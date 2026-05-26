@@ -2985,11 +2985,39 @@ class MediaCoverGenerator(_PluginBase):
         return tips
                  
 
+    def __get_library_total_count(self, service, library):
+        """通过 Items/Counts API 获取媒体库的媒体总数（兜底方案）"""
+        try:
+            if service.type == 'emby':
+                library_id = library.get("Id")
+            else:
+                library_id = library.get("ItemId")
+            if not library_id:
+                return None
+            url = f'[HOST]emby/Items/Counts?api_key=[APIKEY]&ParentId={library_id}'
+            res = service.instance.get_data(url=url)
+            if res:
+                data = res.json()
+                total = 0
+                for key, value in data.items():
+                    if isinstance(value, int):
+                        total += value
+                logger.info(f"角标兜底: library={library.get('Name')}, Items/Counts 各类型计数={data}, 总数={total}")
+                return total if total > 0 else None
+            logger.info(f"角标兜底: library={library.get('Name')}, Items/Counts API 返回空")
+        except Exception as e:
+            logger.info(f"角标兜底: library={library.get('Name')}, Items/Counts API 调用失败: {e}")
+        return None
+
     def __update_library(self, service, library):
         library_name = library['Name']
         logger.info(f"媒体库 {service.name}：{library_name} 开始准备更新封面")
         # 提取媒体数量（角标用）
         item_count = library.get("ItemCount") or library.get("RecursiveItemCount") or None
+        # 如果 API 未返回 ItemCount/RecursiveItemCount，通过 Items/Counts 兜底获取
+        if item_count is None and self._show_item_count:
+            logger.info(f"角标诊断 - library={library_name}, ItemCount/RecursiveItemCount 均为 None，尝试 Items/Counts API 兜底")
+            item_count = self.__get_library_total_count(service, library)
         logger.info(f"角标诊断 - library={library_name}, ItemCount={library.get('ItemCount')}, RecursiveItemCount={library.get('RecursiveItemCount')}, show_item_count={self._show_item_count}, badge_style={self._badge_style}, item_count={item_count}")
         # 自定义图像路径
         image_path = self.__check_custom_image(library_name)
