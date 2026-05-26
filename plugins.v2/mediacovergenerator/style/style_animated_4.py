@@ -197,7 +197,7 @@ def create_style_animated_4(
             reverse=True,
         )
         if not all_posters:
-            logger.warning("style_animated_4 未找到素材图片")
+            logger.warning("style_animated_4 未找到素材图�?)
             return False
 
         unique = []
@@ -241,12 +241,12 @@ def create_style_animated_4(
             tmp_path = Path(tmp_dir)
             n_imgs = len(prepared_bg)
 
-            logger.info(f"开始生成帧，共 {total_frames} 帧，素材数 {n_imgs}")
+            logger.info(f"开始生成帧，共 {total_frames} 帧，素材�?{n_imgs}")
             for f in range(total_frames):
                 if stop_event and stop_event.is_set():
                     return False
                 if f % 10 == 0:
-                    logger.info(f"正在生成第 {f}/{total_frames} 帧...")
+                    logger.info(f"正在生成�?{f}/{total_frames} �?..")
 
                 phase = f / float(total_frames)
                 cycle_pos = phase * n_imgs
