@@ -143,7 +143,9 @@ def create_style_static_4(
         merged = Image.alpha_composite(merged, text_layer)
 
         # 绘制角标
+        logger.info(f"角标绘制检查 - style=static_4, show_item_count={show_item_count}, item_count={item_count}, badge_style={badge_style}")
         if show_item_count and item_count is not None:
+            logger.info(f"角标绘制 - style=static_4, item_count={item_count}, badge_style={badge_style}")
             try:
                 base_color_for_badge = find_dominant_vibrant_colors(
                     Image.open(image_path).convert("RGB"), num_colors=5
@@ -156,10 +158,12 @@ def create_style_static_4(
                 style=badge_style, size_ratio=badge_size_ratio,
                 base_color=base_color_for_badge
             )
+        else:
+            logger.info(f"角标跳过 - style=static_4, 原因: show_item_count={show_item_count}, item_count={item_count}")
 
         buf = BytesIO()
         merged.save(buf, format="PNG", optimize=True)
         return base64.b64encode(buf.getvalue()).decode("utf-8")
     except Exception as e:
-        logger.error(f"创建静�?封面时出�? {e}")
+        logger.error(f"创建静态4封面时出错: {e}")
         return False
