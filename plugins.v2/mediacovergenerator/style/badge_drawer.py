@@ -5,27 +5,89 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import math
 import logging
 import os
+import sys
+from pathlib import Path
 
 _badge_logger = logging.getLogger(__name__)
 
-# 原版徽章图片路径（勋章红/勋章金使用）
-_BADGE_IMG_DIR = os.path.dirname(os.path.abspath(__file__))
-_BADGE_IMG_PATH = os.path.join(_BADGE_IMG_DIR, "badge_image_original.png")
 _badge_img_cache = None
+_badge_img_resolved_path = None  # 诊断用：记录实际找到的路径
+
+
+def _find_badge_image():
+    """多路径回退查找徽章图片，返回 (Image, path) 或 (None, error_msg)"""
+    global _badge_img_cache, _badge_img_resolved_path
+
+    if _badge_img_cache is not None:
+        return _badge_img_cache, _badge_img_resolved_path
+
+    candidates = []
+
+    # 策略1: __file__ 所在目录
+    try:
+        d = os.path.dirname(os.path.abspath(__file__))
+        candidates.append(os.path.join(d, "badge_image_original.png"))
+    except Exception:
+        pass
+
+    # 策略2: 相对于当前工作目录
+    candidates.append(os.path.join(os.getcwd(), "plugins.v2", "mediacovergenerator", "style", "badge_image_original.png"))
+    candidates.append(os.path.join(os.getcwd(), "style", "badge_image_original.png"))
+    candidates.append(os.path.join(os.getcwd(), "badge_image_original.png"))
+
+    # 策略3: 从 sys.path 中的插件路径搜索
+    for sp in sys.path:
+        if "mediacovergenerator" in sp or "plugins" in sp:
+            for sub in ["", "style"]:
+                p = os.path.join(sp, sub, "badge_image_original.png")
+                if os.path.exists(p) and p not in candidates:
+                    candidates.append(p)
+
+    # 策略4: 环境变量 PLUGIN_DIR
+    plugin_dir = os.environ.get("PLUGIN_DIR", "") or os.environ.get("MOVIEPILOT_PLUGIN_DIR", "")
+    if plugin_dir:
+        for sub in ["", "style"]:
+            candidates.append(os.path.join(plugin_dir, "mediacovergenerator", sub, "badge_image_original.png"))
+
+    # 策略5: 常见 MoviePilot 插件目录
+    common_dirs = [
+        "/app/plugins/mediacovergenerator",
+        "/config/plugins/mediacovergenerator",
+        os.path.expanduser("~/plugins/mediacovergenerator"),
+    ]
+    for cd in common_dirs:
+        for sub in ["", "style"]:
+            p = os.path.join(cd, sub, "badge_image_original.png")
+            if os.path.exists(p) and p not in candidates:
+                candidates.append(p)
+
+    _badge_logger.info(f"🔍 徽章图片搜索 - __file__={__file__}, cwd={os.getcwd()}, 候选路径数={len(candidates)}")
+
+    for i, path in enumerate(candidates):
+        exists = os.path.exists(path)
+        size = os.path.getsize(path) if exists else 0
+        _badge_logger.info(f"  候选[{i}]: {path} exists={exists} size={size}")
+        if exists and size > 1000:
+            try:
+                _badge_img_cache = Image.open(path).convert("RGBA")
+                _badge_img_resolved_path = path
+                _badge_logger.info(f"✅ 徽章图片加载成功: {path} ({_badge_img_cache.size})")
+                return _badge_img_cache, path
+            except Exception as e:
+                _badge_logger.warning(f"  ⚠️ 打开失败: {e}")
+
+    _badge_logger.error(f"❌ 徽章图片未找到！搜索了 {len(candidates)} 个路径均无效")
+    return None, "ALL_PATHS_FAILED"
 
 
 def _load_badge_image(target_height):
-    """加载并缩放原版徽章图片（带缓存）"""
-    global _badge_img_cache
-    if _badge_img_cache is None:
-        try:
-            _badge_img_cache = Image.open(_BADGE_IMG_PATH).convert("RGBA")
-        except Exception as e:
-            _badge_logger.warning(f"无法加载徽章图片 {_BADGE_IMG_PATH}: {e}")
-            return None
-    orig_w, orig_h = _badge_img_cache.size
+    """加载并缩放原版徽章图片（带缓存和多路径回退）"""
+    badge_img, path = _find_badge_image()
+    if badge_img is None:
+        return None
+    orig_w, orig_h = badge_img.size
     new_w = int(target_height * orig_w / orig_h)
-    return _badge_img_cache.resize((new_w, target_height), Image.Resampling.LANCZOS)
+    return badge_img.resize((new_w, target_height), Image.Resampling.LANCZOS)
 
 
 def _get_badge_radius(badge_img):
@@ -408,3 +470,67 @@ def draw_badge(image, item_count, font_path, style='badge', size_ratio=0.12, bas
     else:
         _badge_logger.warning(f"未知角标样式: {style}，返回原图")
         return image
+
+
+def preview_badge_styles(font_path, output_dir):
+    """
+    生成4种角标样式的预览图片，用于诊断和预览。
+    
+    参数:
+        font_path: 字体文件路径
+        output_dir: 输出目录路径
+    
+    返回:
+        dict: {"success": bool, "files": [...], "errors": [...], "diagnostics": {...}}
+    """
+    import traceback
+    result = {"success": True, "files": [], "errors": [], "diagnostics": {}}
+    
+    # 诊断信息
+    result["diagnostics"]["__file__"] = __file__
+    result["diagnostics"]["cwd"] = os.getcwd()
+    result["diagnostics"]["python_version"] = sys.version
+    
+    # 测试徽章图片加载
+    badge_img, badge_path = _find_badge_image()
+    result["diagnostics"]["badge_image_found"] = badge_img is not None
+    result["diagnostics"]["badge_image_path"] = badge_path
+    
+    # 测试字体
+    result["diagnostics"]["font_path"] = font_path
+    result["diagnostics"]["font_exists"] = os.path.exists(font_path) if font_path else False
+    
+    if not font_path or not os.path.exists(font_path):
+        result["errors"].append(f"字体不存在: {font_path}")
+        result["success"] = False
+        return result
+    
+    os.makedirs(output_dir, exist_ok=True)
+    
+    w, h = 1200, 675
+    bg = (30, 40, 60)
+    styles = [
+        ("badge", "圆角灰"),
+        ("ribbon", "平缎带"),
+        ("medal_red", "勋章红"),
+        ("medal_gold", "勋章金"),
+    ]
+    test_nums = [5, 42, 123]
+    
+    for style_name, style_label in styles:
+        for num in test_nums:
+            try:
+                img = Image.new('RGB', (w, h), bg)
+                res = draw_badge(img, num, font_path, style=style_name, size_ratio=0.12, base_color=None)
+                filename = f"preview_{style_name}_{num}.png"
+                filepath = os.path.join(output_dir, filename)
+                res.save(filepath)
+                result["files"].append(filename)
+                _badge_logger.info(f"预览生成: {filename}")
+            except Exception as e:
+                err_msg = f"{style_label} num={num}: {e}"
+                result["errors"].append(err_msg)
+                _badge_logger.error(f"预览失败: {err_msg}\n{traceback.format_exc()}")
+                result["success"] = False
+    
+    return result

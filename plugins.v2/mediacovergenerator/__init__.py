@@ -44,6 +44,7 @@ from app.plugins.mediacovergenerator.utils.image_manager import ResolutionConfig
 from app.plugins.mediacovergenerator.utils.network_helper import NetworkHelper, validate_font_file
 from app.plugins.mediacovergenerator.utils.performance_helper import PerformanceMonitor, ProgressTracker, memory_efficient_operation
 from app.plugins.mediacovergenerator.utils.color_helper import ColorHelper
+from app.plugins.mediacovergenerator.style.badge_drawer import preview_badge_styles
 
 
 class MediaCoverGenerator(_PluginBase):
@@ -701,6 +702,8 @@ class MediaCoverGenerator(_PluginBase):
             {"path": "set_page_tab_clean", "endpoint": self.api_set_page_tab_clean, "auth": "bear", "methods": ["POST"], "summary": "切换到清理页(兼容)"},
             {"path": "/saved_cover_image", "endpoint": self.api_saved_cover_image, "methods": ["GET"], "summary": "获取已保存封面图片"},
             {"path": "saved_cover_image", "endpoint": self.api_saved_cover_image, "methods": ["GET"], "summary": "获取已保存封面图片(兼容)"},
+            {"path": "/preview_badge", "endpoint": self.api_preview_badge, "auth": "bear", "methods": ["POST"], "summary": "生成角标样式预览(诊断)"},
+            {"path": "preview_badge", "endpoint": self.api_preview_badge, "auth": "bear", "methods": ["POST"], "summary": "生成角标样式预览(诊断,兼容)"},
         ]
 
     def api_clean_images(self):
@@ -874,6 +877,51 @@ class MediaCoverGenerator(_PluginBase):
             except Exception as e:
                 logger.error(f"【MediaCoverGenerator】返回图片失败: {e}")
                 return {"code": 1, "msg": "返回图片失败"}
+
+    def api_preview_badge(self):
+        """
+        角标样式预览/诊断 API。
+        调用 badge_drawer.preview_badge_styles() 生成4种样式×3个数字的预览图。
+        返回诊断信息（PNG路径、字体路径、搜索路径等）帮助定位服务器上勋章不显示的问题。
+        """
+        try:
+            import tempfile
+            _, _, zh_paths, en_paths = self.__get_font_presets()
+            font_path = zh_paths.get("chaohei") or zh_paths.get("yasong")
+            if not font_path or not os.path.exists(font_path):
+                for v in zh_paths.values():
+                    if v and os.path.exists(v):
+                        font_path = v
+                        break
+            if not font_path or not os.path.exists(font_path):
+                return {"code": 1, "msg": "未找到可用中文字体，请先在设置页下载字体"}
+
+            output_dir = os.path.join(
+                self.__get_recent_cover_output_dir(), "badge_preview"
+            )
+            result = preview_badge_styles(font_path, output_dir)
+            diag = result.get("diagnostics", {})
+            return {
+                "code": 0 if result.get("success") else 1,
+                "msg": "预览完成" if result.get("success") else f"预览部分失败: {result.get('errors')}",
+                "data": {
+                    "files": result.get("files", []),
+                    "errors": result.get("errors", []),
+                    "output_dir": output_dir,
+                    "diagnostics": {
+                        "badge_image_found": diag.get("badge_image_found"),
+                        "badge_image_path": diag.get("badge_image_path"),
+                        "font_path": diag.get("font_path"),
+                        "font_exists": diag.get("font_exists"),
+                        "python_version": diag.get("python_version"),
+                        "cwd": diag.get("cwd"),
+                        "__file__": diag.get("__file__"),
+                    }
+                }
+            }
+        except Exception as e:
+            logger.error(f"【MediaCoverGenerator】角标预览失败: {e}", exc_info=True)
+            return {"code": 1, "msg": f"角标预览失败: {e}"}
 
     def get_service(self) -> List[Dict[str, Any]]:
         """
