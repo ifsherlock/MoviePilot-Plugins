@@ -2998,12 +2998,34 @@ class MediaCoverGenerator(_PluginBase):
             res = service.instance.get_data(url=url)
             if res:
                 data = res.json()
-                total = 0
-                for key, value in data.items():
-                    if isinstance(value, int):
-                        total += value
-                logger.info(f"角标兜底: library={library.get('Name')}, Items/Counts 各类型计数={data}, 总数={total}")
-                return total if total > 0 else None
+                # 根据 CollectionType 选择正确的计数字段，避免电视剧库统计到 EpisodeCount
+                collection_type = library.get('CollectionType', '')
+                # CollectionType → (优先Key, 降级Key...)
+                count_keys_map = {
+                    'movies':     ('MovieCount',),
+                    'tvshows':    ('SeriesCount',),      # 只统计部数，不统计集数
+                    'music':      ('AlbumCount', 'MusicAlbumCount', 'SongCount'),
+                    'boxsets':    ('BoxSetCount',),
+                    'books':      ('BookCount',),
+                    'musicvideos':('MusicVideoCount',),
+                    'homevideos': ('VideoCount',),
+                    'playlists':  ('ItemCount',),
+                }
+                keys = count_keys_map.get(collection_type, ('MovieCount', 'SeriesCount'))
+                total = None
+                # 按优先级查找第一个有效值
+                for key in keys:
+                    val = data.get(key)
+                    if isinstance(val, int) and val > 0:
+                        total = val
+                        break
+                # 兜底：如果都没找到，求和 MovieCount + SeriesCount（混合内容库）
+                if total is None:
+                    fallback = data.get('MovieCount', 0) or 0
+                    fallback += data.get('SeriesCount', 0) or 0
+                    total = fallback if fallback > 0 else None
+                logger.info(f"角标兜底: library={library.get('Name')}, CollectionType={collection_type}, Items/Counts 各类型计数={data}, 选中计数={total}")
+                return total
             logger.info(f"角标兜底: library={library.get('Name')}, Items/Counts API 返回空")
         except Exception as e:
             logger.info(f"角标兜底: library={library.get('Name')}, Items/Counts API 调用失败: {e}")
