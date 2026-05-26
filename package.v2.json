@@ -5,7 +5,7 @@
         "labels": "Emby,动态封面,媒体库",
         "version": "0.9.6",
         "icon": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/emby.png",
-        "author": "ifsherlock",
+        "author": "justzerock、ifsherlock",
         "level": 1,
         "history": {
             "v0.9.6": "新增角标功能，支持在封面左上角显示媒体数量统计",
