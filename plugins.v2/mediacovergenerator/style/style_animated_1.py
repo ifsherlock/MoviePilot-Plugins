@@ -12,6 +12,7 @@ import numpy as np
 from PIL import Image, ImageChops, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 from app.log import logger
+from app.plugins.mediacovergenerator.style.badge_drawer import draw_badge
 from app.plugins.mediacovergenerator.utils.color_helper import ColorHelper
 
 
@@ -312,6 +313,10 @@ def create_style_animated_1(
     image_count=5,
     departure_type="fly",
     stop_event=None,
+    item_count=None,
+    show_item_count=False,
+    badge_style='badge',
+    badge_size_ratio=0.12,
 ):
     def _animate_background(bg_base_rgba, phase, duration_seconds):
         phase = _clamp(phase, 0.0, 1.0)
@@ -742,6 +747,14 @@ def create_style_animated_1(
                     frame.paste(rotated, (draw_x, draw_y), rotated)
 
                 frame = Image.alpha_composite(frame, text_layer)
+
+                # 绘制角标
+                if show_item_count and item_count is not None:
+                    frame = draw_badge(
+                        image=frame, item_count=item_count, font_path=font_path[0],
+                        style=badge_style, size_ratio=badge_size_ratio,
+                        base_color=None
+                    )
 
                 frame_file = tmp_path / f"frame_{f:04d}.bmp"
                 frame.convert("RGB").save(frame_file, format="BMP")

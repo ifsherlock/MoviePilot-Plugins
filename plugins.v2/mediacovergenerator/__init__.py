@@ -267,6 +267,9 @@ class MediaCoverGenerator(_PluginBase):
             self._animation_scroll = "alternate"
         self._bg_color_mode = (config or {}).get("bg_color_mode", "auto")
         self._custom_bg_color = (config or {}).get("custom_bg_color", "")
+        self._show_item_count = config.get("show_item_count", False)
+        self._badge_style = config.get("badge_style", "badge")
+        self._badge_size_ratio = float(config.get("badge_size_ratio", 0.12))
 
         # 初始化分辨率配置（确保安全初始化）
         try:
@@ -437,6 +440,9 @@ class MediaCoverGenerator(_PluginBase):
             "covers_page_history_limit": self._covers_page_history_limit,
             "page_tab": self._page_tab,
             "style_naming_v2": True,
+            "show_item_count": self._show_item_count,
+            "badge_style": self._badge_style,
+            "badge_size_ratio": self._badge_size_ratio,
         })
 
     def get_state(self) -> bool:
@@ -1056,6 +1062,65 @@ class MediaCoverGenerator(_PluginBase):
                                     'hint': '历史封面「显示数量」，默认 50',
                                     'persistentHint': True
                                 },
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VCol',
+                        'props': {
+                            'cols': 12,
+                            'md': 4
+                        },
+                        'content': [
+                            {
+                                'component': 'VSwitch',
+                                'props': {
+                                    'model': 'show_item_count',
+                                    'label': '显示媒体数量角标',
+                                    'hint': '在封面左上角显示媒体库的项目数量',
+                                    'persistentHint': True
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VCol',
+                        'props': {
+                            'cols': 12,
+                            'md': 4
+                        },
+                        'content': [
+                            {
+                                'component': 'VSelect',
+                                'props': {
+                                    'model': 'badge_style',
+                                    'label': '角标样式',
+                                    'items': [
+                                        {"title": "圆角矩形", "value": "badge"},
+                                        {"title": "金色丝带", "value": "ribbon"}
+                                    ],
+                                    'hint': '选择角标的显示样式',
+                                    'persistentHint': True
+                                }
+                            }
+                        ]
+                    },
+                    {
+                        'component': 'VCol',
+                        'props': {
+                            'cols': 12,
+                            'md': 4
+                        },
+                        'content': [
+                            {
+                                'component': 'VTextField',
+                                'props': {
+                                    'model': 'badge_size_ratio',
+                                    'label': '角标大小比例',
+                                    'prependInnerIcon': 'mdi-resize',
+                                    'hint': '角标相对于封面宽度的比例，默认 0.12',
+                                    'persistentHint': True
+                                }
                             }
                         ]
                     }
@@ -2210,6 +2275,9 @@ class MediaCoverGenerator(_PluginBase):
             "covers_page_history_limit": 50,
             "page_tab": "generate-tab",
             "style_naming_v2": True,
+            "show_item_count": False,
+            "badge_style": "badge",
+            "badge_size_ratio": 0.12,
         }
 
     def get_page(self) -> List[dict]:
@@ -2920,6 +2988,8 @@ class MediaCoverGenerator(_PluginBase):
     def __update_library(self, service, library):
         library_name = library['Name']
         logger.info(f"媒体库 {service.name}：{library_name} 开始准备更新封面")
+        # 提取媒体数量（角标用）
+        item_count = library.get("ItemCount") or library.get("RecursiveItemCount") or None
         # 自定义图像路径
         image_path = self.__check_custom_image(library_name)
         # 从配置获取标题和背景颜色
@@ -2932,9 +3002,9 @@ class MediaCoverGenerator(_PluginBase):
             config_bg_color = None
         if image_path:
             logger.info(f"媒体库 {service.name}：{library_name} 从自定义路径获取封面")
-            image_data = self.__generate_image_from_path(service.name, library_name, title, image_path[0], config_bg_color)
+            image_data = self.__generate_image_from_path(service.name, library_name, title, image_path[0], config_bg_color, item_count)
         else:
-            image_data = self.__generate_from_server(service, library, title)
+            image_data = self.__generate_from_server(service, library, title, item_count)
 
         if image_data:
             return self.__set_library_image(service, library, image_data)
@@ -2958,7 +3028,7 @@ class MediaCoverGenerator(_PluginBase):
         return images if images else None  # 或改为 return images if images else False
 
     @memory_efficient_operation
-    def __generate_image_from_path(self, server, library_name, title, image_path=None, config_bg_color=None):
+    def __generate_image_from_path(self, server, library_name, title, image_path=None, config_bg_color=None, item_count=None):
         logger.info(f"媒体库 {server}：{library_name} 正在生成封面图 ...")
 
         # 执行健康检查
@@ -3049,7 +3119,11 @@ class MediaCoverGenerator(_PluginBase):
                                                 blur_size=blur_size,
                                                 color_ratio=color_ratio,
                                                 resolution_config=self._resolution_config,
-                                                bg_color_config=bg_color_config)
+                                                bg_color_config=bg_color_config,
+                                                item_count=item_count,
+                                                show_item_count=self._show_item_count,
+                                                badge_style=self._badge_style,
+                                                badge_size_ratio=self._badge_size_ratio)
         elif self._cover_style == 'static_2':
             image_data = create_style_static_2(image_path, title, font_path,
                                                 font_size=font_size,
@@ -3057,7 +3131,11 @@ class MediaCoverGenerator(_PluginBase):
                                                 blur_size=blur_size,
                                                 color_ratio=color_ratio,
                                                 resolution_config=self._resolution_config,
-                                                bg_color_config=bg_color_config)
+                                                bg_color_config=bg_color_config,
+                                                item_count=item_count,
+                                                show_item_count=self._show_item_count,
+                                                badge_style=self._badge_style,
+                                                badge_size_ratio=self._badge_size_ratio)
         elif self._cover_style == 'static_4':
             image_data = create_style_static_4(image_path, title, font_path,
                                                 font_size=font_size,
@@ -3065,7 +3143,11 @@ class MediaCoverGenerator(_PluginBase):
                                                 blur_size=blur_size,
                                                 color_ratio=color_ratio,
                                                 resolution_config=self._resolution_config,
-                                                bg_color_config=bg_color_config)
+                                                bg_color_config=bg_color_config,
+                                                item_count=item_count,
+                                                show_item_count=self._show_item_count,
+                                                badge_style=self._badge_style,
+                                                badge_size_ratio=self._badge_size_ratio)
         elif self._cover_style == 'static_3':
             # 使用安全的文件名
             safe_library_name = self.__sanitize_filename(library_name)
@@ -3083,7 +3165,11 @@ class MediaCoverGenerator(_PluginBase):
                                                     blur_size=blur_size,
                                                     color_ratio=color_ratio,
                                                     resolution_config=self._resolution_config,
-                                                    bg_color_config=bg_color_config)
+                                                    bg_color_config=bg_color_config,
+                                                    item_count=item_count,
+                                                    show_item_count=self._show_item_count,
+                                                    badge_style=self._badge_style,
+                                                    badge_size_ratio=self._badge_size_ratio)
             else:
                 logger.warning(f"static_3: 图片目录准备失败 {library_dir}")
         elif self._cover_style == 'animated_3':
@@ -3115,7 +3201,11 @@ class MediaCoverGenerator(_PluginBase):
                                                     animation_format=self._animation_format,
                                                     animation_resolution=anim_res,
                                                     animation_reduce_colors=self._animation_reduce_colors,
-                                                    stop_event=self._event)
+                                                    stop_event=self._event,
+                                                    item_count=item_count,
+                                                    show_item_count=self._show_item_count,
+                                                    badge_style=self._badge_style,
+                                                    badge_size_ratio=self._badge_size_ratio)
         elif self._cover_style == 'animated_1':
             # 动态封面强制使用 320x180 分辨率以保证性能
             anim_res = '320x180'
@@ -3148,7 +3238,11 @@ class MediaCoverGenerator(_PluginBase):
                                                     animation_reduce_colors=self._animation_reduce_colors,
                                                     image_count=animated_2_image_count,
                                                     departure_type=self._animated_2_departure_type,
-                                                    stop_event=self._event)
+                                                    stop_event=self._event,
+                                                    item_count=item_count,
+                                                    show_item_count=self._show_item_count,
+                                                    badge_style=self._badge_style,
+                                                    badge_size_ratio=self._badge_size_ratio)
         elif self._cover_style == 'animated_2':
             # 动态封面强制使用 320x180 分辨率以保证性能
             anim_res = '320x180'
@@ -3177,7 +3271,11 @@ class MediaCoverGenerator(_PluginBase):
                                                     animation_resolution=anim_res,
                                                     animation_reduce_colors=self._animation_reduce_colors,
                                                     image_count=self.__get_animated_2_required_items(),
-                                                    stop_event=self._event)
+                                                    stop_event=self._event,
+                                                    item_count=item_count,
+                                                    show_item_count=self._show_item_count,
+                                                    badge_style=self._badge_style,
+                                                    badge_size_ratio=self._badge_size_ratio)
         elif self._cover_style == 'animated_4':
             anim_res = '320x180'
             logger.info(f"强制动图生成分辨率为: {anim_res}")
@@ -3207,10 +3305,14 @@ class MediaCoverGenerator(_PluginBase):
                                                     animation_resolution=anim_res,
                                                     animation_reduce_colors=self._animation_reduce_colors,
                                                     image_count=animated_2_image_count,
-                                                    stop_event=self._event)
+                                                    stop_event=self._event,
+                                                    item_count=item_count,
+                                                    show_item_count=self._show_item_count,
+                                                    badge_style=self._badge_style,
+                                                    badge_size_ratio=self._badge_size_ratio)
         return image_data
     
-    def __generate_from_server(self, service, library, title):
+    def __generate_from_server(self, service, library, title, item_count=None):
 
         logger.info(f"媒体库 {service.name}：{library['Name']} 开始筛选媒体项")
         required_items = self.__get_required_items()
@@ -3230,9 +3332,9 @@ class MediaCoverGenerator(_PluginBase):
         
         # 处理合集类型的特殊情况
         if library_type == "boxsets":
-            return self.__handle_boxset_library(service, library, title)
+            return self.__handle_boxset_library(service, library, title, item_count)
         elif library_type == "playlists":
-            return self.__handle_playlist_library(service, library, title)
+            return self.__handle_playlist_library(service, library, title, item_count)
         elif library_type == "music":
             include_types = 'MusicAlbum,Audio'
         else:
@@ -3278,14 +3380,14 @@ class MediaCoverGenerator(_PluginBase):
         if len(items) > 0:
             logger.info(f"媒体库 {service.name}：{library['Name']} 找到 {len(items)} 个有效项目")
             if self.__is_single_image_style():
-                return self.__update_single_image(service, library, title, items[0])
+                return self.__update_single_image(service, library, title, items[0], item_count)
             else:
-                return self.__update_grid_image(service, library, title, items[:required_items])
+                return self.__update_grid_image(service, library, title, items[:required_items], item_count)
         else:
             logger.warning(f"媒体库 {service.name}：{library['Name']} 无法找到有效的图片项目 (筛选类型: {include_types})")
             return False
         
-    def __handle_boxset_library(self, service, library, title):
+    def __handle_boxset_library(self, service, library, title, item_count=None):
 
         include_types = 'BoxSet,Movie'
         if service.type == 'emby':
@@ -3325,14 +3427,14 @@ class MediaCoverGenerator(_PluginBase):
         # 使用获取到的有效项目更新封面
         if len(valid_items) > 0:
             if self.__is_single_image_style():
-                return self.__update_single_image(service, library, title, valid_items[0])
+                return self.__update_single_image(service, library, title, valid_items[0], item_count)
             else:
-                return self.__update_grid_image(service, library, title, valid_items[:required_items])
+                return self.__update_grid_image(service, library, title, valid_items[:required_items], item_count)
         else:
             print(f"媒体库 {service.name}：{library['Name']} 无法找到有效的图片项目")
             return False
         
-    def __handle_playlist_library(self, service, library, title):
+    def __handle_playlist_library(self, service, library, title, item_count=None):
         """ 
         播放列表图片获取 
         """
@@ -3374,9 +3476,9 @@ class MediaCoverGenerator(_PluginBase):
         # 使用获取到的有效项目更新封面
         if len(valid_items) > 0:
             if self.__is_single_image_style():
-                return self.__update_single_image(service, library, title, valid_items[0])
+                return self.__update_single_image(service, library, title, valid_items[0], item_count)
             else:
-                return self.__update_grid_image(service, library, title, valid_items[:required_items])
+                return self.__update_grid_image(service, library, title, valid_items[:required_items], item_count)
         else:
             print(f"警告: 无法为播放列表 {service.name}：{library['Name']} 找到有效的图片项目")
             return False
@@ -3490,7 +3592,7 @@ class MediaCoverGenerator(_PluginBase):
 
 
     
-    def __update_single_image(self, service, library, title, item):
+    def __update_single_image(self, service, library, title, item, item_count=None):
         """更新单图封面"""
         logger.info(f"媒体库 {service.name}：{library['Name']} 从媒体项获取图片")
         updated_item_id = ''
@@ -3505,7 +3607,7 @@ class MediaCoverGenerator(_PluginBase):
         # 从配置获取背景颜色
         title_result = self.__get_title_from_config(library['Name'])
         config_bg_color = title_result[2] if len(title_result) == 3 else None
-        image_data = self.__generate_image_from_path(service.name, library['Name'], title, image_path, config_bg_color)
+        image_data = self.__generate_image_from_path(service.name, library['Name'], title, image_path, config_bg_color, item_count)
             
         if not image_data:
             return False
@@ -3522,7 +3624,7 @@ class MediaCoverGenerator(_PluginBase):
 
         return image_data
     
-    def __update_grid_image(self, service, library, title, items):
+    def __update_grid_image(self, service, library, title, items, item_count=None):
         """更新九宫格封面"""
         logger.info(f"媒体库 {service.name}：{library['Name']} 从媒体项获取图片")
 
@@ -3547,7 +3649,7 @@ class MediaCoverGenerator(_PluginBase):
         # 从配置获取背景颜色
         title_result = self.__get_title_from_config(library['Name'])
         config_bg_color = title_result[2] if len(title_result) == 3 else None
-        image_data = self.__generate_image_from_path(service.name, library['Name'], title, None, config_bg_color)
+        image_data = self.__generate_image_from_path(service.name, library['Name'], title, None, config_bg_color, item_count)
         if not image_data:
             return False
         if service.type == 'emby':

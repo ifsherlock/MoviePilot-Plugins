@@ -17,6 +17,7 @@ from app.plugins.mediacovergenerator.utils.performance_helper import (
     OptimizedImageProcessor, PerformanceMonitor, memory_efficient_operation
 )
 from app.plugins.mediacovergenerator.utils.color_helper import ColorHelper
+from app.plugins.mediacovergenerator.style.badge_drawer import draw_badge
 
 
 # ========== 配置 ==========
@@ -320,7 +321,7 @@ def rotate_image(img, angle, bg_color=(0, 0, 0, 0)):
 
 
 @memory_efficient_operation
-def create_style_static_1(image_path, title, font_path, font_size=(170,75), font_offset=(0,40,40), blur_size=50, color_ratio=0.8, resolution_config=None, bg_color_config=None):
+def create_style_static_1(image_path, title, font_path, font_size=(170,75), font_offset=(0,40,40), blur_size=50, color_ratio=0.8, resolution_config=None, bg_color_config=None, item_count=None, show_item_count=False, badge_style='badge', badge_size_ratio=0.12):
     try:
         logger.info("开始创建单图封面...")
 
@@ -651,6 +652,21 @@ def create_style_static_1(image_path, title, font_path, font_size=(170,75), font
                     return base64_str
                 else:
                     raise ValueError(f"Unsupported format: {format}")
+
+            # 绘制角标
+            if show_item_count and item_count is not None:
+                try:
+                    base_color_for_badge = find_dominant_macaron_colors(
+                        Image.open(image_path).convert("RGB"), num_colors=5
+                    )
+                    base_color_for_badge = base_color_for_badge[0] if base_color_for_badge else None
+                except Exception:
+                    base_color_for_badge = None
+                combined = draw_badge(
+                    image=combined, item_count=item_count, font_path=font_path[0],
+                    style=badge_style, size_ratio=badge_size_ratio,
+                    base_color=base_color_for_badge
+                )
 
             return image_to_base64(combined)
         

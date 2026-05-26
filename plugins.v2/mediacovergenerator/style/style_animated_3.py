@@ -12,6 +12,7 @@ from app.log import logger
 import subprocess
 import tempfile
 import shutil
+from app.plugins.mediacovergenerator.style.badge_drawer import draw_badge
 from app.plugins.mediacovergenerator.utils.color_helper import ColorHelper
 
 """ 
@@ -759,11 +760,12 @@ def add_film_grain(image, intensity=0.05):
     
     return Image.fromarray(img_array)
 
-def create_style_animated_3(library_dir, title, font_path, font_size=(170,75), font_offset=(0,40,40), 
-                           is_blur=False, blur_size=50, color_ratio=0.8, resolution_config=None, 
-                           bg_color_config=None, animation_duration=12, animation_scroll='down', 
-                           animation_fps=15, animation_format='apng', animation_resolution='300x200', 
-                           animation_reduce_colors='strong', stop_event=None):
+def create_style_animated_3(library_dir, title, font_path, font_size=(170,75), font_offset=(0,40,40),
+                           is_blur=False, blur_size=50, color_ratio=0.8, resolution_config=None,
+                           bg_color_config=None, animation_duration=12, animation_scroll='down',
+                           animation_fps=15, animation_format='apng', animation_resolution='300x200',
+                           animation_reduce_colors='strong', stop_event=None,
+                           item_count=None, show_item_count=False, badge_style='badge', badge_size_ratio=0.12):
     """
     生成多图滚动的动图 (GIF/WebP)，通过 ffmpeg 合成
     已优化版：在目标分辨率下直接合成，预处理旋转和文字，效率提升约 5-8 倍。
@@ -1007,6 +1009,14 @@ def create_style_animated_3(library_dir, title, font_path, font_size=(170,75), f
                     pos_x = int(bcx - rotated_piece.width // 2 + cell_width // 2)
                     pos_y = int(bcy - rotated_piece.height // 2)
                     frame.paste(rotated_piece, (pos_x, pos_y), rotated_piece)
+
+                # 绘制角标
+                if show_item_count and item_count is not None:
+                    frame = draw_badge(
+                        image=frame, item_count=item_count, font_path=font_path[0],
+                        style=badge_style, size_ratio=badge_size_ratio,
+                        base_color=None
+                    )
 
                 # 最终一帧写入 (使用 BMP 消除 PNG 压缩耗时)
                 frame_file = tmp_path / f"frame_{i:04d}.bmp"

@@ -16,6 +16,7 @@ from app.plugins.mediacovergenerator.style.style_static_2 import (
     darken_color,
     find_dominant_vibrant_colors,
 )
+from app.plugins.mediacovergenerator.style.badge_drawer import draw_badge
 from app.plugins.mediacovergenerator.utils.color_helper import ColorHelper
 
 
@@ -207,6 +208,10 @@ def create_style_animated_2(
     animation_reduce_colors="strong",
     image_count=9,
     stop_event=None,
+    item_count=None,
+    show_item_count=False,
+    badge_style='badge',
+    badge_size_ratio=0.12,
 ):
     try:
         try:
@@ -332,6 +337,14 @@ def create_style_animated_2(
                 moving_text = Image.new("RGBA", (target_w, target_h), (0, 0, 0, 0))
                 moving_text.paste(text_mix, (0, 0), text_mix)
                 frame = Image.alpha_composite(frame, moving_text)
+
+                # 绘制角标
+                if show_item_count and item_count is not None:
+                    frame = draw_badge(
+                        image=frame, item_count=item_count, font_path=font_path[0],
+                        style=badge_style, size_ratio=badge_size_ratio,
+                        base_color=None
+                    )
 
                 frame_file = tmp_path / f"frame_{f:04d}.bmp"
                 frame.convert("RGB").save(frame_file, format="BMP")

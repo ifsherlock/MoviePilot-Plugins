@@ -9,6 +9,7 @@ from app.plugins.mediacovergenerator.style.style_static_2 import (
     darken_color,
     find_dominant_vibrant_colors,
 )
+from app.plugins.mediacovergenerator.style.badge_drawer import draw_badge
 from app.plugins.mediacovergenerator.utils.color_helper import ColorHelper
 
 
@@ -44,6 +45,10 @@ def create_style_static_4(
     color_ratio=0.8,
     resolution_config=None,
     bg_color_config=None,
+    item_count=None,
+    show_item_count=False,
+    badge_style='badge',
+    badge_size_ratio=0.12,
 ):
     try:
         zh_font_path, en_font_path = font_path
@@ -136,6 +141,21 @@ def create_style_static_4(
 
         merged = Image.alpha_composite(canvas, shadow_layer.filter(ImageFilter.GaussianBlur(radius=8)))
         merged = Image.alpha_composite(merged, text_layer)
+
+        # 绘制角标
+        if show_item_count and item_count is not None:
+            try:
+                base_color_for_badge = find_dominant_vibrant_colors(
+                    Image.open(image_path).convert("RGB"), num_colors=5
+                )
+                base_color_for_badge = base_color_for_badge[0] if base_color_for_badge else None
+            except Exception:
+                base_color_for_badge = None
+            merged = draw_badge(
+                image=merged, item_count=item_count, font_path=font_path[0],
+                style=badge_style, size_ratio=badge_size_ratio,
+                base_color=base_color_for_badge
+            )
 
         buf = BytesIO()
         merged.save(buf, format="PNG", optimize=True)

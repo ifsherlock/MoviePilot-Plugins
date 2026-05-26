@@ -10,6 +10,7 @@ import random  # 添加随机模块
 import colorsys
 import traceback
 from app.log import logger
+from app.plugins.mediacovergenerator.style.badge_drawer import draw_badge
 from app.plugins.mediacovergenerator.utils.color_helper import ColorHelper
 
 """ 
@@ -774,7 +775,7 @@ def add_film_grain(image, intensity=0.05):
     
     return Image.fromarray(img_array)
 
-def create_style_static_3(library_dir, title, font_path, font_size=(170,75), font_offset=(0,40,40), is_blur=False, blur_size=50, color_ratio=0.8, resolution_config=None, bg_color_config=None):
+def create_style_static_3(library_dir, title, font_path, font_size=(170,75), font_offset=(0,40,40), is_blur=False, blur_size=50, color_ratio=0.8, resolution_config=None, bg_color_config=None, item_count=None, show_item_count=False, badge_style='badge', badge_size_ratio=0.12):
     """
     生成海报：多张图片以旋转列的形式排列在渐变背景上。
     输入:
@@ -1200,6 +1201,28 @@ def create_style_static_3(library_dir, title, font_path, font_size=(170,75), fon
             else:
                 raise ValueError(f"Unsupported format: {format}")
             
+        # 绘制角标
+        if show_item_count and item_count is not None:
+            try:
+                # 从库目录中取第一张图片提取主色
+                supported_formats = (".jpg", ".jpeg", ".png", ".bmp", ".gif", ".webp")
+                poster_folder = str(library_dir)
+                all_posters = sorted([
+                    os.path.join(poster_folder, f) for f in os.listdir(poster_folder)
+                    if f.lower().endswith(supported_formats)
+                ])
+                if all_posters:
+                    base_color_for_badge = get_poster_primary_color(all_posters[0])
+                else:
+                    base_color_for_badge = None
+            except Exception:
+                base_color_for_badge = None
+            result = draw_badge(
+                image=result, item_count=item_count, font_path=font_path[0],
+                style=badge_style, size_ratio=badge_size_ratio,
+                base_color=base_color_for_badge
+            )
+
         return image_to_base64(result)
 
     except Exception as e:

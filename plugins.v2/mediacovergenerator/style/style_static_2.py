@@ -10,6 +10,7 @@ import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont, ImageOps
 
 from app.log import logger
+from app.plugins.mediacovergenerator.style.badge_drawer import draw_badge
 from app.plugins.mediacovergenerator.utils.color_helper import ColorHelper
 
 # ========== 配置 ==========
@@ -239,7 +240,7 @@ def create_shadow_mask(size, split_top=0.5, split_bottom=0.33, feather_size=40):
     
     return mask
 
-def create_style_static_2(image_path, title, font_path, font_size=(170,75), font_offset=(0,40,40), blur_size=50, color_ratio=0.8, resolution_config=None, bg_color_config=None):
+def create_style_static_2(image_path, title, font_path, font_size=(170,75), font_offset=(0,40,40), blur_size=50, color_ratio=0.8, resolution_config=None, bg_color_config=None, item_count=None, show_item_count=False, badge_style='badge', badge_size_ratio=0.12):
     try:
         zh_font_path, en_font_path = font_path
         title_zh, title_en = title
@@ -501,6 +502,21 @@ def create_style_static_2(image_path, title, font_path, font_size=(170,75), font
             else:
                 raise ValueError(f"Unsupported format: {format}")
             
+        # 绘制角标
+        if show_item_count and item_count is not None:
+            try:
+                base_color_for_badge = find_dominant_vibrant_colors(
+                    Image.open(image_path).convert("RGB"), num_colors=5
+                )
+                base_color_for_badge = base_color_for_badge[0] if base_color_for_badge else None
+            except Exception:
+                base_color_for_badge = None
+            combined = draw_badge(
+                image=combined, item_count=item_count, font_path=font_path[0],
+                style=badge_style, size_ratio=badge_size_ratio,
+                base_color=base_color_for_badge
+            )
+
         return image_to_base64(combined)
     except Exception as e:
         logger.error(f"创建单图封面时出错: {e}")
