@@ -1,6 +1,6 @@
 # plugins.v2/mediacovergenerator/style/badge_drawer.py
-# 角标绘制模块：圆角灰 / 平缎带 / 勋章银 / 勋章金
-# 版本: v3-base64 - PNG内嵌base64，消除文件路径依赖；logger改用MoviePilot app.log
+# 角标绘制模块：圆角灰 / 平缎带 / 勋章红(深酒红) / 勋章白(纯白+强阴影)
+# 版本: v4-base64 - 勋章红(深酒红#660000)/勋章白(纯白+深暖棕阴影#3E2723)
 
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import math
@@ -4349,7 +4349,7 @@ def _draw_style_ribbon(image, item_count, font_path, size_ratio, base_color):
 
 
 def _draw_style_medal(image, item_count, font_path, size_ratio, text_colors):
-    """勋章银 / 勋章金：RWB 缎带 + 原版徽章 + 旋转金属渐变字"""
+    """勋章红 / 勋章白：RWB 缎带 + 原版徽章 + 旋转金属渐变字"""
     w, h = image.size
     raw_count = item_count
     count_text = f'{raw_count:02d}' if raw_count < 10 else str(raw_count)
@@ -4465,23 +4465,23 @@ def _draw_style_medal(image, item_count, font_path, size_ratio, text_colors):
     return image
 
 
-# === 勋章银 / 勋章金 预设配色 ===
-_MEDAL_SILVER_COLORS = {
-    'fill': (192, 192, 192, 250),
-    'highlight': (235, 238, 242, 250),
-    'dark': (145, 148, 152, 250),
-    'inner_stroke': (85, 85, 85, 255),
-    'outer_stroke': (218, 165, 32, 250),
-    'shadow': (80, 80, 80, 90),
+# === 勋章红(深酒红) / 勋章白(纯白+强阴影) 预设配色 ===
+_MEDAL_RED_COLORS = {
+    'fill': (102, 0, 0, 250),        # #660000 深酒红
+    'highlight': (175, 45, 45, 250),  # 亮红反光
+    'dark': (77, 0, 0, 250),          # #4D0000 更深酒红
+    'inner_stroke': (30, 0, 0, 255),  # 深红内描边
+    'outer_stroke': (218, 165, 32, 250),  # 金色外描边
+    'shadow': (0, 0, 0, 90),          # 黑色投影
 }
 
-_MEDAL_GOLD_COLORS = {
-    'fill': (184, 115, 51, 250),
-    'highlight': (230, 175, 100, 250),
-    'dark': (120, 70, 25, 250),
-    'inner_stroke': (85, 85, 85, 255),
-    'outer_stroke': (184, 134, 11, 250),
-    'shadow': (0, 0, 0, 90),
+_MEDAL_WHITE_COLORS = {
+    'fill': (255, 255, 255, 250),     # #FFFFFF 纯白
+    'highlight': (255, 255, 255, 250), # 纯白高光
+    'dark': (215, 215, 215, 250),     # 浅灰暗部
+    'inner_stroke': (62, 39, 35, 255), # #3E2723 深暖棕内描边
+    'outer_stroke': (62, 39, 35, 250), # #3E2723 深暖棕外描边
+    'shadow': (62, 39, 35, 90),        # #3E2723 暖棕投影
 }
 
 
@@ -4491,10 +4491,10 @@ def draw_badge(image, item_count, font_path, style='badge', size_ratio=0.12, bas
     支持四种风格：
         'badge'       - 圆角灰 (原版灰底圆角矩形 + 白字)
         'ribbon'      - 平缎带 (金色三角缎带 + 棕字旋转)
-        'medal_silver'- 勋章银 (RWB缎带 + 徽章 + 银色金属渐变字)
-        'medal_gold'  - 勋章金 (RWB缎带 + 徽章 + 古铜金属渐变字)
+        'medal_red'   - 勋章红 (RWB缎带 + 徽章 + 深酒红金属渐变字)
+        'medal_white' - 勋章白 (RWB缎带 + 徽章 + 纯白强阴影字)
     
-    版本: v3-base64 - PNG内嵌base64，消除文件路径依赖
+    版本: v4-base64 - PNG内嵌base64，消除文件路径依赖
 
     参数:
         image: PIL.Image 对象
@@ -4508,7 +4508,7 @@ def draw_badge(image, item_count, font_path, style='badge', size_ratio=0.12, bas
         return image
 
     canvas_width, canvas_height = image.size
-    _badge_logger.info(f'[badge_drawer] draw_badge v3-base64 - item_count={item_count}, style={style}, '
+    _badge_logger.info(f'[badge_drawer] draw_badge v4-base64 - item_count={item_count}, style={style}, '
                        f'image_size={canvas_width}x{canvas_height}, size_ratio={size_ratio}')
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
@@ -4521,18 +4521,18 @@ def draw_badge(image, item_count, font_path, style='badge', size_ratio=0.12, bas
     elif style == 'ribbon':
         return _draw_style_ribbon(image, item_count, font_path, size_ratio, base_color)
 
-    # 勋章银
-    elif style == 'medal_silver':
-        return _draw_style_medal(image, item_count, font_path, size_ratio, _MEDAL_SILVER_COLORS)
-
-    # 勋章金
-    elif style == 'medal_gold':
-        return _draw_style_medal(image, item_count, font_path, size_ratio, _MEDAL_GOLD_COLORS)
-
-    # 兼容旧版 medal_red → medal_silver
+    # 勋章红(深酒红)
     elif style == 'medal_red':
-        _badge_logger.info('[badge_drawer] medal_red 已替换为 medal_silver（勋章银），自动转换')
-        return _draw_style_medal(image, item_count, font_path, size_ratio, _MEDAL_SILVER_COLORS)
+        return _draw_style_medal(image, item_count, font_path, size_ratio, _MEDAL_RED_COLORS)
+
+    # 勋章白(纯白+强阴影)
+    elif style == 'medal_white':
+        return _draw_style_medal(image, item_count, font_path, size_ratio, _MEDAL_WHITE_COLORS)
+
+    # 兼容旧版 medal_silver / medal_gold → medal_white
+    elif style in ('medal_silver', 'medal_gold'):
+        _badge_logger.info(f'[badge_drawer] 旧版样式 {style} 已淘汰，自动转换为 medal_white（勋章白）')
+        return _draw_style_medal(image, item_count, font_path, size_ratio, _MEDAL_WHITE_COLORS)
 
     # 未知样式，返回原图
     else:
@@ -4544,7 +4544,7 @@ def preview_badge_styles(font_path, output_dir):
     """
     生成4种角标样式的预览图片，用于诊断和预览。
     
-    版本: v3-base64
+    版本: v4-base64
     
     参数:
         font_path: 字体文件路径
@@ -4557,7 +4557,7 @@ def preview_badge_styles(font_path, output_dir):
     result = {'success': True, 'files': [], 'errors': [], 'diagnostics': {}}
     
     # 诊断信息
-    result['diagnostics']['version'] = 'v3-base64'
+    result['diagnostics']['version'] = 'v4-base64'
     result['diagnostics']['__file__'] = __file__
     result['diagnostics']['cwd'] = os.getcwd()
     result['diagnostics']['python_version'] = sys.version
@@ -4587,8 +4587,8 @@ def preview_badge_styles(font_path, output_dir):
     styles = [
         ('badge', '圆角灰'),
         ('ribbon', '平缎带'),
-        ('medal_silver', '勋章银'),
-        ('medal_gold', '勋章金'),
+        ('medal_red', '勋章红(深酒红)'),
+        ('medal_white', '勋章白(纯白)'),
     ]
     test_nums = [5, 42, 123]
     
