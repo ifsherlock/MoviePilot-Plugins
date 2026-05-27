@@ -1146,7 +1146,7 @@ class MediaCoverGenerator(_PluginBase):
                                     'items': [
                                         {"title": "圆角灰", "value": "badge"},
                                         {"title": "平缎带", "value": "ribbon"},
-                                        {"title": "勋章红", "value": "medal_red"},
+                                        {"title": "勋章银", "value": "medal_silver"},
                                         {"title": "勋章金", "value": "medal_gold"}
                                     ],
                                     'hint': '选择角标的显示样式',

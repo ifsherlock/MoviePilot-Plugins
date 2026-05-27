@@ -1,5 +1,5 @@
 # plugins.v2/mediacovergenerator/style/badge_drawer.py
-# 角标绘制模块：圆角灰 / 平缎带 / 勋章红 / 勋章金
+# 角标绘制模块：圆角灰 / 平缎带 / 勋章银 / 勋章金
 # 版本: v3-base64 - PNG内嵌base64，消除文件路径依赖；logger改用MoviePilot app.log
 
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
@@ -4214,7 +4214,7 @@ def _build_metallic_text_layer(count_text, font, text_colors):
 
     result = Image.new('RGBA', (cs, cs), (0, 0, 0, 0))
 
-    # Layer 1: 投影 (offset 2,2)
+    # Layer 1: 投影
     sh_cvs = Image.new('RGBA', (cs, cs), (0, 0, 0, 0))
     sh_d = ImageDraw.Draw(sh_cvs)
     sh_d.text((cx + 2, cy + 2), count_text, font=font, fill=shadow_color, anchor='mm')
@@ -4349,7 +4349,7 @@ def _draw_style_ribbon(image, item_count, font_path, size_ratio, base_color):
 
 
 def _draw_style_medal(image, item_count, font_path, size_ratio, text_colors):
-    """勋章红 / 勋章金：RWB 缎带 + 原版徽章 + 旋转金属渐变字"""
+    """勋章银 / 勋章金：RWB 缎带 + 原版徽章 + 旋转金属渐变字"""
     w, h = image.size
     raw_count = item_count
     count_text = f'{raw_count:02d}' if raw_count < 10 else str(raw_count)
@@ -4465,14 +4465,14 @@ def _draw_style_medal(image, item_count, font_path, size_ratio, text_colors):
     return image
 
 
-# === 勋章红 / 勋章金 预设配色 ===
-_MEDAL_RED_COLORS = {
-    'fill': (139, 0, 42, 250),
-    'highlight': (210, 80, 90, 250),
-    'dark': (90, 0, 20, 250),
+# === 勋章银 / 勋章金 预设配色 ===
+_MEDAL_SILVER_COLORS = {
+    'fill': (192, 192, 192, 250),
+    'highlight': (235, 238, 242, 250),
+    'dark': (145, 148, 152, 250),
     'inner_stroke': (85, 85, 85, 255),
-    'outer_stroke': (184, 134, 11, 250),
-    'shadow': (0, 0, 0, 90),
+    'outer_stroke': (218, 165, 32, 250),
+    'shadow': (80, 80, 80, 90),
 }
 
 _MEDAL_GOLD_COLORS = {
@@ -4489,10 +4489,10 @@ def draw_badge(image, item_count, font_path, style='badge', size_ratio=0.12, bas
     """
     在所有封面图片上绘制媒体数量角标的唯一函数。
     支持四种风格：
-        'badge'     - 圆角灰 (原版灰底圆角矩形 + 白字)
-        'ribbon'    - 平缎带 (金色三角缎带 + 棕字旋转)
-        'medal_red' - 勋章红 (RWB缎带 + 徽章 + 勃艮第红金属渐变字)
-        'medal_gold'- 勋章金 (RWB缎带 + 徽章 + 古铜金属渐变字)
+        'badge'       - 圆角灰 (原版灰底圆角矩形 + 白字)
+        'ribbon'      - 平缎带 (金色三角缎带 + 棕字旋转)
+        'medal_silver'- 勋章银 (RWB缎带 + 徽章 + 银色金属渐变字)
+        'medal_gold'  - 勋章金 (RWB缎带 + 徽章 + 古铜金属渐变字)
     
     版本: v3-base64 - PNG内嵌base64，消除文件路径依赖
 
@@ -4513,29 +4513,26 @@ def draw_badge(image, item_count, font_path, style='badge', size_ratio=0.12, bas
     if image.mode != 'RGBA':
         image = image.convert('RGBA')
 
-    # =================================================
     # 圆角灰
-    # =================================================
     if style == 'badge':
         return _draw_style_badge(image, item_count, font_path, size_ratio, base_color)
 
-    # =================================================
     # 平缎带
-    # =================================================
     elif style == 'ribbon':
         return _draw_style_ribbon(image, item_count, font_path, size_ratio, base_color)
 
-    # =================================================
-    # 勋章红
-    # =================================================
-    elif style == 'medal_red':
-        return _draw_style_medal(image, item_count, font_path, size_ratio, _MEDAL_RED_COLORS)
+    # 勋章银
+    elif style == 'medal_silver':
+        return _draw_style_medal(image, item_count, font_path, size_ratio, _MEDAL_SILVER_COLORS)
 
-    # =================================================
     # 勋章金
-    # =================================================
     elif style == 'medal_gold':
         return _draw_style_medal(image, item_count, font_path, size_ratio, _MEDAL_GOLD_COLORS)
+
+    # 兼容旧版 medal_red → medal_silver
+    elif style == 'medal_red':
+        _badge_logger.info('[badge_drawer] medal_red 已替换为 medal_silver（勋章银），自动转换')
+        return _draw_style_medal(image, item_count, font_path, size_ratio, _MEDAL_SILVER_COLORS)
 
     # 未知样式，返回原图
     else:
@@ -4590,7 +4587,7 @@ def preview_badge_styles(font_path, output_dir):
     styles = [
         ('badge', '圆角灰'),
         ('ribbon', '平缎带'),
-        ('medal_red', '勋章红'),
+        ('medal_silver', '勋章银'),
         ('medal_gold', '勋章金'),
     ]
     test_nums = [5, 42, 123]

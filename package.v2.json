@@ -3,11 +3,12 @@
         "name": "Emby媒体库封面生成",
         "description": "生成媒体库动态/静态封面，支持 Emby/Jellyfin",
         "labels": "Emby,动态封面,媒体库",
-        "version": "0.9.7",
+        "version": "0.9.8",
         "icon": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/emby.png",
         "author": "justzerock、ifsherlock",
         "level": 1,
         "history": {
+            "v0.9.8": "角标v4: 勋章红→勋章银(银色字更清晰)，medal_red自动兼容转换；下拉菜单同步更新",
             "v0.9.7": "角标v3: 勋章红/勋章金样式修复(PNG内嵌base64消除路径依赖 + logger改用app.log)；支持4种角标(圆角灰/平缎带/勋章红/勋章金)",
             "v0.9.6": "新增角标功能，支持在封面左上角显示媒体数量统计",
             "v0.9.5": "优化历史封面加载速度，修复入库监控停止运行的问题",
