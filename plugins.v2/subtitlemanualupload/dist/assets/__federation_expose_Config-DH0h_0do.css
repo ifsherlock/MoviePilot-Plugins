@@ -1,14 +1,14 @@
 
-.config-shell[data-v-19bf56ce] {
+.config-shell[data-v-5c8f895f] {
   padding: 20px;
 }
-.config-card[data-v-19bf56ce] {
+.config-card[data-v-5c8f895f] {
   border: 1px solid rgba(127, 151, 185, 0.18);
   background: rgba(255, 255, 255, 0.82);
   backdrop-filter: blur(12px);
   box-shadow: 0 18px 50px rgba(30, 63, 108, 0.08);
 }
-.config-grid[data-v-19bf56ce] {
+.config-grid[data-v-5c8f895f] {
   display: grid;
   gap: 16px;
 }

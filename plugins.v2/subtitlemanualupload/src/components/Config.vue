@@ -61,7 +61,7 @@ onMounted(() => {
             class="mt-4"
             type="info"
             variant="tonal"
-            text="当前版本只读取 MoviePilot 本地整理记录：左侧选择本地已有资源和季度，再上传字幕或 ZIP 生成匹配预览。"
+            text="当前版本只读取 MoviePilot 本地整理记录：左侧选择本地已有资源和季度，再上传字幕、ZIP 或 RAR 生成匹配预览。"
           />
         </VCardText>
       </VCard>

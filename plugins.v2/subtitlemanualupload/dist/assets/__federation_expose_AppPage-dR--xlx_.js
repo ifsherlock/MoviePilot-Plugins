@@ -127,7 +127,12 @@ const _sfc_main = {
 const props = __props;
 
 const pluginBase = computed(() => `plugin/${props.pluginId || 'SubtitleManualUpload'}`);
-const status = ref({ enabled: false, source: 'MoviePilot 本地整理记录', timeline_fixer: { available: false, modules: {} } });
+const status = ref({
+  enabled: false,
+  source: 'MoviePilot 本地整理记录',
+  archive_support: { zip: true, rar: false, rar_tool: '' },
+  timeline_fixer: { available: false, modules: {} },
+});
 const loading = ref(false);
 const searching = ref(false);
 const resolving = ref(false);
@@ -185,6 +190,8 @@ const canApply = computed(() => {
 });
 const timelineStatus = computed(() => status.value?.timeline_fixer || { available: false, modules: {} });
 const timelineAvailable = computed(() => timelineStatus.value.available === true);
+const archiveStatus = computed(() => status.value?.archive_support || { zip: true, rar: false, rar_tool: '' });
+const rarAvailable = computed(() => archiveStatus.value.rar === true);
 const timelineMissing = computed(() => {
   const missing = [];
   if (timelineStatus.value.ffmpeg === false) missing.push('ffmpeg');
@@ -512,7 +519,7 @@ return (_ctx, _cache) => {
           _cache[5] || (_cache[5] = _createElementVNode("div", { class: "hero-copy" }, [
             _createElementVNode("div", { class: "hero-eyebrow" }, "MoviePilot 本地字幕工作台"),
             _createElementVNode("h1", { class: "hero-title" }, "字幕手传匹配"),
-            _createElementVNode("p", { class: "hero-text" }, " 只从 MoviePilot 本地资源库里找已有视频，左侧选资源和季度，中间确认目标与改名预览，右侧拖入字幕或 ZIP 后写入。 ")
+            _createElementVNode("p", { class: "hero-text" }, " 只从 MoviePilot 本地资源库里找已有视频，左侧选资源和季度，中间确认目标与改名预览，右侧拖入字幕、ZIP 或 RAR 后写入。 ")
           ], -1)),
           _createElementVNode("div", _hoisted_3, [
             _createElementVNode("div", _hoisted_4, [
@@ -797,9 +804,9 @@ return (_ctx, _cache) => {
                 onDragover: handleDragOver,
                 onDragleave: handleDragLeave
               }, [
-                _cache[17] || (_cache[17] = _createElementVNode("div", { class: "dropzone-icon" }, "SRT / ASS / ZIP", -1)),
+                _cache[17] || (_cache[17] = _createElementVNode("div", { class: "dropzone-icon" }, "SRT / ASS / ZIP / RAR", -1)),
                 _cache[18] || (_cache[18] = _createElementVNode("div", { class: "dropzone-title" }, "拖入字幕或压缩包", -1)),
-                _cache[19] || (_cache[19] = _createElementVNode("div", { class: "dropzone-text" }, "支持多文件上传；ZIP 会自动解包，只保留字幕文件参与匹配。", -1)),
+                _cache[19] || (_cache[19] = _createElementVNode("div", { class: "dropzone-text" }, "支持多文件上传；ZIP 会自动解包。RAR 需要容器内存在 unrar、bsdtar、7z 或 7za。", -1)),
                 _createVNode(_component_VBtn, {
                   color: "primary",
                   variant: "flat",
@@ -816,10 +823,13 @@ return (_ctx, _cache) => {
                   class: "hidden-input",
                   type: "file",
                   multiple: "",
-                  accept: ".srt,.ass,.ssa,.sbv,.sub,.vtt,.webvtt,.zip",
+                  accept: ".srt,.ass,.ssa,.sbv,.sub,.vtt,.webvtt,.zip,.rar",
                   onChange: onPickFiles
                 }, null, 544)
               ], 34),
+              _createElementVNode("div", {
+                class: _normalizeClass(["archive-hint", { active: rarAvailable.value }])
+              }, " RAR：" + _toDisplayString(rarAvailable.value ? `可用（${archiveStatus.value.rar_tool || '已检测到解压工具'}）` : '当前容器未检测到解压工具，上传 RAR 会提示安装依赖'), 3),
               (files.value.length)
                 ? (_openBlock(), _createElementBlock("div", _hoisted_41, [
                     (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(files.value, (file) => {
@@ -902,6 +912,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-3bb6424c"]]);
+const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-0cbd30bc"]]);
 
 export { AppPage as default };

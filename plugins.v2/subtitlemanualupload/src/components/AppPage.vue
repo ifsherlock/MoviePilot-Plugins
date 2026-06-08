@@ -22,7 +22,12 @@ const props = defineProps({
 })
 
 const pluginBase = computed(() => `plugin/${props.pluginId || 'SubtitleManualUpload'}`)
-const status = ref({ enabled: false, source: 'MoviePilot 本地整理记录', timeline_fixer: { available: false, modules: {} } })
+const status = ref({
+  enabled: false,
+  source: 'MoviePilot 本地整理记录',
+  archive_support: { zip: true, rar: false, rar_tool: '' },
+  timeline_fixer: { available: false, modules: {} },
+})
 const loading = ref(false)
 const searching = ref(false)
 const resolving = ref(false)
@@ -80,6 +85,8 @@ const canApply = computed(() => {
 })
 const timelineStatus = computed(() => status.value?.timeline_fixer || { available: false, modules: {} })
 const timelineAvailable = computed(() => timelineStatus.value.available === true)
+const archiveStatus = computed(() => status.value?.archive_support || { zip: true, rar: false, rar_tool: '' })
+const rarAvailable = computed(() => archiveStatus.value.rar === true)
 const timelineMissing = computed(() => {
   const missing = []
   if (timelineStatus.value.ffmpeg === false) missing.push('ffmpeg')
@@ -399,7 +406,7 @@ defineExpose({
         <div class="hero-eyebrow">MoviePilot 本地字幕工作台</div>
         <h1 class="hero-title">字幕手传匹配</h1>
         <p class="hero-text">
-          只从 MoviePilot 本地资源库里找已有视频，左侧选资源和季度，中间确认目标与改名预览，右侧拖入字幕或 ZIP 后写入。
+          只从 MoviePilot 本地资源库里找已有视频，左侧选资源和季度，中间确认目标与改名预览，右侧拖入字幕、ZIP 或 RAR 后写入。
         </p>
       </div>
       <div class="hero-meta">
@@ -611,18 +618,22 @@ defineExpose({
             @dragover="handleDragOver"
             @dragleave="handleDragLeave"
           >
-            <div class="dropzone-icon">SRT / ASS / ZIP</div>
+            <div class="dropzone-icon">SRT / ASS / ZIP / RAR</div>
             <div class="dropzone-title">拖入字幕或压缩包</div>
-            <div class="dropzone-text">支持多文件上传；ZIP 会自动解包，只保留字幕文件参与匹配。</div>
+            <div class="dropzone-text">支持多文件上传；ZIP 会自动解包。RAR 需要容器内存在 unrar、bsdtar、7z 或 7za。</div>
             <VBtn color="primary" variant="flat" @click="openFileDialog">选择文件</VBtn>
             <input
               ref="fileInputRef"
               class="hidden-input"
               type="file"
               multiple
-              accept=".srt,.ass,.ssa,.sbv,.sub,.vtt,.webvtt,.zip"
+              accept=".srt,.ass,.ssa,.sbv,.sub,.vtt,.webvtt,.zip,.rar"
               @change="onPickFiles"
             >
+          </div>
+
+          <div class="archive-hint" :class="{ active: rarAvailable }">
+            RAR：{{ rarAvailable ? `可用（${archiveStatus.rar_tool || '已检测到解压工具'}）` : '当前容器未检测到解压工具，上传 RAR 会提示安装依赖' }}
           </div>
 
           <div v-if="files.length" class="file-list">
@@ -1051,6 +1062,21 @@ defineExpose({
 
 .file-list {
   margin-top: 16px;
+}
+
+.archive-hint {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(255, 238, 218, 0.82);
+  color: #8a5a20;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.archive-hint.active {
+  background: rgba(231, 243, 234, 0.9);
+  color: #2b744d;
 }
 
 .file-row,

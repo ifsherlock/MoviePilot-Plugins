@@ -4,6 +4,7 @@ import hashlib
 import json
 import re
 import shutil
+import subprocess
 import zipfile
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -23,9 +24,9 @@ from .timeline_fixer import check_timeline_fixer_dependencies, fix_subtitle_time
 
 class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕手传匹配"
-    plugin_desc = "手动上传字幕或 ZIP，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
+    plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "upload.png"
-    plugin_version = "0.1.4"
+    plugin_version = "0.1.5"
     plugin_author = "jaysherlock"
     author_url = "https://github.com/jaysherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -37,9 +38,40 @@ class SubtitleManualUpload(_PluginBase):
     _entry_map: Dict[str, Dict[str, Any]] = {}
 
     _subtitle_exts = {".ass", ".srt", ".ssa", ".sbv", ".sub", ".vtt", ".webvtt"}
-    _archive_exts = {".zip"}
+    _archive_exts = {".zip", ".rar"}
+    _rar_exts = {".rar"}
+    _rar_tools = ("unrar", "bsdtar", "7z", "7za")
     _stream_exts = {".strm"}
     _default_session_hours = 24
+    _language_suffix_aliases = {
+        "zh": "chi",
+        "zh-hans": "chi",
+        "zh_hans": "chi",
+        "zh-cn": "chi",
+        "zh_cn": "chi",
+        "zh-hant": "chi",
+        "zh_hant": "chi",
+        "zh-tw": "chi",
+        "zh_tw": "chi",
+        "chs": "chi",
+        "cht": "chi",
+        "zho": "chi",
+        "cmn": "chi",
+        "cn": "chi",
+        "en": "eng",
+        "ja": "jpn",
+        "jp": "jpn",
+        "ko": "kor",
+        "kr": "kor",
+        "fr": "fre",
+        "fra": "fre",
+        "de": "ger",
+        "deu": "ger",
+        "es": "spa",
+        "pt": "por",
+        "it": "ita",
+        "ru": "rus",
+    }
 
     def init_plugin(self, config: dict = None):
         config = config or {}
@@ -154,7 +186,7 @@ class SubtitleManualUpload(_PluginBase):
                                         "props": {
                                             "type": "info",
                                             "variant": "tonal",
-                                            "text": "从 MoviePilot 本地整理记录中搜索已有视频资源；剧集可选择全部季度或单季后上传字幕/ZIP。",
+                                            "text": "从 MoviePilot 本地整理记录中搜索已有视频资源；剧集可选择全部季度或单季后上传字幕、ZIP 或 RAR。",
                                         },
                                     }
                                 ],
@@ -233,39 +265,67 @@ class SubtitleManualUpload(_PluginBase):
         return raw_bytes.decode("utf-8", errors="ignore")
 
     @classmethod
+    def _normalize_language_suffix(cls, value: Any) -> str:
+        suffix = cls._normalize_text(value).strip().lower()
+        if not suffix:
+            return "und"
+        suffix = cls._language_suffix_aliases.get(suffix, suffix)
+        return re.sub(r"[^a-z0-9-]", "", suffix) or "und"
+
+    @classmethod
     def _detect_language_profile(cls, file_name: str, raw_bytes: bytes) -> Dict[str, str]:
         lowered = file_name.lower()
         preview = cls._decode_preview_bytes(raw_bytes[:16000])
         has_cjk = len(re.findall(r"[\u4e00-\u9fff]", preview)) >= 20
+        has_kana = len(re.findall(r"[\u3040-\u30ff]", preview)) >= 20
+        has_hangul = len(re.findall(r"[\uac00-\ud7af]", preview)) >= 20
         has_ascii = len(re.findall(r"[A-Za-z]{3,}", preview)) >= 20
 
         suffix = "und"
         label = "未知"
 
         if any(token in lowered for token in ("zh-hant", "zh_tw", "zh-tw", "cht", "繁体", "繁中", "big5")):
-            suffix = "zh-Hant"
+            suffix = "chi"
             label = "繁中"
         elif any(token in lowered for token in ("zh-hans", "zh_cn", "zh-cn", "chs", "简体", "简中", "gb")):
-            suffix = "zh-Hans"
+            suffix = "chi"
             label = "简中"
-        elif any(token in lowered for token in ("zh", "chi", "中文", "中字")) or has_cjk:
-            suffix = "zh"
+        elif any(token in lowered for token in ("zh", "chi", "zho", "cmn", "中文", "中字")) or (has_cjk and not has_kana):
+            suffix = "chi"
             label = "中文"
-        elif any(token in lowered for token in ("eng", "english", "英文", "英语", ".en.")) or has_ascii:
-            suffix = "en"
-            label = "英文"
-        elif any(token in lowered for token in ("jpn", "japanese", "日文", "日语", ".ja.")):
-            suffix = "ja"
+        elif any(token in lowered for token in ("jpn", "japanese", "日文", "日语", ".ja.")) or has_kana:
+            suffix = "jpn"
             label = "日文"
-        elif any(token in lowered for token in ("kor", "korean", "韩文", "韩语", ".ko.")):
-            suffix = "ko"
+        elif any(token in lowered for token in ("kor", "korean", "韩文", "韩语", ".ko.")) or has_hangul:
+            suffix = "kor"
             label = "韩文"
+        elif any(token in lowered for token in ("eng", "english", "英文", "英语", ".en.")) or has_ascii:
+            suffix = "eng"
+            label = "英文"
+        elif any(token in lowered for token in ("fre", "fra", "french", "français", ".fr.")):
+            suffix = "fre"
+            label = "法文"
+        elif any(token in lowered for token in ("spa", "spanish", "español", ".es.")):
+            suffix = "spa"
+            label = "西文"
+        elif any(token in lowered for token in ("ger", "deu", "german", "deutsch", ".de.")):
+            suffix = "ger"
+            label = "德文"
+        elif any(token in lowered for token in ("por", "portuguese", "português", ".pt.")):
+            suffix = "por"
+            label = "葡文"
+        elif any(token in lowered for token in ("ita", "italian", "italiano", ".it.")):
+            suffix = "ita"
+            label = "意文"
+        elif any(token in lowered for token in ("rus", "russian", ".ru.")):
+            suffix = "rus"
+            label = "俄文"
 
-        if suffix.startswith("zh") and has_ascii:
+        if suffix == "chi" and has_ascii:
             label = f"{label}/双语"
 
         return {
-            "suffix": suffix,
+            "suffix": cls._normalize_language_suffix(suffix),
             "label": label,
         }
 
@@ -716,7 +776,7 @@ class SubtitleManualUpload(_PluginBase):
         subtitle_info: Dict[str, Any],
     ) -> str:
         basename = cls._normalize_text(target_entry.get("basename")) or "subtitle"
-        language_suffix = cls._normalize_text(subtitle_info.get("language_suffix")) or "und"
+        language_suffix = cls._normalize_language_suffix(subtitle_info.get("language_suffix"))
         ext = cls._normalize_text(subtitle_info.get("ext")) or ".srt"
         if not ext.startswith("."):
             ext = f".{ext}"
@@ -741,6 +801,100 @@ class SubtitleManualUpload(_PluginBase):
     @staticmethod
     def _is_upload_file(value: Any) -> bool:
         return isinstance(value, UploadFile)
+
+    @classmethod
+    def _rar_tool(cls) -> str:
+        for tool in cls._rar_tools:
+            found = shutil.which(tool)
+            if found:
+                return found
+        return ""
+
+    @classmethod
+    def _run_archive_command(cls, args: List[str], timeout: int = 120) -> bytes:
+        try:
+            completed = subprocess.run(
+                args,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+                timeout=timeout,
+            )
+            return completed.stdout
+        except subprocess.CalledProcessError as exc:
+            stderr = cls._decode_preview_bytes(exc.stderr or b"").strip()
+            raise ValueError(f"压缩包解压失败: {stderr or exc}") from exc
+        except subprocess.TimeoutExpired as exc:
+            raise ValueError("压缩包解压超时") from exc
+
+    @classmethod
+    def _list_rar_members(cls, archive_path: Path, tool_path: str) -> List[str]:
+        tool_name = Path(tool_path).name.lower()
+        if tool_name == "unrar":
+            output = cls._run_archive_command([tool_path, "lb", str(archive_path)])
+            return [line.strip() for line in cls._decode_preview_bytes(output).splitlines() if line.strip()]
+        if tool_name == "bsdtar":
+            output = cls._run_archive_command([tool_path, "-tf", str(archive_path)])
+            return [line.strip() for line in cls._decode_preview_bytes(output).splitlines() if line.strip()]
+        if tool_name in {"7z", "7za"}:
+            output = cls._run_archive_command([tool_path, "l", "-slt", str(archive_path)])
+            members = []
+            for line in cls._decode_preview_bytes(output).splitlines():
+                if not line.startswith("Path = "):
+                    continue
+                member = line.removeprefix("Path = ").strip()
+                if member and member != str(archive_path):
+                    members.append(member)
+            return members
+        return []
+
+    @classmethod
+    def _read_rar_member(cls, archive_path: Path, member: str, tool_path: str) -> bytes:
+        tool_name = Path(tool_path).name.lower()
+        if tool_name == "unrar":
+            return cls._run_archive_command([tool_path, "p", "-inul", str(archive_path), member])
+        if tool_name == "bsdtar":
+            return cls._run_archive_command([tool_path, "-xOf", str(archive_path), member])
+        if tool_name in {"7z", "7za"}:
+            return cls._run_archive_command([tool_path, "x", "-so", str(archive_path), member])
+        raise ValueError("当前容器缺少可用的 RAR 解压工具")
+
+    @classmethod
+    def _extract_rar_subtitle_files(
+        cls,
+        source_name: str,
+        archive_path: Path,
+        session_dir: Path,
+    ) -> List[Dict[str, Any]]:
+        tool_path = cls._rar_tool()
+        if not tool_path:
+            raise ValueError("RAR 压缩包需要容器安装 unrar、bsdtar、7z 或 7za 后才能解包")
+
+        prepared: List[Dict[str, Any]] = []
+        members = cls._list_rar_members(archive_path, tool_path)
+        for member in members:
+            member_name = re.split(r"[\\/]", member)[-1]
+            if not member_name or member_name.startswith("."):
+                continue
+            member_ext = Path(member_name).suffix.lower()
+            if member_ext not in cls._subtitle_exts:
+                continue
+            member_bytes = cls._read_rar_member(archive_path, member, tool_path)
+            upload_id = cls._hash_text(
+                f"{source_name}|{member}|{len(member_bytes)}|{datetime.now().timestamp()}"
+            )
+            stored_path = session_dir / f"{upload_id}{member_ext}"
+            stored_path.write_bytes(member_bytes)
+            prepared.append(
+                {
+                    "upload_id": upload_id,
+                    "source_name": member_name,
+                    "archive_name": source_name,
+                    "stored_path": str(stored_path),
+                    "ext": member_ext,
+                }
+            )
+        return prepared
 
     @classmethod
     def _extract_subtitle_files(
@@ -773,6 +927,9 @@ class SubtitleManualUpload(_PluginBase):
 
         archive_path = session_dir / source_name
         archive_path.write_bytes(raw_bytes)
+        if ext in cls._rar_exts:
+            return cls._extract_rar_subtitle_files(source_name, archive_path, session_dir)
+
         try:
             with zipfile.ZipFile(archive_path) as archive:
                 for member in archive.infolist():
@@ -904,7 +1061,7 @@ class SubtitleManualUpload(_PluginBase):
                 raise HTTPException(status_code=400, detail=f"上传缓存文件不存在: {upload_info.get('source_name')}")
 
             item_ext = cls._normalize_text(item.get("ext")) or upload_info.get("ext") or ".srt"
-            item_suffix = cls._normalize_text(item.get("language_suffix")) or "und"
+            item_suffix = cls._normalize_language_suffix(item.get("language_suffix"))
             destination_name = cls._build_destination_name(
                 target_entry,
                 {
@@ -951,6 +1108,11 @@ class SubtitleManualUpload(_PluginBase):
                 "enabled": self.get_state(),
                 "source": "MoviePilot 本地整理记录",
                 "index": {"ready": True, "updated_at": "", "entry_count": 0},
+                "archive_support": {
+                    "zip": True,
+                    "rar": bool(self._rar_tool()),
+                    "rar_tool": Path(self._rar_tool()).name if self._rar_tool() else "",
+                },
                 "timeline_fixer": check_timeline_fixer_dependencies(),
             }
         )
@@ -1039,7 +1201,7 @@ class SubtitleManualUpload(_PluginBase):
                 len(target_entries),
                 self._brief_ids(target_ids),
             )
-            raise HTTPException(status_code=400, detail="请至少上传一个字幕文件或 ZIP")
+            raise HTTPException(status_code=400, detail="请至少上传一个字幕文件、ZIP 或 RAR")
 
         logger.info(
             "[SubtitleManualUpload] 开始上传预览 target_count=%s upload_files=%s target_ids=%s",
