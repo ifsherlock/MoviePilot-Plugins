@@ -49,6 +49,7 @@ const targets = ref([])
 const selectedTargetIds = ref([])
 const lockedTargetIds = ref([])
 const uploadDialog = ref(false)
+const rarHelpDialog = ref(false)
 const uploadTitle = ref('')
 const uploadScopeTargets = ref([])
 const files = ref([])
@@ -796,6 +797,9 @@ defineExpose({
           <div class="support-row">
             <span :class="{ ok: rarPythonAvailable }">rarfile：{{ rarPythonAvailable ? '已安装' : '将由 requirements.txt 安装' }}</span>
             <span :class="{ ok: rarAvailable }">RAR 解压器：{{ rarAvailable ? archiveStatus.rar_tool || '可用' : '未检测到' }}</span>
+            <button class="support-help" type="button" @click="rarHelpDialog = true">
+              RAR 不能解压？查看处理方式
+            </button>
             <span :class="{ ok: timelineAvailable }">
               智能调轴：{{ timelineAvailable ? '可用' : `缺少 ${timelineMissing || '依赖'}` }}
             </span>
@@ -883,6 +887,50 @@ defineExpose({
             写入字幕
           </VBtn>
         </VCardActions>
+      </VCard>
+    </VDialog>
+
+    <VDialog v-model="rarHelpDialog" max-width="760">
+      <VCard class="rar-help-dialog" rounded="xl">
+        <VCardTitle class="dialog-title">
+          <span>RAR 解压器说明</span>
+          <VBtn icon="mdi-close" variant="text" @click="rarHelpDialog = false" />
+        </VCardTitle>
+        <VDivider />
+        <VCardText>
+          <div class="help-intro">
+            插件已经声明了最轻的 Python 依赖 <code>rarfile</code>，但它不是纯 Python 解压器。
+            真正读取 RAR 内容时，容器里还必须能执行 <code>unrar</code>、<code>7z</code>、<code>7za</code> 或 <code>bsdtar</code>。
+          </div>
+
+          <div class="help-grid">
+            <div class="help-card">
+              <strong>临时安装到当前容器</strong>
+              <p>适合马上测试。容器删除或重建后可能丢失。</p>
+              <pre>docker exec -it moviepilot bash
+apt-get update
+apt-get install -y p7zip-full unrar-free</pre>
+            </div>
+            <div class="help-card">
+              <strong>宿主机安装 + 映射进容器</strong>
+              <p>只在宿主机安装还不够，容器看不到宿主机命令；需要把可执行文件 bind mount 到容器 PATH 下。</p>
+              <pre>volumes:
+  - /path/to/7zz:/usr/local/bin/7z:ro</pre>
+            </div>
+            <div class="help-card">
+              <strong>推荐映射静态二进制</strong>
+              <p><code>/usr/bin/7z</code> 这类系统命令可能依赖额外动态库；如果要映射，优先用静态 <code>7zz</code> 或一并映射依赖库。</p>
+              <pre>docker exec moviepilot which unrar 7z 7za bsdtar</pre>
+            </div>
+          </div>
+
+          <VAlert
+            class="mt-4"
+            type="info"
+            variant="tonal"
+            text="安装或映射完成后，重新打开上传弹窗或刷新插件状态即可重新检测。检测逻辑只看容器内 PATH 是否能找到 unrar、bsdtar、7z 或 7za。"
+          />
+        </VCardText>
       </VCard>
     </VDialog>
   </div>
@@ -1307,6 +1355,70 @@ defineExpose({
   color: #2f7d62;
 }
 
+.support-help {
+  padding: 5px 10px;
+  border: 0;
+  border-radius: 999px;
+  background: #fff0d6;
+  color: #9a611d;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.rar-help-dialog {
+  background: #fffaf2;
+}
+
+.help-intro {
+  color: #52635d;
+  line-height: 1.7;
+}
+
+.help-intro code,
+.help-card code {
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: #efe6d8;
+}
+
+.help-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.help-card {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid rgba(91, 109, 100, 0.14);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.help-card strong {
+  color: #2f443d;
+}
+
+.help-card p {
+  margin: 0;
+  color: #687873;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.help-card pre {
+  padding: 10px;
+  margin: 0;
+  overflow-x: auto;
+  border-radius: 12px;
+  background: #2f443d;
+  color: #fff6e8;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
 .file-list,
 .preview-list {
   display: grid;
@@ -1369,6 +1481,7 @@ defineExpose({
   .hero-card,
   .search-bar,
   .detail-head,
+  .help-grid,
   .preview-row {
     grid-template-columns: 1fr;
   }
