@@ -211,17 +211,22 @@ class OnlinePageClient:
                 return self._read_playwright_download(download_info.value, url)
             except Exception:
                 page.goto(url, wait_until="domcontentloaded", timeout=self.timeout * 1000)
-            if captcha_code:
+            captcha = captcha_code or self._recognize_page_captcha(page)
+            if captcha:
                 inputs = page.locator("input[type='text'], input:not([type]), textarea")
                 if inputs.count():
-                    inputs.first.fill(captcha_code)
-                    with page.expect_download(timeout=self.timeout * 1000) as download_info:
-                        self._click_first_download_submit(page)
-                    return self._read_playwright_download(download_info.value, page.url or url)
+                    inputs.first.fill(captcha)
+                    try:
+                        with page.expect_download(timeout=self.timeout * 1000) as download_info:
+                            self._click_first_download_submit(page)
+                        logger.info("[SubtitleManualUpload] 下载页验证码提交完成 host=%s source=%s", _host(page.url or url), "user" if captcha_code else "ocr")
+                        return self._read_playwright_download(download_info.value, page.url or url)
+                    except Exception as exc:
+                        logger.warning("[SubtitleManualUpload] 下载页验证码提交后未捕获下载 host=%s source=%s error=%s", _host(page.url or url), "user" if captcha_code else "ocr", exc)
             raise CaptchaRequiredError(
                 "下载页需要验证码或站点验证；请输入验证码后重试，或打开验证页手动下载后上传。",
                 verify_url=page.url or url,
-                captcha_hint="浏览器仿真已打开下载页，但未触发文件下载。",
+                captcha_hint="浏览器仿真已打开下载页，但未自动识别或提交验证码。",
             )
         finally:
             if page:
@@ -244,6 +249,60 @@ class OnlinePageClient:
                 locator.first.click()
                 return
         page.keyboard.press("Enter")
+
+    @staticmethod
+    def _recognize_page_captcha(page: Any) -> str:
+        try:
+            from app.helper.ocr import OcrHelper
+        except Exception as exc:
+            logger.info("[SubtitleManualUpload] MoviePilot OCR 不可用，跳过下载页验证码自动识别 error=%s", exc)
+            return ""
+        candidates = []
+        try:
+            image_sources = page.locator("img").evaluate_all(
+                """imgs => imgs.map(img => ({
+                    src: img.currentSrc || img.src || '',
+                    alt: img.alt || '',
+                    title: img.title || '',
+                    width: img.naturalWidth || img.width || 0,
+                    height: img.naturalHeight || img.height || 0
+                }))"""
+            )
+        except Exception:
+            image_sources = []
+        for item in image_sources or []:
+            src = str(item.get("src") or "")
+            label = f"{item.get('alt') or ''} {item.get('title') or ''}".lower()
+            width = int(item.get("width") or 0)
+            height = int(item.get("height") or 0)
+            looks_like_captcha = (
+                "captcha" in src.lower()
+                or "verify" in src.lower()
+                or "验证码" in label
+                or "验证" in label
+                or (30 <= width <= 260 and 15 <= height <= 120)
+            )
+            if not looks_like_captcha:
+                continue
+            if src.startswith("data:image/") and "base64," in src:
+                candidates.append(src.split("base64,", 1)[1])
+                continue
+            try:
+                response = page.request.get(urljoin(page.url, src), timeout=10000)
+                if response.ok:
+                    candidates.append(base64.b64encode(response.body()).decode("ascii"))
+            except Exception:
+                continue
+        helper = OcrHelper()
+        for image_b64 in candidates[:4]:
+            try:
+                text = _clean_captcha_text(helper.get_captcha_text(image_b64=image_b64))
+                if len(text) >= 4:
+                    logger.info("[SubtitleManualUpload] 下载页验证码 OCR 完成 host=%s length=%s", _host(page.url), len(text))
+                    return text
+            except Exception as exc:
+                logger.warning("[SubtitleManualUpload] 下载页验证码 OCR 失败 host=%s error=%s", _host(page.url), exc)
+        return ""
 
     @staticmethod
     def _read_playwright_download(download: Any, url: str) -> Tuple[str, bytes, str]:
@@ -758,9 +817,13 @@ class ZimukuProvider(BaseSubtitleProvider):
                     )
                     return nested_name, nested_content
                 if _is_zimuku_security_page(text) or _looks_like_captcha_page(text):
-                    if captcha_code:
+                    try:
                         name, data, _ = self.fetcher.get_bytes_interactive(url, referer=referer, captcha_code=captcha_code)
                         return name, data
+                    except CaptchaRequiredError:
+                        raise
+                    except Exception as exc:
+                        logger.warning("[SubtitleManualUpload] Zimuku 交互式验证码下载失败 host=%s error=%s", _host(url), exc)
                     raise CaptchaRequiredError(
                         "Zimuku 下载需要验证码或站点验证；请打开验证页完成后重试，或手动下载后上传。",
                         provider=self.provider_id,
