@@ -101,10 +101,13 @@ const onlineTargets = ref([])
 const onlineStatus = ref({ providers: [], capabilities: {} })
 const onlineSelectedProviders = ref(['subhd', 'zimuku'])
 const onlineResults = ref([])
+const onlineProviderFilter = ref('all')
 const onlineMessages = ref([])
 const onlineMessagesCollapsed = ref(false)
 const onlineManualLinks = ref([])
 const selectedOnlineResultIds = ref([])
+const onlineCaptcha = ref(null)
+const onlineCaptchaCode = ref('')
 const aiTaskDialog = ref(false)
 const aiTaskDialogTarget = ref(null)
 const aiTaskData = ref({
@@ -183,6 +186,23 @@ const canApply = computed(() => {
 })
 const hasPreviewItems = computed(() => (preview.value?.items || []).length > 0)
 const hasOnlineResults = computed(() => onlineResults.value.length > 0)
+const filteredOnlineResults = computed(() => {
+  if (onlineProviderFilter.value === 'all') return onlineResults.value
+  return onlineResults.value.filter(item => item.provider === onlineProviderFilter.value)
+})
+const onlineProviderFilterItems = computed(() => {
+  const counts = onlineResults.value.reduce((acc, item) => {
+    const provider = item.provider || 'unknown'
+    acc[provider] = (acc[provider] || 0) + 1
+    return acc
+  }, {})
+  return [
+    { title: `全部 ${onlineResults.value.length}`, value: 'all' },
+    ...onlineProviderItems
+      .filter(item => counts[item.value])
+      .map(item => ({ title: `${item.title} ${counts[item.value]}`, value: item.value })),
+  ]
+})
 const selectedOnlineResults = computed(() => {
   const picked = new Set(selectedOnlineResultIds.value)
   return onlineResults.value.filter(item => picked.has(onlineResultKey(item)) && isOnlineResultDownloadable(item))
@@ -396,6 +416,13 @@ function providerStatus(providerId) {
   return `${host}${item?.message || ''}`
 }
 
+function ensureAssrtProviderSelected() {
+  if (!onlineStatus.value?.assrt_api_configured) return
+  if (!onlineSelectedProviders.value.includes('assrt')) {
+    onlineSelectedProviders.value = [...onlineSelectedProviders.value, 'assrt']
+  }
+}
+
 function stopAiPolling() {
   if (aiTaskTimer) {
     clearTimeout(aiTaskTimer)
@@ -576,6 +603,7 @@ async function loadOnlineStatus() {
     if (enabled.length) {
       onlineSelectedProviders.value = enabled
     }
+    ensureAssrtProviderSelected()
   } catch (err) {
     onlineError.value = errorMessage(err, '加载在线字幕源状态失败')
   }
@@ -755,10 +783,13 @@ async function openOnlineDialog(scopeTargets, title, scope) {
   uploadTitle.value = `${title} · 在线字幕`
   onlineKeyword.value = ''
   onlineResults.value = []
+  onlineProviderFilter.value = 'all'
   onlineMessages.value = []
   onlineMessagesCollapsed.value = false
   onlineManualLinks.value = []
   selectedOnlineResultIds.value = []
+  onlineCaptcha.value = null
+  onlineCaptchaCode.value = ''
   onlineError.value = ''
   error.value = ''
   message.value = ''
@@ -815,9 +846,12 @@ async function runOnlineSearch() {
   onlineSearching.value = true
   onlineError.value = ''
   onlineResults.value = []
+  onlineProviderFilter.value = 'all'
   onlineMessages.value = []
   onlineMessagesCollapsed.value = false
   selectedOnlineResultIds.value = []
+  onlineCaptcha.value = null
+  onlineCaptchaCode.value = ''
   try {
     const response = await props.api.post(`${pluginBase.value}/online_search`, onlinePayload())
     const data = unwrapResponse(response) || {}
@@ -854,6 +888,7 @@ async function downloadOnlinePreview() {
     const response = await props.api.post(`${pluginBase.value}/online_download_preview`, {
       ...onlinePayload(),
       results: selectedOnlineResults.value,
+      captcha_code: onlineCaptchaCode.value.trim(),
     })
     preview.value = unwrapResponse(response)
     batchLanguageSuffix.value = ''
@@ -867,7 +902,13 @@ async function downloadOnlinePreview() {
     uploadDialog.value = true
     message.value = response?.message || '已下载在线字幕并生成匹配预览'
   } catch (err) {
-    onlineError.value = errorMessage(err, '在线字幕下载预览失败')
+    const detail = err?.response?.data?.detail || err?.data?.detail
+    if (detail?.captcha_required) {
+      onlineCaptcha.value = detail
+      onlineError.value = detail.message || '下载需要验证码或站点验证'
+    } else {
+      onlineError.value = errorMessage(err, '在线字幕下载预览失败')
+    }
   } finally {
     onlineDownloading.value = false
   }
@@ -1264,9 +1305,10 @@ defineExpose({
               {{ aiBatchLabel }}
             </VBtn>
             <VBtn
-              color="secondary"
-              variant="tonal"
-              prepend-icon="mdi-magnify"
+              class="online-batch-btn"
+              color="success"
+              variant="flat"
+              prepend-icon="mdi-cloud-search-outline"
               :disabled="!batchUploadTargets.length"
               :loading="onlineSearching"
               @click="openBatchOnlineSearch"
@@ -1507,6 +1549,36 @@ defineExpose({
             :text="onlineError"
           />
           <VAlert
+            v-if="onlineCaptcha"
+            class="mb-4"
+            type="warning"
+            variant="tonal"
+          >
+            <div class="captcha-panel">
+              <div>
+                <strong>{{ providerName(onlineCaptcha.provider) }} 需要验证码或站点验证</strong>
+                <p>{{ onlineCaptcha.captcha_hint || onlineCaptcha.message }}</p>
+                <a
+                  v-if="onlineCaptcha.verify_url"
+                  :href="onlineCaptcha.verify_url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  打开验证页
+                </a>
+              </div>
+              <VTextField
+                v-model="onlineCaptchaCode"
+                label="验证码（可选）"
+                placeholder="输入后再次点击下载并生成预览"
+                density="compact"
+                variant="outlined"
+                hide-details
+                clearable
+              />
+            </div>
+          </VAlert>
+          <VAlert
             class="mb-4"
             :type="onlineStatus.engine_available === false ? 'warning' : 'info'"
             variant="tonal"
@@ -1539,15 +1611,32 @@ defineExpose({
                   <div class="section-kicker">自动搜索</div>
                   <h3>选择要下载的字幕</h3>
                 </div>
-                <span>{{ hasOnlineResults ? `${onlineResults.length} 条结果` : '暂无结果' }}</span>
+                <span>{{ hasOnlineResults ? `${filteredOnlineResults.length}/${onlineResults.length} 条结果` : '暂无结果' }}</span>
               </div>
+              <VChipGroup
+                v-if="hasOnlineResults"
+                v-model="onlineProviderFilter"
+                class="online-provider-filter"
+                mandatory
+                selected-class="online-provider-filter-active"
+              >
+                <VChip
+                  v-for="item in onlineProviderFilterItems"
+                  :key="item.value"
+                  :value="item.value"
+                  size="small"
+                  variant="tonal"
+                >
+                  {{ item.title }}
+                </VChip>
+              </VChipGroup>
 
               <div v-if="onlineSearching" class="online-loading">
                 正在从字幕站搜索，请稍等...
               </div>
-              <div v-else-if="hasOnlineResults" class="online-result-list">
+              <div v-else-if="filteredOnlineResults.length" class="online-result-list">
                 <div
-                  v-for="item in onlineResults"
+                  v-for="item in filteredOnlineResults"
                   :key="onlineResultKey(item)"
                   class="online-result-card"
                   :class="{
@@ -1585,7 +1674,7 @@ defineExpose({
                 </div>
               </div>
               <div v-else class="empty-state">
-                没有可自动下载的字幕结果。可以换关键词重试，或使用右侧手动搜索。
+                {{ hasOnlineResults ? '当前平台筛选下没有结果。' : '没有可自动下载的字幕结果。可以换关键词重试，或使用右侧手动搜索。' }}
               </div>
             </section>
 
@@ -2271,6 +2360,11 @@ defineExpose({
     #fffaf2;
 }
 
+.online-batch-btn {
+  box-shadow: 0 12px 28px rgba(47, 111, 82, 0.22);
+  font-weight: 900;
+}
+
 .ai-task-dialog {
   background:
     radial-gradient(circle at 8% 0%, rgba(219, 164, 71, 0.18), transparent 28%),
@@ -2378,6 +2472,22 @@ defineExpose({
   white-space: nowrap;
 }
 
+.captcha-panel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+  gap: 14px;
+  align-items: center;
+}
+
+.captcha-panel p {
+  margin: 4px 0;
+}
+
+.captcha-panel a {
+  color: #2f604f;
+  font-weight: 900;
+}
+
 .online-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 300px;
@@ -2413,6 +2523,15 @@ defineExpose({
 .online-result-main p {
   color: #687873;
   font-size: 12px;
+}
+
+.online-provider-filter {
+  margin: -4px 0 12px;
+}
+
+.online-provider-filter-active {
+  background: #2f604f !important;
+  color: #fff !important;
 }
 
 .online-loading {
@@ -2810,6 +2929,7 @@ defineExpose({
   .search-bar,
   .online-search-actions,
   .online-layout,
+  .captcha-panel,
   .detail-head,
   .preview-row {
     grid-template-columns: 1fr;

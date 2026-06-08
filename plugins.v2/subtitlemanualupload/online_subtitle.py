@@ -5,6 +5,7 @@ import html
 import io
 import json
 import re
+import tempfile
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -47,10 +48,15 @@ class OnlineSubtitleResult:
     source: str = ""
     note: str = ""
     downloadable: bool = True
+    provider_label: str = ""
+    requires_captcha: bool = False
+    captcha_hint: str = ""
+    download_steps: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
             "provider": self.provider,
+            "provider_label": self.provider_label or self.source or self.provider,
             "result_id": self.result_id,
             "title": self.title,
             "page_url": self.page_url,
@@ -63,6 +69,9 @@ class OnlineSubtitleResult:
             "source": self.source,
             "note": self.note,
             "downloadable": self.downloadable,
+            "requires_captcha": self.requires_captcha,
+            "captcha_hint": self.captcha_hint,
+            "download_steps": self.download_steps,
         }
 
 
@@ -70,6 +79,33 @@ class OnlineSubtitleResult:
 class HtmlLink:
     href: str
     text: str
+
+
+class CaptchaRequiredError(ValueError):
+    def __init__(
+        self,
+        message: str,
+        *,
+        provider: str = "",
+        verify_url: str = "",
+        captcha_image: str = "",
+        captcha_hint: str = "",
+    ):
+        super().__init__(message)
+        self.provider = provider
+        self.verify_url = verify_url
+        self.captcha_image = captcha_image
+        self.captcha_hint = captcha_hint or message
+
+    def to_payload(self) -> Dict[str, Any]:
+        return {
+            "captcha_required": True,
+            "provider": self.provider,
+            "message": str(self),
+            "verify_url": self.verify_url,
+            "captcha_image": self.captcha_image,
+            "captcha_hint": self.captcha_hint,
+        }
 
 
 class LinkExtractor(HTMLParser):
@@ -143,6 +179,76 @@ class OnlinePageClient:
             url,
             referer=referer,
         )
+
+    def get_bytes_interactive(self, url: str, *, referer: str = "", captcha_code: str = "") -> Tuple[str, bytes, str]:
+        if self.engine != DEFAULT_ENGINE:
+            raise CaptchaRequiredError(
+                "当前在线搜索引擎不支持交互式验证码下载，请切换到 CloakBrowser 或手动下载后上传。",
+                verify_url=url,
+            )
+        context = self._ensure_context()
+        page = None
+        try:
+            page = context.new_page()
+            page.set_extra_http_headers({"User-Agent": USER_AGENT, **({"Referer": referer} if referer else {})})
+            if referer:
+                page.goto(referer, wait_until="domcontentloaded", timeout=self.timeout * 1000)
+            try:
+                with page.expect_download(timeout=self.timeout * 1000) as download_info:
+                    page.goto(url, wait_until="domcontentloaded", timeout=self.timeout * 1000)
+                return self._read_playwright_download(download_info.value, url)
+            except Exception:
+                page.goto(url, wait_until="domcontentloaded", timeout=self.timeout * 1000)
+            if captcha_code:
+                inputs = page.locator("input[type='text'], input:not([type]), textarea")
+                if inputs.count():
+                    inputs.first.fill(captcha_code)
+                    with page.expect_download(timeout=self.timeout * 1000) as download_info:
+                        self._click_first_download_submit(page)
+                    return self._read_playwright_download(download_info.value, page.url or url)
+            raise CaptchaRequiredError(
+                "下载页需要验证码或站点验证；请输入验证码后重试，或打开验证页手动下载后上传。",
+                verify_url=page.url or url,
+                captcha_hint="浏览器仿真已打开下载页，但未触发文件下载。",
+            )
+        finally:
+            if page:
+                try:
+                    page.close()
+                except Exception:
+                    pass
+
+    @staticmethod
+    def _click_first_download_submit(page: Any) -> None:
+        for selector in [
+            "button[type='submit']",
+            "input[type='submit']",
+            "button:has-text('下载')",
+            "button:has-text('提交')",
+            "a:has-text('下载')",
+        ]:
+            locator = page.locator(selector)
+            if locator.count():
+                locator.first.click()
+                return
+        page.keyboard.press("Enter")
+
+    @staticmethod
+    def _read_playwright_download(download: Any, url: str) -> Tuple[str, bytes, str]:
+        path = download.path()
+        filename = download.suggested_filename or Path(urlparse(url).path).name or "subtitle.zip"
+        if path:
+            return filename, Path(path).read_bytes(), url
+        with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+            tmp_path = Path(tmp_file.name)
+        try:
+            download.save_as(str(tmp_path))
+            return filename, tmp_path.read_bytes(), url
+        finally:
+            try:
+                tmp_path.unlink(missing_ok=True)
+            except Exception:
+                pass
 
     def set_cookie(self, name: str, value: str, domain: str) -> None:
         if self.engine != DEFAULT_ENGINE:
@@ -355,20 +461,32 @@ class SubhdProvider(BaseSubtitleProvider):
         status, text, final_url = self.fetcher.get_text(self.manual_url(keyword))
         if status >= 400 or not text:
             raise ValueError(f"SubHD 搜索失败，HTTP {status}")
-        detail_urls = self._collect_detail_urls(text)
+        detail_links = self._collect_result_links(text)
         results: List[OnlineSubtitleResult] = []
-        for detail_url in detail_urls[:8]:
+        raw_count = len(detail_links)
+        for detail_url, search_title in detail_links[:20]:
             try:
-                results.extend(self._parse_detail(detail_url, keyword, targets))
+                item = self._parse_subtitle_page(detail_url, keyword, targets, search_title)
+                if item:
+                    results.append(item)
             except Exception as exc:
                 logger.warning(
-                    "[SubtitleManualUpload] SubHD 详情解析失败 host=%s error=%s",
+                    "[SubtitleManualUpload] SubHD 单条字幕解析失败 host=%s error=%s",
                     _host(detail_url),
                     exc,
                 )
-        if not results:
-            logger.info("[SubtitleManualUpload] SubHD 未解析到字幕条目 final_host=%s", _host(final_url))
-        return results[:40]
+        filtered = _filter_relevant_results(results, keyword, targets)
+        logger.info(
+            "[SubtitleManualUpload] SubHD 搜索结果过滤完成 host=%s raw=%s parsed=%s kept=%s max_score=%s",
+            _host(final_url),
+            raw_count,
+            len(results),
+            len(filtered),
+            max([item.score for item in filtered], default=0),
+        )
+        if not filtered:
+            logger.info("[SubtitleManualUpload] SubHD 未解析到高相关字幕条目 final_host=%s", _host(final_url))
+        return filtered[:30]
 
     def download(self, result: Dict[str, Any], captcha_code: str = "") -> Tuple[str, bytes]:
         page_url = result.get("page_url") or ""
@@ -378,7 +496,20 @@ class SubhdProvider(BaseSubtitleProvider):
             raise ValueError("SubHD 没有可下载链接")
         filename, content, final_url = self.fetcher.get_bytes(download_url, referer=page_url)
         if self._looks_like_html(content, filename):
-            raise ValueError(self._html_download_reason(content, page_url or download_url))
+            if captcha_code:
+                filename, content, final_url = self.fetcher.get_bytes_interactive(
+                    download_url,
+                    referer=page_url,
+                    captcha_code=captcha_code,
+                )
+                if not self._looks_like_html(content, filename):
+                    return filename or self._safe_download_name(result), content
+            raise CaptchaRequiredError(
+                self._html_download_reason(content, page_url or download_url),
+                provider=self.provider_id,
+                verify_url=page_url or download_url,
+                captcha_hint="SubHD 下载页需要验证码或站点验证，请在验证页完成后重试，或手动下载后上传。",
+            )
         logger.info(
             "[SubtitleManualUpload] SubHD 在线字幕下载完成 final_host=%s size=%s",
             _host(final_url),
@@ -386,53 +517,58 @@ class SubhdProvider(BaseSubtitleProvider):
         )
         return filename or self._safe_download_name(result), content
 
-    def _collect_detail_urls(self, text: str) -> List[str]:
-        urls: List[str] = []
+    def _collect_result_links(self, text: str) -> List[Tuple[str, str]]:
+        links: List[Tuple[str, str]] = []
+        seen = set()
         for link in _extract_links(text):
             href = link.href
-            if not href.startswith("/d/"):
+            if not href.startswith("/a/"):
                 continue
             url = urljoin(self.root_url, href)
-            if url not in urls:
-                urls.append(url)
-        return urls
+            if url in seen:
+                continue
+            seen.add(url)
+            links.append((url, self._clean_text(link.text)))
+        return links
 
-    def _parse_detail(
+    def _parse_subtitle_page(
         self,
         detail_url: str,
         keyword: str,
         targets: List[Dict[str, Any]],
-    ) -> List[OnlineSubtitleResult]:
+        search_title: str = "",
+    ) -> Optional[OnlineSubtitleResult]:
         status, text, _ = self.fetcher.get_text(detail_url, referer=self.root_url)
         if status >= 400 or not text:
-            return []
-        results: List[OnlineSubtitleResult] = []
+            return None
+        title = search_title or self._clean_text(_first_nonempty_link_text(text, "/a/")) or self._html_title(text) or Path(detail_url).name
+        download_url = ""
         for link in _extract_links(text):
-            if not link.href.startswith("/a/"):
-                continue
-            page_url = urljoin(self.root_url, link.href)
-            sid = Path(page_url).name
-            title = self._clean_text(link.text)
-            if not sid or not title:
-                continue
-            season, episode = _episode_from_text(title) or (0, 0)
-            results.append(
-                OnlineSubtitleResult(
-                    provider=self.provider_id,
-                    result_id=sid,
-                    title=title,
-                    page_url=page_url,
-                    download_url=f"{self.root_url}/down/{sid}",
-                    language=_guess_language_label(title),
-                    format=_guess_subtitle_format(title),
-                    season=season,
-                    episode=episode,
-                    score=_score_result(title, keyword, targets),
-                    source=self.display_name,
-                    note="自动解析自 SubHD 详情页",
-                )
-            )
-        return _dedupe_results(results)
+            if "/down/" in link.href or "下载字幕" in link.text:
+                download_url = urljoin(self.root_url, link.href)
+                break
+        sid = Path(urlparse(download_url or detail_url).path).name
+        if not sid or not title:
+            return None
+        season, episode = _episode_from_text(title) or (0, 0)
+        return OnlineSubtitleResult(
+            provider=self.provider_id,
+            provider_label=self.display_name,
+            result_id=sid,
+            title=title,
+            page_url=detail_url,
+            download_url=download_url or f"{self.root_url}/down/{sid}",
+            language=_guess_language_label(title),
+            format=_guess_subtitle_format(title),
+            season=season,
+            episode=episode,
+            score=_score_result(title, keyword, targets),
+            source=self.display_name,
+            note="自动解析自 SubHD 字幕页",
+            requires_captcha=True,
+            captcha_hint="下载时可能需要输入 SubHD 验证码。",
+            download_steps="SubHD 搜索页 -> 字幕页 /a -> 下载页 /down -> 验证码/文件",
+        )
 
     @staticmethod
     def _clean_text(value: str) -> str:
@@ -442,8 +578,8 @@ class SubhdProvider(BaseSubtitleProvider):
     def _html_download_reason(cls, content: bytes, page_url: str) -> str:
         text = _decode_bytes(content[:12000], None)
         lowered = text.lower()
-        if any(token in lowered for token in ["gzh", "wechat", "verify", "captcha"]) or "公众号" in text or "验证码" in text:
-            return "SubHD 下载需要站点验证或公众号验证码；请打开右侧手动链接完成验证并下载字幕包后，再回到本插件上传。"
+        if any(token in lowered for token in ["verify", "captcha"]) or "验证码" in text or "验证" in text:
+            return "SubHD 下载需要验证码或站点验证；请按页面提示完成验证后重试，或手动下载字幕包后上传。"
         if "登录" in text or "login" in lowered:
             return "SubHD 返回登录/验证页面而不是字幕文件；请使用手动链接在浏览器完成站点流程后上传字幕包。"
         logger.info(
@@ -451,7 +587,7 @@ class SubhdProvider(BaseSubtitleProvider):
             _host(page_url),
             cls._html_title(text),
         )
-        return "SubHD 返回网页而不是字幕文件，可能需要站点验证；请使用手动搜索链接下载后再上传。"
+        return "SubHD 返回网页而不是字幕文件，可能需要验证码或站点验证；请使用手动搜索链接下载后再上传。"
 
     @staticmethod
     def _html_title(text: str) -> str:
@@ -494,6 +630,7 @@ class ZimukuProvider(BaseSubtitleProvider):
             results.append(
                 OnlineSubtitleResult(
                     provider=self.provider_id,
+                    provider_label=self.display_name,
                     result_id=result_id,
                     title=title,
                     page_url=page_url,
@@ -504,14 +641,106 @@ class ZimukuProvider(BaseSubtitleProvider):
                     episode=episode,
                     score=_score_result(title, keyword, targets),
                     source=self.display_name,
-                    note="Zimuku 搜索结果，下载失败时请使用手动搜索",
-                    downloadable=False,
+                    note="Zimuku 搜索结果，下载时会继续解析详情页和下载源",
+                    downloadable=True,
+                    requires_captcha=True,
+                    captcha_hint="Zimuku 可能需要站点验证码。",
+                    download_steps="Zimuku 搜索页 -> 详情页 -> 下载页 -> 下载源 -> 验证码/文件",
                 )
             )
-        return _dedupe_results(results)[:30]
+        filtered = _filter_relevant_results(_dedupe_results(results), keyword, targets)
+        logger.info(
+            "[SubtitleManualUpload] Zimuku 搜索结果过滤完成 host=%s raw=%s kept=%s max_score=%s",
+            _host(final_url),
+            len(results),
+            len(filtered),
+            max([item.score for item in filtered], default=0),
+        )
+        return filtered[:30]
 
     def download(self, result: Dict[str, Any], captcha_code: str = "") -> Tuple[str, bytes]:
-        raise ValueError("Zimuku 下载入口存在动态校验，当前请使用手动搜索下载后再上传")
+        page_url = str(result.get("page_url") or result.get("download_url") or "").strip()
+        if not page_url:
+            raise ValueError("Zimuku 缺少详情页链接")
+        logger.info("[SubtitleManualUpload] Zimuku 开始解析下载流程 stage=detail host=%s", _host(page_url))
+        status, text, final_url = self.fetcher.get_text(page_url, referer=self.root_url)
+        if _is_zimuku_security_page(text):
+            text = self._solve_security_page(text, final_url)
+        if status >= 400 and not text:
+            raise ValueError(f"Zimuku 详情页访问失败，HTTP {status}")
+        candidates = self._download_candidates(text, final_url or page_url)
+        if not candidates:
+            raise CaptchaRequiredError(
+                "Zimuku 未解析到可自动下载的下载源；请打开详情页手动选择下载源，或下载后回到本插件上传。",
+                provider=self.provider_id,
+                verify_url=final_url or page_url,
+                captcha_hint="详情页可能需要验证码或登录态后才显示下载源。",
+            )
+        return self._try_download_candidates(candidates, referer=final_url or page_url, captcha_code=captcha_code)
+
+    def _try_download_candidates(self, candidates: List[str], *, referer: str, captcha_code: str = "") -> Tuple[str, bytes]:
+        last_error = ""
+        visited = set()
+        for url in candidates[:8]:
+            if url in visited:
+                continue
+            visited.add(url)
+            try:
+                logger.info("[SubtitleManualUpload] Zimuku 尝试下载源 stage=download host=%s", _host(url))
+                filename, content, final_url = self.fetcher.get_bytes(url, referer=referer)
+                if not _looks_like_html_content(content, filename):
+                    logger.info(
+                        "[SubtitleManualUpload] Zimuku 字幕下载完成 host=%s size=%s",
+                        _host(final_url),
+                        len(content),
+                    )
+                    return filename or Path(urlparse(final_url).path).name or "zimuku-subtitle.zip", content
+                text = _decode_bytes(content[:200000], None)
+                nested = self._download_candidates(text, final_url or url)
+                if nested:
+                    nested_name, nested_content = self._try_download_candidates(
+                        nested,
+                        referer=final_url or url,
+                        captcha_code=captcha_code,
+                    )
+                    return nested_name, nested_content
+                if _is_zimuku_security_page(text) or _looks_like_captcha_page(text):
+                    if captcha_code:
+                        name, data, _ = self.fetcher.get_bytes_interactive(url, referer=referer, captcha_code=captcha_code)
+                        return name, data
+                    raise CaptchaRequiredError(
+                        "Zimuku 下载需要验证码或站点验证；请打开验证页完成后重试，或手动下载后上传。",
+                        provider=self.provider_id,
+                        verify_url=final_url or url,
+                        captcha_hint="下载源页面返回验证码/验证页面。",
+                    )
+                last_error = "下载源返回网页而不是字幕文件"
+            except CaptchaRequiredError:
+                raise
+            except Exception as exc:
+                last_error = str(exc)
+        raise ValueError(f"Zimuku 下载源解析失败：{last_error or '没有可用下载源'}")
+
+    def _download_candidates(self, text: str, base_url: str) -> List[str]:
+        candidates: List[str] = []
+        for link in _extract_links(text):
+            href = (link.href or "").strip()
+            label = (link.text or "").strip()
+            if not href or href.startswith("#") or href.startswith("javascript:"):
+                continue
+            lowered_href = href.lower()
+            lowered_label = label.lower()
+            looks_download = (
+                any(token in lowered_href for token in ["/download", "/down", "/dld", "download", "down="])
+                or any(ext in lowered_href for ext in [".zip", ".rar", ".7z", ".srt", ".ass", ".ssa"])
+                or any(token in lowered_label for token in ["下载", "download", "字幕"])
+            )
+            if not looks_download:
+                continue
+            url = urljoin(base_url or self.root_url, href)
+            if url not in candidates:
+                candidates.append(url)
+        return candidates
 
     def _solve_security_page(self, text: str, final_url: str) -> str:
         current_text = text
@@ -619,6 +848,7 @@ class AssrtProvider(BaseSubtitleProvider):
             results.append(
                 OnlineSubtitleResult(
                     provider=self.provider_id,
+                    provider_label=self.display_name,
                     result_id=_stable_result_id(self.provider_id, page_url),
                     title=title or Path(urlparse(page_url).path).name or "射手网(伪) 字幕",
                     page_url=page_url,
@@ -671,6 +901,7 @@ class AssrtProvider(BaseSubtitleProvider):
             results.append(
                 OnlineSubtitleResult(
                     provider=self.provider_id,
+                    provider_label=self.display_name,
                     result_id=sid,
                     title=title,
                     page_url=f"{self.root_url}/sub/{sid}",
@@ -966,7 +1197,7 @@ class OnlineSubtitleSearchService:
         finally:
             self.fetcher.close()
         results = _dedupe_results(results)
-        results.sort(key=lambda item: (item.score, item.provider != "subhd", item.title), reverse=True)
+        results.sort(key=lambda item: (_provider_priority(item), item.score, item.title), reverse=True)
         return {
             "results": [item.to_dict() for item in results[:80]],
             "messages": provider_messages,
@@ -1114,6 +1345,46 @@ def _score_result(title: str, keyword: str, targets: List[Dict[str, Any]]) -> in
     return score
 
 
+def _filter_relevant_results(
+    results: Iterable[OnlineSubtitleResult],
+    keyword: str,
+    targets: List[Dict[str, Any]],
+) -> List[OnlineSubtitleResult]:
+    return [item for item in results if _has_relevance_signal(item.title, keyword, targets)]
+
+
+def _has_relevance_signal(title: str, keyword: str, targets: List[Dict[str, Any]]) -> bool:
+    haystack = (title or "").lower()
+    for part in re.split(r"[\s._-]+", (keyword or "").lower()):
+        if len(part) >= 2 and part in haystack:
+            return True
+    hint = _episode_from_text(title)
+    if hint:
+        season, episode = hint
+        for target in targets:
+            target_season = int(target.get("season") or 0)
+            target_episode = int(target.get("episode") or 0)
+            if episode == target_episode and (not season or not target_season or season == target_season):
+                return True
+    for target in targets:
+        for field in ["title", "basename", "filename"]:
+            value = str(target.get(field) or "").lower()
+            for part in re.split(r"[\s._-]+", value):
+                if len(part) >= 2 and part in haystack:
+                    return True
+    return False
+
+
+def _provider_priority(item: OnlineSubtitleResult) -> int:
+    if item.provider == "assrt":
+        return 30
+    if item.provider == "zimuku":
+        return 20
+    if item.provider == "subhd":
+        return 10
+    return 0
+
+
 def _dedupe_results(results: Iterable[OnlineSubtitleResult]) -> List[OnlineSubtitleResult]:
     deduped: List[OnlineSubtitleResult] = []
     seen = set()
@@ -1226,6 +1497,27 @@ def _decode_bytes(raw: bytes, charset: Optional[str]) -> str:
         except Exception:
             continue
     return raw.decode("utf-8", errors="ignore")
+
+
+def _looks_like_html_content(content: bytes, filename: str = "") -> bool:
+    if Path(filename or "").suffix.lower() in {".zip", ".rar", ".7z", ".srt", ".ass", ".ssa", ".vtt", ".sub"}:
+        return False
+    head = _decode_bytes((content or b"")[:500], None).lstrip().lower()
+    return head.startswith("<!doctype html") or head.startswith("<html") or "<body" in head
+
+
+def _looks_like_captcha_page(text: str) -> bool:
+    lowered = (text or "").lower()
+    return any(token in lowered for token in ["captcha", "verify", "verification"]) or "验证码" in (text or "") or "验证" in (text or "")
+
+
+def _first_nonempty_link_text(text: str, href_prefix: str = "") -> str:
+    for link in _extract_links(text):
+        if href_prefix and not (link.href or "").startswith(href_prefix):
+            continue
+        if link.text:
+            return link.text
+    return ""
 
 
 def _format_network_error(url: str, exc: BaseException) -> str:

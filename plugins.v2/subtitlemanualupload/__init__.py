@@ -29,6 +29,7 @@ except Exception:
     PluginManager = None
 
 from .online_subtitle import (
+    CaptchaRequiredError,
     DEFAULT_ENGINE,
     DEFAULT_PROVIDER_ROOTS,
     OnlineSubtitleSearchService,
@@ -42,8 +43,8 @@ from .timeline_fixer import check_timeline_fixer_dependencies, fix_subtitle_time
 class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
-    plugin_icon = "subtitle-match.png"
-    plugin_version = "0.1.27"
+    plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/subtitle-match.png"
+    plugin_version = "0.1.29"
     plugin_author = "jaysherlock"
     author_url = "https://github.com/jaysherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -135,6 +136,8 @@ class SubtitleManualUpload(_PluginBase):
         self._ai_link_enabled = bool(config.get("ai_link_enabled", True))
         if not config.get("assrt_provider_migrated") and not self._assrt_api_key:
             self._online_provider_ids = [item for item in self._online_provider_ids if item != "assrt"]
+        if self._assrt_api_key and "assrt" not in self._online_provider_ids:
+            self._online_provider_ids.append("assrt")
         type(self)._rar_dependency_mode = self._rar_dependency_mode
         type(self)._rar_tool_path = self._rar_tool_path
         self._entry_map = OrderedDict()
@@ -2246,6 +2249,10 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     if not item.get("archive_name") and source_name != item.get("source_name"):
                         item["archive_name"] = source_name
                 prepared_uploads.extend(extracted)
+        except CaptchaRequiredError as exc:
+            shutil.rmtree(session_dir, ignore_errors=True)
+            logger.warning("[SubtitleManualUpload] 在线字幕下载需要验证码 provider=%s message=%s", exc.provider, exc)
+            raise HTTPException(status_code=409, detail=exc.to_payload()) from exc
         except ValueError as exc:
             shutil.rmtree(session_dir, ignore_errors=True)
             logger.warning("[SubtitleManualUpload] 在线字幕下载预览失败：%s", exc)

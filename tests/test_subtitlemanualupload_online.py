@@ -35,9 +35,9 @@ def load_online_module():
 class FakeFetcher:
     def get_text(self, url, *, referer=""):
         if "/search/" in url:
-            return 200, '<a href="/d/123">Example Show</a>', url
-        if "/d/123" in url:
             return 200, '<a href="/a/abc">Example.Show.S01E02.1080p.chs&eng.ass</a>', url
+        if "/a/abc" in url:
+            return 200, '<a href="/down/abc">下载字幕文件</a>', url
         return 404, "", url
 
 
@@ -104,14 +104,14 @@ def test_subhd_provider_parses_detail_subtitle_rows():
 def test_subhd_html_download_response_is_reported_as_verification():
     module = load_online_module()
 
-    html = "<html><title>验证</title><body>请关注公众号并输入验证码</body></html>".encode()
+    html = "<html><title>验证</title><body>请输入验证码后下载字幕</body></html>".encode()
     reason = module.SubhdProvider._html_download_reason(html, "https://subhd.tv/down/abc")
 
-    assert "公众号验证码" in reason
-    assert "手动链接" in reason
+    assert "验证码" in reason
+    assert "手动下载" in reason
 
 
-def test_zimuku_results_are_marked_manual_only():
+def test_zimuku_results_are_downloadable_and_keep_steps():
     module = load_online_module()
     provider = module.ZimukuProvider(ZimukuFakeFetcher())
     targets = [{"season": 1, "episode": 2}]
@@ -120,7 +120,9 @@ def test_zimuku_results_are_marked_manual_only():
 
     assert len(results) == 1
     assert results[0].provider == "zimuku"
-    assert results[0].downloadable is False
+    assert results[0].downloadable is True
+    assert results[0].requires_captcha is True
+    assert "下载源" in results[0].download_steps
 
 
 def test_zimuku_security_page_uses_ocr_verify_jump():

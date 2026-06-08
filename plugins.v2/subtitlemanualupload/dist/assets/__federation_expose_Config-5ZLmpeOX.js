@@ -73,10 +73,15 @@ function normalizeRootUrl(value, fallback) {
 }
 
 function normalizeConfig(input) {
+  const assrtApiKey = String(input?.assrt_api_key || '').trim();
+  const providers = normalizeProviders(input?.online_providers);
+  if (assrtApiKey && !providers.includes('assrt')) {
+    providers.push('assrt');
+  }
   return {
     enabled: Boolean(input?.enabled),
     show_sidebar_nav: input?.show_sidebar_nav !== false,
-    online_providers: normalizeProviders(input?.online_providers),
+    online_providers: providers,
     online_engine: ['cloakbrowser', 'mp_browser'].includes(input?.online_engine)
       ? input.online_engine
       : 'cloakbrowser',
@@ -85,7 +90,7 @@ function normalizeConfig(input) {
     subhd_url: normalizeRootUrl(input?.subhd_url, 'https://subhd.tv'),
     zimuku_url: normalizeRootUrl(input?.zimuku_url, 'https://zimuku.org'),
     assrt_url: normalizeRootUrl(input?.assrt_url, 'https://2.assrt.net'),
-    assrt_api_key: String(input?.assrt_api_key || '').trim(),
+    assrt_api_key: assrtApiKey,
     assrt_api_url: normalizeRootUrl(input?.assrt_api_url, 'https://api.assrt.net'),
     ai_link_enabled: input?.ai_link_enabled !== false,
     rar_dependency_mode: ['none', 'container_install', 'mapped_binary'].includes(input?.rar_dependency_mode)
@@ -306,6 +311,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-3ff0f25c"]]);
+const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-c631522c"]]);
 
 export { Config as default };
