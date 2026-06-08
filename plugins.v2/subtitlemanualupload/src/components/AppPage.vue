@@ -860,6 +860,58 @@ defineExpose({
           <VBtn icon="mdi-close" variant="text" @click="uploadDialog = false" />
         </VCardTitle>
         <VDivider />
+        <VCardActions class="dialog-actions dialog-actions-top">
+          <VBtn variant="text" @click="uploadDialog = false">关闭</VBtn>
+          <VSpacer />
+          <VBtn
+            v-if="hasPreviewItems"
+            variant="tonal"
+            @click="resetUploadPreview"
+          >
+            重新选择文件
+          </VBtn>
+          <VBtn
+            v-if="!hasPreviewItems"
+            color="primary"
+            variant="tonal"
+            :disabled="!canPrepare"
+            :loading="preparing"
+            @click="prepareUpload"
+          >
+            生成匹配预览
+          </VBtn>
+          <VTooltip
+            v-if="hasPreviewItems"
+            location="top"
+            text="写入前会分析视频/字幕时间轴，可能占用 CPU 并造成短暂卡顿。"
+          >
+            <template #activator="{ props: tooltipProps }">
+              <div
+                v-bind="tooltipProps"
+                class="timeline-action"
+              >
+                <VSwitch
+                  v-model="fixTimeline"
+                  color="primary"
+                  density="comfortable"
+                  hide-details
+                  :disabled="!timelineAvailable"
+                  label="智能调轴"
+                />
+              </div>
+            </template>
+          </VTooltip>
+          <VBtn
+            v-if="hasPreviewItems"
+            color="success"
+            :disabled="!canApply"
+            :loading="applying"
+            @click="applyUpload"
+          >
+            写入字幕
+          </VBtn>
+        </VCardActions>
+        <VDivider />
         <VCardText>
           <div
             v-if="!hasPreviewItems"
@@ -970,58 +1022,6 @@ defineExpose({
             </div>
           </div>
         </VCardText>
-        <VDivider />
-        <VCardActions class="dialog-actions">
-          <VBtn variant="text" @click="uploadDialog = false">关闭</VBtn>
-          <VSpacer />
-          <VBtn
-            v-if="hasPreviewItems"
-            variant="tonal"
-            @click="resetUploadPreview"
-          >
-            重新选择文件
-          </VBtn>
-          <VBtn
-            v-if="!hasPreviewItems"
-            color="primary"
-            variant="tonal"
-            :disabled="!canPrepare"
-            :loading="preparing"
-            @click="prepareUpload"
-          >
-            生成匹配预览
-          </VBtn>
-          <VTooltip
-            v-if="hasPreviewItems"
-            location="top"
-            text="写入前会分析视频/字幕时间轴，可能占用 CPU 并造成短暂卡顿。"
-          >
-            <template #activator="{ props: tooltipProps }">
-              <div
-                v-bind="tooltipProps"
-                class="timeline-action"
-              >
-                <VSwitch
-                  v-model="fixTimeline"
-                  color="primary"
-                  density="comfortable"
-                  hide-details
-                  :disabled="!timelineAvailable"
-                  label="智能调轴"
-                />
-              </div>
-            </template>
-          </VTooltip>
-          <VBtn
-            v-if="hasPreviewItems"
-            color="success"
-            :disabled="!canApply"
-            :loading="applying"
-            @click="applyUpload"
-          >
-            写入字幕
-          </VBtn>
-        </VCardActions>
       </VCard>
     </VDialog>
 
@@ -1678,6 +1678,12 @@ defineExpose({
   padding: 12px 18px;
 }
 
+.dialog-actions-top {
+  flex-wrap: wrap;
+  gap: 8px;
+  background: rgba(255, 250, 242, 0.96);
+}
+
 .timeline-action {
   display: flex;
   align-items: center;
@@ -1712,6 +1718,14 @@ defineExpose({
 
   .batch-language {
     grid-template-columns: 1fr;
+  }
+
+  .dialog-actions-top {
+    align-items: stretch;
+  }
+
+  .dialog-actions-top .v-btn {
+    flex: 1 1 auto;
   }
 
   .episode-row {
