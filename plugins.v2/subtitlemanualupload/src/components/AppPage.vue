@@ -65,7 +65,22 @@ const files = ref([])
 const preview = ref(null)
 const fileInputRef = ref(null)
 const fixTimeline = ref(false)
+const batchLanguageSuffix = ref('')
+const copyMessage = ref('')
+const copyError = ref('')
 const lastWritten = ref([])
+
+const rarContainerInstallCommand = `docker exec -it moviepilot bash
+apt-get update
+apt-get install -y p7zip-full unrar-free`
+const rarStaticInstallCommand = `curl -fsSLo /tmp/mp-7zz.sh \\
+  https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/plugins.v2/subtitlemanualupload/scripts/install-static-7zz.sh
+sudo bash /tmp/mp-7zz.sh`
+const rarComposeMountCommand = `volumes:
+  - /volume1/docker/moviepilot/tools/7zz:/usr/local/bin/7z:ro
+
+docker exec moviepilot which 7z
+docker exec moviepilot 7z i`
 
 const visibleTargets = computed(() => targets.value || [])
 const selectedTargets = computed(() => {
@@ -87,6 +102,7 @@ const canApply = computed(() => {
   const items = preview.value?.items || []
   return items.length > 0 && items.every(item => item.target_id)
 })
+const hasPreviewItems = computed(() => (preview.value?.items || []).length > 0)
 const timelineStatus = computed(() => status.value?.timeline_fixer || { available: false, modules: {} })
 const timelineAvailable = computed(() => timelineStatus.value.available === true)
 const archiveStatus = computed(() => status.value?.archive_support || { zip: true, rar: false, rar_tool: '', rar_python: false })
@@ -358,6 +374,7 @@ function openUploadDialog(scopeTargets, title) {
   uploadTitle.value = title
   files.value = []
   preview.value = null
+  batchLanguageSuffix.value = ''
   lastWritten.value = []
   error.value = ''
   message.value = ''
@@ -433,6 +450,7 @@ async function prepareUpload() {
     })
     const response = await props.api.post(`${pluginBase.value}/prepare_upload`, formData)
     preview.value = unwrapResponse(response)
+    batchLanguageSuffix.value = ''
     if (preview.value?.items) {
       preview.value.items.forEach(item => {
         const target = uploadTargets.value.find(targetItem => targetItem.id === item.target_id)
@@ -461,6 +479,42 @@ function updateLanguageSuffix(uploadId, value) {
   item.language_suffix = String(value || '').trim() || 'und'
   const target = uploadTargets.value.find(targetItem => targetItem.id === item.target_id)
   item.output_name = buildOutputName(target, item)
+}
+
+function applyBatchLanguageSuffix() {
+  const suffix = batchLanguageSuffix.value.trim()
+  if (!suffix || !preview.value?.items?.length) return
+  preview.value.items.forEach(item => {
+    item.language_suffix = suffix
+    const target = uploadTargets.value.find(targetItem => targetItem.id === item.target_id)
+    item.output_name = buildOutputName(target, item)
+  })
+}
+
+function resetUploadPreview() {
+  files.value = []
+  preview.value = null
+  batchLanguageSuffix.value = ''
+  lastWritten.value = []
+  error.value = ''
+  message.value = ''
+}
+
+function openRarHelp() {
+  copyMessage.value = ''
+  copyError.value = ''
+  rarHelpDialog.value = true
+}
+
+async function copyHelpText(text, label) {
+  copyMessage.value = ''
+  copyError.value = ''
+  try {
+    await navigator.clipboard.writeText(text)
+    copyMessage.value = `${label} 已复制`
+  } catch (err) {
+    copyError.value = '复制失败，请手动选择命令文本复制'
+  }
 }
 
 async function applyUpload() {
@@ -539,7 +593,7 @@ defineExpose({
       <div>
         <div class="hero-eyebrow">MoviePilot Local Subtitle Desk</div>
         <h1>字幕手传匹配</h1>
-        <p>只读取本地媒体库已有资源。先选择电影或剧集，再按季度/集数上传字幕、ZIP 或 RAR，并在写入前确认自动改名结果。</p>
+        <p>从 MoviePilot 本地库选择资源，上传字幕后确认匹配与改名结果。</p>
       </div>
     </div>
 
@@ -563,9 +617,9 @@ defineExpose({
         <VCardText>
           <div class="search-head">
             <div>
-              <div class="section-kicker">第一步</div>
+              <div class="section-kicker">资源选择</div>
               <h2>选择本地已有资源</h2>
-              <p>搜索结果只来自 MoviePilot 本地整理记录，不再展示库里没有的视频。</p>
+              <p>仅展示 MoviePilot 已整理到本地库的视频资源。</p>
             </div>
             <VBtn variant="text" :loading="refreshing" @click="refreshIndex">接口状态</VBtn>
           </div>
@@ -685,7 +739,7 @@ defineExpose({
               清空选中外挂字幕
             </VBtn>
             <div class="toolbar-hint">
-              锁定的集数会在批量上传时自动跳过；清空字幕只作用于你勾选的集。
+              锁定项不参与批量上传；清空仅删除选中项外挂字幕。
             </div>
           </div>
 
@@ -783,6 +837,7 @@ defineExpose({
         <VDivider />
         <VCardText>
           <div
+            v-if="!hasPreviewItems"
             class="dropzone"
             :class="{ dragging }"
             @drop="handleDrop"
@@ -792,7 +847,7 @@ defineExpose({
             <div class="dropzone-icon">SRT / ASS / ZIP / RAR</div>
             <div class="dropzone-title">把字幕或压缩包拖到这里</div>
             <div class="dropzone-text">
-              ZIP 会自动解包；RAR 已加入轻量 Python 依赖 rarfile，但仍需要容器内有 unrar、bsdtar、7z、7za 或 7zz。
+              支持字幕文件、ZIP、RAR；RAR 需容器内解压器支持。
             </div>
             <VBtn color="primary" variant="flat" @click="openFileDialog">选择文件</VBtn>
             <input
@@ -805,13 +860,13 @@ defineExpose({
             >
           </div>
 
-          <div class="support-row">
+          <div v-if="!hasPreviewItems" class="support-row">
             <span :class="{ ok: rarPythonAvailable }">rarfile：{{ rarPythonAvailable ? '已安装' : '将由 requirements.txt 安装' }}</span>
             <span :class="{ ok: rarAvailable }">RAR 解压器：{{ rarAvailable ? archiveStatus.rar_tool || '可用' : '未检测到' }}</span>
             <span :class="{ ok: rarDependencyStatus.state === 'ready' }">
               处理方式：{{ rarDependencyModeLabel(archiveStatus.dependency_mode) }}
             </span>
-            <button class="support-help" type="button" @click="rarHelpDialog = true">
+            <button class="support-help" type="button" @click="openRarHelp">
               RAR 不能解压？查看处理方式
             </button>
             <span :class="{ ok: timelineAvailable }">
@@ -819,7 +874,7 @@ defineExpose({
             </span>
           </div>
 
-          <div v-if="files.length" class="file-list">
+          <div v-if="!hasPreviewItems && files.length" class="file-list">
             <div v-for="file in files" :key="`${file.name}-${file.size}`" class="file-row">
               <div>
                 <strong>{{ file.name }}</strong>
@@ -829,20 +884,31 @@ defineExpose({
             </div>
           </div>
 
-          <div v-if="preview?.items?.length" class="preview-list">
+          <div v-if="hasPreviewItems" class="preview-list">
             <div class="preview-head">
               <div>
-                <div class="section-kicker">匹配预览</div>
-                <h3>确认字幕对应集数和落盘文件名</h3>
+                <div class="section-kicker">字幕匹配</div>
+                <h3>确认集数与输出文件名</h3>
               </div>
-              <VSwitch
-                v-model="fixTimeline"
-                color="primary"
-                density="comfortable"
-                hide-details
-                :disabled="!timelineAvailable"
-                label="写入前智能调轴"
-              />
+              <div class="batch-language">
+                <VTextField
+                  v-model="batchLanguageSuffix"
+                  label="批量语言后缀"
+                  placeholder="chi / eng / jpn"
+                  variant="outlined"
+                  density="comfortable"
+                  hide-details
+                  @keyup.enter="applyBatchLanguageSuffix"
+                />
+                <VBtn
+                  variant="tonal"
+                  color="primary"
+                  :disabled="!batchLanguageSuffix.trim()"
+                  @click="applyBatchLanguageSuffix"
+                >
+                  应用到全部
+                </VBtn>
+              </div>
             </div>
             <div
               v-for="item in preview.items"
@@ -884,6 +950,14 @@ defineExpose({
           <VBtn variant="text" @click="uploadDialog = false">关闭</VBtn>
           <VSpacer />
           <VBtn
+            v-if="hasPreviewItems"
+            variant="tonal"
+            @click="resetUploadPreview"
+          >
+            重新选择文件
+          </VBtn>
+          <VBtn
+            v-if="!hasPreviewItems"
             color="primary"
             variant="tonal"
             :disabled="!canPrepare"
@@ -892,7 +966,29 @@ defineExpose({
           >
             生成匹配预览
           </VBtn>
+          <VTooltip
+            v-if="hasPreviewItems"
+            location="top"
+            text="写入前会分析视频/字幕时间轴，可能占用 CPU 并造成短暂卡顿。"
+          >
+            <template #activator="{ props: tooltipProps }">
+              <div
+                v-bind="tooltipProps"
+                class="timeline-action"
+              >
+                <VSwitch
+                  v-model="fixTimeline"
+                  color="primary"
+                  density="comfortable"
+                  hide-details
+                  :disabled="!timelineAvailable"
+                  label="智能调轴"
+                />
+              </div>
+            </template>
+          </VTooltip>
           <VBtn
+            v-if="hasPreviewItems"
             color="success"
             :disabled="!canApply"
             :loading="applying"
@@ -913,34 +1009,50 @@ defineExpose({
         <VDivider />
         <VCardText>
           <div class="help-intro">
-            插件已经声明了最轻的 Python 依赖 <code>rarfile</code>，但它不是纯 Python 解压器。
-            真正读取 RAR 内容时，容器里还必须能执行 <code>unrar</code>、<code>7z</code>、<code>7za</code>、<code>7zz</code> 或 <code>bsdtar</code>。
+            <code>rarfile</code> 仅负责调用解压能力；读取 RAR 时，容器内仍需可执行 <code>unrar</code>、<code>7z</code>、<code>7za</code>、<code>7zz</code> 或 <code>bsdtar</code>。长期使用建议映射宿主机静态 <code>7zz</code>。
           </div>
 
           <div class="help-grid">
             <div class="help-card">
-              <strong>插件设置：容器内安装</strong>
-              <p>适合马上测试。保存设置后插件加载时会尝试安装，容器删除或重建后可能丢失。</p>
-              <pre>docker exec -it moviepilot bash
-apt-get update
-apt-get install -y p7zip-full unrar-free</pre>
+              <strong>容器内临时安装</strong>
+              <p>适合测试。容器重建后可能失效。</p>
+              <div class="command-block">
+                <button type="button" @click="copyHelpText(rarContainerInstallCommand, '容器安装命令')">复制</button>
+                <pre>{{ rarContainerInstallCommand }}</pre>
+              </div>
             </div>
             <div class="help-card">
               <strong>一键下载静态 7zz</strong>
-              <p>在宿主机执行脚本，它会下载官方 Linux 版 7zz，优先安装到 MoviePilot 宿主机部署目录下的 <code>tools/7zz</code> 并打印映射片段。</p>
-              <pre>curl -fsSLo /tmp/mp-7zz.sh \
-  https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/plugins.v2/subtitlemanualupload/scripts/install-static-7zz.sh
-sudo bash /tmp/mp-7zz.sh</pre>
+              <p>在宿主机执行。脚本会优先安装到 MoviePilot 部署目录的 <code>tools/7zz</code>。</p>
+              <div class="command-block">
+                <button type="button" @click="copyHelpText(rarStaticInstallCommand, '7zz 安装脚本')">复制</button>
+                <pre>{{ rarStaticInstallCommand }}</pre>
+              </div>
             </div>
             <div class="help-card">
-              <strong>推荐映射静态二进制</strong>
-              <p>把脚本输出的宿主机 <code>7zz</code> 路径映射成容器内 <code>/usr/local/bin/7z</code>，比映射系统 <code>7z</code> 更少动态库问题。</p>
-              <pre>volumes:
-  - /volume1/docker/moviepilot/tools/7zz:/usr/local/bin/7z:ro
-
-docker exec moviepilot which 7z</pre>
+              <strong>映射到 MoviePilot 容器</strong>
+              <p>将脚本输出路径映射为容器内 <code>/usr/local/bin/7z</code>。</p>
+              <div class="command-block">
+                <button type="button" @click="copyHelpText(rarComposeMountCommand, '映射配置')">复制</button>
+                <pre>{{ rarComposeMountCommand }}</pre>
+              </div>
             </div>
           </div>
+
+          <VAlert
+            v-if="copyMessage"
+            class="mt-4"
+            type="success"
+            variant="tonal"
+            :text="copyMessage"
+          />
+          <VAlert
+            v-else-if="copyError"
+            class="mt-4"
+            type="warning"
+            variant="tonal"
+            :text="copyError"
+          />
 
           <VAlert
             v-if="rarDependencyStatus.message"
@@ -1412,8 +1524,26 @@ docker exec moviepilot which 7z</pre>
   line-height: 1.6;
 }
 
+.command-block {
+  position: relative;
+}
+
+.command-block button {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 4px 9px;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 250, 239, 0.92);
+  color: #2f443d;
+  font-size: 12px;
+  font-weight: 900;
+}
+
 .help-card pre {
   padding: 10px;
+  padding-right: 58px;
   margin: 0;
   overflow-x: auto;
   border-radius: 12px;
@@ -1460,6 +1590,14 @@ docker exec moviepilot which 7z</pre>
   align-items: center;
 }
 
+.batch-language {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  min-width: min(100%, 360px);
+}
+
 .preview-row {
   display: grid;
   grid-template-columns: minmax(160px, 1fr) minmax(210px, 1fr) 116px minmax(180px, 1fr);
@@ -1475,6 +1613,11 @@ docker exec moviepilot which 7z</pre>
 
 .dialog-actions {
   padding: 12px 18px;
+}
+
+.timeline-action {
+  display: flex;
+  align-items: center;
 }
 
 @media (max-width: 900px) {
@@ -1494,6 +1637,10 @@ docker exec moviepilot which 7z</pre>
   .search-head,
   .preview-head {
     display: grid;
+  }
+
+  .batch-language {
+    grid-template-columns: 1fr;
   }
 
   .episode-row {
