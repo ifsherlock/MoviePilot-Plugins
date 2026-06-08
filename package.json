@@ -72,5 +72,29 @@
             "v0.1.1": "改用 MoviePilot 原生媒体搜索和媒体库文件读取，展示封面并支持剧集按季度选择",
             "v0.1.0": "新增手动字幕上传、ZIP 自动解包、电影/剧集匹配与改名写入页面"
         }
+    },
+    "AutoSubv3": {
+        "name": "AI字幕生成",
+        "description": "自动生成字幕并翻译成中文，支持 faster-whisper 识别、字幕提取和大模型并发翻译。",
+        "labels": "字幕,AI,翻译",
+        "version": "3.5.40",
+        "icon": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/autosubtitles.jpeg",
+        "author": "jaysherlock",
+        "level": 2,
+        "system_version": ">=2.13.5",
+        "v2": true,
+        "history": {
+            "v3.5.40": "插件改名为 AI字幕生成，更新作者信息并合并到 ifsherlock 插件仓库",
+            "v3.5.39": "修复依赖冲突：放宽 python-dotenv 版本约束以兼容 1.1.x",
+            "v3.5.38": "UI：API申请教程链接改为稳定仓库README锚点",
+            "v3.5.37": "日志优化：Whisper提取耗时统计与分段警告；翻译统计修正；日志前缀统一；视频处理完成后空行分隔",
+            "v3.5.36": "Whisper模型下载增加重试机制（3次重试，30秒间隔）；优化日志输出格式统一中文前缀；翻译进度改为每10%打印",
+            "v3.5.35": "批量翻译加入system_prompt；JSON清理增强尾部逗号处理；json解析用贪婪正则",
+            "v3.5.34": "修复批量翻译prompt格式匹配参考脚本；batch_size默认40降到20；正则提取改用贪婪匹配",
+            "v3.5.33": "Whisper字幕提取进度改为百分比显示，每10%打一次日志",
+            "v3.5.32": "Whisper字幕提取添加每50段进度日志",
+            "v3.5.31": "Ling-flash-2.0测试通过；采用fewshot示例格式，token降低26%；全场景3/3成功",
+            "v3.5.30": "优化批量翻译prompt为fewshot示例格式，token消耗降低30%；当前测试最优prompt"
+        }
     }
 }
