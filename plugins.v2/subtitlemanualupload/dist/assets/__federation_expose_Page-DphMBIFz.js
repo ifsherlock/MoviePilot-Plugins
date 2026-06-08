@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import AppPage from './__federation_expose_AppPage-DQ4sHNZm.js';
+import AppPage from './__federation_expose_AppPage-BdUclPXD.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 
 const {createElementVNode:_createElementVNode,resolveComponent:_resolveComponent,createVNode:_createVNode,withCtx:_withCtx,openBlock:_openBlock,createElementBlock:_createElementBlock} = await importShared('vue');
@@ -46,7 +46,7 @@ return (_ctx, _cache) => {
       class: "sticky-toolbar"
     }, {
       default: _withCtx(() => [
-        _cache[2] || (_cache[2] = _createElementVNode("div", { class: "text-h6 ms-3" }, "字幕手传匹配", -1)),
+        _cache[2] || (_cache[2] = _createElementVNode("div", { class: "text-h6 ms-3" }, "字幕匹配", -1)),
         _createVNode(_component_VSpacer),
         _createVNode(_component_VBtn, {
           icon: "mdi-refresh",
@@ -76,6 +76,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-3961fb49"]]);
+const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-f5f02068"]]);
 
 export { Page as default };

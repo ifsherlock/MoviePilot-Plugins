@@ -81,6 +81,32 @@ const rarComposeMountCommand = `volumes:
 
 docker exec moviepilot which 7z
 docker exec moviepilot 7z i`
+const rarHelpItems = [
+  {
+    badge: '临时安装',
+    title: '容器内临时安装',
+    description: '适合临时测试，容器重建后可能失效。',
+    button: '复制命令',
+    copyLabel: '容器安装命令',
+    command: rarContainerInstallCommand,
+  },
+  {
+    badge: '静态文件',
+    title: '下载静态 7zz',
+    description: '在宿主机执行，默认安装到 MoviePilot 部署目录的 tools/7zz。',
+    button: '复制脚本',
+    copyLabel: '7zz 安装脚本',
+    command: rarStaticInstallCommand,
+  },
+  {
+    badge: '容器映射',
+    title: '映射到 MoviePilot 容器',
+    description: '把宿主机二进制映射为容器内 /usr/local/bin/7z。',
+    button: '复制映射',
+    copyLabel: '映射配置',
+    command: rarComposeMountCommand,
+  },
+]
 
 const visibleTargets = computed(() => targets.value || [])
 const selectedTargets = computed(() => {
@@ -591,8 +617,7 @@ defineExpose({
   <div class="subtitle-upload-page">
     <div v-if="!hideTitle" class="hero-card">
       <div>
-        <div class="hero-eyebrow">MoviePilot Local Subtitle Desk</div>
-        <h1>字幕手传匹配</h1>
+        <h1>字幕匹配</h1>
         <p>从 MoviePilot 本地库选择资源，上传字幕后确认匹配与改名结果。</p>
       </div>
     </div>
@@ -1000,7 +1025,7 @@ defineExpose({
       </VCard>
     </VDialog>
 
-    <VDialog v-model="rarHelpDialog" max-width="760">
+    <VDialog v-model="rarHelpDialog" max-width="820">
       <VCard class="rar-help-dialog" rounded="xl">
         <VCardTitle class="dialog-title">
           <span>RAR 解压器说明</span>
@@ -1008,35 +1033,36 @@ defineExpose({
         </VCardTitle>
         <VDivider />
         <VCardText>
-          <div class="help-intro">
-            <code>rarfile</code> 仅负责调用解压能力；读取 RAR 时，容器内仍需可执行 <code>unrar</code>、<code>7z</code>、<code>7za</code>、<code>7zz</code> 或 <code>bsdtar</code>。长期使用建议映射宿主机静态 <code>7zz</code>。
+          <div class="rar-help-summary">
+            <p><strong>说明：</strong><code>rarfile</code> 只是 Python 调用封装，不是独立解压器。</p>
+            <p><strong>要求：</strong>MoviePilot 容器内需要能执行 <code>unrar</code>、<code>7z</code>、<code>7za</code>、<code>7zz</code> 或 <code>bsdtar</code>。</p>
+            <p><strong>建议：</strong>长期使用推荐把宿主机静态 <code>7zz</code> 映射到容器内 <code>/usr/local/bin/7z</code>。</p>
           </div>
 
-          <div class="help-grid">
-            <div class="help-card">
-              <strong>容器内临时安装</strong>
-              <p>适合测试。容器重建后可能失效。</p>
-              <div class="command-block">
-                <button type="button" @click="copyHelpText(rarContainerInstallCommand, '容器安装命令')">复制</button>
-                <pre>{{ rarContainerInstallCommand }}</pre>
+          <div class="rar-help-list">
+            <section
+              v-for="item in rarHelpItems"
+              :key="item.title"
+              class="rar-help-row"
+            >
+              <div class="rar-help-row-head">
+                <div class="rar-help-row-title">
+                  <span class="rar-help-step">{{ item.badge }}</span>
+                  <strong>{{ item.title }}</strong>
+                </div>
+                <button
+                  type="button"
+                  class="rar-help-copy"
+                  @click="copyHelpText(item.command, item.copyLabel)"
+                >
+                  {{ item.button }}
+                </button>
               </div>
-            </div>
-            <div class="help-card">
-              <strong>一键下载静态 7zz</strong>
-              <p>在宿主机执行。脚本会优先安装到 MoviePilot 部署目录的 <code>tools/7zz</code>。</p>
+              <p>{{ item.description }}</p>
               <div class="command-block">
-                <button type="button" @click="copyHelpText(rarStaticInstallCommand, '7zz 安装脚本')">复制</button>
-                <pre>{{ rarStaticInstallCommand }}</pre>
+                <pre>{{ item.command }}</pre>
               </div>
-            </div>
-            <div class="help-card">
-              <strong>映射到 MoviePilot 容器</strong>
-              <p>将脚本输出路径映射为容器内 <code>/usr/local/bin/7z</code>。</p>
-              <div class="command-block">
-                <button type="button" @click="copyHelpText(rarComposeMountCommand, '映射配置')">复制</button>
-                <pre>{{ rarComposeMountCommand }}</pre>
-              </div>
-            </div>
+            </section>
           </div>
 
           <VAlert
@@ -1116,7 +1142,6 @@ defineExpose({
   line-height: 1.7;
 }
 
-.hero-eyebrow,
 .section-kicker,
 .media-type {
   color: #8a6b3f;
@@ -1485,39 +1510,91 @@ defineExpose({
   background: #fffaf2;
 }
 
-.help-intro {
+.rar-help-summary {
   color: #52635d;
   line-height: 1.7;
 }
 
-.help-intro code,
-.help-card code {
+.rar-help-summary code {
   padding: 1px 5px;
   border-radius: 6px;
   background: #efe6d8;
 }
 
-.help-grid {
+.rar-help-summary {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid rgba(91, 109, 100, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.64);
+}
+
+.rar-help-summary p {
+  margin: 0;
+}
+
+.rar-help-list {
+  display: grid;
   gap: 12px;
   margin-top: 16px;
 }
 
-.help-card {
+.rar-help-row {
   display: grid;
-  gap: 8px;
+  gap: 10px;
   padding: 14px;
   border: 1px solid rgba(91, 109, 100, 0.14);
   border-radius: 18px;
   background: rgba(255, 255, 255, 0.74);
 }
 
-.help-card strong {
+.rar-help-row-head {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.rar-help-row-title {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.rar-help-step {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #efe6d8;
+  color: #8a6b3f;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.rar-help-copy {
+  flex: 0 0 auto;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 999px;
+  background: #2f443d;
+  color: #fff6e8;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 900;
+  box-shadow: 0 8px 18px rgba(47, 68, 61, 0.18);
+}
+
+.rar-help-copy:hover {
+  background: #243730;
+}
+
+.rar-help-row-title strong {
   color: #2f443d;
 }
 
-.help-card p {
+.rar-help-row p {
   margin: 0;
   color: #687873;
   font-size: 12px;
@@ -1525,25 +1602,11 @@ defineExpose({
 }
 
 .command-block {
-  position: relative;
+  min-width: 0;
 }
 
-.command-block button {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  padding: 4px 9px;
-  border: 0;
-  border-radius: 999px;
-  background: rgba(255, 250, 239, 0.92);
-  color: #2f443d;
-  font-size: 12px;
-  font-weight: 900;
-}
-
-.help-card pre {
+.command-block pre {
   padding: 10px;
-  padding-right: 58px;
   margin: 0;
   overflow-x: auto;
   border-radius: 12px;
@@ -1628,9 +1691,17 @@ defineExpose({
   .hero-card,
   .search-bar,
   .detail-head,
-  .help-grid,
   .preview-row {
     grid-template-columns: 1fr;
+  }
+
+  .rar-help-row-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .rar-help-copy {
+    width: 100%;
   }
 
   .detail-head,

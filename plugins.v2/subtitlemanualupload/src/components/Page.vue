@@ -24,7 +24,7 @@ const pageRef = ref(null)
 <template>
   <div class="subtitlemanualupload-page-wrapper">
     <VToolbar density="comfortable" class="sticky-toolbar">
-      <div class="text-h6 ms-3">字幕手传匹配</div>
+      <div class="text-h6 ms-3">字幕匹配</div>
       <VSpacer />
       <VBtn
         icon="mdi-refresh"

@@ -35,15 +35,16 @@
         }
     },
     "SubtitleManualUpload": {
-        "name": "字幕手传匹配",
+        "name": "字幕匹配",
         "description": "手动上传字幕、ZIP 或 RAR，只选择本地已有电影/剧集后自动匹配、可选智能调轴并按媒体文件名改名落盘。",
         "labels": "字幕,媒体库,整理",
-        "version": "0.1.11",
+        "version": "0.1.12",
         "icon": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/upload.png",
         "author": "jaysherlock",
         "level": 1,
         "system_version": ">=2.13.5",
         "history": {
+            "v0.1.12": "插件显示名改为字幕匹配；移除页面英文副标题；重做 RAR 解压器说明为逐行布局并强化复制按钮",
             "v0.1.11": "优化上传弹窗和 RAR 说明文案；新增命令复制按钮、批量语言后缀、智能调轴提示，预览后隐藏上传文件列表",
             "v0.1.10": "优化宿主机静态 7zz 一键脚本默认安装路径，优先放到 MoviePilot 部署目录 tools/7zz，适配飞牛和群晖常见路径",
             "v0.1.9": "移除侧边栏页面顶部 RAR 大提示；设置页新增 RAR 解压器处理方式；提供宿主机静态 7zz 一键安装与映射脚本",

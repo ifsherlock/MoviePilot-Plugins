@@ -76,7 +76,7 @@ return (_ctx, _cache) => {
       color: "transparent"
     }, {
       default: _withCtx(() => [
-        _cache[5] || (_cache[5] = _createElementVNode("div", { class: "text-h6 ms-3" }, "字幕手传匹配配置", -1)),
+        _cache[5] || (_cache[5] = _createElementVNode("div", { class: "text-h6 ms-3" }, "字幕匹配配置", -1)),
         _createVNode(_component_VSpacer),
         _createVNode(_component_VBtn, {
           icon: "mdi-content-save",
@@ -154,6 +154,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-dcd7226d"]]);
+const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-ab7585d2"]]);
 
 export { Config as default };
