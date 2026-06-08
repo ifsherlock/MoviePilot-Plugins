@@ -27,6 +27,6 @@ MoviePilot V2 插件，提供手动上传字幕并匹配改名的页面。
 
 - 当前版本只支持可从 MoviePilot 本地媒体库读取到的本地视频文件。
 - `rarfile` 是最轻量的 Python RAR 封装层，但不是纯 Python 解压器；RAR5/压缩内容仍依赖外部解压程序。
-- 智能调轴依赖容器内 `ffmpeg`、`ffprobe`、`numpy`、`pysubs2`；缺失时页面会禁用调轴开关。
+- 智能调轴依赖容器内 `ffmpeg`、`ffprobe`、`numpy`、`pysubs2`；插件会通过 `requirements.txt` 声明 `pysubs2`，缺失时页面会禁用调轴开关。
 - 当前版本不支持 `.7z` 作为上传压缩包。
 - 当前版本会去掉同目录里已有字幕文件名中的 `.default` / `.forced` 标记，但不会自动新增这些标记。

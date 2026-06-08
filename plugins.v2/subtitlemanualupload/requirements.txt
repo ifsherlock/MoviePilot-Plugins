@@ -1,1 +1,2 @@
 rarfile==4.2
+pysubs2==1.8.0
