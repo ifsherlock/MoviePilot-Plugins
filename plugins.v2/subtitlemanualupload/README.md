@@ -15,7 +15,7 @@ MoviePilot V2 插件，提供手动上传字幕并匹配改名的页面。
 - 上传字幕文件：`.srt`、`.ass`、`.ssa`、`.sbv`、`.sub`、`.vtt`、`.webvtt`。
 - 上传 `.zip` 压缩包并自动解包其中的字幕文件。
 - 新增轻量 Python RAR 依赖 `rarfile` 声明；上传 `.rar` 压缩包时仍需要容器内 `unrar`、`bsdtar`、`7z`、`7za` 或 `7zz` 负责实际解包，缺失时会明确提示。
-- 上传弹窗内可点开“RAR 不能解压？查看处理方式”，按逐行说明查看临时安装、插件加载时自动安装或宿主机静态 `7zz` 映射方案，并可一键复制命令。
+- 上传弹窗内可点开“RAR 不能解压？查看处理方式”，查看两套处理方案：容器内临时安装，或宿主机下载静态 `7zz` 后映射到容器。
 - 插件设置可选择 RAR 解压器处理方式：不处理、加载插件时尝试容器内安装、使用宿主机映射文件。
 - 写入前可选“智能调轴”：优先用视频内置文本字幕做基准，没有内置字幕时用 `ffmpeg` 抽取音频并通过 FFT 互相关计算整体偏移；该功能可能占用 CPU 并造成短暂卡顿。
 - 按目标视频文件名生成外挂字幕名并直接落盘。
@@ -31,7 +31,7 @@ MoviePilot V2 插件，提供手动上传字幕并匹配改名的页面。
 - 当前版本只支持可从 MoviePilot 本地媒体库读取到的本地视频文件。
 - `rarfile` 是最轻量的 Python RAR 封装层，但不是纯 Python 解压器；RAR5/压缩内容仍依赖外部解压程序。
 - 临时测试可在插件设置中选择“加载插件时尝试容器内安装”，或进入 MoviePilot 容器安装 `p7zip-full` / `unrar-free` / `unrar`；容器重建后可能失效。
-- 长期建议在宿主机把静态 `7zz` 放到 MoviePilot 部署目录的 `tools/7zz`，并映射为容器内 `/usr/local/bin/7z`；普通系统 `7z` 可能还要一并映射动态库，静态 `7zz` 更省心。
+- 长期建议在宿主机把静态 `7zz` 放到 MoviePilot 部署目录的 `tools/7zz`，设置可执行权限，并映射为容器内 `/usr/local/bin/7z`；普通系统 `7z` 可能还要一并映射动态库，静态 `7zz` 更省心。
 - 智能调轴依赖容器内 `ffmpeg`、`ffprobe`、`numpy`、`pysubs2`；插件会通过 `requirements.txt` 声明 `pysubs2`，缺失时页面会禁用调轴开关。
 - 当前版本不支持 `.7z` 作为上传压缩包。
 - 当前版本会去掉同目录里已有字幕文件名中的 `.default` / `.forced` 标记，但不会自动新增这些标记。
@@ -44,7 +44,7 @@ curl -fsSLo /tmp/mp-7zz.sh \
 sudo bash /tmp/mp-7zz.sh
 ```
 
-脚本会优先自动识别运行中的 MoviePilot 容器挂载目录，默认安装到 `<MoviePilot宿主机目录>/tools/7zz`。飞牛常见会落在 `/vol1/1000/docker/moviepilot/tools/7zz`，群晖常见会落在 `/volume1/docker/moviepilot/tools/7zz`；如果识别不到，会回退到 `/opt/moviepilot/tools/7zz`。
+脚本会优先自动识别运行中的 MoviePilot 容器挂载目录；如果无法确认，会提示输入 MoviePilot 的宿主机映射目录，直接回车则使用默认目录。飞牛常见会落在 `/vol1/1000/docker/moviepilot/tools/7zz`，群晖常见会落在 `/volume1/docker/moviepilot/tools/7zz`；如果识别不到，默认使用 `/volume1/docker/moviepilot/tools/7zz`。脚本会把二进制文件安装为 `0755` 权限。
 
 然后按脚本输出的实际路径给 MoviePilot 服务增加映射，例如：
 
@@ -53,7 +53,13 @@ volumes:
   - /volume1/docker/moviepilot/tools/7zz:/usr/local/bin/7z:ro
 ```
 
-如果你的 MoviePilot 路径比较特殊，可以手动指定：
+如果你的 MoviePilot 路径比较特殊，可以手动指定宿主机 MoviePilot 目录：
+
+```bash
+sudo env MP_HOST_ROOT=/volume1/docker/moviepilot bash /tmp/mp-7zz.sh
+```
+
+也可以直接指定二进制文件完整路径：
 
 ```bash
 sudo env INSTALL_PATH=/volume1/docker/moviepilot/tools/7zz bash /tmp/mp-7zz.sh

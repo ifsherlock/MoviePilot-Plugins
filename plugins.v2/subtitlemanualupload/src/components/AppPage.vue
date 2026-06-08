@@ -75,15 +75,21 @@ apt-get update
 apt-get install -y p7zip-full unrar-free`
 const rarStaticInstallCommand = `curl -fsSLo /tmp/mp-7zz.sh \\
   https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/plugins.v2/subtitlemanualupload/scripts/install-static-7zz.sh
-sudo bash /tmp/mp-7zz.sh`
-const rarComposeMountCommand = `volumes:
+sudo bash /tmp/mp-7zz.sh
+
+# 如果自动检测不准，可直接指定 MoviePilot 宿主机映射目录：
+sudo env MP_HOST_ROOT=/volume1/docker/moviepilot bash /tmp/mp-7zz.sh
+
+# 按脚本输出的实际路径添加到 MoviePilot volumes：
+volumes:
   - /volume1/docker/moviepilot/tools/7zz:/usr/local/bin/7z:ro
 
+# 重建或重启 MoviePilot 容器后验证：
 docker exec moviepilot which 7z
 docker exec moviepilot 7z i`
 const rarHelpItems = [
   {
-    badge: '临时安装',
+    badge: '方案一',
     title: '容器内临时安装',
     description: '适合临时测试，容器重建后可能失效。',
     button: '复制命令',
@@ -91,20 +97,12 @@ const rarHelpItems = [
     command: rarContainerInstallCommand,
   },
   {
-    badge: '静态文件',
-    title: '下载静态 7zz',
-    description: '在宿主机执行，默认安装到 MoviePilot 部署目录的 tools/7zz。',
-    button: '复制脚本',
-    copyLabel: '7zz 安装脚本',
+    badge: '方案二',
+    title: '静态 7zz 下载并映射',
+    description: '推荐长期使用。脚本会自动检测 MoviePilot 宿主机目录，也会提示你手动输入路径；安装后会设置 0755 执行权限，再按输出路径映射到容器。',
+    button: '复制方案',
+    copyLabel: '静态 7zz 安装映射方案',
     command: rarStaticInstallCommand,
-  },
-  {
-    badge: '容器映射',
-    title: '映射到 MoviePilot 容器',
-    description: '把宿主机二进制映射为容器内 /usr/local/bin/7z。',
-    button: '复制映射',
-    copyLabel: '映射配置',
-    command: rarComposeMountCommand,
   },
 ]
 
@@ -1036,7 +1034,7 @@ defineExpose({
           <div class="rar-help-summary">
             <p><strong>说明：</strong><code>rarfile</code> 只是 Python 调用封装，不是独立解压器。</p>
             <p><strong>要求：</strong>MoviePilot 容器内需要能执行 <code>unrar</code>、<code>7z</code>、<code>7za</code>、<code>7zz</code> 或 <code>bsdtar</code>。</p>
-            <p><strong>建议：</strong>长期使用推荐把宿主机静态 <code>7zz</code> 映射到容器内 <code>/usr/local/bin/7z</code>。</p>
+            <p><strong>方案：</strong>临时测试可在容器内安装；长期使用推荐下载宿主机静态 <code>7zz</code>，设置执行权限后映射到容器内 <code>/usr/local/bin/7z</code>。</p>
           </div>
 
           <div class="rar-help-list">

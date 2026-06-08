@@ -3,9 +3,12 @@ set -euo pipefail
 
 VERSION="${VERSION:-26.01}"
 INSTALL_PATH="${INSTALL_PATH:-}"
+MP_HOST_ROOT="${MP_HOST_ROOT:-}"
 MP_CONTAINER="${MP_CONTAINER:-}"
 DOWNLOAD_URL="${DOWNLOAD_URL:-}"
 TOOL_SUBDIR="${TOOL_SUBDIR:-tools}"
+DEFAULT_MP_HOST_ROOT="${DEFAULT_MP_HOST_ROOT:-}"
+NONINTERACTIVE="${NONINTERACTIVE:-0}"
 
 log() {
   printf '[SubtitleManualUpload] %s\n' "$*"
@@ -45,9 +48,11 @@ download_file() {
 }
 
 run_as_root() {
-  if [ "$(id -u)" -eq 0 ]; then
-    "$@"
+  if "$@"; then
     return
+  fi
+  if [ "$(id -u)" -eq 0 ]; then
+    fail "command failed: $*"
   fi
   if command -v sudo >/dev/null 2>&1; then
     sudo "$@"
@@ -96,7 +101,7 @@ candidate_root_from_mount() {
 
   base_l="$(path_basename "$source")"
   base_l="${base_l,,}"
-  if [[ "$base_l" =~ ^(config|configs|data|db|logs|log|cache|temp|tmp)$ ]]; then
+  if [[ "$base_l" =~ ^(config|configs|data|db|logs|log|cache|temp|tmp|plugins|plugin|plugins-repo|plugins_repo|core)$ ]]; then
     path_dirname "$source"
     return
   fi
@@ -116,7 +121,7 @@ detect_moviepilot_root_from_container() {
       printf '%s\n' "$candidate"
       return
     fi
-  done < <(docker inspect --format '{{range .Mounts}}{{println .Type "\t" .Source "\t" .Destination}}{{end}}' "$container" 2>/dev/null)
+  done < <(docker inspect --format '{{range .Mounts}}{{printf "%s\t%s\t%s\n" .Type .Source .Destination}}{{end}}' "$container" 2>/dev/null)
 }
 
 detect_moviepilot_root_from_common_paths() {
@@ -147,7 +152,50 @@ detect_moviepilot_root_from_common_paths() {
     printf '%s\n' /volume1/docker/moviepilot
     return
   fi
-  printf '%s\n' /opt/moviepilot
+  printf '%s\n' /volume1/docker/moviepilot
+}
+
+trim_value() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  value="${value%"${value##*[![:space:]]}"}"
+  printf '%s\n' "$value"
+}
+
+is_interactive() {
+  [ "$NONINTERACTIVE" != "1" ] && [ -t 0 ]
+}
+
+choose_moviepilot_root() {
+  local container="$1"
+  local detected default_root answer
+
+  if [ -n "$MP_HOST_ROOT" ]; then
+    printf '%s\n' "${MP_HOST_ROOT%/}"
+    return
+  fi
+
+  detected="$(detect_moviepilot_root_from_container "$container" || true)"
+  if [ -z "$detected" ]; then
+    detected="$(detect_moviepilot_root_from_common_paths || true)"
+  fi
+  default_root="${DEFAULT_MP_HOST_ROOT:-$detected}"
+  default_root="${default_root:-/volume1/docker/moviepilot}"
+
+  printf '[SubtitleManualUpload] detected/default MoviePilot host directory: %s\n' "$default_root" >&2
+  if is_interactive; then
+    printf '\nMoviePilot host mapped directory [%s]\n' "$default_root" >&2
+    printf 'Press Enter to use it, or input your MoviePilot docker host path: ' >&2
+    IFS= read -r answer || true
+    answer="$(trim_value "$answer")"
+    if [ -n "$answer" ]; then
+      default_root="$answer"
+    fi
+  else
+    printf '[SubtitleManualUpload] non-interactive mode; use MP_HOST_ROOT or INSTALL_PATH to override the path\n' >&2
+  fi
+
+  printf '%s\n' "${default_root%/}"
 }
 
 resolve_install_path() {
@@ -158,10 +206,7 @@ resolve_install_path() {
     return
   fi
 
-  root="$(detect_moviepilot_root_from_container "$container" || true)"
-  if [ -z "$root" ]; then
-    root="$(detect_moviepilot_root_from_common_paths)"
-  fi
+  root="$(choose_moviepilot_root "$container")"
   printf '%s/%s/7zz\n' "${root%/}" "$TOOL_SUBDIR"
 }
 
@@ -189,9 +234,11 @@ test -f "${tmp_dir}/7zz" || fail "7zz not found in downloaded archive"
 install_dir="$(dirname "$INSTALL_PATH")"
 run_as_root install -d -m 0755 "$install_dir"
 run_as_root install -m 0755 "${tmp_dir}/7zz" "$INSTALL_PATH"
+run_as_root chmod 0755 "$INSTALL_PATH"
 
 "$INSTALL_PATH" -h >/dev/null 2>&1 || fail "installed 7zz is not executable: ${INSTALL_PATH}"
 log "installed static 7zz: ${INSTALL_PATH}"
+log "permission set: chmod 0755 ${INSTALL_PATH}"
 
 if [ -n "$container" ] && command -v docker >/dev/null 2>&1; then
   log "detected MoviePilot container: ${container}"
@@ -220,4 +267,7 @@ If your container name is known, rerun detection with:
 
 You can override the install path manually:
   INSTALL_PATH=/volume1/docker/moviepilot/tools/7zz bash plugins.v2/subtitlemanualupload/scripts/install-static-7zz.sh
+
+Or override only the MoviePilot host mapped directory:
+  MP_HOST_ROOT=/volume1/docker/moviepilot bash plugins.v2/subtitlemanualupload/scripts/install-static-7zz.sh
 EOF
