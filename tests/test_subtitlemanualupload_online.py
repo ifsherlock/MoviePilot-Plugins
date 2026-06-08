@@ -123,6 +123,16 @@ def test_provider_roots_are_normalized_with_fallbacks():
     assert roots["assrt"] == "https://2.assrt.net"
 
 
+def test_socks5h_proxy_is_normalized_for_playwright():
+    module = load_online_module()
+
+    proxy = module._playwright_proxy_from_value({"server": "socks5h://user:pass@example.test:1080"})
+
+    assert proxy["server"] == "socks5://example.test:1080"
+    assert proxy["username"] == "user"
+    assert proxy["password"] == "pass"
+
+
 def test_provider_network_errors_are_compacted():
     module = load_online_module()
 

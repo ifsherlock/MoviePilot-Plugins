@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
-from urllib.parse import quote, unquote, urlencode, urljoin, urlparse
+from urllib.parse import quote, unquote, urlencode, urljoin, urlparse, urlunparse
 
 from app.core.config import settings
 from app.log import logger
@@ -928,14 +928,41 @@ def _browser_proxy(use_proxy: bool) -> Optional[Any]:
     if not use_proxy:
         return None
     proxy_server = getattr(settings, "PROXY_SERVER", None)
-    if proxy_server:
-        return proxy_server
+    proxy = _playwright_proxy_from_value(proxy_server)
+    if proxy:
+        return proxy
     proxy_config = getattr(settings, "PROXY", None)
-    if isinstance(proxy_config, dict):
-        server = proxy_config.get("http") or proxy_config.get("https")
-        if server:
-            return {"server": server}
+    proxy = _playwright_proxy_from_value(proxy_config)
+    if proxy:
+        return proxy
     return None
+
+
+def _playwright_proxy_from_value(value: Any) -> Optional[Dict[str, str]]:
+    if isinstance(value, dict):
+        raw_server = value.get("server") or value.get("http") or value.get("https")
+    else:
+        raw_server = value
+    server = str(raw_server or "").strip()
+    if not server:
+        return None
+    parsed = urlparse(server)
+    scheme = parsed.scheme.lower()
+    if scheme == "socks5h":
+        parsed = parsed._replace(scheme="socks5")
+    normalized_server = urlunparse(parsed) if parsed.scheme else server
+    if parsed.scheme and parsed.hostname:
+        host = parsed.hostname
+        if ":" in host and not host.startswith("["):
+            host = f"[{host}]"
+        netloc = f"{host}:{parsed.port}" if parsed.port else host
+        normalized_server = urlunparse((parsed.scheme, netloc, "", "", "", ""))
+    proxy: Dict[str, str] = {"server": normalized_server}
+    if parsed.username:
+        proxy["username"] = unquote(parsed.username)
+    if parsed.password:
+        proxy["password"] = unquote(parsed.password)
+    return proxy
 
 
 def _host(url: str) -> str:
