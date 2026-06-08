@@ -12,13 +12,11 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from fastapi import HTTPException, Request
 from starlette.datastructures import UploadFile
 
-from app.chain.media import MediaChain
-from app.chain.tmdb import TmdbChain
 from app.core.config import settings
 from app.core.metainfo import MetaInfoPath
+from app.db.models.transferhistory import TransferHistory
 from app.log import logger
 from app.plugins import _PluginBase
-from app.schemas.types import MediaType
 
 from .timeline_fixer import check_timeline_fixer_dependencies, fix_subtitle_timeline
 
@@ -27,7 +25,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕手传匹配"
     plugin_desc = "手动上传字幕或 ZIP，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "upload.png"
-    plugin_version = "0.1.2"
+    plugin_version = "0.1.3"
     plugin_author = "jaysherlock"
     author_url = "https://github.com/jaysherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -82,7 +80,7 @@ class SubtitleManualUpload(_PluginBase):
                 "endpoint": self.api_search,
                 "methods": ["GET"],
                 "auth": "bear",
-                "summary": "使用 MoviePilot 搜索媒体候选",
+                "summary": "搜索 MoviePilot 本地资源候选",
             },
             {
                 "path": "/targets",
@@ -155,7 +153,7 @@ class SubtitleManualUpload(_PluginBase):
                                         "props": {
                                             "type": "info",
                                             "variant": "tonal",
-                                            "text": "先用 MoviePilot 搜索媒体并展示封面，再读取已入库文件；剧集可选择季度后上传字幕或 ZIP。",
+                                            "text": "从 MoviePilot 本地整理记录中搜索已有视频资源；剧集可选择全部季度或单季后上传字幕/ZIP。",
                                         },
                                     }
                                 ],
@@ -310,15 +308,6 @@ class SubtitleManualUpload(_PluginBase):
         return ""
 
     @classmethod
-    def _media_type_enum(cls, value: Any) -> Optional[MediaType]:
-        media_type = cls._media_type_text(value)
-        if media_type == "movie":
-            return MediaType.MOVIE
-        if media_type == "tv":
-            return MediaType.TV
-        return None
-
-    @classmethod
     def _poster_url(cls, poster_path: Any, prefix: str = "w500") -> str:
         poster = cls._normalize_text(poster_path)
         if not poster:
@@ -330,128 +319,66 @@ class SubtitleManualUpload(_PluginBase):
         domain = cls._normalize_text(getattr(settings, "TMDB_IMAGE_DOMAIN", "")) or "image.tmdb.org"
         return f"https://{domain}/t/p/{prefix}{poster}"
 
-    @staticmethod
-    def _model_dump(value: Any) -> Dict[str, Any]:
-        if isinstance(value, dict):
-            return value
-        if hasattr(value, "model_dump"):
-            return value.model_dump()
-        if hasattr(value, "dict"):
-            return value.dict()
-        return {}
+    @classmethod
+    def _history_type_text(cls, media_type: Any) -> str:
+        normalized = cls._media_type_text(media_type)
+        if normalized == "movie":
+            return "电影"
+        if normalized == "tv":
+            return "电视剧"
+        return cls._normalize_text(media_type)
 
-    def _media_from_info(self, mediainfo: Any) -> Dict[str, Any]:
-        data = self._model_dump(mediainfo)
-        media_type = self._media_type_text(data.get("type") or getattr(mediainfo, "type", None))
-        title = self._normalize_text(data.get("title") or getattr(mediainfo, "title", ""))
-        year = self._normalize_text(data.get("year") or getattr(mediainfo, "year", ""))
-        tmdb_id = data.get("tmdb_id") or getattr(mediainfo, "tmdb_id", None)
-        douban_id = self._normalize_text(data.get("douban_id") or getattr(mediainfo, "douban_id", ""))
-        poster_path = data.get("poster_path") or getattr(mediainfo, "poster_path", "")
-        media_id = self._normalize_text(data.get("media_id") or getattr(mediainfo, "media_id", ""))
-        if not media_id and tmdb_id:
-            media_id = f"tmdb:{tmdb_id}"
-        return {
-            "id": self._hash_text(f"{media_type}|{tmdb_id}|{douban_id}|{title}|{year}"),
-            "media_id": media_id,
-            "media_type": media_type,
-            "title": title,
-            "en_title": self._normalize_text(data.get("en_title") or getattr(mediainfo, "en_title", "")),
-            "year": year,
-            "tmdb_id": tmdb_id,
-            "douban_id": douban_id,
-            "poster_path": poster_path,
-            "poster_url": self._poster_url(poster_path),
-            "backdrop_url": self._poster_url(data.get("backdrop_path") or getattr(mediainfo, "backdrop_path", ""), "w780"),
-            "overview": self._normalize_text(data.get("overview") or getattr(mediainfo, "overview", "")),
-            "vote_average": data.get("vote_average") or getattr(mediainfo, "vote_average", None) or 0,
+    @classmethod
+    def _number_from_tag(cls, value: Any) -> int:
+        match = re.search(r"\d+", cls._normalize_text(value))
+        return cls._safe_int(match.group(0), 0) if match else 0
+
+    @classmethod
+    def _is_local_video_path(cls, storage: str, path: str) -> bool:
+        if cls._normalize_text(storage) != "local" or not path:
+            return False
+        suffix = Path(path).suffix.lower()
+        configured_exts = getattr(settings, "RMT_MEDIAEXT", set()) or set()
+        allowed_exts = {
+            ext.lower() if str(ext).startswith(".") else f".{str(ext).lower()}"
+            for ext in configured_exts
         }
-
-    def _resolve_mediainfo(
-        self,
-        media_type: str,
-        tmdb_id: Any = None,
-        douban_id: Any = None,
-        title: str = "",
-        year: str = "",
-    ) -> Any:
-        mtype = self._media_type_enum(media_type)
-        if not mtype:
-            raise HTTPException(status_code=400, detail="媒体类型必须是 movie 或 tv")
-
-        chain = MediaChain()
-        clean_tmdb_id = self._safe_int(tmdb_id, 0)
-        clean_douban_id = self._normalize_text(douban_id)
-        if clean_tmdb_id:
-            mediainfo = chain.recognize_media(mtype=mtype, tmdbid=clean_tmdb_id, cache=True)
-            if mediainfo:
-                return mediainfo
-        if clean_douban_id:
-            mediainfo = chain.recognize_media(mtype=mtype, doubanid=clean_douban_id, cache=True)
-            if mediainfo:
-                return mediainfo
-
-        clean_title = self._normalize_text(title)
-        if clean_title:
-            try:
-                _, medias = chain.search(title=clean_title)
-            except Exception as exc:
-                raise HTTPException(status_code=500, detail=f"MoviePilot 搜索媒体失败: {exc}") from exc
-            for media in medias or []:
-                if self._media_type_text(getattr(media, "type", "")) != self._media_type_text(media_type):
-                    continue
-                media_year = self._normalize_text(getattr(media, "year", ""))
-                if year and media_year and media_year != self._normalize_text(year):
-                    continue
-                return media
-
-        raise HTTPException(status_code=404, detail="未能识别选中的媒体，请重新搜索后选择")
-
-    async def _search_media_candidates(self, keyword: str, media_type: str, limit: int) -> List[Dict[str, Any]]:
-        clean_keyword = self._normalize_text(keyword)
-        if not clean_keyword:
-            return []
-
+        if suffix and allowed_exts and suffix not in allowed_exts:
+            return False
         try:
-            _, medias = await MediaChain().async_search(title=clean_keyword)
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"MoviePilot 搜索媒体失败: {exc}") from exc
+            return Path(path).is_file()
+        except Exception:
+            return False
 
-        result: List[Dict[str, Any]] = []
-        expected_type = self._media_type_text(media_type)
-        for media in medias or []:
-            item = self._media_from_info(media)
-            if expected_type and item.get("media_type") != expected_type:
-                continue
-            if not item.get("title") or not item.get("media_type"):
-                continue
-            result.append(item)
-            if len(result) >= limit:
-                break
-        return result
+    def _build_entry_from_history(self, history: Any) -> Optional[Dict[str, Any]]:
+        if not getattr(history, "status", False):
+            return None
 
-    def _build_entry_from_fileitem(self, fileitem: Any, mediainfo: Any) -> Optional[Dict[str, Any]]:
-        path = self._normalize_text(getattr(fileitem, "path", None))
-        if not path:
+        raw_fileitem = getattr(history, "dest_fileitem", None)
+        fileitem = raw_fileitem if isinstance(raw_fileitem, dict) else {}
+        storage = self._normalize_text(fileitem.get("storage") or getattr(history, "dest_storage", "")) or "local"
+        path = self._normalize_text(fileitem.get("path") or getattr(history, "dest", ""))
+        if not self._is_local_video_path(storage, path):
             return None
 
         file_path = Path(path)
-        basename = self._normalize_text(getattr(fileitem, "basename", None)) or file_path.stem
-        filename = self._normalize_text(getattr(fileitem, "name", None)) or file_path.name
-        storage = self._normalize_text(getattr(fileitem, "storage", None)) or "local"
-        media_type = self._media_type_text(getattr(mediainfo, "type", None))
-        title = self._normalize_text(getattr(mediainfo, "title", ""))
-        year = self._normalize_text(getattr(mediainfo, "year", ""))
+        filename = self._normalize_text(fileitem.get("name")) or file_path.name
+        basename = self._normalize_text(fileitem.get("basename")) or file_path.stem
+        media_type = self._media_type_text(getattr(history, "type", ""))
+        if not media_type:
+            return None
 
-        season = 0
-        episode = 0
-        try:
-            meta = MetaInfoPath(file_path)
-            season = self._safe_int(getattr(meta, "begin_season", None) or getattr(meta, "season", None), 0)
-            episode = self._safe_int(getattr(meta, "begin_episode", None) or getattr(meta, "episode", None), 0)
-        except Exception:
-            pass
-
+        title = self._normalize_text(getattr(history, "title", ""))
+        year = self._normalize_text(getattr(history, "year", ""))
+        season = self._number_from_tag(getattr(history, "seasons", ""))
+        episode = self._number_from_tag(getattr(history, "episodes", ""))
+        if not season or not episode:
+            try:
+                meta = MetaInfoPath(file_path)
+                season = season or self._safe_int(getattr(meta, "begin_season", None) or getattr(meta, "season", None), 0)
+                episode = episode or self._safe_int(getattr(meta, "begin_episode", None) or getattr(meta, "episode", None), 0)
+            except Exception:
+                pass
         episode_hint = self._extract_episode_hint(filename or basename)
         if episode_hint:
             season = season or episode_hint.get("season", 0)
@@ -459,6 +386,9 @@ class SubtitleManualUpload(_PluginBase):
         if media_type == "tv" and episode and not season:
             season = 1
 
+        tmdb_id = self._safe_int(getattr(history, "tmdbid", 0), 0)
+        douban_id = self._normalize_text(getattr(history, "doubanid", ""))
+        media_key = self._hash_text(f"{media_type}|{tmdb_id}|{douban_id}|{title}|{year}")
         entry_id = self._hash_text(f"{storage}|{path}")
         if media_type == "tv":
             prefix = f"S{season:02d}E{episode:02d}" if season and episode else basename
@@ -468,9 +398,13 @@ class SubtitleManualUpload(_PluginBase):
 
         return {
             "id": entry_id,
+            "media_key": media_key,
             "media_type": media_type,
             "title": title,
             "year": year,
+            "tmdb_id": tmdb_id,
+            "douban_id": douban_id,
+            "poster_url": self._poster_url(getattr(history, "image", "")),
             "season": season,
             "episode": episode,
             "path": path,
@@ -480,38 +414,105 @@ class SubtitleManualUpload(_PluginBase):
             "library_name": "MoviePilot 媒体库",
             "relative_path": path.replace("\\", "/"),
             "target_label": target_label,
-            "writable": storage == "local",
+            "writable": True,
+            "date": self._normalize_text(getattr(history, "date", "")),
         }
 
-    def _season_catalog(self, tmdb_id: Any) -> Dict[int, Dict[str, Any]]:
-        clean_tmdb_id = self._safe_int(tmdb_id, 0)
-        if not clean_tmdb_id:
-            return {}
+    async def _search_media_candidates(self, keyword: str, media_type: str, limit: int) -> List[Dict[str, Any]]:
+        clean_keyword = self._normalize_text(keyword)
+        count = max(limit * 80, 200)
         try:
-            seasons = TmdbChain().tmdb_seasons(tmdbid=clean_tmdb_id) or []
+            if clean_keyword:
+                histories = TransferHistory.list_by_title(
+                    db=None,
+                    title=clean_keyword,
+                    page=1,
+                    count=count,
+                    status=True,
+                ) or []
+            else:
+                histories = TransferHistory.list_by_page(
+                    db=None,
+                    page=1,
+                    count=count,
+                    status=True,
+                ) or []
         except Exception as exc:
-            logger.warning("[SubtitleManualUpload] 获取 TMDB 季信息失败 %s: %s", clean_tmdb_id, exc)
-            return {}
+            raise HTTPException(status_code=500, detail=f"读取 MoviePilot 本地整理记录失败: {exc}") from exc
 
-        result: Dict[int, Dict[str, Any]] = {}
-        for season in seasons:
-            season_number = self._safe_int(getattr(season, "season_number", None), -1)
-            if season_number < 0:
+        expected_type = self._media_type_text(media_type)
+        entries: List[Dict[str, Any]] = []
+        seen_paths = set()
+        for history in histories:
+            entry = self._build_entry_from_history(history)
+            if not entry:
                 continue
-            poster_path = getattr(season, "poster_path", "")
-            result[season_number] = {
-                "season": season_number,
-                "name": self._normalize_text(getattr(season, "name", "")) or f"第 {season_number} 季",
-                "episode_count": self._safe_int(getattr(season, "episode_count", None), 0),
-                "poster_url": self._poster_url(poster_path),
-                "local_count": 0,
-                "episodes": [],
-                "available": False,
-            }
-        return result
+            if expected_type and entry.get("media_type") != expected_type:
+                continue
+            if entry["path"] in seen_paths:
+                continue
+            seen_paths.add(entry["path"])
+            entries.append(entry)
+        candidates = self._group_entries_as_media(entries, limit)
+        for media in candidates:
+            detail = self._targets_for_media(
+                media_type=media.get("media_type"),
+                tmdb_id=media.get("tmdb_id"),
+                douban_id=media.get("douban_id"),
+                title=media.get("title"),
+                year=media.get("year"),
+                season="all",
+            )
+            detail_media = detail.get("media") or {}
+            media["local_count"] = detail.get("all_target_count", media.get("local_count", 0))
+            media["seasons"] = detail.get("seasons", media.get("seasons", []))
+            media["season_count"] = len(media["seasons"])
+            media["poster_url"] = detail_media.get("poster_url") or media.get("poster_url", "")
+        return candidates
 
-    def _merge_seasons(self, entries: List[Dict[str, Any]], tmdb_id: Any) -> List[Dict[str, Any]]:
-        seasons = self._season_catalog(tmdb_id)
+    def _group_entries_as_media(self, entries: List[Dict[str, Any]], limit: int) -> List[Dict[str, Any]]:
+        groups: Dict[str, Dict[str, Any]] = {}
+        for entry in entries:
+            key = entry["media_key"]
+            group = groups.setdefault(
+                key,
+                {
+                    "id": key,
+                    "media_id": key,
+                    "media_type": entry.get("media_type"),
+                    "title": entry.get("title"),
+                    "en_title": "",
+                    "year": entry.get("year"),
+                    "tmdb_id": entry.get("tmdb_id"),
+                    "douban_id": entry.get("douban_id"),
+                    "poster_url": entry.get("poster_url"),
+                    "backdrop_url": "",
+                    "overview": "",
+                    "vote_average": 0,
+                    "local_count": 0,
+                    "season_count": 0,
+                    "latest_at": entry.get("date", ""),
+                    "_entries": [],
+                },
+            )
+            group["_entries"].append(entry)
+            group["local_count"] += 1
+            if entry.get("poster_url") and not group.get("poster_url"):
+                group["poster_url"] = entry["poster_url"]
+            if entry.get("date") and entry["date"] > group.get("latest_at", ""):
+                group["latest_at"] = entry["date"]
+
+        result = []
+        for group in groups.values():
+            seasons = self._merge_seasons(group.pop("_entries"))
+            group["seasons"] = seasons
+            group["season_count"] = len(seasons)
+            result.append(group)
+        result.sort(key=lambda item: (item.get("latest_at", ""), item.get("title", "")), reverse=True)
+        return result[:limit]
+
+    def _merge_seasons(self, entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        seasons: Dict[int, Dict[str, Any]] = {}
         for entry in entries:
             season = self._safe_int(entry.get("season"), 0)
             episode = self._safe_int(entry.get("episode"), 0)
@@ -537,6 +538,7 @@ class SubtitleManualUpload(_PluginBase):
         result = list(seasons.values())
         for item in result:
             item["episodes"] = sorted(item.get("episodes") or [])
+            item["episode_count"] = len(item["episodes"])
         result.sort(key=lambda item: item.get("season", 0))
         return result
 
@@ -549,36 +551,79 @@ class SubtitleManualUpload(_PluginBase):
         year: str = "",
         season: Any = None,
     ) -> Dict[str, Any]:
-        mediainfo = self._resolve_mediainfo(
-            media_type=media_type,
-            tmdb_id=tmdb_id,
-            douban_id=douban_id,
-            title=title,
-            year=year,
-        )
-        media = self._media_from_info(mediainfo)
-
         try:
-            fileitems = MediaChain().media_files(mediainfo) or []
+            clean_type = self._media_type_text(media_type)
+            history_type = self._history_type_text(clean_type)
+            clean_tmdb_id = self._safe_int(tmdb_id, 0)
+            clean_title = self._normalize_text(title)
+            clean_year = self._normalize_text(year)
+            if clean_tmdb_id and history_type:
+                histories = TransferHistory.list_by(
+                    db=None,
+                    mtype=history_type,
+                    tmdbid=clean_tmdb_id,
+                ) or []
+            elif clean_title and clean_year and history_type:
+                histories = TransferHistory.list_by(
+                    db=None,
+                    mtype=history_type,
+                    title=clean_title,
+                    year=clean_year,
+                ) or []
+            elif clean_title:
+                histories = TransferHistory.list_by_title(
+                    db=None,
+                    title=clean_title,
+                    page=1,
+                    count=500,
+                    status=True,
+                ) or []
+            else:
+                histories = []
         except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"读取 MoviePilot 媒体库文件失败: {exc}") from exc
+            raise HTTPException(status_code=500, detail=f"读取 MoviePilot 本地资源失败: {exc}") from exc
 
         entries = []
-        for fileitem in fileitems:
-            entry = self._build_entry_from_fileitem(fileitem, mediainfo)
-            if entry:
+        seen_paths = set()
+        for history in histories:
+            entry = self._build_entry_from_history(history)
+            if not entry:
+                continue
+            if clean_type and entry.get("media_type") != clean_type:
+                continue
+            if clean_title and entry.get("title") != clean_title:
+                continue
+            if clean_year and entry.get("year") != clean_year:
+                continue
+            if clean_tmdb_id and self._safe_int(entry.get("tmdb_id"), 0) != clean_tmdb_id:
+                continue
+            if entry["path"] not in seen_paths:
+                seen_paths.add(entry["path"])
                 entries.append(entry)
 
         entries.sort(key=lambda item: (item.get("season", 0), item.get("episode", 0), item.get("filename", "")))
-        seasons = self._merge_seasons(entries, media.get("tmdb_id")) if media.get("media_type") == "tv" else []
+        media_groups = self._group_entries_as_media(entries, 1)
+        media = media_groups[0] if media_groups else {
+            "id": self._hash_text(f"{clean_type}|{clean_tmdb_id}|{douban_id}|{clean_title}|{clean_year}"),
+            "media_id": "",
+            "media_type": clean_type,
+            "title": clean_title,
+            "year": clean_year,
+            "tmdb_id": clean_tmdb_id,
+            "douban_id": self._normalize_text(douban_id),
+            "poster_url": "",
+            "local_count": 0,
+            "season_count": 0,
+        }
+        seasons = self._merge_seasons(entries) if media.get("media_type") == "tv" else []
 
-        selected_season = self._safe_int(season, 0)
-        if media.get("media_type") == "tv" and not selected_season:
-            available_seasons = [item["season"] for item in seasons if item.get("available")]
-            selected_season = available_seasons[0] if available_seasons else 0
+        season_value = self._normalize_text(season)
+        selected_season: Any = "all"
+        if media.get("media_type") == "tv" and season_value not in {"", "all", "0"}:
+            selected_season = self._safe_int(season_value, 0) or "all"
 
         visible_entries = entries
-        if media.get("media_type") == "tv" and selected_season:
+        if media.get("media_type") == "tv" and selected_season != "all":
             visible_entries = [entry for entry in entries if self._safe_int(entry.get("season"), 0) == selected_season]
 
         self._remember_targets(visible_entries)
@@ -861,7 +906,7 @@ class SubtitleManualUpload(_PluginBase):
         return self._ok(
             {
                 "enabled": self.get_state(),
-                "source": "MoviePilot MediaChain",
+                "source": "MoviePilot 本地整理记录",
                 "index": {"ready": True, "updated_at": "", "entry_count": 0},
                 "timeline_fixer": check_timeline_fixer_dependencies(),
             }
@@ -872,7 +917,7 @@ class SubtitleManualUpload(_PluginBase):
             {
                 "realtime": True,
             },
-            message="已改用 MoviePilot 实时媒体搜索，无需刷新索引",
+            message="已改用 MoviePilot 本地整理记录实时读取，无需刷新索引",
         )
 
     async def api_search(self, request: Request) -> Dict[str, Any]:
@@ -978,6 +1023,10 @@ class SubtitleManualUpload(_PluginBase):
             preview_items.append(preview_item)
 
         self._auto_fill_missing_targets(preview_items, targets)
+        target_lookup = {item["id"]: item for item in targets if item.get("id")}
+        for item in preview_items:
+            target = target_lookup.get(item.get("target_id"))
+            item["output_name"] = self._build_destination_name(target, item) if target else ""
 
         session_payload = {
             "session_id": session_id,

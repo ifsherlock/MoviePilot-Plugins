@@ -22,13 +22,14 @@ const props = defineProps({
 })
 
 const pluginBase = computed(() => `plugin/${props.pluginId || 'SubtitleManualUpload'}`)
-const status = ref({ enabled: false, source: 'MoviePilot MediaChain', timeline_fixer: { available: false, modules: {} } })
+const status = ref({ enabled: false, source: 'MoviePilot 本地整理记录', timeline_fixer: { available: false, modules: {} } })
 const loading = ref(false)
 const searching = ref(false)
 const resolving = ref(false)
 const refreshing = ref(false)
 const preparing = ref(false)
 const applying = ref(false)
+const dragging = ref(false)
 const message = ref('')
 const error = ref('')
 const searchKeyword = ref('')
@@ -36,7 +37,7 @@ const mediaType = ref('all')
 const medias = ref([])
 const selectedMedia = ref(null)
 const seasons = ref([])
-const selectedSeason = ref(null)
+const selectedSeason = ref('all')
 const targets = ref([])
 const selectedTargetIds = ref([])
 const files = ref([])
@@ -45,21 +46,34 @@ const fileInputRef = ref(null)
 const fixTimeline = ref(false)
 const lastWritten = ref([])
 
-const availableSeasonItems = computed(() => {
-  return seasons.value
-    .filter(item => item.available)
-    .map(item => ({
-      title: `${seasonLabel(item.season)} · 本地 ${item.local_count || 0} 集${item.episode_count ? ` / TMDB ${item.episode_count} 集` : ''}`,
-      value: item.season,
-    }))
-})
-
 const selectedTargets = computed(() => {
   const picked = new Set(selectedTargetIds.value || [])
   return targets.value.filter(item => picked.has(item.id))
 })
 
-const canPrepare = computed(() => selectedTargetIds.value.length > 0 && files.value.length > 0)
+const seasonItems = computed(() => {
+  if (selectedMedia.value?.media_type !== 'tv') return []
+  const total = seasons.value.reduce((sum, item) => sum + Number(item.local_count || 0), 0)
+  return [
+    { title: `全部季度 · 本地 ${total} 集`, value: 'all', count: total },
+    ...seasons.value
+      .filter(item => item.available)
+      .map(item => ({
+        title: `${seasonLabel(item.season)} · 本地 ${item.local_count || 0} 集`,
+        value: item.season,
+        count: item.local_count || 0,
+      })),
+  ]
+})
+
+const targetSelectItems = computed(() => {
+  return selectedTargets.value.map(target => ({
+    title: targetLabel(target),
+    value: target.id,
+  }))
+})
+
+const canPrepare = computed(() => selectedTargets.value.length > 0 && files.value.length > 0)
 const canApply = computed(() => {
   const items = preview.value?.items || []
   return items.length > 0 && items.every(item => item.target_id)
@@ -86,6 +100,24 @@ function seasonLabel(season) {
   return value === 0 ? '特别篇' : `第 ${value} 季`
 }
 
+function compactTargetName(target) {
+  if (!target) return ''
+  if (target.media_type !== 'tv') return target.basename || targetLabel(target)
+  const season = Number(target.season || 0)
+  const episode = Number(target.episode || 0)
+  if (season && episode) return `S${String(season).padStart(2, '0')}E${String(episode).padStart(2, '0')} · ${target.basename}`
+  return target.basename || targetLabel(target)
+}
+
+function mediaStat(media) {
+  const count = Number(media?.local_count || 0)
+  if (media?.media_type === 'tv') {
+    const seasonCount = Number(media?.season_count || 0)
+    return `${seasonCount || '-'} 季 · ${count} 集本地视频`
+  }
+  return `${count || 1} 个本地视频`
+}
+
 function formatOffset(value) {
   const number = Number(value || 0)
   return `${number >= 0 ? '+' : ''}${number.toFixed(3)}s`
@@ -101,9 +133,18 @@ function timelineResultText(item) {
   return `未调整：偏移 ${formatOffset(timeline.offset_seconds)} 小于阈值 · ${base}`
 }
 
+function buildOutputName(target, item) {
+  if (!target) return ''
+  const basename = target.basename || 'subtitle'
+  const suffix = item?.language_suffix || 'und'
+  let ext = item?.ext || '.srt'
+  if (!ext.startsWith('.')) ext = `.${ext}`
+  return `${basename}.${suffix}${ext.toLowerCase()}`
+}
+
 function clearTargetState() {
   seasons.value = []
-  selectedSeason.value = null
+  selectedSeason.value = 'all'
   targets.value = []
   selectedTargetIds.value = []
   preview.value = null
@@ -128,7 +169,7 @@ async function refreshIndex() {
   error.value = ''
   try {
     const response = await props.api.post(`${pluginBase.value}/refresh_index`, {})
-    message.value = response?.message || '已改用 MoviePilot 实时媒体搜索，无需刷新索引'
+    message.value = response?.message || '已改用 MoviePilot 本地整理记录实时读取，无需刷新索引'
   } catch (err) {
     error.value = err?.message || '刷新状态失败'
   } finally {
@@ -138,11 +179,6 @@ async function refreshIndex() {
 
 async function runSearch() {
   const keyword = searchKeyword.value.trim()
-  if (!keyword) {
-    error.value = '请输入电影名或剧名'
-    return
-  }
-
   searching.value = true
   error.value = ''
   message.value = ''
@@ -152,15 +188,17 @@ async function runSearch() {
     const params = new URLSearchParams()
     params.set('keyword', keyword)
     params.set('media_type', mediaType.value)
-    params.set('limit', '24')
+    params.set('limit', '36')
     const response = await props.api.get(`${pluginBase.value}/search?${params.toString()}`)
     const data = unwrapResponse(response) || {}
     medias.value = data.medias || []
     if (!medias.value.length) {
-      message.value = '没有找到媒体候选，请换一个关键词试试'
+      message.value = keyword
+        ? '本地资源库里没有匹配的视频目标，请换个关键词试试'
+        : '本地整理记录里暂时没有可用的视频目标'
     }
   } catch (err) {
-    error.value = err?.message || '搜索媒体失败'
+    error.value = err?.message || '搜索本地资源失败'
   } finally {
     searching.value = false
   }
@@ -187,22 +225,20 @@ async function loadTargets(media = selectedMedia.value, season = selectedSeason.
   preview.value = null
   lastWritten.value = []
   try {
-    const params = buildMediaParams(media, season)
+    const params = buildMediaParams(media, season || 'all')
     const response = await props.api.get(`${pluginBase.value}/targets?${params.toString()}`)
     const data = unwrapResponse(response) || {}
     selectedMedia.value = data.media || media
     seasons.value = data.seasons || []
-    selectedSeason.value = data.selected_season ?? null
+    selectedSeason.value = data.selected_season ?? 'all'
     targets.value = data.targets || []
     selectedTargetIds.value = targets.value.filter(item => item.writable !== false).map(item => item.id)
 
     if (!targets.value.length) {
-      message.value = `${mediaLabel(selectedMedia.value)} 未在 MoviePilot 本地媒体库中找到可写入的视频文件`
-    } else {
-      message.value = `已读取 ${targets.value.length} 个本地目标文件`
+      message.value = `${mediaLabel(selectedMedia.value)} 没有找到本地可写入的视频文件`
     }
   } catch (err) {
-    error.value = err?.message || '读取媒体库目标失败'
+    error.value = err?.message || '读取本地视频目标失败'
   } finally {
     resolving.value = false
   }
@@ -211,7 +247,7 @@ async function loadTargets(media = selectedMedia.value, season = selectedSeason.
 async function selectMedia(media) {
   selectedMedia.value = media
   clearTargetState()
-  await loadTargets(media, null)
+  await loadTargets(media, 'all')
 }
 
 async function changeSeason(season) {
@@ -221,7 +257,6 @@ async function changeSeason(season) {
 
 function resetSelection() {
   selectedMedia.value = null
-  medias.value = []
   clearTargetState()
 }
 
@@ -255,12 +290,19 @@ function openFileDialog() {
 
 function handleDrop(event) {
   event.preventDefault()
+  dragging.value = false
   const dropped = Array.from(event.dataTransfer?.files || [])
   mergeFiles(dropped)
 }
 
 function handleDragOver(event) {
   event.preventDefault()
+  dragging.value = true
+}
+
+function handleDragLeave(event) {
+  event.preventDefault()
+  dragging.value = false
 }
 
 async function prepareUpload() {
@@ -275,6 +317,12 @@ async function prepareUpload() {
     })
     const response = await props.api.post(`${pluginBase.value}/prepare_upload`, formData)
     preview.value = unwrapResponse(response)
+    if (preview.value?.items) {
+      preview.value.items.forEach(item => {
+        const target = selectedTargets.value.find(targetItem => targetItem.id === item.target_id)
+        item.output_name = item.output_name || buildOutputName(target, item)
+      })
+    }
     lastWritten.value = []
     message.value = response?.message || '已生成匹配预览'
   } catch (err) {
@@ -285,11 +333,11 @@ async function prepareUpload() {
 }
 
 function updatePreviewTarget(uploadId, targetId) {
-  const items = preview.value?.items || []
-  const target = items.find(item => item.upload_id === uploadId)
-  if (target) {
-    target.target_id = targetId
-  }
+  const item = (preview.value?.items || []).find(previewItem => previewItem.upload_id === uploadId)
+  if (!item) return
+  const target = selectedTargets.value.find(targetItem => targetItem.id === targetId)
+  item.target_id = targetId
+  item.output_name = buildOutputName(target, item)
 }
 
 async function applyUpload() {
@@ -339,17 +387,17 @@ defineExpose({
   <div class="subtitle-upload-page">
     <div v-if="!hideTitle" class="hero-shell">
       <div class="hero-copy">
-        <div class="hero-eyebrow">MoviePilot 媒体库字幕工具</div>
+        <div class="hero-eyebrow">MoviePilot 本地字幕工作台</div>
         <h1 class="hero-title">字幕手传匹配</h1>
         <p class="hero-text">
-          像 CSB 一样先搜索媒体并确认封面，再读取 MoviePilot 已入库文件。剧集可按季度选择目标，然后拖入字幕或 ZIP 自动匹配写入。
+          只从 MoviePilot 本地资源库里找已有视频，左侧选资源和季度，中间确认目标与改名预览，右侧拖入字幕或 ZIP 后写入。
         </p>
       </div>
       <div class="hero-meta">
         <div class="meta-card">
-          <div class="meta-label">当前链路</div>
-          <div class="meta-value">MP</div>
-          <div class="meta-hint">{{ status.source || 'MoviePilot MediaChain' }}</div>
+          <div class="meta-label">数据来源</div>
+          <div class="meta-value">LOCAL</div>
+          <div class="meta-hint">{{ status.source || 'MoviePilot 本地整理记录' }}</div>
         </div>
       </div>
     </div>
@@ -370,41 +418,44 @@ defineExpose({
     />
 
     <div class="workspace-grid">
-      <VCard class="panel-card" rounded="xl" elevation="0">
-        <VCardTitle class="panel-title">1. 搜索并选择媒体</VCardTitle>
+      <VCard class="panel-card resource-panel" rounded="xl" elevation="0">
+        <VCardTitle class="panel-title">
+          <span>选择本地资源</span>
+          <VBtn size="small" variant="text" :loading="refreshing" @click="refreshIndex">接口状态</VBtn>
+        </VCardTitle>
         <VCardText>
-          <div class="toolbar-row">
+          <div class="search-stack">
             <VTextField
               v-model="searchKeyword"
-              label="电影名、剧名或英文名"
+              label="片名、剧名或文件路径关键词"
               variant="outlined"
               density="comfortable"
               hide-details
+              clearable
               @keyup.enter="runSearch"
             />
-            <VSelect
-              v-model="mediaType"
-              :items="[
-                { title: '全部', value: 'all' },
-                { title: '电影', value: 'movie' },
-                { title: '剧集', value: 'tv' },
-              ]"
-              label="类型"
-              variant="outlined"
-              density="comfortable"
-              hide-details
-            />
-          </div>
-          <div class="toolbar-actions">
-            <VBtn color="primary" :loading="searching" @click="runSearch">搜索媒体</VBtn>
-            <VBtn variant="tonal" :loading="refreshing" @click="refreshIndex">接口状态</VBtn>
+            <div class="search-actions">
+              <VSelect
+                v-model="mediaType"
+                :items="[
+                  { title: '全部', value: 'all' },
+                  { title: '电影', value: 'movie' },
+                  { title: '剧集', value: 'tv' },
+                ]"
+                label="类型"
+                variant="outlined"
+                density="comfortable"
+                hide-details
+              />
+              <VBtn color="primary" :loading="searching" @click="runSearch">搜索本地</VBtn>
+            </div>
           </div>
 
-          <div v-if="medias.length" class="media-grid">
+          <div v-if="medias.length" class="media-list">
             <button
               v-for="media in medias"
               :key="media.id"
-              class="media-card"
+              class="media-row"
               :class="{ active: selectedMedia?.id === media.id }"
               @click="selectMedia(media)"
             >
@@ -418,83 +469,151 @@ defineExpose({
                 <div v-else class="poster-fallback">{{ formatMediaType(media.media_type) }}</div>
               </div>
               <div class="media-info">
-                <div class="media-type">{{ formatMediaType(media.media_type) }}</div>
                 <div class="media-title">{{ mediaLabel(media) }}</div>
-                <div v-if="media.en_title" class="media-subtitle">{{ media.en_title }}</div>
                 <div class="media-meta">
-                  <span v-if="media.vote_average">TMDB {{ Number(media.vote_average).toFixed(1) }}</span>
-                  <span v-if="media.tmdb_id">#{{ media.tmdb_id }}</span>
+                  <span>{{ formatMediaType(media.media_type) }}</span>
+                  <span>{{ mediaStat(media) }}</span>
                 </div>
               </div>
             </button>
           </div>
           <div v-else class="empty-state">
-            输入关键词搜索媒体。结果会使用 MoviePilot 的媒体搜索能力，并直接展示封面。
+            输入关键词搜索本地已有资源；留空点击搜索会显示最近整理的视频。
           </div>
 
-          <div v-if="selectedMedia" class="target-shell">
-            <div class="selected-media">
+          <div v-if="selectedMedia?.media_type === 'tv'" class="season-section">
+            <div class="section-kicker">季度</div>
+            <button
+              v-for="season in seasonItems"
+              :key="season.value"
+              class="season-row"
+              :class="{ active: String(selectedSeason) === String(season.value) }"
+              :disabled="resolving"
+              @click="changeSeason(season.value)"
+            >
+              <span>{{ season.title }}</span>
+              <span class="season-dot">{{ season.count }}</span>
+            </button>
+          </div>
+        </VCardText>
+      </VCard>
+
+      <VCard class="panel-card preview-panel" rounded="xl" elevation="0">
+        <VCardTitle class="panel-title">
+          <span>目标与预览</span>
+          <span v-if="selectedTargets.length" class="panel-count">{{ selectedTargets.length }} 个目标</span>
+        </VCardTitle>
+        <VCardText>
+          <div v-if="!selectedMedia" class="center-empty">
+            <div class="empty-title">先从左侧选择一个本地资源</div>
+            <div class="empty-text">这里会显示该电影或剧集季度下的真实视频文件，不再混入库里没有的视频目标。</div>
+          </div>
+
+          <template v-else>
+            <div class="selected-header">
               <img
                 v-if="selectedMedia.poster_url"
                 class="selected-poster"
                 :src="selectedMedia.poster_url"
                 :alt="mediaLabel(selectedMedia)"
               >
-              <div class="selected-copy">
-                <div class="target-title">已选：{{ mediaLabel(selectedMedia) }}</div>
-                <div class="target-caption">
-                  正在读取 MoviePilot 媒体库中这个条目的实际视频文件。
+              <div>
+                <div class="selected-title">{{ mediaLabel(selectedMedia) }}</div>
+                <div class="selected-subtitle">
+                  {{ selectedMedia.media_type === 'tv' ? (String(selectedSeason) === 'all' ? '全部季度' : seasonLabel(selectedSeason)) : '电影文件' }}
+                </div>
+              </div>
+              <VBtn size="small" variant="tonal" @click="resetSelection">重选</VBtn>
+            </div>
+
+            <div class="target-list">
+              <div
+                v-for="target in selectedTargets"
+                :key="target.id"
+                class="target-row"
+              >
+                <div class="target-index">{{ target.media_type === 'tv' ? `E${String(target.episode || 0).padStart(2, '0')}` : 'MOV' }}</div>
+                <div class="target-copy">
+                  <div class="target-name">{{ compactTargetName(target) }}</div>
+                  <div class="target-path">{{ target.relative_path }}</div>
                 </div>
               </div>
             </div>
 
-            <VSelect
-              v-if="selectedMedia.media_type === 'tv' && availableSeasonItems.length"
-              class="season-select"
-              :model-value="selectedSeason"
-              :items="availableSeasonItems"
-              label="选择季度"
-              variant="outlined"
-              density="comfortable"
-              hide-details
-              :loading="resolving"
-              @update:model-value="changeSeason"
-            />
+            <div v-if="!selectedTargets.length" class="empty-state compact">
+              {{ resolving ? '正在读取本地视频目标...' : '这个资源没有可写入的本地视频文件。' }}
+            </div>
 
-            <div v-if="targets.length" class="target-list">
-              <label
-                v-for="target in targets"
-                :key="target.id"
-                class="target-item"
-                :class="{ disabled: target.writable === false }"
-              >
-                <input
-                  v-model="selectedTargetIds"
-                  type="checkbox"
-                  :value="target.id"
-                  :disabled="target.writable === false"
+            <div v-if="preview?.items?.length" class="preview-section">
+              <div class="section-head">
+                <div>
+                  <div class="section-title">匹配预览</div>
+                  <div class="section-desc">检查每个字幕对应的视频目标和最终落盘文件名。</div>
+                </div>
+              </div>
+
+              <div class="match-list">
+                <div
+                  v-for="item in preview.items"
+                  :key="item.upload_id"
+                  class="match-row"
                 >
-                <span>{{ targetLabel(target) }}</span>
-              </label>
+                  <div class="subtitle-source">
+                    <div class="source-name">{{ item.source_name }}</div>
+                    <div class="source-meta">
+                      <span v-if="item.archive_name">来自 {{ item.archive_name }}</span>
+                      <span>{{ item.detected_label || '未知语言' }}</span>
+                      <span>{{ item.language_suffix }}</span>
+                    </div>
+                  </div>
+                  <VSelect
+                    :model-value="item.target_id"
+                    :items="targetSelectItems"
+                    label="匹配目标"
+                    variant="outlined"
+                    density="comfortable"
+                    hide-details
+                    @update:model-value="value => updatePreviewTarget(item.upload_id, value)"
+                  />
+                  <div class="output-name">
+                    <span>改名为</span>
+                    <strong>{{ item.output_name || buildOutputName(selectedTargets.find(target => target.id === item.target_id), item) || '待选择目标' }}</strong>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div v-else class="empty-state compact">
-              {{ resolving ? '正在读取媒体库目标...' : '这个媒体还没有可写入的本地视频目标。' }}
+
+            <div v-if="lastWritten.length" class="result-section">
+              <div class="section-title">写入结果</div>
+              <div class="result-list">
+                <div v-for="item in lastWritten" :key="item.output_path" class="result-row">
+                  <div>
+                    <div class="source-name">{{ item.output_name }}</div>
+                    <div class="source-meta">{{ item.target_label }}</div>
+                  </div>
+                  <div class="result-badge" :class="{ active: item.timeline?.applied }">
+                    {{ timelineResultText(item) }}
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
+          </template>
         </VCardText>
       </VCard>
 
-      <VCard class="panel-card" rounded="xl" elevation="0">
-        <VCardTitle class="panel-title">2. 上传并确认匹配</VCardTitle>
+      <VCard class="panel-card upload-panel" rounded="xl" elevation="0">
+        <VCardTitle class="panel-title">上传字幕</VCardTitle>
         <VCardText>
           <div
             class="dropzone"
+            :class="{ dragging }"
             @drop="handleDrop"
             @dragover="handleDragOver"
+            @dragleave="handleDragLeave"
           >
             <div class="dropzone-icon">SRT / ASS / ZIP</div>
-            <div class="dropzone-title">拖拽字幕文件或 ZIP 到这里</div>
-            <div class="dropzone-text">可以一次选择多个字幕。ZIP 会自动解包，只保留字幕文件参与匹配。</div>
+            <div class="dropzone-title">拖入字幕或压缩包</div>
+            <div class="dropzone-text">支持多文件上传；ZIP 会自动解包，只保留字幕文件参与匹配。</div>
             <VBtn color="primary" variant="flat" @click="openFileDialog">选择文件</VBtn>
             <input
               ref="fileInputRef"
@@ -507,7 +626,7 @@ defineExpose({
           </div>
 
           <div v-if="files.length" class="file-list">
-            <div v-for="file in files" :key="`${file.name}-${file.size}`" class="file-item">
+            <div v-for="file in files" :key="`${file.name}-${file.size}`" class="file-row">
               <div>
                 <div class="file-name">{{ file.name }}</div>
                 <div class="file-size">{{ Math.max(1, Math.round(file.size / 1024)) }} KB</div>
@@ -516,84 +635,49 @@ defineExpose({
             </div>
           </div>
 
-          <div class="toolbar-actions mt-4">
-            <VBtn color="primary" :disabled="!canPrepare" :loading="preparing" @click="prepareUpload">
+          <div class="timeline-option">
+            <VSwitch
+              v-model="fixTimeline"
+              color="primary"
+              density="comfortable"
+              hide-details
+              :disabled="!timelineAvailable"
+              label="写入前智能调轴"
+            />
+            <div class="timeline-hint">
+              <span v-if="timelineAvailable">
+                使用容器内 ffmpeg/ffprobe 与 Python 依赖计算整体偏移。
+              </span>
+              <span v-else>
+                当前缺少调轴依赖{{ timelineMissing ? `：${timelineMissing}` : '' }}。
+              </span>
+            </div>
+          </div>
+
+          <div class="action-stack">
+            <VBtn
+              color="primary"
+              block
+              :disabled="!canPrepare"
+              :loading="preparing"
+              @click="prepareUpload"
+            >
               生成匹配预览
             </VBtn>
-            <VBtn variant="tonal" @click="resetSelection">重新选择媒体</VBtn>
+            <VBtn
+              color="success"
+              block
+              variant="tonal"
+              :disabled="!canApply"
+              :loading="applying"
+              @click="applyUpload"
+            >
+              写入字幕
+            </VBtn>
           </div>
 
-          <div v-if="preview?.items?.length" class="preview-shell">
-            <div class="preview-header">
-              <div class="target-title">3. 检查并写入</div>
-              <div class="target-caption">每个字幕都需要对应一个目标视频；自动匹配不准时可以手动改。</div>
-            </div>
-            <div class="timeline-option">
-              <VSwitch
-                v-model="fixTimeline"
-                color="primary"
-                density="comfortable"
-                hide-details
-                :disabled="!timelineAvailable"
-                label="写入前智能调轴"
-              />
-              <div class="timeline-hint">
-                <span v-if="timelineAvailable">
-                  使用容器内 ffmpeg/ffprobe 提取音频或内置字幕，按 CSB/ffsubsync 思路自动计算字幕偏移。
-                </span>
-                <span v-else>
-                  当前容器缺少调轴依赖{{ timelineMissing ? `：${timelineMissing}` : '' }}。
-                </span>
-              </div>
-            </div>
-            <div class="preview-list">
-              <div
-                v-for="item in preview.items"
-                :key="item.upload_id"
-                class="preview-item"
-              >
-                <div class="preview-main">
-                  <div class="preview-name">{{ item.source_name }}</div>
-                  <div class="preview-meta">
-                    <span v-if="item.archive_name">来自 {{ item.archive_name }}</span>
-                    <span>{{ item.detected_label || '未知语言' }}</span>
-                    <span>{{ item.language_suffix }}</span>
-                  </div>
-                </div>
-                <VSelect
-                  :model-value="item.target_id"
-                  :items="selectedTargets.map(target => ({ title: targetLabel(target), value: target.id }))"
-                  label="目标视频"
-                  variant="outlined"
-                  density="comfortable"
-                  hide-details
-                  @update:model-value="value => updatePreviewTarget(item.upload_id, value)"
-                />
-              </div>
-            </div>
-            <div class="toolbar-actions mt-4">
-              <VBtn color="primary" :disabled="!canApply" :loading="applying" @click="applyUpload">
-                写入字幕
-              </VBtn>
-            </div>
-          </div>
-
-          <div v-if="lastWritten.length" class="result-shell">
-            <div class="preview-header">
-              <div class="target-title">写入结果</div>
-              <div class="target-caption">字幕已按目标视频文件名落盘，下面是本次智能调轴摘要。</div>
-            </div>
-            <div class="result-list">
-              <div v-for="item in lastWritten" :key="item.output_path" class="result-item">
-                <div>
-                  <div class="file-name">{{ item.output_name }}</div>
-                  <div class="result-meta">{{ item.target_label }}</div>
-                </div>
-                <div class="result-badge" :class="{ active: item.timeline?.applied }">
-                  {{ timelineResultText(item) }}
-                </div>
-              </div>
-            </div>
+          <div class="upload-note">
+            先生成预览再写入。预览会出现在中间栏，确认改名结果后再点击写入。
           </div>
         </VCardText>
       </VCard>
@@ -606,25 +690,27 @@ defineExpose({
   min-height: 100%;
   padding: 24px;
   background:
-    radial-gradient(circle at 95% 0%, rgba(184, 214, 255, 0.36), transparent 32%),
-    linear-gradient(180deg, #f7f9fc 0%, #edf2f8 100%);
-  color: #1c2635;
+    radial-gradient(circle at 92% 4%, rgba(245, 184, 94, 0.22), transparent 30%),
+    radial-gradient(circle at 0% 0%, rgba(88, 126, 156, 0.18), transparent 34%),
+    linear-gradient(180deg, #f6f4ee 0%, #edf1f4 100%);
+  color: #1f2a32;
+  font-family: "LXGW WenKai Screen", "Noto Serif SC", "PingFang SC", sans-serif;
 }
 
 .hero-shell {
   display: grid;
-  grid-template-columns: minmax(0, 1.8fr) minmax(220px, 0.8fr);
-  gap: 20px;
-  margin-bottom: 20px;
+  grid-template-columns: minmax(0, 1.8fr) minmax(220px, 0.7fr);
+  gap: 18px;
+  margin-bottom: 18px;
 }
 
 .hero-copy,
 .hero-meta,
 .panel-card {
-  border: 1px solid rgba(127, 151, 185, 0.18);
-  background: rgba(255, 255, 255, 0.84);
-  backdrop-filter: blur(12px);
-  box-shadow: 0 18px 50px rgba(30, 63, 108, 0.08);
+  border: 1px solid rgba(93, 109, 119, 0.16);
+  background: rgba(255, 252, 245, 0.88);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 20px 50px rgba(47, 59, 68, 0.08);
 }
 
 .hero-copy {
@@ -633,13 +719,14 @@ defineExpose({
 }
 
 .hero-meta {
-  padding: 20px;
+  padding: 18px;
   border-radius: 28px;
 }
 
-.hero-eyebrow {
-  margin-bottom: 8px;
-  color: #587196;
+.hero-eyebrow,
+.meta-label,
+.section-kicker {
+  color: #7a694f;
   font-size: 12px;
   letter-spacing: 0.14em;
   text-transform: uppercase;
@@ -653,30 +740,24 @@ defineExpose({
 }
 
 .hero-text {
-  max-width: 760px;
-  margin: 14px 0 0;
-  color: #53637b;
+  max-width: 820px;
+  margin: 12px 0 0;
+  color: #596870;
   line-height: 1.7;
 }
 
 .meta-card {
+  height: 100%;
   padding: 18px;
   border-radius: 22px;
-  background: linear-gradient(145deg, #17375d, #315c94);
-  color: #f8fbff;
-}
-
-.meta-label {
-  font-size: 12px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  opacity: 0.78;
+  background: linear-gradient(145deg, #25343d, #52616a);
+  color: #fff9ed;
 }
 
 .meta-value {
   margin-top: 8px;
-  font-size: 34px;
-  font-weight: 700;
+  font-size: 30px;
+  font-weight: 800;
 }
 
 .meta-hint {
@@ -687,8 +768,9 @@ defineExpose({
 
 .workspace-grid {
   display: grid;
-  grid-template-columns: minmax(360px, 1fr) minmax(380px, 0.95fr);
-  gap: 20px;
+  grid-template-columns: minmax(280px, 0.9fr) minmax(420px, 1.45fr) minmax(300px, 0.85fr);
+  gap: 18px;
+  align-items: start;
 }
 
 .panel-card {
@@ -696,56 +778,77 @@ defineExpose({
 }
 
 .panel-title {
-  padding: 22px 24px 8px;
-  font-size: 18px;
-  font-weight: 700;
-}
-
-.toolbar-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 140px;
-  gap: 12px;
-}
-
-.toolbar-actions {
   display: flex;
-  flex-wrap: wrap;
-  gap: 12px;
-  margin-top: 14px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 20px 22px 8px;
+  font-size: 17px;
+  font-weight: 800;
 }
 
-.media-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
-  gap: 12px;
-  margin-top: 18px;
+.panel-count {
+  color: #7b8a92;
+  font-size: 13px;
+  font-weight: 500;
 }
 
-.media-card {
+.search-stack,
+.file-list,
+.target-list,
+.match-list,
+.result-list,
+.action-stack {
   display: grid;
-  grid-template-columns: 74px minmax(0, 1fr);
   gap: 12px;
-  min-height: 118px;
-  padding: 10px;
-  border: 1px solid rgba(115, 146, 188, 0.2);
-  border-radius: 18px;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 250, 255, 0.92));
+}
+
+.search-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+}
+
+.media-list,
+.season-section {
+  display: grid;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.media-row,
+.season-row {
+  width: 100%;
+  border: 1px solid rgba(109, 126, 137, 0.18);
+  background: rgba(255, 255, 255, 0.72);
+  color: inherit;
   text-align: left;
-  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+  transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
 }
 
-.media-card:hover,
-.media-card.active {
+.media-row {
+  display: grid;
+  grid-template-columns: 58px minmax(0, 1fr);
+  gap: 12px;
+  min-height: 86px;
+  padding: 10px;
+  border-radius: 18px;
+}
+
+.media-row:hover,
+.media-row.active,
+.season-row:hover,
+.season-row.active {
   transform: translateY(-1px);
-  border-color: rgba(39, 88, 153, 0.45);
-  box-shadow: 0 12px 30px rgba(41, 77, 126, 0.08);
+  border-color: rgba(161, 107, 39, 0.46);
+  background: #fff8ea;
 }
 
 .poster-shell,
 .poster,
 .poster-fallback {
-  width: 74px;
-  height: 98px;
+  width: 58px;
+  height: 76px;
   border-radius: 12px;
 }
 
@@ -757,8 +860,8 @@ defineExpose({
 .poster-fallback {
   display: grid;
   place-items: center;
-  background: #17375d;
-  color: #eef6ff;
+  background: #293942;
+  color: #fff8ea;
   font-size: 13px;
 }
 
@@ -766,169 +869,192 @@ defineExpose({
   min-width: 0;
 }
 
-.media-type {
-  color: #5a6d88;
+.media-title,
+.selected-title,
+.target-name,
+.source-name,
+.file-name,
+.section-title {
+  font-weight: 800;
+  word-break: break-all;
+}
+
+.media-meta,
+.selected-subtitle,
+.target-path,
+.source-meta,
+.file-size,
+.section-desc,
+.empty-text,
+.timeline-hint,
+.upload-note {
+  color: #65757d;
   font-size: 12px;
+  line-height: 1.55;
 }
 
-.media-title {
-  margin-top: 4px;
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1.35;
-}
-
-.media-subtitle,
-.media-meta {
-  margin-top: 6px;
-  color: #67788f;
-  font-size: 12px;
-}
-
-.media-meta {
+.media-meta,
+.source-meta {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+  margin-top: 5px;
 }
 
-.empty-state {
+.season-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 14px;
+}
+
+.season-dot,
+.target-index {
+  display: inline-grid;
+  min-width: 34px;
+  min-height: 26px;
+  place-items: center;
+  border-radius: 999px;
+  background: #eef1f2;
+  color: #53636b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.empty-state,
+.center-empty {
   padding: 22px 14px;
-  margin-top: 18px;
+  margin-top: 16px;
   border-radius: 18px;
-  background: #f4f7fb;
-  color: #6c7f97;
+  background: rgba(238, 242, 244, 0.78);
+  color: #687980;
   text-align: center;
 }
 
 .empty-state.compact {
-  margin-top: 12px;
-  padding: 16px 12px;
+  padding: 14px 12px;
 }
 
-.target-shell,
-.preview-shell,
-.result-shell {
-  margin-top: 20px;
-  padding-top: 18px;
-  border-top: 1px solid rgba(126, 151, 183, 0.18);
+.empty-title {
+  color: #24343d;
+  font-weight: 800;
 }
 
-.selected-media {
-  display: flex;
-  gap: 14px;
+.selected-header {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 12px;
   align-items: center;
+  margin-bottom: 14px;
 }
 
 .selected-poster {
-  width: 54px;
-  height: 76px;
+  width: 48px;
+  height: 68px;
   border-radius: 12px;
   object-fit: cover;
 }
 
-.selected-copy {
-  min-width: 0;
-}
-
-.season-select {
-  margin-top: 14px;
-}
-
-.target-title {
-  font-size: 16px;
-  font-weight: 700;
-}
-
-.target-caption {
-  margin-top: 4px;
-  color: #697b92;
-  font-size: 13px;
-}
-
 .target-list {
-  display: grid;
-  gap: 8px;
   max-height: 360px;
-  margin-top: 14px;
   overflow: auto;
+  padding-right: 2px;
 }
 
-.target-item {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  padding: 10px 12px;
-  border-radius: 14px;
-  background: #f4f8fc;
-  color: #34485f;
+.target-row,
+.match-row,
+.result-row,
+.file-row {
+  border: 1px solid rgba(109, 126, 137, 0.14);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.72);
 }
 
-.target-item.disabled {
-  opacity: 0.58;
-}
-
-.timeline-option {
+.target-row {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 12px;
-  align-items: center;
-  margin-top: 14px;
-  padding: 12px 14px;
-  border-radius: 18px;
-  background: #f4f8fc;
+  align-items: start;
+  padding: 11px 12px;
 }
 
-.timeline-hint {
-  color: #647790;
-  font-size: 13px;
-  line-height: 1.6;
+.preview-section,
+.result-section {
+  margin-top: 20px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(112, 128, 138, 0.16);
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.match-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) minmax(220px, 0.95fr) minmax(180px, 0.9fr);
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+}
+
+.output-name {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  color: #65757d;
+  font-size: 12px;
+}
+
+.output-name strong {
+  color: #293942;
+  word-break: break-all;
 }
 
 .dropzone {
   position: relative;
   overflow: hidden;
-  padding: 26px 20px;
-  border: 1px dashed rgba(55, 100, 165, 0.36);
+  padding: 28px 18px;
+  border: 1px dashed rgba(151, 101, 42, 0.42);
   border-radius: 24px;
-  background: linear-gradient(180deg, rgba(250, 252, 255, 0.95), rgba(239, 245, 252, 0.95));
+  background: linear-gradient(180deg, rgba(255, 250, 239, 0.95), rgba(242, 238, 229, 0.9));
   text-align: center;
+  transition: border-color 0.18s ease, transform 0.18s ease, background 0.18s ease;
 }
 
-.dropzone::before {
-  position: absolute;
-  right: -20px;
-  bottom: -40px;
-  width: 150px;
-  height: 150px;
-  border-radius: 999px;
-  background: radial-gradient(circle, rgba(131, 176, 255, 0.28), transparent 70%);
-  content: '';
+.dropzone.dragging {
+  transform: translateY(-1px);
+  border-color: rgba(169, 105, 26, 0.88);
+  background: #fff3d8;
 }
 
 .dropzone-icon {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 132px;
+  min-width: 126px;
   padding: 8px 14px;
   border-radius: 999px;
-  background: #17375d;
-  color: #eef6ff;
+  background: #293942;
+  color: #fff8ea;
   font-size: 12px;
   letter-spacing: 0.08em;
-  text-transform: uppercase;
 }
 
 .dropzone-title {
   margin-top: 16px;
   font-size: 20px;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .dropzone-text {
-  max-width: 520px;
+  max-width: 420px;
   margin: 10px auto 18px;
-  color: #647790;
+  color: #65757d;
   line-height: 1.65;
 }
 
@@ -936,94 +1062,75 @@ defineExpose({
   display: none;
 }
 
-.file-list,
-.preview-list,
-.result-list {
-  display: grid;
-  gap: 10px;
+.file-list {
   margin-top: 16px;
 }
 
-.file-item,
-.preview-item,
-.result-item {
+.file-row,
+.result-row {
   display: grid;
-  gap: 12px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
   align-items: center;
+  padding: 11px 12px;
+}
+
+.timeline-option {
+  display: grid;
+  gap: 6px;
+  margin-top: 16px;
   padding: 12px 14px;
-  border: 1px solid rgba(124, 152, 186, 0.18);
   border-radius: 18px;
-  background: rgba(249, 251, 255, 0.92);
+  background: rgba(238, 242, 244, 0.78);
 }
 
-.file-item {
-  grid-template-columns: minmax(0, 1fr) auto;
+.action-stack {
+  margin-top: 16px;
 }
 
-.preview-item {
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
-}
-
-.result-item {
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-
-.result-meta {
-  margin-top: 4px;
-  color: #667890;
-  font-size: 12px;
+.upload-note {
+  margin-top: 12px;
 }
 
 .result-badge {
   max-width: 320px;
   padding: 8px 10px;
   border-radius: 999px;
-  background: #edf3fa;
-  color: #516880;
+  background: #eef1f2;
+  color: #53636b;
   font-size: 12px;
   text-align: right;
 }
 
 .result-badge.active {
-  background: #e7f5ed;
-  color: #247149;
-}
-
-.file-name,
-.preview-name {
-  font-weight: 600;
-  word-break: break-all;
-}
-
-.file-size,
-.preview-meta {
-  margin-top: 4px;
-  color: #667890;
-  font-size: 12px;
-}
-
-.preview-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.mt-4 {
-  margin-top: 16px;
+  background: #e7f3ea;
+  color: #2b744d;
 }
 
 .mb-4 {
   margin-bottom: 16px;
 }
 
-@media (max-width: 1120px) {
-  .hero-shell,
+@media (max-width: 1280px) {
   .workspace-grid {
+    grid-template-columns: minmax(300px, 0.9fr) minmax(420px, 1.2fr);
+  }
+
+  .upload-panel {
+    grid-column: 1 / -1;
+  }
+}
+
+@media (max-width: 920px) {
+  .hero-shell,
+  .workspace-grid,
+  .match-row,
+  .selected-header {
     grid-template-columns: 1fr;
   }
 }
 
-@media (max-width: 720px) {
+@media (max-width: 640px) {
   .subtitle-upload-page {
     padding: 16px;
   }
@@ -1038,26 +1145,10 @@ defineExpose({
     font-size: 28px;
   }
 
-  .toolbar-row,
-  .preview-item,
-  .timeline-option,
-  .result-item {
+  .search-actions,
+  .file-row,
+  .result-row {
     grid-template-columns: 1fr;
-  }
-
-  .media-card {
-    grid-template-columns: 64px minmax(0, 1fr);
-  }
-
-  .poster-shell,
-  .poster,
-  .poster-fallback {
-    width: 64px;
-    height: 88px;
-  }
-
-  .panel-card {
-    border-radius: 22px;
   }
 }
 </style>
