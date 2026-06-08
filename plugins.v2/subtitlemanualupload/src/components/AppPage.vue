@@ -45,9 +45,12 @@ const refreshing = ref(false)
 const preparing = ref(false)
 const applying = ref(false)
 const clearing = ref(false)
+const onlineSearching = ref(false)
+const onlineDownloading = ref(false)
 const dragging = ref(false)
 const message = ref('')
 const error = ref('')
+const onlineError = ref('')
 const searchKeyword = ref('')
 const mediaType = ref('all')
 const medias = ref([])
@@ -69,6 +72,23 @@ const batchLanguageSuffix = ref('')
 const copyMessage = ref('')
 const copyError = ref('')
 const lastWritten = ref([])
+const onlineDialog = ref(false)
+const onlineTitle = ref('')
+const onlineScope = ref('auto')
+const onlineKeyword = ref('')
+const onlineTargets = ref([])
+const onlineStatus = ref({ providers: [], capabilities: {} })
+const onlineSelectedProviders = ref(['subhd', 'zimuku', 'assrt'])
+const onlineResults = ref([])
+const onlineMessages = ref([])
+const onlineManualLinks = ref([])
+const selectedOnlineResultIds = ref([])
+
+const onlineProviderItems = [
+  { title: 'SubHD', value: 'subhd' },
+  { title: 'Zimuku', value: 'zimuku' },
+  { title: 'ASSRT', value: 'assrt' },
+]
 
 const rarContainerInstallCommand = `docker exec -it moviepilot bash
 apt-get update
@@ -131,6 +151,16 @@ const canApply = computed(() => {
   return items.length > 0 && items.every(item => item.target_id)
 })
 const hasPreviewItems = computed(() => (preview.value?.items || []).length > 0)
+const hasOnlineResults = computed(() => onlineResults.value.length > 0)
+const selectedOnlineResults = computed(() => {
+  const picked = new Set(selectedOnlineResultIds.value)
+  return onlineResults.value.filter(item => picked.has(onlineResultKey(item)) && isOnlineResultDownloadable(item))
+})
+const onlineBatchLabel = computed(() => {
+  if (selectedMedia.value?.media_type !== 'tv') return '搜索在线字幕'
+  if (selectedTargets.value.length) return `搜索选中 ${selectedTargets.value.length} 集`
+  return selectedSeason.value === 'all' ? '搜索全部季字幕包' : '搜索本季字幕包'
+})
 const timelineStatus = computed(() => status.value?.timeline_fixer || { available: false, modules: {} })
 const timelineAvailable = computed(() => timelineStatus.value.available === true)
 const archiveStatus = computed(() => status.value?.archive_support || { zip: true, rar: false, rar_tool: '', rar_python: false })
@@ -247,6 +277,35 @@ function isLocked(targetId) {
   return lockedTargetIds.value.includes(targetId)
 }
 
+function onlineResultKey(item) {
+  return `${item?.provider || 'unknown'}:${item?.result_id || item?.page_url || item?.title || ''}`
+}
+
+function providerName(providerId) {
+  const known = onlineProviderItems.find(item => item.value === providerId)
+  return known?.title || providerId || '未知来源'
+}
+
+function onlineResultMeta(item) {
+  const parts = []
+  if (item.language) parts.push(item.language)
+  if (item.format) parts.push(item.format)
+  if (item.season || item.episode) {
+    parts.push(`S${String(item.season || 0).padStart(2, '0')}E${String(item.episode || 0).padStart(2, '0')}`)
+  }
+  if (item.score) parts.push(`匹配 ${item.score}`)
+  return parts.join(' · ') || '等待下载后自动匹配'
+}
+
+function isOnlineResultDownloadable(item) {
+  return item?.downloadable !== false
+}
+
+function providerStatus(providerId) {
+  const item = (onlineStatus.value.providers || []).find(provider => provider.id === providerId)
+  return item?.message || ''
+}
+
 function clearTargetState() {
   seasons.value = []
   selectedSeason.value = 'all'
@@ -266,6 +325,19 @@ async function loadStatus() {
     error.value = errorMessage(err, '加载插件状态失败')
   } finally {
     loading.value = false
+  }
+}
+
+async function loadOnlineStatus() {
+  try {
+    const response = await props.api.get(`${pluginBase.value}/online_status`)
+    onlineStatus.value = unwrapResponse(response) || onlineStatus.value
+    const enabled = onlineStatus.value.enabled_providers || []
+    if (enabled.length) {
+      onlineSelectedProviders.value = enabled
+    }
+  } catch (err) {
+    onlineError.value = errorMessage(err, '加载在线字幕源状态失败')
   }
 }
 
@@ -418,6 +490,135 @@ function openBatchUpload() {
 
 function openSingleUpload(target) {
   openUploadDialog([target], `上传 ${compactTargetName(target)}`)
+}
+
+async function openOnlineDialog(scopeTargets, title, scope) {
+  const usableTargets = scopeTargets.filter(item => !isLocked(item.id) && item.writable !== false)
+  if (!usableTargets.length) {
+    error.value = '没有可搜索的目标：选中的集数可能都已锁定'
+    return
+  }
+  onlineTitle.value = title
+  onlineScope.value = scope
+  onlineTargets.value = usableTargets
+  uploadScopeTargets.value = usableTargets
+  uploadTitle.value = `${title} · 在线字幕`
+  onlineKeyword.value = ''
+  onlineResults.value = []
+  onlineMessages.value = []
+  onlineManualLinks.value = []
+  selectedOnlineResultIds.value = []
+  onlineError.value = ''
+  error.value = ''
+  message.value = ''
+  lastWritten.value = []
+  preview.value = null
+  files.value = []
+  onlineDialog.value = true
+  await loadOnlineStatus()
+  await loadOnlineManualLinks()
+  await runOnlineSearch()
+}
+
+function openBatchOnlineSearch() {
+  const title = selectedMedia.value?.media_type === 'tv'
+    ? onlineBatchLabel.value
+    : '搜索在线字幕'
+  const scope = selectedMedia.value?.media_type === 'tv'
+    ? (selectedTargets.value.length ? 'batch' : 'season')
+    : 'movie'
+  openOnlineDialog(batchUploadTargets.value, title, scope)
+}
+
+function openSingleOnlineSearch(target) {
+  openOnlineDialog([target], `搜索 ${compactTargetName(target)}`, 'episode')
+}
+
+function onlinePayload() {
+  return {
+    target_ids: onlineTargets.value.map(item => item.id),
+    media: selectedMedia.value,
+    scope: onlineScope.value,
+    keyword: onlineKeyword.value.trim(),
+    providers: onlineSelectedProviders.value,
+  }
+}
+
+async function loadOnlineManualLinks() {
+  if (!onlineTargets.value.length) return
+  try {
+    const response = await props.api.post(`${pluginBase.value}/online_manual_links`, onlinePayload())
+    const data = unwrapResponse(response) || {}
+    onlineManualLinks.value = data.links || []
+  } catch (err) {
+    onlineError.value = errorMessage(err, '生成手动搜索链接失败')
+  }
+}
+
+async function runOnlineSearch() {
+  if (!onlineTargets.value.length || onlineSearching.value) return
+  if (!onlineSelectedProviders.value.length) {
+    onlineError.value = '请至少选择一个在线字幕源'
+    return
+  }
+  onlineSearching.value = true
+  onlineError.value = ''
+  onlineResults.value = []
+  onlineMessages.value = []
+  selectedOnlineResultIds.value = []
+  try {
+    const response = await props.api.post(`${pluginBase.value}/online_search`, onlinePayload())
+    const data = unwrapResponse(response) || {}
+    onlineResults.value = data.results || []
+    onlineMessages.value = data.messages || []
+    onlineManualLinks.value = data.manual_links || onlineManualLinks.value
+    if (!onlineResults.value.length && !onlineMessages.value.length) {
+      onlineMessages.value = [{ level: 'info', message: '没有搜索到可自动下载的字幕，可使用右侧手动搜索链接。' }]
+    }
+  } catch (err) {
+    onlineError.value = errorMessage(err, '在线字幕搜索失败')
+  } finally {
+    onlineSearching.value = false
+  }
+}
+
+function toggleOnlineResult(item, checked) {
+  if (!isOnlineResultDownloadable(item)) return
+  const key = onlineResultKey(item)
+  const set = new Set(selectedOnlineResultIds.value)
+  if (checked) {
+    set.add(key)
+  } else {
+    set.delete(key)
+  }
+  selectedOnlineResultIds.value = Array.from(set)
+}
+
+async function downloadOnlinePreview() {
+  if (!selectedOnlineResults.value.length || onlineDownloading.value) return
+  onlineDownloading.value = true
+  onlineError.value = ''
+  try {
+    const response = await props.api.post(`${pluginBase.value}/online_download_preview`, {
+      ...onlinePayload(),
+      results: selectedOnlineResults.value,
+    })
+    preview.value = unwrapResponse(response)
+    batchLanguageSuffix.value = ''
+    if (preview.value?.items) {
+      preview.value.items.forEach(item => {
+        const target = uploadTargets.value.find(targetItem => targetItem.id === item.target_id)
+        item.output_name = item.output_name || buildOutputName(target, item)
+      })
+    }
+    onlineDialog.value = false
+    uploadDialog.value = true
+    message.value = response?.message || '已下载在线字幕并生成匹配预览'
+  } catch (err) {
+    onlineError.value = errorMessage(err, '在线字幕下载预览失败')
+  } finally {
+    onlineDownloading.value = false
+  }
 }
 
 async function onPickFiles(event) {
@@ -619,6 +820,8 @@ defineExpose({
   preparing,
   applying,
   clearing,
+  onlineSearching,
+  onlineDownloading,
 })
 </script>
 
@@ -764,6 +967,16 @@ defineExpose({
               {{ selectedTargets.length ? '上传选中字幕' : '批量上传整季字幕' }}
             </VBtn>
             <VBtn
+              color="secondary"
+              variant="tonal"
+              prepend-icon="mdi-magnify"
+              :disabled="!batchUploadTargets.length"
+              :loading="onlineSearching"
+              @click="openBatchOnlineSearch"
+            >
+              {{ onlineBatchLabel }}
+            </VBtn>
+            <VBtn
               color="error"
               variant="tonal"
               :disabled="!selectedTargetIds.length"
@@ -828,6 +1041,13 @@ defineExpose({
               />
               <VBtn
                 variant="text"
+                icon="mdi-magnify"
+                title="搜索此集在线字幕"
+                :disabled="isLocked(target.id)"
+                @click="openSingleOnlineSearch(target)"
+              />
+              <VBtn
+                variant="text"
                 :icon="isLocked(target.id) ? 'mdi-lock' : 'mdi-lock-open-variant'"
                 :color="isLocked(target.id) ? 'warning' : undefined"
                 :title="isLocked(target.id) ? '解锁此集' : '锁定此集，批量上传跳过'"
@@ -861,6 +1081,167 @@ defineExpose({
         </VCardText>
       </VCard>
     </section>
+
+    <VDialog v-model="onlineDialog" max-width="1080">
+      <VCard class="online-dialog" rounded="xl">
+        <VCardTitle class="dialog-title">
+          <div>
+            <span>{{ onlineTitle || '在线字幕搜索' }}</span>
+            <p>{{ onlineTargets.length }} 个目标 · 下载后进入匹配预览，不会直接写入</p>
+          </div>
+          <VBtn icon="mdi-close" variant="text" @click="onlineDialog = false" />
+        </VCardTitle>
+        <VDivider />
+        <VCardActions class="online-search-actions">
+          <VTextField
+            v-model="onlineKeyword"
+            label="手动关键词（可选）"
+            placeholder="留空按资源名、季集号自动生成"
+            variant="outlined"
+            density="comfortable"
+            hide-details
+            clearable
+            @keyup.enter="runOnlineSearch"
+          />
+          <VSelect
+            v-model="onlineSelectedProviders"
+            :items="onlineProviderItems"
+            label="字幕源"
+            variant="outlined"
+            density="comfortable"
+            hide-details
+            multiple
+            chips
+          />
+          <VBtn
+            color="primary"
+            :disabled="!onlineSelectedProviders.length"
+            :loading="onlineSearching"
+            @click="runOnlineSearch"
+          >
+            搜索
+          </VBtn>
+        </VCardActions>
+        <VDivider />
+        <VCardText>
+          <VAlert
+            v-if="onlineError"
+            class="mb-4"
+            type="error"
+            variant="tonal"
+            :text="onlineError"
+          />
+          <div v-if="onlineMessages.length" class="online-message-list">
+            <VAlert
+              v-for="item in onlineMessages"
+              :key="`${item.provider || 'msg'}-${item.message}`"
+              :type="item.level === 'info' ? 'info' : 'warning'"
+              variant="tonal"
+              density="compact"
+              :text="item.provider ? `${providerName(item.provider)}：${item.message}` : item.message"
+            />
+          </div>
+
+          <div class="online-layout">
+            <section class="online-results-panel">
+              <div class="online-panel-head">
+                <div>
+                  <div class="section-kicker">自动搜索</div>
+                  <h3>选择要下载的字幕</h3>
+                </div>
+                <span>{{ hasOnlineResults ? `${onlineResults.length} 条结果` : '暂无结果' }}</span>
+              </div>
+
+              <div v-if="onlineSearching" class="online-loading">
+                正在从字幕站搜索，请稍等...
+              </div>
+              <div v-else-if="hasOnlineResults" class="online-result-list">
+                <div
+                  v-for="item in onlineResults"
+                  :key="onlineResultKey(item)"
+                  class="online-result-card"
+                  :class="{
+                    active: selectedOnlineResultIds.includes(onlineResultKey(item)),
+                    disabled: !isOnlineResultDownloadable(item),
+                  }"
+                >
+                  <VCheckbox
+                    :model-value="selectedOnlineResultIds.includes(onlineResultKey(item))"
+                    density="compact"
+                    hide-details
+                    :disabled="!isOnlineResultDownloadable(item)"
+                    @update:model-value="value => toggleOnlineResult(item, value)"
+                  />
+                  <div class="online-result-main">
+                    <div class="online-result-title">{{ item.title }}</div>
+                    <div class="online-result-meta">
+                      <span>{{ providerName(item.provider) }}</span>
+                      <span>{{ onlineResultMeta(item) }}</span>
+                      <span v-if="!isOnlineResultDownloadable(item)" class="online-manual-badge">
+                        需手动下载
+                      </span>
+                    </div>
+                    <p v-if="item.note">{{ item.note }}</p>
+                  </div>
+                  <a
+                    v-if="item.page_url"
+                    class="online-open-link"
+                    :href="item.page_url"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    查看
+                  </a>
+                </div>
+              </div>
+              <div v-else class="empty-state">
+                没有可自动下载的字幕结果。可以换关键词重试，或使用右侧手动搜索。
+              </div>
+            </section>
+
+            <aside class="manual-links-panel">
+              <div class="section-kicker">手动搜索</div>
+              <h3>跳转字幕站</h3>
+              <p>自动搜索失败或源站需要验证时，可打开链接下载字幕包后回到本页上传。</p>
+              <div
+                v-for="provider in onlineManualLinks"
+                :key="provider.provider"
+                class="manual-provider"
+              >
+                <div class="manual-provider-head">
+                  <strong>{{ provider.name }}</strong>
+                  <span>{{ providerStatus(provider.provider) }}</span>
+                </div>
+                <div class="manual-keywords">
+                  <a
+                    v-for="link in provider.links"
+                    :key="`${provider.provider}-${link.keyword}`"
+                    :href="link.url"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    {{ link.keyword }}
+                  </a>
+                </div>
+              </div>
+            </aside>
+          </div>
+        </VCardText>
+        <VDivider />
+        <VCardActions class="dialog-actions">
+          <VBtn variant="text" @click="onlineDialog = false">关闭</VBtn>
+          <VSpacer />
+          <VBtn
+            color="success"
+            :disabled="!selectedOnlineResults.length"
+            :loading="onlineDownloading"
+            @click="downloadOnlinePreview"
+          >
+            下载并生成预览
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
 
     <VDialog v-model="uploadDialog" max-width="980">
       <VCard class="upload-dialog" rounded="xl">
@@ -1351,7 +1732,7 @@ defineExpose({
 
 .episode-row {
   display: grid;
-  grid-template-columns: auto 58px minmax(0, 1fr) auto auto auto;
+  grid-template-columns: auto 58px minmax(0, 1fr) auto auto auto auto;
   gap: 10px;
   align-items: center;
   padding: 10px 12px;
@@ -1439,11 +1820,184 @@ defineExpose({
     #fffaf2;
 }
 
+.online-dialog {
+  background:
+    radial-gradient(circle at 12% 0%, rgba(80, 126, 107, 0.14), transparent 30%),
+    radial-gradient(circle at 88% 18%, rgba(214, 160, 82, 0.16), transparent 30%),
+    #fffaf2;
+}
+
+.online-search-actions {
+  display: grid;
+  grid-template-columns: minmax(220px, 1fr) minmax(220px, 0.7fr) auto;
+  gap: 12px;
+  padding: 14px 18px;
+  background: rgba(255, 250, 242, 0.96);
+}
+
+.online-message-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.online-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 300px;
+  gap: 16px;
+}
+
+.online-results-panel,
+.manual-links-panel {
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid rgba(91, 109, 100, 0.14);
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.online-panel-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.online-panel-head h3,
+.manual-links-panel h3 {
+  margin: 4px 0 0;
+}
+
+.online-panel-head span,
+.manual-links-panel p,
+.manual-provider-head span,
+.online-result-meta,
+.online-result-main p {
+  color: #687873;
+  font-size: 12px;
+}
+
+.online-loading {
+  padding: 24px;
+  border-radius: 18px;
+  background: #f3eadb;
+  color: #53655f;
+  text-align: center;
+}
+
+.online-result-list {
+  display: grid;
+  gap: 10px;
+  max-height: 520px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.online-result-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid rgba(91, 109, 100, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.online-result-card.active {
+  border-color: rgba(150, 99, 40, 0.5);
+  background: #fff4da;
+}
+
+.online-result-card.disabled {
+  opacity: 0.72;
+  background: rgba(245, 241, 232, 0.72);
+}
+
+.online-result-main {
+  min-width: 0;
+}
+
+.online-result-title {
+  font-weight: 900;
+  word-break: break-word;
+}
+
+.online-result-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.online-manual-badge {
+  padding: 1px 8px;
+  border: 1px solid rgba(150, 99, 40, 0.24);
+  border-radius: 999px;
+  background: rgba(150, 99, 40, 0.1);
+  color: #7c4d18;
+  font-weight: 800;
+}
+
+.online-result-main p {
+  margin: 6px 0 0;
+}
+
+.online-open-link,
+.manual-keywords a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: #e7eee8;
+  color: #2f604f;
+  font-size: 12px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.manual-links-panel {
+  align-self: start;
+}
+
+.manual-links-panel p {
+  margin: 8px 0 14px;
+  line-height: 1.6;
+}
+
+.manual-provider {
+  display: grid;
+  gap: 8px;
+  padding: 10px 0;
+  border-top: 1px solid rgba(91, 109, 100, 0.12);
+}
+
+.manual-provider-head {
+  display: grid;
+  gap: 2px;
+}
+
+.manual-keywords {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .dialog-title {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+}
+
+.dialog-title p {
+  margin: 4px 0 0;
+  color: #687873;
+  font-size: 12px;
+  font-weight: 400;
 }
 
 .dropzone {
@@ -1710,6 +2264,8 @@ defineExpose({
 
   .hero-card,
   .search-bar,
+  .online-search-actions,
+  .online-layout,
   .detail-head,
   .preview-row {
     grid-template-columns: 1fr;

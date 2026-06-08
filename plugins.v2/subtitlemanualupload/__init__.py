@@ -21,6 +21,7 @@ from app.db.models.transferhistory import TransferHistory
 from app.log import logger
 from app.plugins import _PluginBase
 
+from .online_subtitle import OnlineSubtitleSearchService, build_search_keywords
 from .timeline_fixer import check_timeline_fixer_dependencies, fix_subtitle_timeline
 
 
@@ -28,7 +29,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "upload.png"
-    plugin_version = "0.1.16"
+    plugin_version = "0.1.17"
     plugin_author = "jaysherlock"
     author_url = "https://github.com/jaysherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -39,6 +40,9 @@ class SubtitleManualUpload(_PluginBase):
     _show_sidebar_nav = True
     _rar_dependency_mode = "none"
     _rar_tool_path = "/usr/local/bin/7z"
+    _online_provider_ids = ["subhd", "zimuku", "assrt"]
+    _online_use_proxy = True
+    _assrt_token = ""
     _rar_dependency_status: Dict[str, Any] = {
         "mode": "none",
         "state": "idle",
@@ -91,6 +95,9 @@ class SubtitleManualUpload(_PluginBase):
         self._show_sidebar_nav = bool(config.get("show_sidebar_nav", True))
         self._rar_dependency_mode = self._normalize_rar_dependency_mode(config.get("rar_dependency_mode"))
         self._rar_tool_path = self._normalize_text(config.get("rar_tool_path")) or "/usr/local/bin/7z"
+        self._online_provider_ids = self._normalize_provider_ids(config.get("online_providers"))
+        self._online_use_proxy = bool(config.get("online_use_proxy", True))
+        self._assrt_token = self._normalize_text(config.get("assrt_token"))
         type(self)._rar_dependency_mode = self._rar_dependency_mode
         type(self)._rar_tool_path = self._rar_tool_path
         self._entry_map = {}
@@ -160,6 +167,34 @@ class SubtitleManualUpload(_PluginBase):
                 "auth": "bear",
                 "summary": "清空选中目标视频的外挂字幕",
             },
+            {
+                "path": "/online_status",
+                "endpoint": self.api_online_status,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "获取在线字幕源状态",
+            },
+            {
+                "path": "/online_manual_links",
+                "endpoint": self.api_online_manual_links,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "生成在线字幕站手动搜索链接",
+            },
+            {
+                "path": "/online_search",
+                "endpoint": self.api_online_search,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "搜索在线字幕",
+            },
+            {
+                "path": "/online_download_preview",
+                "endpoint": self.api_online_download_preview,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "下载在线字幕并生成匹配预览",
+            },
         ]
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
@@ -196,6 +231,64 @@ class SubtitleManualUpload(_PluginBase):
                                     }
                                 ],
                             },
+                        ],
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VSelect",
+                                        "props": {
+                                            "model": "online_providers",
+                                            "label": "在线字幕源",
+                                            "multiple": True,
+                                            "chips": True,
+                                            "items": [
+                                                {"title": "SubHD", "value": "subhd"},
+                                                {"title": "Zimuku", "value": "zimuku"},
+                                                {"title": "ASSRT", "value": "assrt"},
+                                            ],
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VSwitch",
+                                        "props": {
+                                            "model": "online_use_proxy",
+                                            "label": "在线搜索使用系统代理",
+                                        },
+                                    }
+                                ],
+                            },
+                        ],
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12},
+                                "content": [
+                                    {
+                                        "component": "VTextField",
+                                        "props": {
+                                            "model": "assrt_token",
+                                            "label": "ASSRT Token（可选）",
+                                            "placeholder": "不填写时仅提供 ASSRT 手动搜索链接",
+                                            "type": "password",
+                                        },
+                                    }
+                                ],
+                            }
                         ],
                     },
                     {
@@ -247,7 +340,7 @@ class SubtitleManualUpload(_PluginBase):
                                         "props": {
                                             "type": "info",
                                             "variant": "tonal",
-                                            "text": "从 MoviePilot 本地整理记录中搜索已有视频资源；长期建议把宿主机静态 7zz 放到 MoviePilot 部署目录的 tools/7zz，并映射为容器内 /usr/local/bin/7z。",
+                                            "text": "从 MoviePilot 本地整理记录中搜索已有视频资源；在线字幕会先生成匹配预览，不会直接写入。ASSRT 不填写 Token 时仅作为手动搜索入口。",
                                         },
                                     }
                                 ],
@@ -261,6 +354,9 @@ class SubtitleManualUpload(_PluginBase):
             "show_sidebar_nav": True,
             "rar_dependency_mode": "none",
             "rar_tool_path": "/usr/local/bin/7z",
+            "online_providers": ["subhd", "zimuku", "assrt"],
+            "online_use_proxy": True,
+            "assrt_token": "",
         }
 
     def get_page(self) -> List[dict]:
@@ -290,6 +386,9 @@ class SubtitleManualUpload(_PluginBase):
                 "show_sidebar_nav": self._show_sidebar_nav,
                 "rar_dependency_mode": self._rar_dependency_mode,
                 "rar_tool_path": self._rar_tool_path,
+                "online_providers": self._online_provider_ids,
+                "online_use_proxy": self._online_use_proxy,
+                "assrt_token": self._assrt_token,
             }
         )
 
@@ -335,6 +434,22 @@ class SubtitleManualUpload(_PluginBase):
         if mode in cls._rar_dependency_modes:
             return mode
         return "none"
+
+    @classmethod
+    def _normalize_provider_ids(cls, value: Any, *, fallback: bool = True) -> List[str]:
+        allowed = {"subhd", "zimuku", "assrt"}
+        if isinstance(value, list):
+            raw_items = value
+        elif isinstance(value, str):
+            raw_items = re.split(r"[,，\s]+", value)
+        else:
+            raw_items = cls._online_provider_ids
+        providers = []
+        for item in raw_items:
+            provider_id = cls._normalize_text(item).lower()
+            if provider_id in allowed and provider_id not in providers:
+                providers.append(provider_id)
+        return providers or (["subhd", "zimuku", "assrt"] if fallback else [])
 
     @staticmethod
     def _is_executable_file(path: Path) -> bool:
@@ -1385,6 +1500,138 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"读取上传会话失败: {exc}") from exc
 
+    def _online_service(self) -> OnlineSubtitleSearchService:
+        return OnlineSubtitleSearchService(
+            assrt_token=self._assrt_token,
+            use_proxy=self._online_use_proxy,
+        )
+
+    @classmethod
+    def _target_ids_from_body(cls, body: Dict[str, Any]) -> List[str]:
+        target_ids = body.get("target_ids") or []
+        if isinstance(target_ids, str):
+            try:
+                target_ids = json.loads(target_ids)
+            except Exception:
+                target_ids = [target_ids]
+        if not isinstance(target_ids, list):
+            return []
+        return [cls._normalize_text(item) for item in target_ids if cls._normalize_text(item)]
+
+    @classmethod
+    def _results_from_body(cls, body: Dict[str, Any]) -> List[Dict[str, Any]]:
+        results = body.get("results") or body.get("selected_results") or []
+        if isinstance(results, dict):
+            results = [results]
+        if not isinstance(results, list):
+            return []
+        return [item for item in results if isinstance(item, dict)]
+
+    def _online_keywords(
+        self,
+        body: Dict[str, Any],
+        targets: List[Dict[str, Any]],
+    ) -> List[str]:
+        manual_keyword = self._normalize_text(body.get("keyword"))
+        media = body.get("media") if isinstance(body.get("media"), dict) else {}
+        scope = self._normalize_text(body.get("scope")) or "auto"
+        keywords = build_search_keywords(media, targets, scope)
+        if manual_keyword:
+            keywords = [manual_keyword, *[item for item in keywords if item != manual_keyword]]
+        return keywords[:8]
+
+    @classmethod
+    def _normalize_online_download_name(cls, name: str, content: bytes, result: Dict[str, Any]) -> str:
+        safe_name = Path(cls._normalize_text(name)).name
+        suffix = Path(safe_name).suffix.lower()
+        if suffix in cls._subtitle_exts or suffix in cls._archive_exts:
+            return safe_name
+        title = re.sub(r"[\\/:*?\"<>|]+", " ", cls._normalize_text(result.get("title")) or "online-subtitle").strip()
+        if content.startswith(b"PK\x03\x04"):
+            return f"{title}.zip"
+        if content.startswith(b"Rar!\x1a\x07"):
+            return f"{title}.rar"
+        text_head = cls._decode_preview_bytes(content[:4096]).lstrip()
+        if re.match(r"^\d+\s*\n\d{2}:\d{2}:\d{2}[,.]\d{3}\s+-->", text_head):
+            return f"{title}.srt"
+        if "[Script Info]" in text_head or "[V4+ Styles]" in text_head:
+            return f"{title}.ass"
+        return safe_name or f"{title}.zip"
+
+    def _build_preview_response_from_uploads(
+        self,
+        *,
+        session_id: str,
+        target_ids: List[str],
+        target_entries: List[Dict[str, Any]],
+        prepared_uploads: List[Dict[str, Any]],
+        unsupported_files: Optional[List[str]] = None,
+        invalid_files: Optional[List[Dict[str, str]]] = None,
+        source: str = "upload",
+    ) -> Dict[str, Any]:
+        unsupported_files = unsupported_files or []
+        invalid_files = invalid_files or []
+        targets = [self._target_from_entry(item) for item in target_entries]
+        preview_items: List[Dict[str, Any]] = []
+        for prepared in prepared_uploads:
+            file_path = Path(prepared["stored_path"])
+            raw_bytes = file_path.read_bytes()
+            language_profile = self._detect_language_profile(prepared["source_name"], raw_bytes)
+            preview_item = {
+                "upload_id": prepared["upload_id"],
+                "source_name": prepared["source_name"],
+                "archive_name": prepared.get("archive_name", ""),
+                "ext": prepared["ext"],
+                "target_id": self._suggest_target(prepared, targets),
+                "detected_label": language_profile["label"],
+                "language_suffix": language_profile["suffix"],
+                "online_source": prepared.get("online_source", ""),
+            }
+            preview_items.append(preview_item)
+
+        self._auto_fill_missing_targets(preview_items, targets)
+        target_lookup = {item["id"]: item for item in targets if item.get("id")}
+        for item in preview_items:
+            target = target_lookup.get(item.get("target_id"))
+            item["output_name"] = self._build_destination_name(target, item) if target else ""
+
+        session_payload = {
+            "session_id": session_id,
+            "created_at": datetime.now().isoformat(timespec="seconds"),
+            "target_ids": list(target_ids),
+            "targets": target_entries,
+            "uploads": prepared_uploads,
+            "source": source,
+        }
+        self._write_session(session_id, session_payload)
+
+        resolved_count = len([item for item in preview_items if item.get("target_id")])
+        message = f"已解析 {len(preview_items)} 个字幕文件，自动匹配 {resolved_count} 个。"
+        if unsupported_files:
+            message += f" 已忽略 {len(unsupported_files)} 个不支持的文件。"
+        if invalid_files:
+            message += f" 有 {len(invalid_files)} 个压缩包解析失败。"
+
+        logger.info(
+            "[SubtitleManualUpload] 预览生成完成 source=%s session=%s subtitles=%s resolved=%s unsupported=%s invalid=%s",
+            source,
+            session_id,
+            len(preview_items),
+            resolved_count,
+            len(unsupported_files),
+            len(invalid_files),
+        )
+        return self._ok(
+            {
+                "session_id": session_id,
+                "targets": targets,
+                "items": preview_items,
+                "unsupported_files": unsupported_files,
+                "invalid_files": invalid_files,
+            },
+            message=message,
+        )
+
     def api_status(self) -> Dict[str, Any]:
         rar_tool = self._rar_tool()
         rar_python = self._rar_python_available()
@@ -1459,6 +1706,161 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             result.get("all_target_count"),
         )
         return self._ok(result)
+
+    def api_online_status(self) -> Dict[str, Any]:
+        status = self._online_service().status()
+        status["enabled_providers"] = self._online_provider_ids
+        status["assrt_token_configured"] = bool(self._assrt_token)
+        return self._ok(status)
+
+    async def api_online_manual_links(self, request: Request) -> Dict[str, Any]:
+        body = await request.json()
+        target_ids = self._target_ids_from_body(body)
+        if not target_ids:
+            raise HTTPException(status_code=400, detail="请先选择要搜索字幕的本地视频")
+        target_entries = list(self._resolve_targets(target_ids).values())
+        if not target_entries:
+            raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
+        targets = [self._target_from_entry(item) for item in target_entries]
+        keywords = self._online_keywords(body, targets)
+        if not keywords:
+            raise HTTPException(status_code=400, detail="没有可用搜索关键词，请手动输入关键词")
+        links = self._online_service().manual_links(keywords)
+        logger.info(
+            "[SubtitleManualUpload] 在线字幕手动链接生成 target_count=%s keywords=%s",
+            len(targets),
+            len(keywords),
+        )
+        return self._ok(
+            {
+                "keywords": keywords,
+                "links": links,
+            }
+        )
+
+    async def api_online_search(self, request: Request) -> Dict[str, Any]:
+        body = await request.json()
+        target_ids = self._target_ids_from_body(body)
+        if not target_ids:
+            raise HTTPException(status_code=400, detail="请先选择要搜索字幕的本地视频")
+        target_entries = list(self._resolve_targets(target_ids).values())
+        if not target_entries:
+            raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
+        targets = [self._target_from_entry(item) for item in target_entries]
+        keywords = self._online_keywords(body, targets)
+        if not keywords:
+            raise HTTPException(status_code=400, detail="没有可用搜索关键词，请手动输入关键词")
+        requested_providers = body.get("providers") if isinstance(body.get("providers"), list) else self._online_provider_ids
+        providers = self._normalize_provider_ids(requested_providers, fallback=not isinstance(body.get("providers"), list))
+        if not providers:
+            raise HTTPException(status_code=400, detail="请至少选择一个在线字幕源")
+        scope = self._normalize_text(body.get("scope")) or "auto"
+        service = self._online_service()
+        search_result = service.search(
+            keywords=keywords,
+            providers=providers,
+            targets=targets,
+            scope=scope,
+        )
+        manual_links = service.manual_links(keywords)
+        logger.info(
+            "[SubtitleManualUpload] 在线字幕搜索完成 scope=%s providers=%s targets=%s results=%s",
+            scope,
+            ",".join(providers),
+            len(targets),
+            len(search_result.get("results") or []),
+        )
+        return self._ok(
+            {
+                "keywords": keywords,
+                "providers": providers,
+                "targets": targets,
+                "results": search_result.get("results") or [],
+                "messages": search_result.get("messages") or [],
+                "manual_links": manual_links,
+            }
+        )
+
+    async def api_online_download_preview(self, request: Request) -> Dict[str, Any]:
+        body = await request.json()
+        target_ids = self._target_ids_from_body(body)
+        if not target_ids:
+            raise HTTPException(status_code=400, detail="请先选择要写入字幕的本地视频")
+        target_entries = list(self._resolve_targets(target_ids).values())
+        if not target_entries:
+            raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
+        selected_results = self._results_from_body(body)
+        if not selected_results:
+            raise HTTPException(status_code=400, detail="请至少选择一个在线字幕结果")
+
+        session_id = self._hash_text(f"online|{datetime.now().isoformat()}|{','.join(sorted(map(str, target_ids)))}")[:16]
+        session_dir = self._get_session_root() / session_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+
+        prepared_uploads: List[Dict[str, Any]] = []
+        unsupported_files: List[str] = []
+        invalid_files: List[Dict[str, str]] = []
+        try:
+            downloads = self._online_service().download(
+                selected_results,
+                captcha_code=self._normalize_text(body.get("captcha_code")),
+            )
+            for downloaded in downloads:
+                result = downloaded.get("result") or {}
+                source_name = self._normalize_online_download_name(
+                    downloaded.get("source_name", ""),
+                    downloaded.get("content") or b"",
+                    result,
+                )
+                try:
+                    extracted = self._extract_subtitle_files(
+                        source_name,
+                        downloaded.get("content") or b"",
+                        session_dir,
+                    )
+                except ValueError as exc:
+                    invalid_files.append({"name": source_name, "reason": str(exc)})
+                    continue
+                if not extracted:
+                    unsupported_files.append(source_name)
+                    continue
+                for item in extracted:
+                    item["online_source"] = downloaded.get("provider")
+                    item["online_title"] = result.get("title", "")
+                    if not item.get("archive_name") and source_name != item.get("source_name"):
+                        item["archive_name"] = source_name
+                prepared_uploads.extend(extracted)
+        except ValueError as exc:
+            shutil.rmtree(session_dir, ignore_errors=True)
+            logger.warning("[SubtitleManualUpload] 在线字幕下载预览失败：%s", exc)
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            shutil.rmtree(session_dir, ignore_errors=True)
+            logger.error("[SubtitleManualUpload] 在线字幕下载预览异常: %s", exc)
+            raise HTTPException(status_code=500, detail=f"在线字幕下载失败: {exc}") from exc
+
+        if not prepared_uploads:
+            shutil.rmtree(session_dir, ignore_errors=True)
+            if invalid_files:
+                raise HTTPException(status_code=400, detail=f"没有解析到可用字幕文件，{invalid_files[0]['reason']}")
+            raise HTTPException(status_code=400, detail="没有解析到可用的在线字幕文件")
+
+        logger.info(
+            "[SubtitleManualUpload] 在线字幕下载完成 selected=%s prepared=%s unsupported=%s invalid=%s",
+            len(selected_results),
+            len(prepared_uploads),
+            len(unsupported_files),
+            len(invalid_files),
+        )
+        return self._build_preview_response_from_uploads(
+            session_id=session_id,
+            target_ids=target_ids,
+            target_entries=target_entries,
+            prepared_uploads=prepared_uploads,
+            unsupported_files=unsupported_files,
+            invalid_files=invalid_files,
+            source="online",
+        )
 
     async def api_prepare_upload(self, request: Request) -> Dict[str, Any]:
         form = await request.form()
@@ -1544,63 +1946,14 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             )
             raise HTTPException(status_code=400, detail="没有解析到可用的字幕文件，请检查文件格式")
 
-        targets = [self._target_from_entry(item) for item in target_entries]
-        preview_items: List[Dict[str, Any]] = []
-        for prepared in prepared_uploads:
-            file_path = Path(prepared["stored_path"])
-            raw_bytes = file_path.read_bytes()
-            language_profile = self._detect_language_profile(prepared["source_name"], raw_bytes)
-            preview_item = {
-                "upload_id": prepared["upload_id"],
-                "source_name": prepared["source_name"],
-                "archive_name": prepared["archive_name"],
-                "ext": prepared["ext"],
-                "target_id": self._suggest_target(prepared, targets),
-                "detected_label": language_profile["label"],
-                "language_suffix": language_profile["suffix"],
-            }
-            preview_items.append(preview_item)
-
-        self._auto_fill_missing_targets(preview_items, targets)
-        target_lookup = {item["id"]: item for item in targets if item.get("id")}
-        for item in preview_items:
-            target = target_lookup.get(item.get("target_id"))
-            item["output_name"] = self._build_destination_name(target, item) if target else ""
-
-        session_payload = {
-            "session_id": session_id,
-            "created_at": datetime.now().isoformat(timespec="seconds"),
-            "target_ids": list(target_ids),
-            "targets": target_entries,
-            "uploads": prepared_uploads,
-        }
-        self._write_session(session_id, session_payload)
-
-        resolved_count = len([item for item in preview_items if item.get("target_id")])
-        message = f"已解析 {len(preview_items)} 个字幕文件，自动匹配 {resolved_count} 个。"
-        if unsupported_files:
-            message += f" 已忽略 {len(unsupported_files)} 个不支持的文件。"
-        if invalid_files:
-            message += f" 有 {len(invalid_files)} 个压缩包解析失败。"
-
-        logger.info(
-            "[SubtitleManualUpload] 上传预览完成 session=%s subtitles=%s resolved=%s unsupported=%s invalid=%s",
-            session_id,
-            len(preview_items),
-            resolved_count,
-            len(unsupported_files),
-            len(invalid_files),
-        )
-
-        return self._ok(
-            {
-                "session_id": session_id,
-                "targets": targets,
-                "items": preview_items,
-                "unsupported_files": unsupported_files,
-                "invalid_files": invalid_files,
-            },
-            message=message,
+        return self._build_preview_response_from_uploads(
+            session_id=session_id,
+            target_ids=target_ids,
+            target_entries=target_entries,
+            prepared_uploads=prepared_uploads,
+            unsupported_files=unsupported_files,
+            invalid_files=invalid_files,
+            source="upload",
         )
 
     async def api_apply_upload(self, request: Request) -> Dict[str, Any]:
