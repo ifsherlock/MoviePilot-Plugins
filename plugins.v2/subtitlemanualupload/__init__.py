@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import time
 import zipfile
 from collections import OrderedDict
 from datetime import datetime, timedelta
@@ -44,7 +45,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/subtitle-match.png"
-    plugin_version = "0.1.29"
+    plugin_version = "0.1.30"
     plugin_author = "jaysherlock"
     author_url = "https://github.com/jaysherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -60,6 +61,10 @@ class SubtitleManualUpload(_PluginBase):
     _online_engine = DEFAULT_ENGINE
     _online_use_proxy = False
     _online_site_urls = dict(DEFAULT_PROVIDER_ROOTS)
+    _online_site_cookies = {"subhd": "", "zimuku": ""}
+    _online_use_cookiecloud = False
+    _online_rate_records: Dict[str, List[float]] = {}
+    _online_rate_limit_per_minute = 5
     _assrt_api_key = ""
     _assrt_api_url = "https://api.assrt.net"
     _ai_link_enabled = True
@@ -93,12 +98,14 @@ class SubtitleManualUpload(_PluginBase):
         "zh_hans": "chi",
         "zh-cn": "chi",
         "zh_cn": "chi",
-        "zh-hant": "chi",
-        "zh_hant": "chi",
-        "zh-tw": "chi",
-        "zh_tw": "chi",
+        "zh-hant": "cht",
+        "zh_hant": "cht",
+        "zh-tw": "cht",
+        "zh_tw": "cht",
         "chs": "chi",
-        "cht": "chi",
+        "cht": "cht",
+        "tw": "cht",
+        "hk": "cht",
         "zho": "chi",
         "cmn": "chi",
         "cn": "chi",
@@ -128,6 +135,8 @@ class SubtitleManualUpload(_PluginBase):
         legacy_proxy_default = "online_proxy_migrated" not in config and config.get("online_use_proxy") is True
         self._online_use_proxy = False if legacy_proxy_default else bool(config.get("online_use_proxy", False))
         self._online_site_urls = self._normalize_online_site_urls(config)
+        self._online_site_cookies = self._normalize_online_site_cookies(config)
+        self._online_use_cookiecloud = bool(config.get("online_use_cookiecloud", False))
         self._assrt_api_key = self._normalize_text(config.get("assrt_api_key"))
         self._assrt_api_url = self._normalize_root_url(
             config.get("assrt_api_url"),
@@ -351,11 +360,54 @@ class SubtitleManualUpload(_PluginBase):
                                 "props": {"cols": 12, "md": 6},
                                 "content": [
                                     {
+                                        "component": "VSwitch",
+                                        "props": {
+                                            "model": "online_use_cookiecloud",
+                                            "label": "从 CookieCloud/站点库读取 SubHD 与 Zimuku Cookie",
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
                                         "component": "VTextField",
                                         "props": {
                                             "model": "subhd_url",
                                             "label": "SubHD 站点地址",
                                             "placeholder": DEFAULT_PROVIDER_ROOTS["subhd"],
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VTextField",
+                                        "props": {
+                                            "model": "subhd_cookie",
+                                            "label": "SubHD Cookie（可选）",
+                                            "type": "password",
+                                            "placeholder": "登录后复制 Cookie；优先于 CookieCloud",
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VTextField",
+                                        "props": {
+                                            "model": "zimuku_cookie",
+                                            "label": "Zimuku Cookie（可选）",
+                                            "type": "password",
+                                            "placeholder": "登录后复制 Cookie；优先于 CookieCloud",
                                         },
                                     }
                                 ],
@@ -484,10 +536,13 @@ class SubtitleManualUpload(_PluginBase):
             "rar_tool_path": "/usr/local/bin/7z",
             "online_providers": list(self._default_online_provider_ids),
             "online_engine": DEFAULT_ENGINE,
-            "online_use_proxy": False,
-            "subhd_url": DEFAULT_PROVIDER_ROOTS["subhd"],
-            "zimuku_url": DEFAULT_PROVIDER_ROOTS["zimuku"],
-            "assrt_url": DEFAULT_PROVIDER_ROOTS["assrt"],
+                "online_use_proxy": False,
+                "online_use_cookiecloud": False,
+                "subhd_url": DEFAULT_PROVIDER_ROOTS["subhd"],
+                "zimuku_url": DEFAULT_PROVIDER_ROOTS["zimuku"],
+                "subhd_cookie": "",
+                "zimuku_cookie": "",
+                "assrt_url": DEFAULT_PROVIDER_ROOTS["assrt"],
             "assrt_api_key": "",
             "assrt_api_url": "https://api.assrt.net",
             "ai_link_enabled": True,
@@ -523,10 +578,13 @@ class SubtitleManualUpload(_PluginBase):
                 "online_providers": self._online_provider_ids,
                 "online_engine": self._online_engine,
                 "online_use_proxy": self._online_use_proxy,
+                "online_use_cookiecloud": self._online_use_cookiecloud,
                 "online_proxy_migrated": True,
                 "assrt_provider_migrated": True,
                 "subhd_url": self._online_site_urls["subhd"],
                 "zimuku_url": self._online_site_urls["zimuku"],
+                "subhd_cookie": self._online_site_cookies["subhd"],
+                "zimuku_cookie": self._online_site_cookies["zimuku"],
                 "assrt_url": self._online_site_urls["assrt"],
                 "assrt_api_key": self._assrt_api_key,
                 "assrt_api_url": self._assrt_api_url,
@@ -614,6 +672,98 @@ class SubtitleManualUpload(_PluginBase):
             "assrt": raw.get("assrt") or config.get("assrt_url"),
         }
         return normalize_provider_roots(roots)
+
+    @classmethod
+    def _normalize_online_site_cookies(cls, config: Dict[str, Any]) -> Dict[str, str]:
+        raw = config.get("online_site_cookies") if isinstance(config.get("online_site_cookies"), dict) else {}
+        return {
+            "subhd": cls._normalize_cookie_header(raw.get("subhd") or config.get("subhd_cookie")),
+            "zimuku": cls._normalize_cookie_header(raw.get("zimuku") or config.get("zimuku_cookie")),
+        }
+
+    @classmethod
+    def _normalize_cookie_header(cls, value: Any) -> str:
+        text = cls._normalize_text(value)
+        if text.lower().startswith("cookie:"):
+            text = text.split(":", 1)[1].strip()
+        pairs = []
+        seen = set()
+        for part in text.replace("\r", ";").replace("\n", ";").split(";"):
+            if "=" not in part:
+                continue
+            name, cookie_value = part.split("=", 1)
+            name = name.strip()
+            cookie_value = cookie_value.strip()
+            if not name or name in seen:
+                continue
+            seen.add(name)
+            pairs.append(f"{name}={cookie_value}")
+        return "; ".join(pairs)
+
+    def _online_site_cookie_headers(self, providers: Optional[Iterable[str]] = None) -> Dict[str, str]:
+        provider_ids = set(providers or ["subhd", "zimuku"])
+        cookies = {key: value for key, value in self._online_site_cookies.items() if key in provider_ids and value}
+        if self._online_use_cookiecloud:
+            cloud_cookies = self._load_cookiecloud_site_cookies(provider_ids)
+            for provider_id, cookie in cloud_cookies.items():
+                cookies.setdefault(provider_id, cookie)
+        headers: Dict[str, str] = {}
+        for provider_id, cookie in cookies.items():
+            host = self._host_from_url(self._online_site_urls.get(provider_id))
+            if host and cookie:
+                headers[host.lower()] = cookie
+        return headers
+
+    def _load_cookiecloud_site_cookies(self, providers: Iterable[str]) -> Dict[str, str]:
+        provider_ids = set(providers)
+        matched: Dict[str, str] = {}
+        try:
+            from app.db.models.site import Site
+        except Exception as exc:
+            logger.info("[SubtitleManualUpload] CookieCloud/站点库不可用，跳过在线字幕 Cookie 读取 error=%s", exc)
+            return matched
+        hosts = {
+            provider_id: self._host_from_url(self._online_site_urls.get(provider_id))
+            for provider_id in provider_ids
+            if provider_id in {"subhd", "zimuku"}
+        }
+        try:
+            sites = Site.select()
+        except Exception as exc:
+            logger.info("[SubtitleManualUpload] 读取 MoviePilot 站点 Cookie 失败 error=%s", exc)
+            return matched
+        for site in sites:
+            site_url = self._normalize_text(getattr(site, "url", ""))
+            site_host = self._host_from_url(site_url).lower()
+            cookie = self._normalize_cookie_header(getattr(site, "cookie", ""))
+            if not site_host or not cookie:
+                continue
+            for provider_id, target_host in hosts.items():
+                target_host = target_host.lower()
+                if site_host == target_host or site_host.endswith(f".{target_host}") or target_host.endswith(f".{site_host}"):
+                    matched[provider_id] = cookie
+        if matched:
+            logger.info("[SubtitleManualUpload] 已从 MoviePilot 站点库读取在线字幕 Cookie providers=%s", ",".join(sorted(matched)))
+        return matched
+
+    def _check_online_rate_limit(self, providers: Iterable[str]) -> None:
+        now = time.time()
+        provider_ids = sorted({self._normalize_text(provider_id).lower() for provider_id in providers if self._normalize_text(provider_id)})
+        blocked = []
+        active_records: Dict[str, List[float]] = {}
+        for provider_id in provider_ids:
+            records = [item for item in self._online_rate_records.get(provider_id, []) if now - item < 60]
+            active_records[provider_id] = records
+            if len(records) >= self._online_rate_limit_per_minute:
+                blocked.append(provider_id)
+        if blocked:
+            raise HTTPException(
+                status_code=429,
+                detail=f"在线字幕源请求过于频繁：{','.join(blocked)} 每分钟最多 {self._online_rate_limit_per_minute} 次，请稍后再试",
+            )
+        for provider_id, records in active_records.items():
+            records.append(now)
+            self._online_rate_records[provider_id] = records
 
     @staticmethod
     def _is_executable_file(path: Path) -> bool:
@@ -729,8 +879,11 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         suffix = "und"
         label = "未知"
 
-        if any(token in lowered for token in ("zh-hant", "zh_tw", "zh-tw", "cht", "繁体", "繁中", "big5")):
-            suffix = "chi"
+        if any(token in lowered for token in ("zh-hant", "zh_tw", "zh-tw", "cht", "繁体", "繁中", "big5")) or re.search(
+            r"(^|[\s._\-\[\]()])(?:tw|hk)(?=$|[\s._\-\[\]()])",
+            lowered,
+        ):
+            suffix = "cht"
             label = "繁中"
         elif any(token in lowered for token in ("zh-hans", "zh_cn", "zh-cn", "chs", "简体", "简中", "gb")):
             suffix = "chi"
@@ -1849,6 +2002,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             provider_roots=self._online_site_urls,
             assrt_api_key=self._assrt_api_key,
             assrt_api_url=self._assrt_api_url,
+            site_cookies=self._online_site_cookie_headers(self._online_provider_ids),
         )
 
     @classmethod
@@ -2125,6 +2279,13 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         status["provider_roots"] = self._online_site_urls
         status["assrt_api_configured"] = bool(self._assrt_api_key)
         status["assrt_api_host"] = self._host_from_url(self._assrt_api_url)
+        status["cookiecloud_enabled"] = self._online_use_cookiecloud
+        status["site_cookies_configured"] = {
+            "subhd": bool(self._online_site_cookies.get("subhd")),
+            "zimuku": bool(self._online_site_cookies.get("zimuku")),
+        }
+        status["site_cookie_hosts"] = sorted(self._online_site_cookie_headers(self._online_provider_ids).keys())
+        status["rate_limit_per_minute"] = self._online_rate_limit_per_minute
         return self._ok(status)
 
     async def api_online_manual_links(self, request: Request) -> Dict[str, Any]:
@@ -2171,6 +2332,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         providers = self._normalize_provider_ids(requested_providers, fallback=not isinstance(body.get("providers"), list))
         if not providers:
             raise HTTPException(status_code=400, detail="请至少选择一个在线字幕源")
+        self._check_online_rate_limit(providers)
         scope = self._normalize_text(body.get("scope")) or "auto"
         service = self._online_service()
         search_result = await run_in_threadpool(
@@ -2210,6 +2372,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         selected_results = self._results_from_body(body)
         if not selected_results:
             raise HTTPException(status_code=400, detail="请至少选择一个在线字幕结果")
+        self._check_online_rate_limit([item.get("provider") for item in selected_results if isinstance(item, dict)])
 
         session_id = self._hash_text(f"online|{datetime.now().isoformat()}|{','.join(sorted(map(str, target_ids)))}")[:16]
         session_dir = self._get_session_root() / session_id

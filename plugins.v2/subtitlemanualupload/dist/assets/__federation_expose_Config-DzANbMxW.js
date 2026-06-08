@@ -34,8 +34,11 @@ const localConfig = ref({
   online_providers: ['subhd', 'zimuku'],
   online_engine: 'cloakbrowser',
   online_use_proxy: false,
+  online_use_cookiecloud: false,
   subhd_url: 'https://subhd.tv',
   zimuku_url: 'https://zimuku.org',
+  subhd_cookie: '',
+  zimuku_cookie: '',
   assrt_url: 'https://2.assrt.net',
   assrt_api_key: '',
   assrt_api_url: 'https://api.assrt.net',
@@ -86,9 +89,12 @@ function normalizeConfig(input) {
       ? input.online_engine
       : 'cloakbrowser',
     online_use_proxy: Boolean(input?.online_use_proxy),
+    online_use_cookiecloud: Boolean(input?.online_use_cookiecloud),
     online_proxy_migrated: true,
     subhd_url: normalizeRootUrl(input?.subhd_url, 'https://subhd.tv'),
     zimuku_url: normalizeRootUrl(input?.zimuku_url, 'https://zimuku.org'),
+    subhd_cookie: String(input?.subhd_cookie || '').trim(),
+    zimuku_cookie: String(input?.zimuku_cookie || '').trim(),
     assrt_url: normalizeRootUrl(input?.assrt_url, 'https://2.assrt.net'),
     assrt_api_key: assrtApiKey,
     assrt_api_url: normalizeRootUrl(input?.assrt_api_url, 'https://api.assrt.net'),
@@ -126,7 +132,7 @@ return (_ctx, _cache) => {
       color: "transparent"
     }, {
       default: _withCtx(() => [
-        _cache[14] || (_cache[14] = _createElementVNode("div", { class: "text-h6 ms-3" }, "字幕匹配配置", -1)),
+        _cache[17] || (_cache[17] = _createElementVNode("div", { class: "text-h6 ms-3" }, "字幕匹配配置", -1)),
         _createVNode(_component_VSpacer),
         _createVNode(_component_VBtn, {
           icon: "mdi-content-save",
@@ -152,7 +158,7 @@ return (_ctx, _cache) => {
         default: _withCtx(() => [
           _createVNode(_component_VCardText, null, {
             default: _withCtx(() => [
-              _cache[15] || (_cache[15] = _createElementVNode("div", { class: "config-section" }, [
+              _cache[18] || (_cache[18] = _createElementVNode("div", { class: "config-section" }, [
                 _createElementVNode("div", { class: "config-section-title" }, "基础设置")
               ], -1)),
               _createElementVNode("div", _hoisted_3, [
@@ -179,7 +185,7 @@ return (_ctx, _cache) => {
                 }, null, 8, ["modelValue"])
               ]),
               _createVNode(_component_VDivider, { class: "my-5" }),
-              _cache[16] || (_cache[16] = _createElementVNode("div", { class: "config-section" }, [
+              _cache[19] || (_cache[19] = _createElementVNode("div", { class: "config-section" }, [
                 _createElementVNode("div", null, [
                   _createElementVNode("div", { class: "config-section-title" }, "在线字幕搜索"),
                   _createElementVNode("p", null, "维护字幕站根地址；代理默认关闭，由容器当前网络环境决定。")
@@ -214,9 +220,17 @@ return (_ctx, _cache) => {
                   color: "primary",
                   "hide-details": ""
                 }, null, 8, ["modelValue"]),
+                _createVNode(_component_VSwitch, {
+                  modelValue: localConfig.value.online_use_cookiecloud,
+                  "onUpdate:modelValue": _cache[7] || (_cache[7] = $event => ((localConfig.value.online_use_cookiecloud) = $event)),
+                  class: "config-switch-line",
+                  label: "从 CookieCloud/站点库读取 SubHD 与 Zimuku Cookie",
+                  color: "success",
+                  "hide-details": ""
+                }, null, 8, ["modelValue"]),
                 _createVNode(_component_VTextField, {
                   modelValue: localConfig.value.subhd_url,
-                  "onUpdate:modelValue": _cache[7] || (_cache[7] = $event => ((localConfig.value.subhd_url) = $event)),
+                  "onUpdate:modelValue": _cache[8] || (_cache[8] = $event => ((localConfig.value.subhd_url) = $event)),
                   label: "SubHD 站点地址",
                   placeholder: "https://subhd.tv",
                   variant: "outlined",
@@ -225,7 +239,7 @@ return (_ctx, _cache) => {
                 }, null, 8, ["modelValue"]),
                 _createVNode(_component_VTextField, {
                   modelValue: localConfig.value.zimuku_url,
-                  "onUpdate:modelValue": _cache[8] || (_cache[8] = $event => ((localConfig.value.zimuku_url) = $event)),
+                  "onUpdate:modelValue": _cache[9] || (_cache[9] = $event => ((localConfig.value.zimuku_url) = $event)),
                   label: "Zimuku 站点地址",
                   placeholder: "https://zimuku.org",
                   variant: "outlined",
@@ -233,8 +247,30 @@ return (_ctx, _cache) => {
                   "hide-details": ""
                 }, null, 8, ["modelValue"]),
                 _createVNode(_component_VTextField, {
+                  modelValue: localConfig.value.subhd_cookie,
+                  "onUpdate:modelValue": _cache[10] || (_cache[10] = $event => ((localConfig.value.subhd_cookie) = $event)),
+                  label: "SubHD Cookie（可选）",
+                  placeholder: "登录后复制 Cookie；优先于 CookieCloud",
+                  variant: "outlined",
+                  density: "comfortable",
+                  type: "password",
+                  autocomplete: "new-password",
+                  "hide-details": ""
+                }, null, 8, ["modelValue"]),
+                _createVNode(_component_VTextField, {
+                  modelValue: localConfig.value.zimuku_cookie,
+                  "onUpdate:modelValue": _cache[11] || (_cache[11] = $event => ((localConfig.value.zimuku_cookie) = $event)),
+                  label: "Zimuku Cookie（可选）",
+                  placeholder: "登录后复制 Cookie；优先于 CookieCloud",
+                  variant: "outlined",
+                  density: "comfortable",
+                  type: "password",
+                  autocomplete: "new-password",
+                  "hide-details": ""
+                }, null, 8, ["modelValue"]),
+                _createVNode(_component_VTextField, {
                   modelValue: localConfig.value.assrt_url,
-                  "onUpdate:modelValue": _cache[9] || (_cache[9] = $event => ((localConfig.value.assrt_url) = $event)),
+                  "onUpdate:modelValue": _cache[12] || (_cache[12] = $event => ((localConfig.value.assrt_url) = $event)),
                   label: "射手网(伪) 站点地址",
                   placeholder: "https://2.assrt.net",
                   variant: "outlined",
@@ -243,7 +279,7 @@ return (_ctx, _cache) => {
                 }, null, 8, ["modelValue"]),
                 _createVNode(_component_VTextField, {
                   modelValue: localConfig.value.assrt_api_url,
-                  "onUpdate:modelValue": _cache[10] || (_cache[10] = $event => ((localConfig.value.assrt_api_url) = $event)),
+                  "onUpdate:modelValue": _cache[13] || (_cache[13] = $event => ((localConfig.value.assrt_api_url) = $event)),
                   label: "射手网(伪) API 地址",
                   placeholder: "https://api.assrt.net",
                   variant: "outlined",
@@ -252,7 +288,7 @@ return (_ctx, _cache) => {
                 }, null, 8, ["modelValue"]),
                 _createVNode(_component_VTextField, {
                   modelValue: localConfig.value.assrt_api_key,
-                  "onUpdate:modelValue": _cache[11] || (_cache[11] = $event => ((localConfig.value.assrt_api_key) = $event)),
+                  "onUpdate:modelValue": _cache[14] || (_cache[14] = $event => ((localConfig.value.assrt_api_key) = $event)),
                   label: "射手网(伪) API Key",
                   placeholder: "未填写时默认不启用伪射手自动搜索",
                   variant: "outlined",
@@ -269,14 +305,21 @@ return (_ctx, _cache) => {
                 density: "compact",
                 text: "站点地址只填写根地址；射手网(伪) 默认不启用，填写 API Key 后可勾选并优先使用官方 API。"
               }),
+              _createVNode(_component_VAlert, {
+                class: "mt-3",
+                type: "warning",
+                variant: "tonal",
+                density: "compact",
+                text: "SubHD/Zimuku 登录 Cookie 仅用于降低验证码触发概率。插件内部按平台限制为每分钟 5 次自动搜索/下载请求。"
+              }),
               _createVNode(_component_VDivider, { class: "my-5" }),
-              _cache[17] || (_cache[17] = _createElementVNode("div", { class: "config-section" }, [
+              _cache[20] || (_cache[20] = _createElementVNode("div", { class: "config-section" }, [
                 _createElementVNode("div", { class: "config-section-title" }, "RAR 解压器")
               ], -1)),
               _createElementVNode("div", _hoisted_5, [
                 _createVNode(_component_VSelect, {
                   modelValue: localConfig.value.rar_dependency_mode,
-                  "onUpdate:modelValue": _cache[12] || (_cache[12] = $event => ((localConfig.value.rar_dependency_mode) = $event)),
+                  "onUpdate:modelValue": _cache[15] || (_cache[15] = $event => ((localConfig.value.rar_dependency_mode) = $event)),
                   items: rarDependencyModes,
                   label: "RAR 解压器处理方式",
                   variant: "outlined",
@@ -285,7 +328,7 @@ return (_ctx, _cache) => {
                 }, null, 8, ["modelValue"]),
                 _createVNode(_component_VTextField, {
                   modelValue: localConfig.value.rar_tool_path,
-                  "onUpdate:modelValue": _cache[13] || (_cache[13] = $event => ((localConfig.value.rar_tool_path) = $event)),
+                  "onUpdate:modelValue": _cache[16] || (_cache[16] = $event => ((localConfig.value.rar_tool_path) = $event)),
                   label: "容器内映射路径",
                   placeholder: "/usr/local/bin/7z",
                   variant: "outlined",
@@ -311,6 +354,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-c631522c"]]);
+const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-30a9bff6"]]);
 
 export { Config as default };

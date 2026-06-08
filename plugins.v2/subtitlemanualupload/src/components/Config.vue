@@ -15,8 +15,11 @@ const localConfig = ref({
   online_providers: ['subhd', 'zimuku'],
   online_engine: 'cloakbrowser',
   online_use_proxy: false,
+  online_use_cookiecloud: false,
   subhd_url: 'https://subhd.tv',
   zimuku_url: 'https://zimuku.org',
+  subhd_cookie: '',
+  zimuku_cookie: '',
   assrt_url: 'https://2.assrt.net',
   assrt_api_key: '',
   assrt_api_url: 'https://api.assrt.net',
@@ -67,9 +70,12 @@ function normalizeConfig(input) {
       ? input.online_engine
       : 'cloakbrowser',
     online_use_proxy: Boolean(input?.online_use_proxy),
+    online_use_cookiecloud: Boolean(input?.online_use_cookiecloud),
     online_proxy_migrated: true,
     subhd_url: normalizeRootUrl(input?.subhd_url, 'https://subhd.tv'),
     zimuku_url: normalizeRootUrl(input?.zimuku_url, 'https://zimuku.org'),
+    subhd_cookie: String(input?.subhd_cookie || '').trim(),
+    zimuku_cookie: String(input?.zimuku_cookie || '').trim(),
     assrt_url: normalizeRootUrl(input?.assrt_url, 'https://2.assrt.net'),
     assrt_api_key: assrtApiKey,
     assrt_api_url: normalizeRootUrl(input?.assrt_api_url, 'https://api.assrt.net'),
@@ -162,6 +168,13 @@ onMounted(() => {
               color="primary"
               hide-details
             />
+            <VSwitch
+              v-model="localConfig.online_use_cookiecloud"
+              class="config-switch-line"
+              label="从 CookieCloud/站点库读取 SubHD 与 Zimuku Cookie"
+              color="success"
+              hide-details
+            />
             <VTextField
               v-model="localConfig.subhd_url"
               label="SubHD 站点地址"
@@ -176,6 +189,26 @@ onMounted(() => {
               placeholder="https://zimuku.org"
               variant="outlined"
               density="comfortable"
+              hide-details
+            />
+            <VTextField
+              v-model="localConfig.subhd_cookie"
+              label="SubHD Cookie（可选）"
+              placeholder="登录后复制 Cookie；优先于 CookieCloud"
+              variant="outlined"
+              density="comfortable"
+              type="password"
+              autocomplete="new-password"
+              hide-details
+            />
+            <VTextField
+              v-model="localConfig.zimuku_cookie"
+              label="Zimuku Cookie（可选）"
+              placeholder="登录后复制 Cookie；优先于 CookieCloud"
+              variant="outlined"
+              density="comfortable"
+              type="password"
+              autocomplete="new-password"
               hide-details
             />
             <VTextField
@@ -212,6 +245,13 @@ onMounted(() => {
             variant="tonal"
             density="compact"
             text="站点地址只填写根地址；射手网(伪) 默认不启用，填写 API Key 后可勾选并优先使用官方 API。"
+          />
+          <VAlert
+            class="mt-3"
+            type="warning"
+            variant="tonal"
+            density="compact"
+            text="SubHD/Zimuku 登录 Cookie 仅用于降低验证码触发概率。插件内部按平台限制为每分钟 5 次自动搜索/下载请求。"
           />
 
           <VDivider class="my-5" />

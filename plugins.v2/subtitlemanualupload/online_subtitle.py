@@ -138,10 +138,18 @@ class LinkExtractor(HTMLParser):
 
 
 class OnlinePageClient:
-    def __init__(self, *, engine: str = DEFAULT_ENGINE, use_proxy: bool = False, timeout: int = 60):
+    def __init__(
+        self,
+        *,
+        engine: str = DEFAULT_ENGINE,
+        use_proxy: bool = False,
+        timeout: int = 60,
+        site_cookies: Optional[Dict[str, str]] = None,
+    ):
         self.engine = normalize_online_engine(engine)
         self.use_proxy = use_proxy
         self.timeout = timeout
+        self.site_cookies = _normalize_site_cookies(site_cookies)
         self._context = None
         self._playwright_helper = None
 
@@ -161,6 +169,7 @@ class OnlinePageClient:
         return _mp_browser_looks_configured()
 
     def get_text(self, url: str, *, referer: str = "") -> Tuple[int, str, str]:
+        self._prepare_cookie_for_url(url)
         if self.engine == DEFAULT_ENGINE:
             return self._get_text_with_cloakbrowser(url, referer=referer)
         return self._get_text_with_mp_browser(url, referer=referer)
@@ -187,6 +196,9 @@ class OnlinePageClient:
                 verify_url=url,
             )
         context = self._ensure_context()
+        self._prepare_cookie_for_url(url)
+        if referer:
+            self._prepare_cookie_for_url(referer)
         page = None
         try:
             page = context.new_page()
@@ -270,6 +282,37 @@ class OnlinePageClient:
         except Exception as exc:
             logger.warning("[SubtitleManualUpload] 设置浏览器 Cookie 失败 domain=%s error=%s", domain, exc)
 
+    def _prepare_cookie_for_url(self, url: str) -> None:
+        cookie = self._configured_cookie_header(url)
+        if not cookie:
+            return
+        if self.engine == DEFAULT_ENGINE:
+            self._set_browser_cookie_header(url, cookie)
+
+    def _set_browser_cookie_header(self, url: str, cookie: str) -> None:
+        host = urlparse(url).hostname or ""
+        if not host:
+            return
+        context = self._ensure_context()
+        cookies = []
+        for name, value in _parse_cookie_header(cookie).items():
+            cookies.append(
+                {
+                    "name": name,
+                    "value": value,
+                    "domain": host,
+                    "path": "/",
+                    "httpOnly": False,
+                    "secure": urlparse(url).scheme == "https",
+                }
+            )
+        if not cookies:
+            return
+        try:
+            context.add_cookies(cookies)
+        except Exception as exc:
+            logger.warning("[SubtitleManualUpload] 注入站点 Cookie 失败 host=%s count=%s error=%s", _host(url), len(cookies), exc)
+
     def close(self) -> None:
         if not self._context:
             return
@@ -317,7 +360,7 @@ class OnlinePageClient:
                 self._playwright_helper = PlaywrightHelper()
             text = self._playwright_helper.get_page_source(
                 url=url,
-                cookies=None,
+                cookies=self._configured_cookie_header(url) or None,
                 proxies=getattr(settings, "PROXY_SERVER", None) if self.use_proxy else None,
                 timeout=self.timeout,
             )
@@ -336,19 +379,29 @@ class OnlinePageClient:
         return self._context
 
     def _cookie_header(self, url: str) -> str:
+        configured = self._configured_cookie_header(url)
         if self.engine != DEFAULT_ENGINE or not self._context:
-            return ""
+            return configured
         try:
             cookies = self._context.cookies([url])
         except Exception:
-            return ""
+            return configured
         pairs = []
         for item in cookies or []:
             name = str(item.get("name") or "").strip()
             value = str(item.get("value") or "")
             if name:
                 pairs.append(f"{name}={value}")
-        return "; ".join(pairs)
+        return _merge_cookie_headers(configured, "; ".join(pairs))
+
+    def _configured_cookie_header(self, url: str) -> str:
+        host = (urlparse(url).hostname or "").lower()
+        if not host:
+            return ""
+        for cookie_host, cookie in self.site_cookies.items():
+            if host == cookie_host or host.endswith(f".{cookie_host}"):
+                return cookie
+        return ""
 
 
 class OnlineDirectDownloader:
@@ -1070,8 +1123,9 @@ class OnlineSubtitleSearchService:
         provider_roots: Optional[Dict[str, str]] = None,
         assrt_api_key: str = "",
         assrt_api_url: str = DEFAULT_ASSRT_API_URL,
+        site_cookies: Optional[Dict[str, str]] = None,
     ):
-        self.fetcher = OnlinePageClient(engine=engine, use_proxy=use_proxy)
+        self.fetcher = OnlinePageClient(engine=engine, use_proxy=use_proxy, site_cookies=site_cookies)
         roots = normalize_provider_roots(provider_roots)
         self.providers: Dict[str, BaseSubtitleProvider] = {
             "subhd": SubhdProvider(self.fetcher, root_url=roots["subhd"]),
@@ -1098,6 +1152,7 @@ class OnlineSubtitleSearchService:
                 "proxy": browser_status["proxy"],
             },
             "engine_available": browser_status["available"],
+            "site_cookie_hosts": sorted(self.fetcher.site_cookies.keys()),
         }
 
     def manual_links(self, keywords: List[str], providers: Optional[List[str]] = None) -> List[Dict[str, Any]]:
@@ -1285,6 +1340,47 @@ def normalize_provider_roots(value: Optional[Dict[str, Any]]) -> Dict[str, str]:
     }
 
 
+def _normalize_site_cookies(value: Optional[Dict[str, Any]]) -> Dict[str, str]:
+    raw = value if isinstance(value, dict) else {}
+    cookies: Dict[str, str] = {}
+    for host, cookie in raw.items():
+        normalized_host = str(host or "").strip().lower().lstrip(".")
+        normalized_cookie = _normalize_cookie_header(cookie)
+        if normalized_host and normalized_cookie:
+            cookies[normalized_host] = normalized_cookie
+    return cookies
+
+
+def _normalize_cookie_header(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+    if text.lower().startswith("cookie:"):
+        text = text.split(":", 1)[1].strip()
+    return "; ".join(f"{name}={cookie_value}" for name, cookie_value in _parse_cookie_header(text).items())
+
+
+def _parse_cookie_header(value: Any) -> Dict[str, str]:
+    cookies: Dict[str, str] = {}
+    for part in str(value or "").replace("\r", ";").replace("\n", ";").split(";"):
+        if "=" not in part:
+            continue
+        name, cookie_value = part.split("=", 1)
+        name = name.strip()
+        cookie_value = cookie_value.strip()
+        if not name:
+            continue
+        cookies[name] = cookie_value
+    return cookies
+
+
+def _merge_cookie_headers(*values: Any) -> str:
+    merged: Dict[str, str] = {}
+    for value in values:
+        merged.update(_parse_cookie_header(value))
+    return "; ".join(f"{name}={cookie_value}" for name, cookie_value in merged.items())
+
+
 def _episode_from_text(value: str) -> Optional[Tuple[int, int]]:
     text = value or ""
     patterns = [
@@ -1308,7 +1404,10 @@ def _guess_language_label(value: str) -> str:
     text = (value or "").lower()
     if any(key in text for key in ["简英", "中英", "双语", "chs&eng", "chi_eng", "zh&en"]):
         return "简英双语"
-    if any(key in text for key in ["繁", "cht", "zh-hant"]):
+    if any(key in text for key in ["繁", "cht", "zh-hant", "zh-tw"]) or re.search(
+        r"(^|[\s._\-\[\]()])(?:tw|hk)(?=$|[\s._\-\[\]()])",
+        text,
+    ):
         return "繁体中文"
     if any(key in text for key in ["简", "chs", "zh-hans", "中文", "chinese"]):
         return "简体中文"

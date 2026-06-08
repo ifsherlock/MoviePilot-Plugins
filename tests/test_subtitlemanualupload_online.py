@@ -227,6 +227,31 @@ def test_online_service_defaults_to_no_proxy():
     assert service.fetcher.use_proxy is False
 
 
+def test_site_cookie_headers_are_normalized_without_plain_status_leak():
+    module = load_online_module()
+
+    service = module.OnlineSubtitleSearchService(
+        site_cookies={
+            "subhd.tv": "foo=bar; session=abc",
+            "zimuku.org": "zid=xyz",
+        }
+    )
+
+    assert service.fetcher._configured_cookie_header("https://subhd.tv/search/demo") == "foo=bar; session=abc"
+    assert service.fetcher._configured_cookie_header("https://www.zimuku.org/search?q=demo") == "zid=xyz"
+    status = service.status()
+    assert status["site_cookie_hosts"] == ["subhd.tv", "zimuku.org"]
+    assert "foo=bar" not in str(status)
+
+
+def test_cookie_headers_are_merged_by_name():
+    module = load_online_module()
+
+    merged = module._merge_cookie_headers("a=1; b=2", "b=3; c=4")
+
+    assert merged == "a=1; b=3; c=4"
+
+
 def test_manual_links_respect_empty_provider_selection():
     module = load_online_module()
 
