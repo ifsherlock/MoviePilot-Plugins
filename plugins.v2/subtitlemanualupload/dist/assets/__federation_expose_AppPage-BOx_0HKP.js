@@ -244,7 +244,7 @@ const selectedOnlineResultIds = ref([]);
 const onlineProviderItems = [
   { title: 'SubHD', value: 'subhd' },
   { title: 'Zimuku', value: 'zimuku' },
-  { title: 'ASSRT', value: 'assrt' },
+  { title: '射手网(伪)', value: 'assrt' },
 ];
 
 const rarHelpItems = [
@@ -307,6 +307,11 @@ const onlineMessageSummary = computed(() => {
 });
 const onlineMessageType = computed(() => {
   return (onlineMessages.value || []).some(item => item.level !== 'info') ? 'warning' : 'info'
+});
+const onlineEngineText = computed(() => {
+  const name = onlineStatus.value?.engine_name || 'CloakBrowser';
+  const available = onlineStatus.value?.engine_available !== false;
+  return `${name}${available ? ' 可用' : ' 不可用'}`
 });
 const onlineBatchLabel = computed(() => {
   if (selectedMedia.value?.media_type !== 'tv') return '搜索在线字幕'
@@ -455,7 +460,8 @@ function isOnlineResultDownloadable(item) {
 
 function providerStatus(providerId) {
   const item = (onlineStatus.value.providers || []).find(provider => provider.id === providerId);
-  return item?.message || ''
+  const host = item?.host ? `${item.host} · ` : '';
+  return `${host}${item?.message || ''}`
 }
 
 function clearTargetState() {
@@ -1423,6 +1429,13 @@ return (_ctx, _cache) => {
                       text: onlineError.value
                     }, null, 8, ["text"]))
                   : _createCommentVNode("", true),
+                _createVNode(_component_VAlert, {
+                  class: "mb-4",
+                  type: onlineStatus.value.engine_available === false ? 'warning' : 'info',
+                  variant: "tonal",
+                  density: "compact",
+                  text: `当前引擎：${onlineEngineText.value}。站点地址可在插件设置中维护。`
+                }, null, 8, ["type", "text"]),
                 (onlineMessages.value.length && !onlineMessagesCollapsed.value)
                   ? (_openBlock(), _createBlock(_component_VAlert, {
                       key: 1,
@@ -1935,6 +1948,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-d807f270"]]);
+const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-7d909bbf"]]);
 
 export { AppPage as default };

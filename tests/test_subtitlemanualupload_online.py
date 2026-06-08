@@ -46,6 +46,13 @@ class ZimukuFakeFetcher:
         return 200, '<a href="/detail/456">Example Show S01E02 简体字幕</a>', url
 
 
+class AssrtFakeFetcher:
+    def get_text(self, url, *, referer=""):
+        if "/sub/123" in url:
+            return 200, '<a href="/download/123.zip">下载字幕</a>', url
+        return 200, '<a href="/sub/123">Example Show S01E02 简体字幕.zip</a>', url
+
+
 def test_build_search_keywords_prefers_season_package():
     module = load_online_module()
     media = {"media_type": "tv", "title": "Example Show", "year": "2025"}
@@ -86,6 +93,36 @@ def test_zimuku_results_are_marked_manual_only():
     assert results[0].downloadable is False
 
 
+def test_assrt_provider_parses_web_results_without_token():
+    module = load_online_module()
+    provider = module.AssrtProvider(AssrtFakeFetcher())
+    targets = [{"season": 1, "episode": 2}]
+
+    results = provider.search("Example Show S01E02", targets, "episode")
+
+    assert len(results) == 1
+    assert results[0].provider == "assrt"
+    assert results[0].source == "射手网(伪)"
+    assert results[0].downloadable is True
+    assert results[0].page_url == "https://2.assrt.net/sub/123"
+
+
+def test_provider_roots_are_normalized_with_fallbacks():
+    module = load_online_module()
+
+    roots = module.normalize_provider_roots(
+        {
+            "subhd": "https://sub.example/",
+            "zimuku": "ftp://invalid.example",
+            "assrt": "",
+        }
+    )
+
+    assert roots["subhd"] == "https://sub.example"
+    assert roots["zimuku"] == "https://zimuku.org"
+    assert roots["assrt"] == "https://2.assrt.net"
+
+
 def test_provider_network_errors_are_compacted():
     module = load_online_module()
 
@@ -101,6 +138,7 @@ def test_provider_network_errors_are_compacted():
 
     service = module.OnlineSubtitleSearchService(use_proxy=False)
     service.providers = {"subhd": FailingProvider(None)}
+    service.fetcher = types.SimpleNamespace(available=lambda: True, close=lambda: None, engine=module.DEFAULT_ENGINE)
 
     result = service.search(
         keywords=["Example S01", "Example 第1季", "Example.S01E01"],

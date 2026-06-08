@@ -21,7 +21,14 @@ from app.db.models.transferhistory import TransferHistory
 from app.log import logger
 from app.plugins import _PluginBase
 
-from .online_subtitle import OnlineSubtitleSearchService, build_search_keywords
+from .online_subtitle import (
+    DEFAULT_ENGINE,
+    DEFAULT_PROVIDER_ROOTS,
+    OnlineSubtitleSearchService,
+    build_search_keywords,
+    normalize_online_engine,
+    normalize_provider_roots,
+)
 from .timeline_fixer import check_timeline_fixer_dependencies, fix_subtitle_timeline
 
 
@@ -29,7 +36,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "subtitle-match.png"
-    plugin_version = "0.1.19"
+    plugin_version = "0.1.20"
     plugin_author = "jaysherlock"
     author_url = "https://github.com/jaysherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -41,8 +48,9 @@ class SubtitleManualUpload(_PluginBase):
     _rar_dependency_mode = "none"
     _rar_tool_path = "/usr/local/bin/7z"
     _online_provider_ids = ["subhd", "zimuku", "assrt"]
+    _online_engine = DEFAULT_ENGINE
     _online_use_proxy = True
-    _assrt_token = ""
+    _online_site_urls = dict(DEFAULT_PROVIDER_ROOTS)
     _rar_dependency_status: Dict[str, Any] = {
         "mode": "none",
         "state": "idle",
@@ -96,8 +104,9 @@ class SubtitleManualUpload(_PluginBase):
         self._rar_dependency_mode = self._normalize_rar_dependency_mode(config.get("rar_dependency_mode"))
         self._rar_tool_path = self._normalize_text(config.get("rar_tool_path")) or "/usr/local/bin/7z"
         self._online_provider_ids = self._normalize_provider_ids(config.get("online_providers"))
+        self._online_engine = normalize_online_engine(config.get("online_engine"))
         self._online_use_proxy = bool(config.get("online_use_proxy", True))
-        self._assrt_token = self._normalize_text(config.get("assrt_token"))
+        self._online_site_urls = self._normalize_online_site_urls(config)
         type(self)._rar_dependency_mode = self._rar_dependency_mode
         type(self)._rar_tool_path = self._rar_tool_path
         self._entry_map = {}
@@ -250,12 +259,34 @@ class SubtitleManualUpload(_PluginBase):
                                             "items": [
                                                 {"title": "SubHD", "value": "subhd"},
                                                 {"title": "Zimuku", "value": "zimuku"},
-                                                {"title": "ASSRT", "value": "assrt"},
+                                                {"title": "射手网(伪)", "value": "assrt"},
                                             ],
                                         },
                                     }
                                 ],
                             },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VSelect",
+                                        "props": {
+                                            "model": "online_engine",
+                                            "label": "在线搜索引擎",
+                                            "items": [
+                                                {"title": "CloakBrowser（默认）", "value": "cloakbrowser"},
+                                                {"title": "MoviePilot 浏览器仿真 / FlareSolverr", "value": "mp_browser"},
+                                            ],
+                                        },
+                                    }
+                                ],
+                            },
+                        ],
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
                             {
                                 "component": "VCol",
                                 "props": {"cols": 12, "md": 6},
@@ -269,22 +300,44 @@ class SubtitleManualUpload(_PluginBase):
                                     }
                                 ],
                             },
-                        ],
-                    },
-                    {
-                        "component": "VRow",
-                        "content": [
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12},
+                                "props": {"cols": 12, "md": 6},
                                 "content": [
                                     {
                                         "component": "VTextField",
                                         "props": {
-                                            "model": "assrt_token",
-                                            "label": "ASSRT Token（可选）",
-                                            "placeholder": "不填写时仅提供 ASSRT 手动搜索链接",
-                                            "type": "password",
+                                            "model": "subhd_url",
+                                            "label": "SubHD 站点地址",
+                                            "placeholder": DEFAULT_PROVIDER_ROOTS["subhd"],
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VTextField",
+                                        "props": {
+                                            "model": "zimuku_url",
+                                            "label": "Zimuku 站点地址",
+                                            "placeholder": DEFAULT_PROVIDER_ROOTS["zimuku"],
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VTextField",
+                                        "props": {
+                                            "model": "assrt_url",
+                                            "label": "射手网(伪) 站点地址",
+                                            "placeholder": DEFAULT_PROVIDER_ROOTS["assrt"],
                                         },
                                     }
                                 ],
@@ -340,7 +393,7 @@ class SubtitleManualUpload(_PluginBase):
                                         "props": {
                                             "type": "info",
                                             "variant": "tonal",
-                                            "text": "从 MoviePilot 本地整理记录中搜索已有视频资源；在线字幕会先生成匹配预览，不会直接写入。ASSRT 不填写 Token 时仅作为手动搜索入口。",
+                                            "text": "从 MoviePilot 本地整理记录中搜索已有视频资源；在线字幕默认使用 CloakBrowser 页面仿真，下载后先生成匹配预览，不会直接写入。",
                                         },
                                     }
                                 ],
@@ -355,8 +408,11 @@ class SubtitleManualUpload(_PluginBase):
             "rar_dependency_mode": "none",
             "rar_tool_path": "/usr/local/bin/7z",
             "online_providers": ["subhd", "zimuku", "assrt"],
+            "online_engine": DEFAULT_ENGINE,
             "online_use_proxy": True,
-            "assrt_token": "",
+            "subhd_url": DEFAULT_PROVIDER_ROOTS["subhd"],
+            "zimuku_url": DEFAULT_PROVIDER_ROOTS["zimuku"],
+            "assrt_url": DEFAULT_PROVIDER_ROOTS["assrt"],
         }
 
     def get_page(self) -> List[dict]:
@@ -387,8 +443,11 @@ class SubtitleManualUpload(_PluginBase):
                 "rar_dependency_mode": self._rar_dependency_mode,
                 "rar_tool_path": self._rar_tool_path,
                 "online_providers": self._online_provider_ids,
+                "online_engine": self._online_engine,
                 "online_use_proxy": self._online_use_proxy,
-                "assrt_token": self._assrt_token,
+                "subhd_url": self._online_site_urls["subhd"],
+                "zimuku_url": self._online_site_urls["zimuku"],
+                "assrt_url": self._online_site_urls["assrt"],
             }
         )
 
@@ -450,6 +509,16 @@ class SubtitleManualUpload(_PluginBase):
             if provider_id in allowed and provider_id not in providers:
                 providers.append(provider_id)
         return providers or (["subhd", "zimuku", "assrt"] if fallback else [])
+
+    @classmethod
+    def _normalize_online_site_urls(cls, config: Dict[str, Any]) -> Dict[str, str]:
+        raw = config.get("online_site_urls") if isinstance(config.get("online_site_urls"), dict) else {}
+        roots = {
+            "subhd": raw.get("subhd") or config.get("subhd_url"),
+            "zimuku": raw.get("zimuku") or config.get("zimuku_url"),
+            "assrt": raw.get("assrt") or config.get("assrt_url"),
+        }
+        return normalize_provider_roots(roots)
 
     @staticmethod
     def _is_executable_file(path: Path) -> bool:
@@ -1502,8 +1571,9 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
 
     def _online_service(self) -> OnlineSubtitleSearchService:
         return OnlineSubtitleSearchService(
-            assrt_token=self._assrt_token,
+            engine=self._online_engine,
             use_proxy=self._online_use_proxy,
+            provider_roots=self._online_site_urls,
         )
 
     @classmethod
@@ -1710,7 +1780,8 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
     def api_online_status(self) -> Dict[str, Any]:
         status = self._online_service().status()
         status["enabled_providers"] = self._online_provider_ids
-        status["assrt_token_configured"] = bool(self._assrt_token)
+        status["online_engine"] = self._online_engine
+        status["provider_roots"] = self._online_site_urls
         return self._ok(status)
 
     async def api_online_manual_links(self, request: Request) -> Dict[str, Any]:

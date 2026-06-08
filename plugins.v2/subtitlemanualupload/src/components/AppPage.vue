@@ -88,7 +88,7 @@ const selectedOnlineResultIds = ref([])
 const onlineProviderItems = [
   { title: 'SubHD', value: 'subhd' },
   { title: 'Zimuku', value: 'zimuku' },
-  { title: 'ASSRT', value: 'assrt' },
+  { title: '射手网(伪)', value: 'assrt' },
 ]
 
 const rarContainerInstallCommand = `docker exec -it moviepilot bash
@@ -172,6 +172,11 @@ const onlineMessageSummary = computed(() => {
 })
 const onlineMessageType = computed(() => {
   return (onlineMessages.value || []).some(item => item.level !== 'info') ? 'warning' : 'info'
+})
+const onlineEngineText = computed(() => {
+  const name = onlineStatus.value?.engine_name || 'CloakBrowser'
+  const available = onlineStatus.value?.engine_available !== false
+  return `${name}${available ? ' 可用' : ' 不可用'}`
 })
 const onlineBatchLabel = computed(() => {
   if (selectedMedia.value?.media_type !== 'tv') return '搜索在线字幕'
@@ -320,7 +325,8 @@ function isOnlineResultDownloadable(item) {
 
 function providerStatus(providerId) {
   const item = (onlineStatus.value.providers || []).find(provider => provider.id === providerId)
-  return item?.message || ''
+  const host = item?.host ? `${item.host} · ` : ''
+  return `${host}${item?.message || ''}`
 }
 
 function clearTargetState() {
@@ -1149,6 +1155,13 @@ defineExpose({
             type="error"
             variant="tonal"
             :text="onlineError"
+          />
+          <VAlert
+            class="mb-4"
+            :type="onlineStatus.engine_available === false ? 'warning' : 'info'"
+            variant="tonal"
+            density="compact"
+            :text="`当前引擎：${onlineEngineText}。站点地址可在插件设置中维护。`"
           />
           <VAlert
             v-if="onlineMessages.length && !onlineMessagesCollapsed"
