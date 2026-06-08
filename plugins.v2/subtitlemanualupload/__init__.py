@@ -8,6 +8,7 @@ import re
 import shutil
 import subprocess
 import zipfile
+from collections import OrderedDict
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -37,7 +38,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "subtitle-match.png"
-    plugin_version = "0.1.25"
+    plugin_version = "0.1.26"
     plugin_author = "jaysherlock"
     author_url = "https://github.com/jaysherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -48,17 +49,28 @@ class SubtitleManualUpload(_PluginBase):
     _show_sidebar_nav = True
     _rar_dependency_mode = "none"
     _rar_tool_path = "/usr/local/bin/7z"
-    _online_provider_ids = ["subhd", "zimuku", "assrt"]
+    _default_online_provider_ids = ["subhd", "zimuku"]
+    _online_provider_ids = ["subhd", "zimuku"]
     _online_engine = DEFAULT_ENGINE
     _online_use_proxy = False
     _online_site_urls = dict(DEFAULT_PROVIDER_ROOTS)
+    _assrt_api_key = ""
+    _assrt_api_url = "https://api.assrt.net"
+    _cache_ttl_seconds = 90
+    _cache_max_entries = 5000
+    _entry_map_max_size = 2000
     _rar_dependency_status: Dict[str, Any] = {
         "mode": "none",
         "state": "idle",
         "message": "",
         "checked_at": "",
     }
-    _entry_map: Dict[str, Dict[str, Any]] = {}
+    _entry_map: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
+    _local_entries_cache: Dict[str, Any] = {
+        "loaded_at": None,
+        "entries": [],
+        "media_count": 0,
+    }
 
     _subtitle_exts = {".ass", ".srt", ".ssa", ".sbv", ".sub", ".vtt", ".webvtt"}
     _archive_exts = {".zip", ".rar"}
@@ -109,9 +121,17 @@ class SubtitleManualUpload(_PluginBase):
         legacy_proxy_default = "online_proxy_migrated" not in config and config.get("online_use_proxy") is True
         self._online_use_proxy = False if legacy_proxy_default else bool(config.get("online_use_proxy", False))
         self._online_site_urls = self._normalize_online_site_urls(config)
+        self._assrt_api_key = self._normalize_text(config.get("assrt_api_key"))
+        self._assrt_api_url = self._normalize_root_url(
+            config.get("assrt_api_url"),
+            "https://api.assrt.net",
+        )
+        if not config.get("assrt_provider_migrated") and not self._assrt_api_key:
+            self._online_provider_ids = [item for item in self._online_provider_ids if item != "assrt"]
         type(self)._rar_dependency_mode = self._rar_dependency_mode
         type(self)._rar_tool_path = self._rar_tool_path
-        self._entry_map = {}
+        self._entry_map = OrderedDict()
+        self._local_entries_cache = {"loaded_at": None, "entries": [], "media_count": 0}
         self._save_config()
         self._prepare_rar_dependency()
         self._cleanup_old_sessions()
@@ -261,7 +281,7 @@ class SubtitleManualUpload(_PluginBase):
                                             "items": [
                                                 {"title": "SubHD", "value": "subhd"},
                                                 {"title": "Zimuku", "value": "zimuku"},
-                                                {"title": "射手网(伪)", "value": "assrt"},
+                                                {"title": "射手网(伪，需 API Key)", "value": "assrt"},
                                             ],
                                         },
                                     }
@@ -343,7 +363,36 @@ class SubtitleManualUpload(_PluginBase):
                                         },
                                     }
                                 ],
-                            }
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VTextField",
+                                        "props": {
+                                            "model": "assrt_api_url",
+                                            "label": "射手网(伪) API 地址",
+                                            "placeholder": "https://api.assrt.net",
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VTextField",
+                                        "props": {
+                                            "model": "assrt_api_key",
+                                            "label": "射手网(伪) API Key",
+                                            "type": "password",
+                                            "placeholder": "未填写时默认不启用伪射手自动搜索",
+                                        },
+                                    }
+                                ],
+                            },
                         ],
                     },
                     {
@@ -409,12 +458,14 @@ class SubtitleManualUpload(_PluginBase):
             "show_sidebar_nav": True,
             "rar_dependency_mode": "none",
             "rar_tool_path": "/usr/local/bin/7z",
-            "online_providers": ["subhd", "zimuku", "assrt"],
+            "online_providers": list(self._default_online_provider_ids),
             "online_engine": DEFAULT_ENGINE,
             "online_use_proxy": False,
             "subhd_url": DEFAULT_PROVIDER_ROOTS["subhd"],
             "zimuku_url": DEFAULT_PROVIDER_ROOTS["zimuku"],
             "assrt_url": DEFAULT_PROVIDER_ROOTS["assrt"],
+            "assrt_api_key": "",
+            "assrt_api_url": "https://api.assrt.net",
         }
 
     def get_page(self) -> List[dict]:
@@ -448,9 +499,12 @@ class SubtitleManualUpload(_PluginBase):
                 "online_engine": self._online_engine,
                 "online_use_proxy": self._online_use_proxy,
                 "online_proxy_migrated": True,
+                "assrt_provider_migrated": True,
                 "subhd_url": self._online_site_urls["subhd"],
                 "zimuku_url": self._online_site_urls["zimuku"],
                 "assrt_url": self._online_site_urls["assrt"],
+                "assrt_api_key": self._assrt_api_key,
+                "assrt_api_url": self._assrt_api_url,
             }
         )
 
@@ -467,6 +521,18 @@ class SubtitleManualUpload(_PluginBase):
     @staticmethod
     def _normalize_text(value: Any) -> str:
         return str(value or "").strip()
+
+    @classmethod
+    def _normalize_root_url(cls, value: Any, default: str) -> str:
+        url = cls._normalize_text(value).rstrip("/")
+        if re.match(r"^https?://", url, flags=re.I):
+            return url
+        return default
+
+    @classmethod
+    def _host_from_url(cls, value: Any) -> str:
+        match = re.match(r"^https?://([^/?#]+)", cls._normalize_text(value), flags=re.I)
+        return match.group(1) if match else ""
 
     @staticmethod
     def _hash_text(value: str) -> str:
@@ -505,13 +571,13 @@ class SubtitleManualUpload(_PluginBase):
         elif isinstance(value, str):
             raw_items = re.split(r"[,，\s]+", value)
         else:
-            raw_items = cls._online_provider_ids
+            raw_items = cls._default_online_provider_ids
         providers = []
         for item in raw_items:
             provider_id = cls._normalize_text(item).lower()
             if provider_id in allowed and provider_id not in providers:
                 providers.append(provider_id)
-        return providers or (["subhd", "zimuku", "assrt"] if fallback else [])
+        return providers or (list(cls._default_online_provider_ids) if fallback else [])
 
     @classmethod
     def _normalize_online_site_urls(cls, config: Dict[str, Any]) -> Dict[str, str]:
@@ -840,40 +906,93 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             "date": self._normalize_text(getattr(history, "date", "")),
         }
 
-    async def _search_media_candidates(self, keyword: str, media_type: str, limit: int) -> List[Dict[str, Any]]:
-        clean_keyword = self._normalize_text(keyword)
-        count = max(limit * 80, 200)
+    def _load_local_entries(self, *, force: bool = False) -> List[Dict[str, Any]]:
+        cache = self._local_entries_cache or {}
+        loaded_at = cache.get("loaded_at")
+        now = datetime.now()
+        if not force and loaded_at and (now - loaded_at).total_seconds() < self._cache_ttl_seconds:
+            return list(cache.get("entries") or [])
+
         try:
-            if clean_keyword:
-                histories = TransferHistory.list_by_title(
-                    db=None,
-                    title=clean_keyword,
-                    page=1,
-                    count=count,
-                    status=True,
-                ) or []
-            else:
-                histories = TransferHistory.list_by_page(
-                    db=None,
-                    page=1,
-                    count=count,
-                    status=True,
-                ) or []
+            histories = TransferHistory.list_by_page(
+                db=None,
+                page=1,
+                count=self._cache_max_entries,
+                status=True,
+            ) or []
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"读取 MoviePilot 本地整理记录失败: {exc}") from exc
 
-        expected_type = self._media_type_text(media_type)
         entries: List[Dict[str, Any]] = []
         seen_paths = set()
         for history in histories:
             entry = self._build_entry_from_history(history)
             if not entry:
                 continue
+            path = entry.get("path")
+            if path in seen_paths:
+                continue
+            seen_paths.add(path)
+            entries.append(entry)
+            if len(entries) >= self._cache_max_entries:
+                break
+
+        media_count = len({entry.get("media_key") for entry in entries if entry.get("media_key")})
+        self._local_entries_cache = {
+            "loaded_at": now,
+            "entries": entries,
+            "media_count": media_count,
+        }
+        self._remember_targets(entries)
+        logger.info(
+            "[SubtitleManualUpload] 本地资源缓存已刷新 entries=%s medias=%s",
+            len(entries),
+            media_count,
+        )
+        return list(entries)
+
+    def _refresh_local_cache(self) -> List[Dict[str, Any]]:
+        self._entry_map = OrderedDict()
+        self._local_entries_cache = {"loaded_at": None, "entries": [], "media_count": 0}
+        return self._load_local_entries(force=True)
+
+    def _cache_status(self) -> Dict[str, Any]:
+        cache = self._local_entries_cache or {}
+        loaded_at = cache.get("loaded_at")
+        expires_in = 0
+        if loaded_at:
+            expires_in = max(0, int(self._cache_ttl_seconds - (datetime.now() - loaded_at).total_seconds()))
+        return {
+            "ready": bool(loaded_at),
+            "ttl_seconds": self._cache_ttl_seconds,
+            "expires_in": expires_in,
+            "updated_at": loaded_at.isoformat(timespec="seconds") if loaded_at else "",
+            "entry_count": len(cache.get("entries") or []),
+            "media_count": int(cache.get("media_count") or 0),
+            "target_cache_count": len(self._entry_map or {}),
+            "max_entries": self._cache_max_entries,
+        }
+
+    @classmethod
+    def _entry_matches_keyword(cls, entry: Dict[str, Any], keyword: str) -> bool:
+        clean_keyword = cls._normalize_text(keyword).lower()
+        if not clean_keyword:
+            return True
+        haystack = " ".join(
+            cls._normalize_text(entry.get(key)).lower()
+            for key in ("title", "filename", "basename", "relative_path")
+        )
+        return all(part in haystack for part in re.split(r"\s+", clean_keyword) if part)
+
+    async def _search_media_candidates(self, keyword: str, media_type: str, limit: int) -> List[Dict[str, Any]]:
+        clean_keyword = self._normalize_text(keyword)
+        expected_type = self._media_type_text(media_type)
+        entries: List[Dict[str, Any]] = []
+        for entry in self._load_local_entries():
             if expected_type and entry.get("media_type") != expected_type:
                 continue
-            if entry["path"] in seen_paths:
+            if not self._entry_matches_keyword(entry, clean_keyword):
                 continue
-            seen_paths.add(entry["path"])
             entries.append(entry)
         candidates = self._group_entries_as_media(entries, limit)
         for media in candidates:
@@ -973,51 +1092,24 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         year: str = "",
         season: Any = None,
     ) -> Dict[str, Any]:
-        try:
-            clean_type = self._media_type_text(media_type)
-            history_type = self._history_type_text(clean_type)
-            clean_tmdb_id = self._safe_int(tmdb_id, 0)
-            clean_title = self._normalize_text(title)
-            clean_year = self._normalize_text(year)
-            if clean_tmdb_id and history_type:
-                histories = TransferHistory.list_by(
-                    db=None,
-                    mtype=history_type,
-                    tmdbid=clean_tmdb_id,
-                ) or []
-            elif clean_title and clean_year and history_type:
-                histories = TransferHistory.list_by(
-                    db=None,
-                    mtype=history_type,
-                    title=clean_title,
-                    year=clean_year,
-                ) or []
-            elif clean_title:
-                histories = TransferHistory.list_by_title(
-                    db=None,
-                    title=clean_title,
-                    page=1,
-                    count=500,
-                    status=True,
-                ) or []
-            else:
-                histories = []
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"读取 MoviePilot 本地资源失败: {exc}") from exc
+        clean_type = self._media_type_text(media_type)
+        clean_tmdb_id = self._safe_int(tmdb_id, 0)
+        clean_title = self._normalize_text(title)
+        clean_year = self._normalize_text(year)
+        clean_douban_id = self._normalize_text(douban_id)
 
         entries = []
         seen_paths = set()
-        for history in histories:
-            entry = self._build_entry_from_history(history)
-            if not entry:
-                continue
+        for entry in self._load_local_entries():
             if clean_type and entry.get("media_type") != clean_type:
                 continue
-            if clean_title and entry.get("title") != clean_title:
+            if clean_tmdb_id and self._safe_int(entry.get("tmdb_id"), 0) != clean_tmdb_id:
+                continue
+            if clean_douban_id and self._normalize_text(entry.get("douban_id")) != clean_douban_id:
+                continue
+            if not clean_tmdb_id and not clean_douban_id and clean_title and entry.get("title") != clean_title:
                 continue
             if clean_year and entry.get("year") != clean_year:
-                continue
-            if clean_tmdb_id and self._safe_int(entry.get("tmdb_id"), 0) != clean_tmdb_id:
                 continue
             if entry["path"] not in seen_paths:
                 seen_paths.add(entry["path"])
@@ -1082,7 +1174,11 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         for entry in entries:
             target_id = self._normalize_text(entry.get("id"))
             if target_id:
+                if target_id in self._entry_map:
+                    self._entry_map.move_to_end(target_id)
                 self._entry_map[target_id] = entry
+        while len(self._entry_map) > self._entry_map_max_size:
+            self._entry_map.popitem(last=False)
 
     def _resolve_targets(self, target_ids: Iterable[str]) -> Dict[str, Dict[str, Any]]:
         target_id_list = [self._normalize_text(item) for item in target_ids if self._normalize_text(item)]
@@ -1101,23 +1197,26 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             self._brief_ids(target_id_list),
             len(missing_ids),
         )
-        try:
-            histories = TransferHistory.list_by_page(db=None, page=1, count=-1, status=True) or []
-        except Exception as exc:
-            logger.error("[SubtitleManualUpload] 回查本地整理记录失败: %s", exc)
-            return result
 
-        for history in histories:
-            entry = self._build_entry_from_history(history)
-            if not entry:
-                continue
-            target_id = self._normalize_text(entry.get("id"))
-            if target_id in missing_ids:
-                self._entry_map[target_id] = entry
+        def take_matches(source_entries: List[Dict[str, Any]]) -> None:
+            for entry in source_entries:
+                target_id = self._normalize_text(entry.get("id"))
+                if target_id not in missing_ids:
+                    continue
+                self._remember_targets([entry])
                 result[target_id] = entry
                 missing_ids.remove(target_id)
                 if not missing_ids:
                     break
+
+        try:
+            take_matches(self._load_local_entries())
+            if missing_ids:
+                take_matches(self._load_local_entries(force=True))
+        except Exception as exc:
+            logger.error("[SubtitleManualUpload] 回查本地整理记录失败: %s", exc)
+            return result
+
         if missing_ids:
             logger.warning(
                 "[SubtitleManualUpload] 仍有目标无法解析 target_ids=%s missing=%s",
@@ -1577,6 +1676,8 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             engine=self._online_engine,
             use_proxy=self._online_use_proxy,
             provider_roots=self._online_site_urls,
+            assrt_api_key=self._assrt_api_key,
+            assrt_api_url=self._assrt_api_url,
         )
 
     @classmethod
@@ -1712,7 +1813,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             {
                 "enabled": self.get_state(),
                 "source": "MoviePilot 本地整理记录",
-                "index": {"ready": True, "updated_at": "", "entry_count": 0},
+                "index": self._cache_status(),
                 "archive_support": {
                     "zip": True,
                     "rar": bool(rar_tool),
@@ -1724,15 +1825,23 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     "dependency_status": self._rar_dependency_status,
                 },
                 "timeline_fixer": check_timeline_fixer_dependencies(),
+                "online_search": {
+                    "enabled_providers": self._online_provider_ids,
+                    "assrt_api_configured": bool(self._assrt_api_key),
+                    "assrt_api_host": self._host_from_url(self._assrt_api_url),
+                },
             }
         )
 
     def api_refresh_index(self) -> Dict[str, Any]:
+        entries = self._refresh_local_cache()
+        cache_status = self._cache_status()
         return self._ok(
             {
-                "realtime": True,
+                "realtime": False,
+                "index": cache_status,
             },
-            message="已改用 MoviePilot 本地整理记录实时读取，无需刷新索引",
+            message=f"已刷新媒体库资源清单：{cache_status['media_count']} 个媒体，{len(entries)} 个本地视频目标",
         )
 
     async def api_search(self, request: Request) -> Dict[str, Any]:
@@ -1785,6 +1894,8 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         status["enabled_providers"] = self._online_provider_ids
         status["online_engine"] = self._online_engine
         status["provider_roots"] = self._online_site_urls
+        status["assrt_api_configured"] = bool(self._assrt_api_key)
+        status["assrt_api_host"] = self._host_from_url(self._assrt_api_url)
         return self._ok(status)
 
     async def api_online_manual_links(self, request: Request) -> Dict[str, Any]:
@@ -1799,11 +1910,14 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         keywords = self._online_keywords(body, targets)
         if not keywords:
             raise HTTPException(status_code=400, detail="没有可用搜索关键词，请手动输入关键词")
-        links = self._online_service().manual_links(keywords)
+        requested_providers = body.get("providers") if isinstance(body.get("providers"), list) else self._online_provider_ids
+        providers = self._normalize_provider_ids(requested_providers, fallback=not isinstance(body.get("providers"), list))
+        links = self._online_service().manual_links(keywords, providers=providers)
         logger.info(
-            "[SubtitleManualUpload] 在线字幕手动链接生成 target_count=%s keywords=%s",
+            "[SubtitleManualUpload] 在线字幕手动链接生成 target_count=%s keywords=%s providers=%s",
             len(targets),
             len(keywords),
+            ",".join(providers),
         )
         return self._ok(
             {
@@ -1837,7 +1951,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             targets=targets,
             scope=scope,
         )
-        manual_links = service.manual_links(keywords)
+        manual_links = service.manual_links(keywords, providers=providers)
         logger.info(
             "[SubtitleManualUpload] 在线字幕搜索完成 scope=%s providers=%s targets=%s results=%s",
             scope,

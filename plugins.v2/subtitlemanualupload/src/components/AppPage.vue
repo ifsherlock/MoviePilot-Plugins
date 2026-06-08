@@ -25,6 +25,13 @@ const pluginBase = computed(() => `plugin/${props.pluginId || 'SubtitleManualUpl
 const status = ref({
   enabled: false,
   source: 'MoviePilot 本地整理记录',
+  index: {
+    ready: false,
+    updated_at: '',
+    entry_count: 0,
+    media_count: 0,
+    expires_in: 0,
+  },
   archive_support: {
     zip: true,
     rar: false,
@@ -78,7 +85,7 @@ const onlineScope = ref('auto')
 const onlineKeyword = ref('')
 const onlineTargets = ref([])
 const onlineStatus = ref({ providers: [], capabilities: {} })
-const onlineSelectedProviders = ref(['subhd', 'zimuku', 'assrt'])
+const onlineSelectedProviders = ref(['subhd', 'zimuku'])
 const onlineResults = ref([])
 const onlineMessages = ref([])
 const onlineMessagesCollapsed = ref(false)
@@ -88,7 +95,7 @@ const selectedOnlineResultIds = ref([])
 const onlineProviderItems = [
   { title: 'SubHD', value: 'subhd' },
   { title: 'Zimuku', value: 'zimuku' },
-  { title: '射手网(伪)', value: 'assrt' },
+  { title: '射手网(伪，需 API Key)', value: 'assrt' },
 ]
 
 const rarContainerInstallCommand = `docker exec -it moviepilot bash
@@ -185,6 +192,16 @@ const onlineBatchLabel = computed(() => {
 })
 const timelineStatus = computed(() => status.value?.timeline_fixer || { available: false, modules: {} })
 const timelineAvailable = computed(() => timelineStatus.value.available === true)
+const indexStatus = computed(() => status.value?.index || {})
+const indexSummary = computed(() => {
+  if (!indexStatus.value.ready) return '媒体库清单尚未缓存'
+  const parts = [
+    `${indexStatus.value.media_count || 0} 个媒体`,
+    `${indexStatus.value.entry_count || 0} 个视频`,
+  ]
+  if (indexStatus.value.updated_at) parts.push(`更新于 ${indexStatus.value.updated_at}`)
+  return parts.join(' · ')
+})
 const archiveStatus = computed(() => status.value?.archive_support || { zip: true, rar: false, rar_tool: '', rar_python: false })
 const rarAvailable = computed(() => archiveStatus.value.rar === true)
 const rarPythonAvailable = computed(() => archiveStatus.value.rar_python === true)
@@ -369,9 +386,18 @@ async function refreshIndex() {
   error.value = ''
   try {
     const response = await props.api.post(`${pluginBase.value}/refresh_index`, {})
-    message.value = response?.message || 'MoviePilot 本地整理记录为实时读取，无需重建索引'
+    const data = unwrapResponse(response) || {}
+    if (data.index) {
+      status.value = { ...status.value, index: data.index }
+    }
+    if (selectedMedia.value) {
+      await loadTargets(selectedMedia.value, selectedSeason.value || 'all')
+    } else {
+      await runSearch()
+    }
+    message.value = response?.message || '已刷新媒体库资源清单'
   } catch (err) {
-    error.value = errorMessage(err, '刷新状态失败')
+    error.value = errorMessage(err, '刷新媒体库清单失败')
   } finally {
     refreshing.value = false
   }
@@ -881,9 +907,17 @@ defineExpose({
             <div>
               <div class="section-kicker">资源选择</div>
               <h2>选择本地已有资源</h2>
-              <p>仅展示 MoviePilot 已整理到本地库的视频资源。</p>
+              <p>仅展示 MoviePilot 已整理到本地库的视频资源。{{ indexSummary }}</p>
             </div>
-            <VBtn variant="text" :loading="refreshing" @click="refreshIndex">接口状态</VBtn>
+            <VBtn
+              variant="tonal"
+              color="primary"
+              prepend-icon="mdi-refresh"
+              :loading="refreshing"
+              @click="refreshIndex"
+            >
+              刷新媒体库清单
+            </VBtn>
           </div>
           <div class="search-bar">
             <VTextField

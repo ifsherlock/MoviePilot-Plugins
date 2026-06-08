@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import html
 import io
+import json
 import re
 import urllib.error
 import urllib.request
@@ -28,6 +29,7 @@ DEFAULT_PROVIDER_ROOTS = {
     "zimuku": "https://zimuku.org",
     "assrt": "https://2.assrt.net",
 }
+DEFAULT_ASSRT_API_URL = "https://api.assrt.net"
 
 
 @dataclass
@@ -376,10 +378,7 @@ class SubhdProvider(BaseSubtitleProvider):
             raise ValueError("SubHD 没有可下载链接")
         filename, content, final_url = self.fetcher.get_bytes(download_url, referer=page_url)
         if self._looks_like_html(content, filename):
-            lowered = content.lower()
-            if b"gzh" in lowered or "公众号".encode("utf-8") in content:
-                raise ValueError("SubHD 需要公众号验证码，请打开手动搜索链接处理后再上传字幕包")
-            raise ValueError("SubHD 返回网页而不是字幕文件，请尝试手动搜索")
+            raise ValueError(self._html_download_reason(content, page_url or download_url))
         logger.info(
             "[SubtitleManualUpload] SubHD 在线字幕下载完成 final_host=%s size=%s",
             _host(final_url),
@@ -438,6 +437,28 @@ class SubhdProvider(BaseSubtitleProvider):
     @staticmethod
     def _clean_text(value: str) -> str:
         return re.sub(r"\s+", " ", html.unescape(value or "")).strip()
+
+    @classmethod
+    def _html_download_reason(cls, content: bytes, page_url: str) -> str:
+        text = _decode_bytes(content[:12000], None)
+        lowered = text.lower()
+        if any(token in lowered for token in ["gzh", "wechat", "verify", "captcha"]) or "公众号" in text or "验证码" in text:
+            return "SubHD 下载需要站点验证或公众号验证码；请打开右侧手动链接完成验证并下载字幕包后，再回到本插件上传。"
+        if "登录" in text or "login" in lowered:
+            return "SubHD 返回登录/验证页面而不是字幕文件；请使用手动链接在浏览器完成站点流程后上传字幕包。"
+        logger.info(
+            "[SubtitleManualUpload] SubHD 下载返回 HTML host=%s title=%s",
+            _host(page_url),
+            cls._html_title(text),
+        )
+        return "SubHD 返回网页而不是字幕文件，可能需要站点验证；请使用手动搜索链接下载后再上传。"
+
+    @staticmethod
+    def _html_title(text: str) -> str:
+        match = re.search(r"<title[^>]*>(.*?)</title>", text or "", flags=re.I | re.S)
+        if not match:
+            return ""
+        return re.sub(r"\s+", " ", html.unescape(match.group(1))).strip()[:80]
 
 
 class ZimukuProvider(BaseSubtitleProvider):
@@ -557,15 +578,32 @@ class AssrtProvider(BaseSubtitleProvider):
     display_name = "射手网(伪)"
     default_root_url = DEFAULT_PROVIDER_ROOTS["assrt"]
 
+    def __init__(
+        self,
+        fetcher: OnlinePageClient,
+        root_url: str = "",
+        *,
+        api_key: str = "",
+        api_url: str = DEFAULT_ASSRT_API_URL,
+    ):
+        super().__init__(fetcher, root_url=root_url)
+        self.api_key = str(api_key or "").strip()
+        self.api_url = normalize_root_url(api_url, DEFAULT_ASSRT_API_URL)
+
     def status(self) -> Dict[str, Any]:
         status = super().status()
-        status["message"] = "使用浏览器仿真搜索网页站"
+        status["api_configured"] = bool(self.api_key)
+        status["api_host"] = _host(self.api_url)
+        status["message"] = "已配置 API Key，优先使用官方 API" if self.api_key else "未配置 API Key；默认不参与自动搜索，可手动勾选后尝试网页仿真"
         return status
 
     def manual_url(self, keyword: str) -> str:
         return f"{self.root_url}/sub/?{urlencode({'searchword': keyword})}"
 
     def search(self, keyword: str, targets: List[Dict[str, Any]], scope: str) -> List[OnlineSubtitleResult]:
+        if self.api_key:
+            return self._search_api(keyword, targets)
+        logger.info("[SubtitleManualUpload] 射手网(伪) 未配置 API Key，使用网页仿真降级搜索 host=%s", _host(self.root_url))
         status, text, final_url = self.fetcher.get_text(self.manual_url(keyword))
         if status >= 400 or not text:
             raise ValueError(f"射手网(伪) 搜索失败，HTTP {status}")
@@ -591,7 +629,7 @@ class AssrtProvider(BaseSubtitleProvider):
                     episode=episode,
                     score=_score_result(title, keyword, targets),
                     source=self.display_name,
-                    note="浏览器仿真解析自射手网(伪)",
+                    note="未配置 API Key，浏览器仿真解析自射手网(伪)",
                     downloadable=True,
                 )
             )
@@ -600,11 +638,161 @@ class AssrtProvider(BaseSubtitleProvider):
         return _dedupe_results(results)[:30]
 
     def download(self, result: Dict[str, Any], captcha_code: str = "") -> Tuple[str, bytes]:
+        result_id = str(result.get("result_id") or "").strip()
+        download_url = str(result.get("download_url") or "").strip()
+        if self.api_key and (result_id.isdigit() or download_url.startswith("assrt-api:")):
+            return self._download_api(result_id or download_url.replace("assrt-api:", "", 1))
         page_url = result.get("page_url") or ""
-        download_url = result.get("download_url") or self._extract_download_url(page_url)
+        download_url = download_url or self._extract_download_url(page_url)
         if not download_url:
             raise ValueError("射手网(伪) 未找到可下载链接，请使用手动搜索")
         return super().download({**result, "download_url": download_url, "page_url": page_url}, captcha_code=captcha_code)
+
+    def _search_api(self, keyword: str, targets: List[Dict[str, Any]]) -> List[OnlineSubtitleResult]:
+        payload = self._api_json(
+            "/v1/sub/search",
+            {
+                "q": keyword,
+                "cnt": "15",
+                "pos": "0",
+                "is_file": "1",
+                "no_muxer": "1",
+                "filelist": "1",
+            },
+        )
+        subs = self._extract_subs(payload)
+        results: List[OnlineSubtitleResult] = []
+        for item in subs:
+            sid = str(item.get("id") or "").strip()
+            if not sid:
+                continue
+            title = self._api_subtitle_title(item)
+            season, episode = _episode_from_text(title) or (0, 0)
+            results.append(
+                OnlineSubtitleResult(
+                    provider=self.provider_id,
+                    result_id=sid,
+                    title=title,
+                    page_url=f"{self.root_url}/sub/{sid}",
+                    download_url=f"assrt-api:{sid}",
+                    language=_guess_language_label(" ".join([title, str(item.get("lang") or ""), str(item.get("desc") or "")])),
+                    format=_guess_subtitle_format(" ".join([title, str(item.get("subtype") or ""), str(item.get("filename") or "")])),
+                    season=season,
+                    episode=episode,
+                    score=_score_result(title, keyword, targets) + 8,
+                    source=self.display_name,
+                    note="通过 ASSRT 官方 API 搜索",
+                    downloadable=True,
+                )
+            )
+        return _dedupe_results(results)[:30]
+
+    def _download_api(self, subtitle_id: str) -> Tuple[str, bytes]:
+        if not subtitle_id:
+            raise ValueError("射手网(伪) API 缺少字幕 ID")
+        payload = self._api_json("/v1/sub/detail", {"id": subtitle_id})
+        subs = self._extract_subs(payload)
+        detail = subs[0] if subs else {}
+        download_url = str(detail.get("url") or "").strip()
+        filename = str(detail.get("filename") or "").strip()
+        filelist = detail.get("filelist") or []
+        if isinstance(filelist, dict):
+            filelist = [filelist]
+        if not download_url and isinstance(filelist, list):
+            for item in filelist:
+                if not isinstance(item, dict):
+                    continue
+                download_url = str(item.get("url") or "").strip()
+                filename = filename or str(item.get("f") or "").strip()
+                if download_url:
+                    break
+        if not download_url:
+            raise ValueError("射手网(伪) API 未返回可下载链接")
+        name, content, final_url = OnlineDirectDownloader(use_proxy=self.fetcher.use_proxy).get_bytes(download_url)
+        logger.info(
+            "[SubtitleManualUpload] 射手网(伪) API 字幕下载完成 host=%s size=%s",
+            _host(final_url),
+            len(content),
+        )
+        return filename or name or f"assrt-{subtitle_id}.zip", content
+
+    def _api_json(self, path: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        query = urlencode({key: value for key, value in params.items() if value not in {None, ""}})
+        url = f"{self.api_url}{path}?{query}"
+        headers = {
+            "User-Agent": USER_AGENT,
+            "Accept": "application/json",
+            "Authorization": f"Bearer {self.api_key}",
+        }
+        handlers = []
+        proxies = getattr(settings, "PROXY", None) if self.fetcher.use_proxy else None
+        if proxies:
+            handlers.append(urllib.request.ProxyHandler(proxies))
+        opener = urllib.request.build_opener(*handlers)
+        try:
+            request = urllib.request.Request(url, headers=headers)
+            with opener.open(request, timeout=40) as response:
+                raw = response.read()
+        except urllib.error.HTTPError as exc:
+            detail = _decode_bytes(exc.read()[:500], exc.headers.get_content_charset())
+            raise ValueError(f"射手网(伪) API 请求失败 HTTP {exc.code}: {_compact_error_message(detail)}") from exc
+        except urllib.error.URLError as exc:
+            raise ValueError(_format_network_error(self.api_url, exc)) from exc
+        except OSError as exc:
+            raise ValueError(_format_network_error(self.api_url, exc)) from exc
+        try:
+            payload = json.loads(_decode_bytes(raw, None) or "{}")
+        except Exception as exc:
+            raise ValueError("射手网(伪) API 返回内容不是 JSON") from exc
+        error = self._api_error_message(payload)
+        if error:
+            raise ValueError(error)
+        return payload
+
+    @staticmethod
+    def _api_error_message(payload: Dict[str, Any]) -> str:
+        status = payload.get("status")
+        if status in {0, "0", None}:
+            return ""
+        message = (
+            payload.get("message")
+            or payload.get("msg")
+            or payload.get("error")
+            or payload.get("err")
+            or payload.get("result")
+            or "API 返回错误"
+        )
+        text = str(message)
+        lowered = text.lower()
+        if "invalid token" in lowered:
+            return "射手网(伪) API Key 无效，请在插件设置中检查。"
+        if "quota" in lowered or "limit" in lowered:
+            return "射手网(伪) API 配额不足或请求过于频繁，请稍后再试。"
+        return f"射手网(伪) API 返回错误: {text}"
+
+    @staticmethod
+    def _extract_subs(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
+        containers = [
+            payload.get("sub") if isinstance(payload, dict) else None,
+            payload,
+        ]
+        for container in containers:
+            if not isinstance(container, dict):
+                continue
+            subs = container.get("subs") or container.get("sub")
+            if isinstance(subs, list):
+                return [item for item in subs if isinstance(item, dict)]
+            if isinstance(subs, dict):
+                return [subs]
+        return []
+
+    @staticmethod
+    def _api_subtitle_title(item: Dict[str, Any]) -> str:
+        for key in ("native_name", "title", "videoname", "filename"):
+            value = re.sub(r"\s+", " ", html.unescape(str(item.get(key) or ""))).strip()
+            if value:
+                return value
+        return f"射手网(伪) 字幕 {item.get('id') or ''}".strip()
 
     def _extract_download_url(self, page_url: str) -> str:
         if not page_url:
@@ -649,13 +837,20 @@ class OnlineSubtitleSearchService:
         engine: str = DEFAULT_ENGINE,
         use_proxy: bool = False,
         provider_roots: Optional[Dict[str, str]] = None,
+        assrt_api_key: str = "",
+        assrt_api_url: str = DEFAULT_ASSRT_API_URL,
     ):
         self.fetcher = OnlinePageClient(engine=engine, use_proxy=use_proxy)
         roots = normalize_provider_roots(provider_roots)
         self.providers: Dict[str, BaseSubtitleProvider] = {
             "subhd": SubhdProvider(self.fetcher, root_url=roots["subhd"]),
             "zimuku": ZimukuProvider(self.fetcher, root_url=roots["zimuku"]),
-            "assrt": AssrtProvider(self.fetcher, root_url=roots["assrt"]),
+            "assrt": AssrtProvider(
+                self.fetcher,
+                root_url=roots["assrt"],
+                api_key=assrt_api_key,
+                api_url=assrt_api_url,
+            ),
         }
 
     def status(self) -> Dict[str, Any]:
@@ -674,9 +869,11 @@ class OnlineSubtitleSearchService:
             "engine_available": browser_status["available"],
         }
 
-    def manual_links(self, keywords: List[str]) -> List[Dict[str, Any]]:
+    def manual_links(self, keywords: List[str], providers: Optional[List[str]] = None) -> List[Dict[str, Any]]:
         links: List[Dict[str, Any]] = []
-        for provider in self.providers.values():
+        provider_ids = list(self.providers.keys()) if providers is None else [item for item in providers if item in self.providers]
+        for provider_id in provider_ids:
+            provider = self.providers[provider_id]
             links.append(
                 {
                     "provider": provider.provider_id,
@@ -702,6 +899,18 @@ class OnlineSubtitleSearchService:
         targets: List[Dict[str, Any]],
         scope: str,
     ) -> Dict[str, Any]:
+        provider_ids = [item for item in providers if item in self.providers]
+        if not provider_ids:
+            return {
+                "results": [],
+                "messages": [
+                    {
+                        "provider": "providers",
+                        "level": "info",
+                        "message": "未启用在线字幕源，请至少选择一个来源或使用手动上传。",
+                    }
+                ],
+            }
         if not self.fetcher.available():
             engine_name = "CloakBrowser" if self.fetcher.engine == DEFAULT_ENGINE else "MoviePilot 浏览器仿真/FlareSolverr"
             return {
@@ -714,7 +923,6 @@ class OnlineSubtitleSearchService:
                     }
                 ],
             }
-        provider_ids = [item for item in providers if item in self.providers] or list(self.providers.keys())
         results: List[OnlineSubtitleResult] = []
         provider_messages: List[Dict[str, str]] = []
         try:

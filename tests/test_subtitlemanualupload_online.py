@@ -101,6 +101,16 @@ def test_subhd_provider_parses_detail_subtitle_rows():
     assert results[0].episode == 2
 
 
+def test_subhd_html_download_response_is_reported_as_verification():
+    module = load_online_module()
+
+    html = "<html><title>验证</title><body>请关注公众号并输入验证码</body></html>".encode()
+    reason = module.SubhdProvider._html_download_reason(html, "https://subhd.tv/down/abc")
+
+    assert "公众号验证码" in reason
+    assert "手动链接" in reason
+
+
 def test_zimuku_results_are_marked_manual_only():
     module = load_online_module()
     provider = module.ZimukuProvider(ZimukuFakeFetcher())
@@ -137,7 +147,7 @@ def test_zimuku_security_page_uses_ocr_verify_jump():
     assert fetcher.cookies[0][0] == "srcurl"
 
 
-def test_assrt_provider_parses_web_results_without_token():
+def test_assrt_provider_parses_web_results_without_api_key():
     module = load_online_module()
     provider = module.AssrtProvider(AssrtFakeFetcher())
     targets = [{"season": 1, "episode": 2}]
@@ -149,6 +159,36 @@ def test_assrt_provider_parses_web_results_without_token():
     assert results[0].source == "射手网(伪)"
     assert results[0].downloadable is True
     assert results[0].page_url == "https://2.assrt.net/sub/123"
+
+
+def test_assrt_provider_uses_official_api_when_key_exists():
+    module = load_online_module()
+    provider = module.AssrtProvider(AssrtFakeFetcher(), api_key="test-key")
+
+    def fake_api_json(path, params):
+        assert path == "/v1/sub/search"
+        assert params["q"] == "Example Show S01E02"
+        return {
+            "status": 0,
+            "sub": {
+                "subs": [
+                    {
+                        "id": 602333,
+                        "native_name": "Example Show S01E02 简体字幕",
+                        "subtype": "Subrip(srt)",
+                    }
+                ]
+            },
+        }
+
+    provider._api_json = fake_api_json
+
+    results = provider.search("Example Show S01E02", [{"season": 1, "episode": 2}], "episode")
+
+    assert len(results) == 1
+    assert results[0].result_id == "602333"
+    assert results[0].download_url == "assrt-api:602333"
+    assert results[0].note == "通过 ASSRT 官方 API 搜索"
 
 
 def test_provider_roots_are_normalized_with_fallbacks():
@@ -183,6 +223,25 @@ def test_online_service_defaults_to_no_proxy():
     service = module.OnlineSubtitleSearchService()
 
     assert service.fetcher.use_proxy is False
+
+
+def test_manual_links_respect_empty_provider_selection():
+    module = load_online_module()
+
+    service = module.OnlineSubtitleSearchService()
+
+    assert service.manual_links(["Example"], providers=[]) == []
+
+
+def test_online_search_respects_empty_provider_selection():
+    module = load_online_module()
+
+    service = module.OnlineSubtitleSearchService()
+
+    result = service.search(keywords=["Example"], providers=[], targets=[], scope="movie")
+
+    assert result["results"] == []
+    assert result["messages"][0]["provider"] == "providers"
 
 
 def test_provider_network_errors_are_compacted():

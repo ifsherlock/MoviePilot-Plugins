@@ -67,11 +67,31 @@ def check_timeline_fixer_dependencies() -> Dict[str, Any]:
         "available": bool(ffmpeg and ffprobe and all(modules.values())),
         "ffmpeg": bool(ffmpeg),
         "ffprobe": bool(ffprobe),
+        "ffmpeg_path": ffmpeg or "",
+        "ffprobe_path": ffprobe or "",
+        "ffmpeg_version": _binary_version(ffmpeg),
+        "ffprobe_version": _binary_version(ffprobe),
         "modules": modules,
         "sample_rate": SAMPLE_RATE,
         "max_offset_seconds": DEFAULT_MAX_OFFSET_SECONDS,
         "min_offset_seconds": DEFAULT_MIN_OFFSET_SECONDS,
     }
+
+
+def _binary_version(path: Optional[str]) -> str:
+    if not path:
+        return ""
+    try:
+        result = subprocess.run(
+            [path, "-version"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except Exception:
+        return ""
+    first_line = (result.stdout or result.stderr or "").splitlines()
+    return first_line[0][:160] if first_line else ""
 
 
 def fix_subtitle_timeline(

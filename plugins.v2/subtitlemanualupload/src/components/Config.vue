@@ -12,12 +12,14 @@ const emit = defineEmits(['save', 'close'])
 const localConfig = ref({
   enabled: false,
   show_sidebar_nav: true,
-  online_providers: ['subhd', 'zimuku', 'assrt'],
+  online_providers: ['subhd', 'zimuku'],
   online_engine: 'cloakbrowser',
   online_use_proxy: false,
   subhd_url: 'https://subhd.tv',
   zimuku_url: 'https://zimuku.org',
   assrt_url: 'https://2.assrt.net',
+  assrt_api_key: '',
+  assrt_api_url: 'https://api.assrt.net',
   rar_dependency_mode: 'none',
   rar_tool_path: '/usr/local/bin/7z',
 })
@@ -25,7 +27,7 @@ const localConfig = ref({
 const onlineProviderItems = [
   { title: 'SubHD', value: 'subhd' },
   { title: 'Zimuku', value: 'zimuku' },
-  { title: '射手网(伪)', value: 'assrt' },
+  { title: '射手网(伪，需 API Key)', value: 'assrt' },
 ]
 
 const onlineEngineItems = [
@@ -42,7 +44,7 @@ const rarDependencyModes = [
 function normalizeProviders(value) {
   const allowed = ['subhd', 'zimuku', 'assrt']
   const providers = Array.isArray(value) ? value.filter(item => allowed.includes(item)) : []
-  return providers.length ? Array.from(new Set(providers)) : allowed
+  return providers.length ? Array.from(new Set(providers)) : ['subhd', 'zimuku']
 }
 
 function normalizeRootUrl(value, fallback) {
@@ -63,6 +65,8 @@ function normalizeConfig(input) {
     subhd_url: normalizeRootUrl(input?.subhd_url, 'https://subhd.tv'),
     zimuku_url: normalizeRootUrl(input?.zimuku_url, 'https://zimuku.org'),
     assrt_url: normalizeRootUrl(input?.assrt_url, 'https://2.assrt.net'),
+    assrt_api_key: String(input?.assrt_api_key || '').trim(),
+    assrt_api_url: normalizeRootUrl(input?.assrt_api_url, 'https://api.assrt.net'),
     rar_dependency_mode: ['none', 'container_install', 'mapped_binary'].includes(input?.rar_dependency_mode)
       ? input.rar_dependency_mode
       : 'none',
@@ -169,6 +173,24 @@ onMounted(() => {
               density="comfortable"
               hide-details
             />
+            <VTextField
+              v-model="localConfig.assrt_api_url"
+              label="射手网(伪) API 地址"
+              placeholder="https://api.assrt.net"
+              variant="outlined"
+              density="comfortable"
+              hide-details
+            />
+            <VTextField
+              v-model="localConfig.assrt_api_key"
+              label="射手网(伪) API Key"
+              placeholder="未填写时默认不启用伪射手自动搜索"
+              variant="outlined"
+              density="comfortable"
+              type="password"
+              autocomplete="new-password"
+              hide-details
+            />
           </div>
 
           <VAlert
@@ -176,7 +198,7 @@ onMounted(() => {
             type="info"
             variant="tonal"
             density="compact"
-            text="站点地址只填写根地址，例如 https://subhd.tv；如果域名或反代地址变化，在这里改根地址即可。"
+            text="站点地址只填写根地址；射手网(伪) 默认不启用，填写 API Key 后可勾选并优先使用官方 API。"
           />
 
           <VDivider class="my-5" />

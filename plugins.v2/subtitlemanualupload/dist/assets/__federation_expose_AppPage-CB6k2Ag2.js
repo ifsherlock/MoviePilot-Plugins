@@ -17,7 +17,7 @@ function targetLabel(target) {
   return target?.label || target?.target_label || ''
 }
 
-const {createElementVNode:_createElementVNode,openBlock:_openBlock,createElementBlock:_createElementBlock,createCommentVNode:_createCommentVNode,resolveComponent:_resolveComponent,createBlock:_createBlock,createTextVNode:_createTextVNode,withCtx:_withCtx,createVNode:_createVNode,withKeys:_withKeys,renderList:_renderList,Fragment:_Fragment,unref:_unref,toDisplayString:_toDisplayString,normalizeClass:_normalizeClass,mergeProps:_mergeProps} = await importShared('vue');
+const {createElementVNode:_createElementVNode,openBlock:_openBlock,createElementBlock:_createElementBlock,createCommentVNode:_createCommentVNode,resolveComponent:_resolveComponent,createBlock:_createBlock,toDisplayString:_toDisplayString,createTextVNode:_createTextVNode,withCtx:_withCtx,createVNode:_createVNode,withKeys:_withKeys,renderList:_renderList,Fragment:_Fragment,unref:_unref,normalizeClass:_normalizeClass,mergeProps:_mergeProps} = await importShared('vue');
 
 
 const _hoisted_1 = { class: "subtitle-upload-page" };
@@ -182,6 +182,13 @@ const pluginBase = computed(() => `plugin/${props.pluginId || 'SubtitleManualUpl
 const status = ref({
   enabled: false,
   source: 'MoviePilot 本地整理记录',
+  index: {
+    ready: false,
+    updated_at: '',
+    entry_count: 0,
+    media_count: 0,
+    expires_in: 0,
+  },
   archive_support: {
     zip: true,
     rar: false,
@@ -235,7 +242,7 @@ const onlineScope = ref('auto');
 const onlineKeyword = ref('');
 const onlineTargets = ref([]);
 const onlineStatus = ref({ providers: [], capabilities: {} });
-const onlineSelectedProviders = ref(['subhd', 'zimuku', 'assrt']);
+const onlineSelectedProviders = ref(['subhd', 'zimuku']);
 const onlineResults = ref([]);
 const onlineMessages = ref([]);
 const onlineMessagesCollapsed = ref(false);
@@ -245,7 +252,7 @@ const selectedOnlineResultIds = ref([]);
 const onlineProviderItems = [
   { title: 'SubHD', value: 'subhd' },
   { title: 'Zimuku', value: 'zimuku' },
-  { title: '射手网(伪)', value: 'assrt' },
+  { title: '射手网(伪，需 API Key)', value: 'assrt' },
 ];
 
 const rarHelpItems = [
@@ -321,6 +328,16 @@ const onlineBatchLabel = computed(() => {
 });
 const timelineStatus = computed(() => status.value?.timeline_fixer || { available: false, modules: {} });
 const timelineAvailable = computed(() => timelineStatus.value.available === true);
+const indexStatus = computed(() => status.value?.index || {});
+const indexSummary = computed(() => {
+  if (!indexStatus.value.ready) return '媒体库清单尚未缓存'
+  const parts = [
+    `${indexStatus.value.media_count || 0} 个媒体`,
+    `${indexStatus.value.entry_count || 0} 个视频`,
+  ];
+  if (indexStatus.value.updated_at) parts.push(`更新于 ${indexStatus.value.updated_at}`);
+  return parts.join(' · ')
+});
 const archiveStatus = computed(() => status.value?.archive_support || { zip: true, rar: false, rar_tool: '', rar_python: false });
 const rarAvailable = computed(() => archiveStatus.value.rar === true);
 const rarPythonAvailable = computed(() => archiveStatus.value.rar_python === true);
@@ -505,9 +522,18 @@ async function refreshIndex() {
   error.value = '';
   try {
     const response = await props.api.post(`${pluginBase.value}/refresh_index`, {});
-    message.value = response?.message || 'MoviePilot 本地整理记录为实时读取，无需重建索引';
+    const data = unwrapResponse(response) || {};
+    if (data.index) {
+      status.value = { ...status.value, index: data.index };
+    }
+    if (selectedMedia.value) {
+      await loadTargets(selectedMedia.value, selectedSeason.value || 'all');
+    } else {
+      await runSearch();
+    }
+    message.value = response?.message || '已刷新媒体库资源清单';
   } catch (err) {
-    error.value = errorMessage(err, '刷新状态失败');
+    error.value = errorMessage(err, '刷新媒体库清单失败');
   } finally {
     refreshing.value = false;
   }
@@ -1043,18 +1069,20 @@ return (_ctx, _cache) => {
               _createVNode(_component_VCardText, null, {
                 default: _withCtx(() => [
                   _createElementVNode("div", _hoisted_4, [
-                    _cache[17] || (_cache[17] = _createElementVNode("div", null, [
-                      _createElementVNode("div", { class: "section-kicker" }, "资源选择"),
-                      _createElementVNode("h2", null, "选择本地已有资源"),
-                      _createElementVNode("p", null, "仅展示 MoviePilot 已整理到本地库的视频资源。")
-                    ], -1)),
+                    _createElementVNode("div", null, [
+                      _cache[16] || (_cache[16] = _createElementVNode("div", { class: "section-kicker" }, "资源选择", -1)),
+                      _cache[17] || (_cache[17] = _createElementVNode("h2", null, "选择本地已有资源", -1)),
+                      _createElementVNode("p", null, "仅展示 MoviePilot 已整理到本地库的视频资源。" + _toDisplayString(indexSummary.value), 1)
+                    ]),
                     _createVNode(_component_VBtn, {
-                      variant: "text",
+                      variant: "tonal",
+                      color: "primary",
+                      "prepend-icon": "mdi-refresh",
                       loading: refreshing.value,
                       onClick: refreshIndex
                     }, {
-                      default: _withCtx(() => [...(_cache[16] || (_cache[16] = [
-                        _createTextVNode("接口状态", -1)
+                      default: _withCtx(() => [...(_cache[18] || (_cache[18] = [
+                        _createTextVNode(" 刷新媒体库清单 ", -1)
                       ]))]),
                       _: 1
                     }, 8, ["loading"])
@@ -1088,7 +1116,7 @@ return (_ctx, _cache) => {
                       loading: searching.value,
                       onClick: runSearch
                     }, {
-                      default: _withCtx(() => [...(_cache[18] || (_cache[18] = [
+                      default: _withCtx(() => [...(_cache[19] || (_cache[19] = [
                         _createTextVNode("搜索", -1)
                       ]))]),
                       _: 1
@@ -1165,7 +1193,7 @@ return (_ctx, _cache) => {
                       loading: resolving.value,
                       onClick: _cache[2] || (_cache[2] = $event => (loadTargets(selectedMedia.value, selectedSeason.value)))
                     }, {
-                      default: _withCtx(() => [...(_cache[19] || (_cache[19] = [
+                      default: _withCtx(() => [...(_cache[20] || (_cache[20] = [
                         _createTextVNode(" 刷新列表 ", -1)
                       ]))]),
                       _: 1
@@ -1225,12 +1253,12 @@ return (_ctx, _cache) => {
                       loading: clearing.value,
                       onClick: clearSelectedSubtitles
                     }, {
-                      default: _withCtx(() => [...(_cache[20] || (_cache[20] = [
+                      default: _withCtx(() => [...(_cache[21] || (_cache[21] = [
                         _createTextVNode(" 清空选中外挂字幕 ", -1)
                       ]))]),
                       _: 1
                     }, 8, ["disabled", "loading"]),
-                    _cache[21] || (_cache[21] = _createElementVNode("div", { class: "toolbar-hint" }, " 锁定项不参与批量上传；清空仅删除选中项外挂字幕。 ", -1))
+                    _cache[22] || (_cache[22] = _createElementVNode("div", { class: "toolbar-hint" }, " 锁定项不参与批量上传；清空仅删除选中项外挂字幕。 ", -1))
                   ]),
                   (visibleTargets.value.length)
                     ? (_openBlock(), _createElementBlock("div", _hoisted_24, [
@@ -1272,7 +1300,7 @@ return (_ctx, _cache) => {
                                         _createVNode(_component_VList, { density: "compact" }, {
                                           default: _withCtx(() => [
                                             _createVNode(_component_VListSubheader, null, {
-                                              default: _withCtx(() => [...(_cache[22] || (_cache[22] = [
+                                              default: _withCtx(() => [...(_cache[23] || (_cache[23] = [
                                                 _createTextVNode("已有外挂字幕", -1)
                                               ]))]),
                                               _: 1
@@ -1321,7 +1349,7 @@ return (_ctx, _cache) => {
                               disabled: isLocked(target.id),
                               onClick: $event => (openSingleUpload(target))
                             }, {
-                              default: _withCtx(() => [...(_cache[23] || (_cache[23] = [
+                              default: _withCtx(() => [...(_cache[24] || (_cache[24] = [
                                 _createTextVNode(" 单集上传 ", -1)
                               ]))]),
                               _: 1
@@ -1332,7 +1360,7 @@ return (_ctx, _cache) => {
                     : (_openBlock(), _createElementBlock("div", _hoisted_29, _toDisplayString(resolving.value ? '正在读取本地视频目标...' : '这个资源没有本地视频文件。'), 1)),
                   (lastWritten.value.length)
                     ? (_openBlock(), _createElementBlock("div", _hoisted_30, [
-                        _cache[24] || (_cache[24] = _createElementVNode("div", { class: "section-kicker" }, "写入结果", -1)),
+                        _cache[25] || (_cache[25] = _createElementVNode("div", { class: "section-kicker" }, "写入结果", -1)),
                         (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(lastWritten.value, (item) => {
                           return (_openBlock(), _createElementBlock("div", {
                             key: item.output_path,
@@ -1378,7 +1406,7 @@ return (_ctx, _cache) => {
                     loading: onlineDownloading.value,
                     onClick: downloadOnlinePreview
                   }, {
-                    default: _withCtx(() => [...(_cache[25] || (_cache[25] = [
+                    default: _withCtx(() => [...(_cache[26] || (_cache[26] = [
                       _createTextVNode(" 下载并生成预览 ", -1)
                     ]))]),
                     _: 1
@@ -1423,7 +1451,7 @@ return (_ctx, _cache) => {
                   loading: onlineSearching.value,
                   onClick: runOnlineSearch
                 }, {
-                  default: _withCtx(() => [...(_cache[26] || (_cache[26] = [
+                  default: _withCtx(() => [...(_cache[27] || (_cache[27] = [
                     _createTextVNode(" 搜索 ", -1)
                   ]))]),
                   _: 1
@@ -1466,7 +1494,7 @@ return (_ctx, _cache) => {
                             variant: "text",
                             onClick: _cache[6] || (_cache[6] = $event => (onlineMessagesCollapsed.value = true))
                           }, {
-                            default: _withCtx(() => [...(_cache[27] || (_cache[27] = [
+                            default: _withCtx(() => [...(_cache[28] || (_cache[28] = [
                               _createTextVNode(" 收起 ", -1)
                             ]))]),
                             _: 1
@@ -1479,7 +1507,7 @@ return (_ctx, _cache) => {
                 _createElementVNode("div", _hoisted_33, [
                   _createElementVNode("section", _hoisted_34, [
                     _createElementVNode("div", _hoisted_35, [
-                      _cache[28] || (_cache[28] = _createElementVNode("div", null, [
+                      _cache[29] || (_cache[29] = _createElementVNode("div", null, [
                         _createElementVNode("div", { class: "section-kicker" }, "自动搜索"),
                         _createElementVNode("h3", null, "选择要下载的字幕")
                       ], -1)),
@@ -1532,9 +1560,9 @@ return (_ctx, _cache) => {
                         : (_openBlock(), _createElementBlock("div", _hoisted_44, " 没有可自动下载的字幕结果。可以换关键词重试，或使用右侧手动搜索。 "))
                   ]),
                   _createElementVNode("aside", _hoisted_45, [
-                    _cache[29] || (_cache[29] = _createElementVNode("div", { class: "section-kicker" }, "手动搜索", -1)),
-                    _cache[30] || (_cache[30] = _createElementVNode("h3", null, "跳转字幕站", -1)),
-                    _cache[31] || (_cache[31] = _createElementVNode("p", null, "自动搜索失败或源站需要验证时，可打开链接下载字幕包后回到本页上传。", -1)),
+                    _cache[30] || (_cache[30] = _createElementVNode("div", { class: "section-kicker" }, "手动搜索", -1)),
+                    _cache[31] || (_cache[31] = _createElementVNode("h3", null, "跳转字幕站", -1)),
+                    _cache[32] || (_cache[32] = _createElementVNode("p", null, "自动搜索失败或源站需要验证时，可打开链接下载字幕包后回到本页上传。", -1)),
                     (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(onlineManualLinks.value, (provider) => {
                       return (_openBlock(), _createElementBlock("div", {
                         key: provider.provider,
@@ -1596,7 +1624,7 @@ return (_ctx, _cache) => {
                   variant: "text",
                   onClick: _cache[9] || (_cache[9] = $event => (uploadDialog.value = false))
                 }, {
-                  default: _withCtx(() => [...(_cache[32] || (_cache[32] = [
+                  default: _withCtx(() => [...(_cache[33] || (_cache[33] = [
                     _createTextVNode("关闭", -1)
                   ]))]),
                   _: 1
@@ -1608,7 +1636,7 @@ return (_ctx, _cache) => {
                       variant: "tonal",
                       onClick: resetUploadPreview
                     }, {
-                      default: _withCtx(() => [...(_cache[33] || (_cache[33] = [
+                      default: _withCtx(() => [...(_cache[34] || (_cache[34] = [
                         _createTextVNode(" 重新选择文件 ", -1)
                       ]))]),
                       _: 1
@@ -1644,7 +1672,7 @@ return (_ctx, _cache) => {
                       loading: applying.value,
                       onClick: applyUpload
                     }, {
-                      default: _withCtx(() => [...(_cache[34] || (_cache[34] = [
+                      default: _withCtx(() => [...(_cache[35] || (_cache[35] = [
                         _createTextVNode(" 写入字幕 ", -1)
                       ]))]),
                       _: 1
@@ -1664,9 +1692,9 @@ return (_ctx, _cache) => {
                       onDragover: handleDragOver,
                       onDragleave: handleDragLeave
                     }, [
-                      _cache[36] || (_cache[36] = _createElementVNode("div", { class: "dropzone-icon" }, "SRT / ASS / ZIP / RAR", -1)),
-                      _cache[37] || (_cache[37] = _createElementVNode("div", { class: "dropzone-title" }, "把字幕或压缩包拖到这里", -1)),
-                      _cache[38] || (_cache[38] = _createElementVNode("div", { class: "dropzone-text" }, " 支持字幕文件、ZIP、RAR；RAR 需容器内解压器支持。 ", -1)),
+                      _cache[37] || (_cache[37] = _createElementVNode("div", { class: "dropzone-icon" }, "SRT / ASS / ZIP / RAR", -1)),
+                      _cache[38] || (_cache[38] = _createElementVNode("div", { class: "dropzone-title" }, "把字幕或压缩包拖到这里", -1)),
+                      _cache[39] || (_cache[39] = _createElementVNode("div", { class: "dropzone-text" }, " 支持字幕文件、ZIP、RAR；RAR 需容器内解压器支持。 ", -1)),
                       _createVNode(_component_VBtn, {
                         color: "primary",
                         variant: "flat",
@@ -1674,7 +1702,7 @@ return (_ctx, _cache) => {
                         loading: preparing.value,
                         onClick: openFileDialog
                       }, {
-                        default: _withCtx(() => [...(_cache[35] || (_cache[35] = [
+                        default: _withCtx(() => [...(_cache[36] || (_cache[36] = [
                           _createTextVNode(" 选择文件 ", -1)
                         ]))]),
                         _: 1
@@ -1728,7 +1756,7 @@ return (_ctx, _cache) => {
                             color: "error",
                             onClick: $event => (removeFile(file))
                           }, {
-                            default: _withCtx(() => [...(_cache[39] || (_cache[39] = [
+                            default: _withCtx(() => [...(_cache[40] || (_cache[40] = [
                               _createTextVNode("移除", -1)
                             ]))]),
                             _: 1
@@ -1740,7 +1768,7 @@ return (_ctx, _cache) => {
                 (hasPreviewItems.value)
                   ? (_openBlock(), _createElementBlock("div", _hoisted_51, [
                       _createElementVNode("div", _hoisted_52, [
-                        _cache[41] || (_cache[41] = _createElementVNode("div", null, [
+                        _cache[42] || (_cache[42] = _createElementVNode("div", null, [
                           _createElementVNode("div", { class: "section-kicker" }, "字幕匹配"),
                           _createElementVNode("h3", null, "确认集数与输出文件名")
                         ], -1)),
@@ -1761,7 +1789,7 @@ return (_ctx, _cache) => {
                             disabled: !batchLanguageSuffix.value.trim(),
                             onClick: applyBatchLanguageSuffix
                           }, {
-                            default: _withCtx(() => [...(_cache[40] || (_cache[40] = [
+                            default: _withCtx(() => [...(_cache[41] || (_cache[41] = [
                               _createTextVNode(" 应用到全部 ", -1)
                             ]))]),
                             _: 1
@@ -1795,7 +1823,7 @@ return (_ctx, _cache) => {
                             "onUpdate:modelValue": value => updateLanguageSuffix(item.upload_id, value)
                           }, null, 8, ["model-value", "onUpdate:modelValue"]),
                           _createElementVNode("div", _hoisted_55, [
-                            _cache[42] || (_cache[42] = _createElementVNode("span", null, "改名为", -1)),
+                            _cache[43] || (_cache[43] = _createElementVNode("span", null, "改名为", -1)),
                             _createElementVNode("strong", null, _toDisplayString(item.output_name || buildOutputName(uploadTargets.value.find(target => target.id === item.target_id), item) || '待选择目标'), 1)
                           ])
                         ]))
@@ -1824,7 +1852,7 @@ return (_ctx, _cache) => {
           default: _withCtx(() => [
             _createVNode(_component_VCardTitle, { class: "dialog-title" }, {
               default: _withCtx(() => [
-                _cache[43] || (_cache[43] = _createElementVNode("span", null, "RAR 解压器说明", -1)),
+                _cache[44] || (_cache[44] = _createElementVNode("span", null, "RAR 解压器说明", -1)),
                 _createVNode(_component_VBtn, {
                   icon: "mdi-close",
                   variant: "text",
@@ -1836,7 +1864,7 @@ return (_ctx, _cache) => {
             _createVNode(_component_VDivider),
             _createVNode(_component_VCardText, null, {
               default: _withCtx(() => [
-                _cache[44] || (_cache[44] = _createElementVNode("div", { class: "rar-help-summary" }, [
+                _cache[45] || (_cache[45] = _createElementVNode("div", { class: "rar-help-summary" }, [
                   _createElementVNode("p", null, [
                     _createElementVNode("strong", null, "说明："),
                     _createElementVNode("code", null, "rarfile"),
@@ -1935,6 +1963,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-6d527565"]]);
+const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-39959b03"]]);
 
 export { AppPage as default };
