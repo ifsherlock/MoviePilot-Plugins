@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import importlib.util
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -27,7 +28,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕手传匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "upload.png"
-    plugin_version = "0.1.8"
+    plugin_version = "0.1.9"
     plugin_author = "jaysherlock"
     author_url = "https://github.com/jaysherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -36,13 +37,22 @@ class SubtitleManualUpload(_PluginBase):
 
     _enabled = False
     _show_sidebar_nav = True
+    _rar_dependency_mode = "none"
+    _rar_tool_path = "/usr/local/bin/7z"
+    _rar_dependency_status: Dict[str, Any] = {
+        "mode": "none",
+        "state": "idle",
+        "message": "",
+        "checked_at": "",
+    }
     _entry_map: Dict[str, Dict[str, Any]] = {}
 
     _subtitle_exts = {".ass", ".srt", ".ssa", ".sbv", ".sub", ".vtt", ".webvtt"}
     _archive_exts = {".zip", ".rar"}
     _rar_exts = {".rar"}
-    _rar_tools = ("unrar", "bsdtar", "7z", "7za")
+    _rar_tools = ("unrar", "bsdtar", "7z", "7za", "7zz")
     _rar_python_package = "rarfile"
+    _rar_dependency_modes = {"none", "container_install", "mapped_binary"}
     _stream_exts = {".strm"}
     _default_session_hours = 24
     _language_suffix_aliases = {
@@ -79,8 +89,13 @@ class SubtitleManualUpload(_PluginBase):
         config = config or {}
         self._enabled = bool(config.get("enabled"))
         self._show_sidebar_nav = bool(config.get("show_sidebar_nav", True))
+        self._rar_dependency_mode = self._normalize_rar_dependency_mode(config.get("rar_dependency_mode"))
+        self._rar_tool_path = self._normalize_text(config.get("rar_tool_path")) or "/usr/local/bin/7z"
+        type(self)._rar_dependency_mode = self._rar_dependency_mode
+        type(self)._rar_tool_path = self._rar_tool_path
         self._entry_map = {}
         self._save_config()
+        self._prepare_rar_dependency()
         self._cleanup_old_sessions()
 
     def get_state(self) -> bool:
@@ -188,6 +203,43 @@ class SubtitleManualUpload(_PluginBase):
                         "content": [
                             {
                                 "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VSelect",
+                                        "props": {
+                                            "model": "rar_dependency_mode",
+                                            "label": "RAR 解压器处理方式",
+                                            "items": [
+                                                {"title": "不处理，仅检测", "value": "none"},
+                                                {"title": "加载插件时尝试容器内安装", "value": "container_install"},
+                                                {"title": "使用宿主机映射文件", "value": "mapped_binary"},
+                                            ],
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VTextField",
+                                        "props": {
+                                            "model": "rar_tool_path",
+                                            "label": "容器内映射路径",
+                                            "placeholder": "/usr/local/bin/7z",
+                                        },
+                                    }
+                                ],
+                            },
+                        ],
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
                                 "props": {"cols": 12},
                                 "content": [
                                     {
@@ -195,7 +247,7 @@ class SubtitleManualUpload(_PluginBase):
                                         "props": {
                                             "type": "info",
                                             "variant": "tonal",
-                                            "text": "从 MoviePilot 本地整理记录中搜索已有视频资源；剧集可选择全部季度或单季后上传字幕、ZIP 或 RAR。",
+                                            "text": "从 MoviePilot 本地整理记录中搜索已有视频资源；RAR 自动安装只适合临时测试，长期建议把宿主机静态 7zz 映射为容器内 /usr/local/bin/7z。",
                                         },
                                     }
                                 ],
@@ -207,6 +259,8 @@ class SubtitleManualUpload(_PluginBase):
         ], {
             "enabled": False,
             "show_sidebar_nav": True,
+            "rar_dependency_mode": "none",
+            "rar_tool_path": "/usr/local/bin/7z",
         }
 
     def get_page(self) -> List[dict]:
@@ -234,6 +288,8 @@ class SubtitleManualUpload(_PluginBase):
             {
                 "enabled": self._enabled,
                 "show_sidebar_nav": self._show_sidebar_nav,
+                "rar_dependency_mode": self._rar_dependency_mode,
+                "rar_tool_path": self._rar_tool_path,
             }
         )
 
@@ -272,6 +328,107 @@ class SubtitleManualUpload(_PluginBase):
             except Exception:
                 continue
         return raw_bytes.decode("utf-8", errors="ignore")
+
+    @classmethod
+    def _normalize_rar_dependency_mode(cls, value: Any) -> str:
+        mode = cls._normalize_text(value).lower()
+        if mode in cls._rar_dependency_modes:
+            return mode
+        return "none"
+
+    @staticmethod
+    def _is_executable_file(path: Path) -> bool:
+        try:
+            return path.is_file() and os.access(path, os.X_OK)
+        except Exception:
+            return False
+
+    def _set_rar_dependency_status(self, state: str, message: str) -> None:
+        self._rar_dependency_status = {
+            "mode": self._rar_dependency_mode,
+            "state": state,
+            "message": message,
+            "checked_at": datetime.now().isoformat(timespec="seconds"),
+            "tool_path": self._rar_tool_path,
+        }
+
+    def _prepare_rar_dependency(self) -> None:
+        if self._rar_dependency_mode == "none":
+            self._set_rar_dependency_status("skipped", "未启用 RAR 解压器自动处理")
+            return
+
+        if self._rar_tool():
+            self._set_rar_dependency_status("ready", "已检测到可用 RAR 解压器")
+            return
+
+        if self._rar_dependency_mode == "mapped_binary":
+            self._set_rar_dependency_status(
+                "missing",
+                f"未检测到映射文件，请把宿主机 7zz 映射到容器 {self._rar_tool_path}",
+            )
+            logger.info(
+                "[SubtitleManualUpload] RAR 映射模式未检测到工具 path=%s",
+                self._rar_tool_path,
+            )
+            return
+
+        if self._rar_dependency_mode == "container_install":
+            self._install_container_rar_tool()
+            return
+
+        self._set_rar_dependency_status("skipped", "未知 RAR 依赖处理方式")
+
+    def _install_container_rar_tool(self) -> None:
+        logger.info("[SubtitleManualUpload] 开始尝试在容器内安装 RAR 解压器")
+        install_script = r"""
+set -eu
+if command -v unrar >/dev/null 2>&1 || command -v bsdtar >/dev/null 2>&1 || command -v 7z >/dev/null 2>&1 || command -v 7za >/dev/null 2>&1 || command -v 7zz >/dev/null 2>&1; then
+  exit 0
+fi
+if ! command -v apt-get >/dev/null 2>&1; then
+  echo "当前容器没有 apt-get，无法自动安装，请使用宿主机静态 7zz 映射" >&2
+  exit 78
+fi
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get install -y --no-install-recommends 7zip unrar-free libarchive-tools
+"""
+        try:
+            completed = subprocess.run(
+                ["sh", "-lc", install_script],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+                timeout=600,
+            )
+        except subprocess.TimeoutExpired:
+            self._set_rar_dependency_status("failed", "容器内安装 RAR 解压器超时")
+            logger.warning("[SubtitleManualUpload] 容器内安装 RAR 解压器超时")
+            return
+        except subprocess.CalledProcessError as exc:
+            stderr = self._decode_preview_bytes(exc.stderr or b"").strip()
+            message = stderr[-500:] if stderr else str(exc)
+            self._set_rar_dependency_status("failed", f"容器内安装失败: {message}")
+            logger.warning(
+                "[SubtitleManualUpload] 容器内安装 RAR 解压器失败 returncode=%s error=%s",
+                exc.returncode,
+                message,
+            )
+            return
+
+        stdout = self._decode_preview_bytes(completed.stdout or b"").strip()
+        tool_path = self._rar_tool()
+        if tool_path:
+            self._set_rar_dependency_status("ready", f"容器内安装完成，当前工具: {Path(tool_path).name}")
+            logger.info(
+                "[SubtitleManualUpload] 容器内安装 RAR 解压器完成 tool=%s output_tail=%s",
+                Path(tool_path).name,
+                stdout[-300:],
+            )
+            return
+
+        self._set_rar_dependency_status("failed", "安装命令结束，但仍未检测到 unrar、bsdtar、7z、7za 或 7zz")
+        logger.warning("[SubtitleManualUpload] 容器内安装后仍未检测到 RAR 解压器")
 
     @classmethod
     def _normalize_language_suffix(cls, value: Any) -> str:
@@ -861,6 +1018,11 @@ class SubtitleManualUpload(_PluginBase):
 
     @classmethod
     def _rar_tool(cls) -> str:
+        configured = cls._normalize_text(getattr(cls, "_rar_tool_path", ""))
+        if configured:
+            configured_path = Path(configured)
+            if cls._is_executable_file(configured_path):
+                return str(configured_path)
         for tool in cls._rar_tools:
             found = shutil.which(tool)
             if found:
@@ -904,7 +1066,7 @@ class SubtitleManualUpload(_PluginBase):
         if tool_name == "bsdtar":
             output = cls._run_archive_command([tool_path, "-tf", str(archive_path)])
             return [line.strip() for line in cls._decode_preview_bytes(output).splitlines() if line.strip()]
-        if tool_name in {"7z", "7za"}:
+        if tool_name in {"7z", "7za", "7zz"}:
             output = cls._run_archive_command([tool_path, "l", "-slt", str(archive_path)])
             members = []
             for line in cls._decode_preview_bytes(output).splitlines():
@@ -923,7 +1085,7 @@ class SubtitleManualUpload(_PluginBase):
             return cls._run_archive_command([tool_path, "p", "-inul", str(archive_path), member])
         if tool_name == "bsdtar":
             return cls._run_archive_command([tool_path, "-xOf", str(archive_path), member])
-        if tool_name in {"7z", "7za"}:
+        if tool_name in {"7z", "7za", "7zz"}:
             return cls._run_archive_command([tool_path, "x", "-so", str(archive_path), member])
         raise ValueError("当前容器缺少可用的 RAR 解压工具")
 
@@ -989,7 +1151,7 @@ class SubtitleManualUpload(_PluginBase):
         tool_path = cls._rar_tool()
         if not tool_path:
             package_note = f"已声明 Python 依赖 {cls._rar_python_package}，但 RAR 内容解压仍需要外部解压程序"
-            raise ValueError(f"{package_note}；请在容器安装 unrar、bsdtar、7z 或 7za")
+            raise ValueError(f"{package_note}；请在容器安装 unrar、bsdtar、7z、7za 或映射静态 7zz")
 
         prepared: List[Dict[str, Any]] = []
         members = cls._list_rar_members(archive_path, tool_path)
@@ -1235,8 +1397,11 @@ class SubtitleManualUpload(_PluginBase):
                     "zip": True,
                     "rar": bool(rar_tool),
                     "rar_tool": Path(rar_tool).name if rar_tool else "",
+                    "rar_tool_path": rar_tool or self._rar_tool_path,
                     "rar_python": rar_python,
                     "rar_python_package": self._rar_python_package,
+                    "dependency_mode": self._rar_dependency_mode,
+                    "dependency_status": self._rar_dependency_status,
                 },
                 "timeline_fixer": check_timeline_fixer_dependencies(),
             }

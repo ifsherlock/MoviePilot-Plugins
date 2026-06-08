@@ -29,12 +29,24 @@ const emit = __emit;
 const localConfig = ref({
   enabled: false,
   show_sidebar_nav: true,
+  rar_dependency_mode: 'none',
+  rar_tool_path: '/usr/local/bin/7z',
 });
+
+const rarDependencyModes = [
+  { title: '不处理，仅检测', value: 'none' },
+  { title: '加载插件时尝试容器内安装', value: 'container_install' },
+  { title: '使用宿主机映射文件', value: 'mapped_binary' },
+];
 
 function normalizeConfig(input) {
   return {
     enabled: Boolean(input?.enabled),
     show_sidebar_nav: input?.show_sidebar_nav !== false,
+    rar_dependency_mode: ['none', 'container_install', 'mapped_binary'].includes(input?.rar_dependency_mode)
+      ? input.rar_dependency_mode
+      : 'none',
+    rar_tool_path: String(input?.rar_tool_path || '/usr/local/bin/7z').trim() || '/usr/local/bin/7z',
   }
 }
 
@@ -52,6 +64,8 @@ return (_ctx, _cache) => {
   const _component_VToolbar = _resolveComponent("VToolbar");
   const _component_VDivider = _resolveComponent("VDivider");
   const _component_VSwitch = _resolveComponent("VSwitch");
+  const _component_VSelect = _resolveComponent("VSelect");
+  const _component_VTextField = _resolveComponent("VTextField");
   const _component_VAlert = _resolveComponent("VAlert");
   const _component_VCardText = _resolveComponent("VCardText");
   const _component_VCard = _resolveComponent("VCard");
@@ -62,7 +76,7 @@ return (_ctx, _cache) => {
       color: "transparent"
     }, {
       default: _withCtx(() => [
-        _cache[3] || (_cache[3] = _createElementVNode("div", { class: "text-h6 ms-3" }, "字幕手传匹配配置", -1)),
+        _cache[5] || (_cache[5] = _createElementVNode("div", { class: "text-h6 ms-3" }, "字幕手传匹配配置", -1)),
         _createVNode(_component_VSpacer),
         _createVNode(_component_VBtn, {
           icon: "mdi-content-save",
@@ -102,13 +116,31 @@ return (_ctx, _cache) => {
                   label: "显示侧边栏入口",
                   color: "primary",
                   "hide-details": ""
+                }, null, 8, ["modelValue"]),
+                _createVNode(_component_VSelect, {
+                  modelValue: localConfig.value.rar_dependency_mode,
+                  "onUpdate:modelValue": _cache[3] || (_cache[3] = $event => ((localConfig.value.rar_dependency_mode) = $event)),
+                  items: rarDependencyModes,
+                  label: "RAR 解压器处理方式",
+                  variant: "outlined",
+                  density: "comfortable",
+                  "hide-details": ""
+                }, null, 8, ["modelValue"]),
+                _createVNode(_component_VTextField, {
+                  modelValue: localConfig.value.rar_tool_path,
+                  "onUpdate:modelValue": _cache[4] || (_cache[4] = $event => ((localConfig.value.rar_tool_path) = $event)),
+                  label: "容器内映射路径",
+                  placeholder: "/usr/local/bin/7z",
+                  variant: "outlined",
+                  density: "comfortable",
+                  "hide-details": ""
                 }, null, 8, ["modelValue"])
               ]),
               _createVNode(_component_VAlert, {
                 class: "mt-4",
                 type: "info",
                 variant: "tonal",
-                text: "当前版本只读取 MoviePilot 本地整理记录：先选择本地电影或剧集，再按季度/集数批量或单集上传字幕、ZIP、RAR 并生成匹配预览。"
+                text: "RAR 自动安装只适合临时测试；长期建议在宿主机安装静态 7zz，并映射为容器内 /usr/local/bin/7z。插件不会主动重启 Docker 容器。"
               })
             ]),
             _: 1
@@ -122,6 +154,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-f94cb61b"]]);
+const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-b6c5a61f"]]);
 
 export { Config as default };

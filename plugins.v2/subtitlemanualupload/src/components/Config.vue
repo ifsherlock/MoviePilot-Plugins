@@ -12,12 +12,24 @@ const emit = defineEmits(['save', 'close'])
 const localConfig = ref({
   enabled: false,
   show_sidebar_nav: true,
+  rar_dependency_mode: 'none',
+  rar_tool_path: '/usr/local/bin/7z',
 })
+
+const rarDependencyModes = [
+  { title: '不处理，仅检测', value: 'none' },
+  { title: '加载插件时尝试容器内安装', value: 'container_install' },
+  { title: '使用宿主机映射文件', value: 'mapped_binary' },
+]
 
 function normalizeConfig(input) {
   return {
     enabled: Boolean(input?.enabled),
     show_sidebar_nav: input?.show_sidebar_nav !== false,
+    rar_dependency_mode: ['none', 'container_install', 'mapped_binary'].includes(input?.rar_dependency_mode)
+      ? input.rar_dependency_mode
+      : 'none',
+    rar_tool_path: String(input?.rar_tool_path || '/usr/local/bin/7z').trim() || '/usr/local/bin/7z',
   }
 }
 
@@ -56,12 +68,28 @@ onMounted(() => {
               color="primary"
               hide-details
             />
+            <VSelect
+              v-model="localConfig.rar_dependency_mode"
+              :items="rarDependencyModes"
+              label="RAR 解压器处理方式"
+              variant="outlined"
+              density="comfortable"
+              hide-details
+            />
+            <VTextField
+              v-model="localConfig.rar_tool_path"
+              label="容器内映射路径"
+              placeholder="/usr/local/bin/7z"
+              variant="outlined"
+              density="comfortable"
+              hide-details
+            />
           </div>
           <VAlert
             class="mt-4"
             type="info"
             variant="tonal"
-            text="当前版本只读取 MoviePilot 本地整理记录：先选择本地电影或剧集，再按季度/集数批量或单集上传字幕、ZIP、RAR 并生成匹配预览。"
+            text="RAR 自动安装只适合临时测试；长期建议在宿主机安装静态 7zz，并映射为容器内 /usr/local/bin/7z。插件不会主动重启 Docker 容器。"
           />
         </VCardText>
       </VCard>

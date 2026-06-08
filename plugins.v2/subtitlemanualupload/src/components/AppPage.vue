@@ -25,7 +25,16 @@ const pluginBase = computed(() => `plugin/${props.pluginId || 'SubtitleManualUpl
 const status = ref({
   enabled: false,
   source: 'MoviePilot 本地整理记录',
-  archive_support: { zip: true, rar: false, rar_tool: '', rar_python: false, rar_python_package: 'rarfile' },
+  archive_support: {
+    zip: true,
+    rar: false,
+    rar_tool: '',
+    rar_tool_path: '/usr/local/bin/7z',
+    rar_python: false,
+    rar_python_package: 'rarfile',
+    dependency_mode: 'none',
+    dependency_status: {},
+  },
   timeline_fixer: { available: false, modules: {} },
 })
 
@@ -83,6 +92,7 @@ const timelineAvailable = computed(() => timelineStatus.value.available === true
 const archiveStatus = computed(() => status.value?.archive_support || { zip: true, rar: false, rar_tool: '', rar_python: false })
 const rarAvailable = computed(() => archiveStatus.value.rar === true)
 const rarPythonAvailable = computed(() => archiveStatus.value.rar_python === true)
+const rarDependencyStatus = computed(() => archiveStatus.value.dependency_status || {})
 const seasonCards = computed(() => {
   if (selectedMedia.value?.media_type !== 'tv') return []
   const total = seasons.value.reduce((sum, item) => sum + Number(item.local_count || 0), 0)
@@ -116,6 +126,12 @@ const timelineMissing = computed(() => {
 
 function formatMediaType(type) {
   return type === 'tv' ? '剧集' : '电影'
+}
+
+function rarDependencyModeLabel(mode) {
+  if (mode === 'container_install') return '容器内自动安装'
+  if (mode === 'mapped_binary') return '宿主机映射文件'
+  return '仅检测'
 }
 
 function seasonLabel(season) {
@@ -525,11 +541,6 @@ defineExpose({
         <h1>字幕手传匹配</h1>
         <p>只读取本地媒体库已有资源。先选择电影或剧集，再按季度/集数上传字幕、ZIP 或 RAR，并在写入前确认自动改名结果。</p>
       </div>
-      <div class="hero-status">
-        <span>RAR</span>
-        <strong>{{ rarAvailable ? archiveStatus.rar_tool || '可用' : '需解压器' }}</strong>
-        <small>{{ rarPythonAvailable ? '已声明 rarfile' : '等待安装 rarfile' }}</small>
-      </div>
     </div>
 
     <VAlert
@@ -781,7 +792,7 @@ defineExpose({
             <div class="dropzone-icon">SRT / ASS / ZIP / RAR</div>
             <div class="dropzone-title">把字幕或压缩包拖到这里</div>
             <div class="dropzone-text">
-              ZIP 会自动解包；RAR 已加入轻量 Python 依赖 rarfile，但仍需要容器内有 unrar、bsdtar、7z 或 7za。
+              ZIP 会自动解包；RAR 已加入轻量 Python 依赖 rarfile，但仍需要容器内有 unrar、bsdtar、7z、7za 或 7zz。
             </div>
             <VBtn color="primary" variant="flat" @click="openFileDialog">选择文件</VBtn>
             <input
@@ -797,6 +808,9 @@ defineExpose({
           <div class="support-row">
             <span :class="{ ok: rarPythonAvailable }">rarfile：{{ rarPythonAvailable ? '已安装' : '将由 requirements.txt 安装' }}</span>
             <span :class="{ ok: rarAvailable }">RAR 解压器：{{ rarAvailable ? archiveStatus.rar_tool || '可用' : '未检测到' }}</span>
+            <span :class="{ ok: rarDependencyStatus.state === 'ready' }">
+              处理方式：{{ rarDependencyModeLabel(archiveStatus.dependency_mode) }}
+            </span>
             <button class="support-help" type="button" @click="rarHelpDialog = true">
               RAR 不能解压？查看处理方式
             </button>
@@ -900,35 +914,47 @@ defineExpose({
         <VCardText>
           <div class="help-intro">
             插件已经声明了最轻的 Python 依赖 <code>rarfile</code>，但它不是纯 Python 解压器。
-            真正读取 RAR 内容时，容器里还必须能执行 <code>unrar</code>、<code>7z</code>、<code>7za</code> 或 <code>bsdtar</code>。
+            真正读取 RAR 内容时，容器里还必须能执行 <code>unrar</code>、<code>7z</code>、<code>7za</code>、<code>7zz</code> 或 <code>bsdtar</code>。
           </div>
 
           <div class="help-grid">
             <div class="help-card">
-              <strong>临时安装到当前容器</strong>
-              <p>适合马上测试。容器删除或重建后可能丢失。</p>
+              <strong>插件设置：容器内安装</strong>
+              <p>适合马上测试。保存设置后插件加载时会尝试安装，容器删除或重建后可能丢失。</p>
               <pre>docker exec -it moviepilot bash
 apt-get update
 apt-get install -y p7zip-full unrar-free</pre>
             </div>
             <div class="help-card">
-              <strong>宿主机安装 + 映射进容器</strong>
-              <p>只在宿主机安装还不够，容器看不到宿主机命令；需要把可执行文件 bind mount 到容器 PATH 下。</p>
-              <pre>volumes:
-  - /path/to/7zz:/usr/local/bin/7z:ro</pre>
+              <strong>一键下载静态 7zz</strong>
+              <p>在宿主机执行脚本，它会下载官方 Linux 版 7zz，安装到 <code>/opt/bin/7zz</code> 并打印映射片段。</p>
+              <pre>curl -fsSLo /tmp/mp-7zz.sh \
+  https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/plugins.v2/subtitlemanualupload/scripts/install-static-7zz.sh
+sudo bash /tmp/mp-7zz.sh</pre>
             </div>
             <div class="help-card">
               <strong>推荐映射静态二进制</strong>
-              <p><code>/usr/bin/7z</code> 这类系统命令可能依赖额外动态库；如果要映射，优先用静态 <code>7zz</code> 或一并映射依赖库。</p>
-              <pre>docker exec moviepilot which unrar 7z 7za bsdtar</pre>
+              <p>把宿主机静态 <code>7zz</code> 映射成容器内 <code>/usr/local/bin/7z</code>，比映射系统 <code>7z</code> 更少动态库问题。</p>
+              <pre>volumes:
+  - /opt/bin/7zz:/usr/local/bin/7z:ro
+
+docker exec moviepilot which 7z</pre>
             </div>
           </div>
+
+          <VAlert
+            v-if="rarDependencyStatus.message"
+            class="mt-4"
+            :type="rarDependencyStatus.state === 'ready' ? 'success' : 'warning'"
+            variant="tonal"
+            :text="rarDependencyStatus.message"
+          />
 
           <VAlert
             class="mt-4"
             type="info"
             variant="tonal"
-            text="安装或映射完成后，重新打开上传弹窗或刷新插件状态即可重新检测。检测逻辑只看容器内 PATH 是否能找到 unrar、bsdtar、7z 或 7za。"
+            text="插件不会主动重启 Docker 容器。映射文件后需要按你的部署方式重建或重启 MoviePilot 容器；安装或映射完成后，刷新插件状态即可重新检测。"
           />
         </VCardText>
       </VCard>
@@ -957,9 +983,6 @@ apt-get install -y p7zip-full unrar-free</pre>
 }
 
 .hero-card {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 180px;
-  gap: 18px;
   padding: 26px;
   margin-bottom: 18px;
   border-radius: 28px;
@@ -989,25 +1012,6 @@ apt-get install -y p7zip-full unrar-free</pre>
   font-weight: 800;
   letter-spacing: 0.13em;
   text-transform: uppercase;
-}
-
-.hero-status {
-  display: grid;
-  align-content: center;
-  gap: 6px;
-  padding: 18px;
-  border-radius: 22px;
-  background: linear-gradient(145deg, #2d463f, #7d6845);
-  color: #fffaf0;
-}
-
-.hero-status span,
-.hero-status small {
-  opacity: 0.78;
-}
-
-.hero-status strong {
-  font-size: 24px;
 }
 
 .media-stage,
