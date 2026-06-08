@@ -28,8 +28,8 @@ from .timeline_fixer import check_timeline_fixer_dependencies, fix_subtitle_time
 class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
-    plugin_icon = "upload.png"
-    plugin_version = "0.1.17"
+    plugin_icon = "subtitle-match.png"
+    plugin_version = "0.1.18"
     plugin_author = "jaysherlock"
     author_url = "https://github.com/jaysherlock"
     plugin_config_prefix = "subtitlemanualupload_"
