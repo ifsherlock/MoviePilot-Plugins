@@ -12,9 +12,26 @@ const emit = defineEmits(['save', 'close'])
 const localConfig = ref({
   enabled: false,
   show_sidebar_nav: true,
+  online_providers: ['subhd', 'zimuku', 'assrt'],
+  online_engine: 'cloakbrowser',
+  online_use_proxy: false,
+  subhd_url: 'https://subhd.tv',
+  zimuku_url: 'https://zimuku.org',
+  assrt_url: 'https://2.assrt.net',
   rar_dependency_mode: 'none',
   rar_tool_path: '/usr/local/bin/7z',
 })
+
+const onlineProviderItems = [
+  { title: 'SubHD', value: 'subhd' },
+  { title: 'Zimuku', value: 'zimuku' },
+  { title: '射手网(伪)', value: 'assrt' },
+]
+
+const onlineEngineItems = [
+  { title: 'CloakBrowser（默认）', value: 'cloakbrowser' },
+  { title: 'MoviePilot 浏览器仿真 / FlareSolverr', value: 'mp_browser' },
+]
 
 const rarDependencyModes = [
   { title: '不处理，仅检测', value: 'none' },
@@ -22,10 +39,30 @@ const rarDependencyModes = [
   { title: '使用宿主机映射文件', value: 'mapped_binary' },
 ]
 
+function normalizeProviders(value) {
+  const allowed = ['subhd', 'zimuku', 'assrt']
+  const providers = Array.isArray(value) ? value.filter(item => allowed.includes(item)) : []
+  return providers.length ? Array.from(new Set(providers)) : allowed
+}
+
+function normalizeRootUrl(value, fallback) {
+  const text = String(value || '').trim().replace(/\/+$/, '')
+  return /^https?:\/\//i.test(text) ? text : fallback
+}
+
 function normalizeConfig(input) {
   return {
     enabled: Boolean(input?.enabled),
     show_sidebar_nav: input?.show_sidebar_nav !== false,
+    online_providers: normalizeProviders(input?.online_providers),
+    online_engine: ['cloakbrowser', 'mp_browser'].includes(input?.online_engine)
+      ? input.online_engine
+      : 'cloakbrowser',
+    online_use_proxy: Boolean(input?.online_use_proxy),
+    online_proxy_migrated: true,
+    subhd_url: normalizeRootUrl(input?.subhd_url, 'https://subhd.tv'),
+    zimuku_url: normalizeRootUrl(input?.zimuku_url, 'https://zimuku.org'),
+    assrt_url: normalizeRootUrl(input?.assrt_url, 'https://2.assrt.net'),
     rar_dependency_mode: ['none', 'container_install', 'mapped_binary'].includes(input?.rar_dependency_mode)
       ? input.rar_dependency_mode
       : 'none',
@@ -55,6 +92,9 @@ onMounted(() => {
     <div class="config-shell">
       <VCard rounded="xl" elevation="0" class="config-card">
         <VCardText>
+          <div class="config-section">
+            <div class="config-section-title">基础设置</div>
+          </div>
           <div class="config-grid">
             <VSwitch
               v-model="localConfig.enabled"
@@ -68,6 +108,84 @@ onMounted(() => {
               color="primary"
               hide-details
             />
+          </div>
+
+          <VDivider class="my-5" />
+
+          <div class="config-section">
+            <div>
+              <div class="config-section-title">在线字幕搜索</div>
+              <p>维护字幕站根地址；代理默认关闭，由容器当前网络环境决定。</p>
+            </div>
+          </div>
+
+          <div class="config-grid two-column">
+            <VSelect
+              v-model="localConfig.online_providers"
+              :items="onlineProviderItems"
+              label="启用字幕源"
+              variant="outlined"
+              density="comfortable"
+              multiple
+              chips
+              hide-details
+            />
+            <VSelect
+              v-model="localConfig.online_engine"
+              :items="onlineEngineItems"
+              label="在线搜索引擎"
+              variant="outlined"
+              density="comfortable"
+              hide-details
+            />
+            <VSwitch
+              v-model="localConfig.online_use_proxy"
+              class="config-switch-line"
+              label="在线搜索使用 MoviePilot 系统代理（默认关闭）"
+              color="primary"
+              hide-details
+            />
+            <VTextField
+              v-model="localConfig.subhd_url"
+              label="SubHD 站点地址"
+              placeholder="https://subhd.tv"
+              variant="outlined"
+              density="comfortable"
+              hide-details
+            />
+            <VTextField
+              v-model="localConfig.zimuku_url"
+              label="Zimuku 站点地址"
+              placeholder="https://zimuku.org"
+              variant="outlined"
+              density="comfortable"
+              hide-details
+            />
+            <VTextField
+              v-model="localConfig.assrt_url"
+              label="射手网(伪) 站点地址"
+              placeholder="https://2.assrt.net"
+              variant="outlined"
+              density="comfortable"
+              hide-details
+            />
+          </div>
+
+          <VAlert
+            class="mt-4"
+            type="info"
+            variant="tonal"
+            density="compact"
+            text="站点地址只填写根地址，例如 https://subhd.tv；如果域名或反代地址变化，在这里改根地址即可。"
+          />
+
+          <VDivider class="my-5" />
+
+          <div class="config-section">
+            <div class="config-section-title">RAR 解压器</div>
+          </div>
+
+          <div class="config-grid">
             <VSelect
               v-model="localConfig.rar_dependency_mode"
               :items="rarDependencyModes"
@@ -112,5 +230,40 @@ onMounted(() => {
 .config-grid {
   display: grid;
   gap: 16px;
+}
+
+.config-grid.two-column {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.config-section {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+
+.config-section-title {
+  color: #24362f;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+.config-section p {
+  margin: 4px 0 0;
+  color: #687873;
+  font-size: 12px;
+}
+
+.config-switch-line {
+  min-height: 48px;
+}
+
+@media (max-width: 760px) {
+  .config-grid.two-column {
+    grid-template-columns: 1fr;
+  }
 }
 </style>
