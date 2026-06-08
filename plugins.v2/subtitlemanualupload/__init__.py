@@ -26,8 +26,8 @@ class SubtitleManualUpload(_PluginBase):
     plugin_desc = "手动上传字幕或 ZIP，匹配电影/剧集并按媒体文件名落盘。"
     plugin_icon = "upload.png"
     plugin_version = "0.1.1"
-    plugin_author = "jaysh"
-    author_url = "https://github.com/jaysh"
+    plugin_author = "jaysherlock"
+    author_url = "https://github.com/jaysherlock"
     plugin_config_prefix = "subtitlemanualupload_"
     plugin_order = 48
     auth_level = 1

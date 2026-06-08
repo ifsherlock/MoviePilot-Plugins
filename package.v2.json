@@ -40,7 +40,7 @@
         "labels": "字幕,媒体库,整理",
         "version": "0.1.1",
         "icon": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/upload.png",
-        "author": "jaysh",
+        "author": "jaysherlock",
         "level": 1,
         "system_version": ">=2.13.5",
         "history": {
