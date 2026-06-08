@@ -20,6 +20,7 @@ const localConfig = ref({
   assrt_url: 'https://2.assrt.net',
   assrt_api_key: '',
   assrt_api_url: 'https://api.assrt.net',
+  ai_link_enabled: true,
   rar_dependency_mode: 'none',
   rar_tool_path: '/usr/local/bin/7z',
 })
@@ -67,6 +68,7 @@ function normalizeConfig(input) {
     assrt_url: normalizeRootUrl(input?.assrt_url, 'https://2.assrt.net'),
     assrt_api_key: String(input?.assrt_api_key || '').trim(),
     assrt_api_url: normalizeRootUrl(input?.assrt_api_url, 'https://api.assrt.net'),
+    ai_link_enabled: input?.ai_link_enabled !== false,
     rar_dependency_mode: ['none', 'container_install', 'mapped_binary'].includes(input?.rar_dependency_mode)
       ? input.rar_dependency_mode
       : 'none',
@@ -110,6 +112,12 @@ onMounted(() => {
               v-model="localConfig.show_sidebar_nav"
               label="显示侧边栏入口"
               color="primary"
+              hide-details
+            />
+            <VSwitch
+              v-model="localConfig.ai_link_enabled"
+              label="启用 AI 字幕联动"
+              color="warning"
               hide-details
             />
           </div>

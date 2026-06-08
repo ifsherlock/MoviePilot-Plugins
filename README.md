@@ -6,4 +6,4 @@ MoviePilot官方插件市场：https://github.com/jxxghp/MoviePilot-Plugins
 
   在群里受到这个项目的启发，督促AI帮我写封面处理的代码，于是有了这个插件，支持切换风格
 
-  ![插件界面](https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/images/plugin.webp)
+  ![插件界面](images/plugin-preview.svg)

@@ -39,6 +39,7 @@ const localConfig = ref({
   assrt_url: 'https://2.assrt.net',
   assrt_api_key: '',
   assrt_api_url: 'https://api.assrt.net',
+  ai_link_enabled: true,
   rar_dependency_mode: 'none',
   rar_tool_path: '/usr/local/bin/7z',
 });
@@ -86,6 +87,7 @@ function normalizeConfig(input) {
     assrt_url: normalizeRootUrl(input?.assrt_url, 'https://2.assrt.net'),
     assrt_api_key: String(input?.assrt_api_key || '').trim(),
     assrt_api_url: normalizeRootUrl(input?.assrt_api_url, 'https://api.assrt.net'),
+    ai_link_enabled: input?.ai_link_enabled !== false,
     rar_dependency_mode: ['none', 'container_install', 'mapped_binary'].includes(input?.rar_dependency_mode)
       ? input.rar_dependency_mode
       : 'none',
@@ -119,7 +121,7 @@ return (_ctx, _cache) => {
       color: "transparent"
     }, {
       default: _withCtx(() => [
-        _cache[13] || (_cache[13] = _createElementVNode("div", { class: "text-h6 ms-3" }, "字幕匹配配置", -1)),
+        _cache[14] || (_cache[14] = _createElementVNode("div", { class: "text-h6 ms-3" }, "字幕匹配配置", -1)),
         _createVNode(_component_VSpacer),
         _createVNode(_component_VBtn, {
           icon: "mdi-content-save",
@@ -145,7 +147,7 @@ return (_ctx, _cache) => {
         default: _withCtx(() => [
           _createVNode(_component_VCardText, null, {
             default: _withCtx(() => [
-              _cache[14] || (_cache[14] = _createElementVNode("div", { class: "config-section" }, [
+              _cache[15] || (_cache[15] = _createElementVNode("div", { class: "config-section" }, [
                 _createElementVNode("div", { class: "config-section-title" }, "基础设置")
               ], -1)),
               _createElementVNode("div", _hoisted_3, [
@@ -162,10 +164,17 @@ return (_ctx, _cache) => {
                   label: "显示侧边栏入口",
                   color: "primary",
                   "hide-details": ""
+                }, null, 8, ["modelValue"]),
+                _createVNode(_component_VSwitch, {
+                  modelValue: localConfig.value.ai_link_enabled,
+                  "onUpdate:modelValue": _cache[3] || (_cache[3] = $event => ((localConfig.value.ai_link_enabled) = $event)),
+                  label: "启用 AI 字幕联动",
+                  color: "warning",
+                  "hide-details": ""
                 }, null, 8, ["modelValue"])
               ]),
               _createVNode(_component_VDivider, { class: "my-5" }),
-              _cache[15] || (_cache[15] = _createElementVNode("div", { class: "config-section" }, [
+              _cache[16] || (_cache[16] = _createElementVNode("div", { class: "config-section" }, [
                 _createElementVNode("div", null, [
                   _createElementVNode("div", { class: "config-section-title" }, "在线字幕搜索"),
                   _createElementVNode("p", null, "维护字幕站根地址；代理默认关闭，由容器当前网络环境决定。")
@@ -174,7 +183,7 @@ return (_ctx, _cache) => {
               _createElementVNode("div", _hoisted_4, [
                 _createVNode(_component_VSelect, {
                   modelValue: localConfig.value.online_providers,
-                  "onUpdate:modelValue": _cache[3] || (_cache[3] = $event => ((localConfig.value.online_providers) = $event)),
+                  "onUpdate:modelValue": _cache[4] || (_cache[4] = $event => ((localConfig.value.online_providers) = $event)),
                   items: onlineProviderItems,
                   label: "启用字幕源",
                   variant: "outlined",
@@ -185,7 +194,7 @@ return (_ctx, _cache) => {
                 }, null, 8, ["modelValue"]),
                 _createVNode(_component_VSelect, {
                   modelValue: localConfig.value.online_engine,
-                  "onUpdate:modelValue": _cache[4] || (_cache[4] = $event => ((localConfig.value.online_engine) = $event)),
+                  "onUpdate:modelValue": _cache[5] || (_cache[5] = $event => ((localConfig.value.online_engine) = $event)),
                   items: onlineEngineItems,
                   label: "在线搜索引擎",
                   variant: "outlined",
@@ -194,7 +203,7 @@ return (_ctx, _cache) => {
                 }, null, 8, ["modelValue"]),
                 _createVNode(_component_VSwitch, {
                   modelValue: localConfig.value.online_use_proxy,
-                  "onUpdate:modelValue": _cache[5] || (_cache[5] = $event => ((localConfig.value.online_use_proxy) = $event)),
+                  "onUpdate:modelValue": _cache[6] || (_cache[6] = $event => ((localConfig.value.online_use_proxy) = $event)),
                   class: "config-switch-line",
                   label: "在线搜索使用 MoviePilot 系统代理（默认关闭）",
                   color: "primary",
@@ -202,7 +211,7 @@ return (_ctx, _cache) => {
                 }, null, 8, ["modelValue"]),
                 _createVNode(_component_VTextField, {
                   modelValue: localConfig.value.subhd_url,
-                  "onUpdate:modelValue": _cache[6] || (_cache[6] = $event => ((localConfig.value.subhd_url) = $event)),
+                  "onUpdate:modelValue": _cache[7] || (_cache[7] = $event => ((localConfig.value.subhd_url) = $event)),
                   label: "SubHD 站点地址",
                   placeholder: "https://subhd.tv",
                   variant: "outlined",
@@ -211,7 +220,7 @@ return (_ctx, _cache) => {
                 }, null, 8, ["modelValue"]),
                 _createVNode(_component_VTextField, {
                   modelValue: localConfig.value.zimuku_url,
-                  "onUpdate:modelValue": _cache[7] || (_cache[7] = $event => ((localConfig.value.zimuku_url) = $event)),
+                  "onUpdate:modelValue": _cache[8] || (_cache[8] = $event => ((localConfig.value.zimuku_url) = $event)),
                   label: "Zimuku 站点地址",
                   placeholder: "https://zimuku.org",
                   variant: "outlined",
@@ -220,7 +229,7 @@ return (_ctx, _cache) => {
                 }, null, 8, ["modelValue"]),
                 _createVNode(_component_VTextField, {
                   modelValue: localConfig.value.assrt_url,
-                  "onUpdate:modelValue": _cache[8] || (_cache[8] = $event => ((localConfig.value.assrt_url) = $event)),
+                  "onUpdate:modelValue": _cache[9] || (_cache[9] = $event => ((localConfig.value.assrt_url) = $event)),
                   label: "射手网(伪) 站点地址",
                   placeholder: "https://2.assrt.net",
                   variant: "outlined",
@@ -229,7 +238,7 @@ return (_ctx, _cache) => {
                 }, null, 8, ["modelValue"]),
                 _createVNode(_component_VTextField, {
                   modelValue: localConfig.value.assrt_api_url,
-                  "onUpdate:modelValue": _cache[9] || (_cache[9] = $event => ((localConfig.value.assrt_api_url) = $event)),
+                  "onUpdate:modelValue": _cache[10] || (_cache[10] = $event => ((localConfig.value.assrt_api_url) = $event)),
                   label: "射手网(伪) API 地址",
                   placeholder: "https://api.assrt.net",
                   variant: "outlined",
@@ -238,7 +247,7 @@ return (_ctx, _cache) => {
                 }, null, 8, ["modelValue"]),
                 _createVNode(_component_VTextField, {
                   modelValue: localConfig.value.assrt_api_key,
-                  "onUpdate:modelValue": _cache[10] || (_cache[10] = $event => ((localConfig.value.assrt_api_key) = $event)),
+                  "onUpdate:modelValue": _cache[11] || (_cache[11] = $event => ((localConfig.value.assrt_api_key) = $event)),
                   label: "射手网(伪) API Key",
                   placeholder: "未填写时默认不启用伪射手自动搜索",
                   variant: "outlined",
@@ -256,13 +265,13 @@ return (_ctx, _cache) => {
                 text: "站点地址只填写根地址；射手网(伪) 默认不启用，填写 API Key 后可勾选并优先使用官方 API。"
               }),
               _createVNode(_component_VDivider, { class: "my-5" }),
-              _cache[16] || (_cache[16] = _createElementVNode("div", { class: "config-section" }, [
+              _cache[17] || (_cache[17] = _createElementVNode("div", { class: "config-section" }, [
                 _createElementVNode("div", { class: "config-section-title" }, "RAR 解压器")
               ], -1)),
               _createElementVNode("div", _hoisted_5, [
                 _createVNode(_component_VSelect, {
                   modelValue: localConfig.value.rar_dependency_mode,
-                  "onUpdate:modelValue": _cache[11] || (_cache[11] = $event => ((localConfig.value.rar_dependency_mode) = $event)),
+                  "onUpdate:modelValue": _cache[12] || (_cache[12] = $event => ((localConfig.value.rar_dependency_mode) = $event)),
                   items: rarDependencyModes,
                   label: "RAR 解压器处理方式",
                   variant: "outlined",
@@ -271,7 +280,7 @@ return (_ctx, _cache) => {
                 }, null, 8, ["modelValue"]),
                 _createVNode(_component_VTextField, {
                   modelValue: localConfig.value.rar_tool_path,
-                  "onUpdate:modelValue": _cache[12] || (_cache[12] = $event => ((localConfig.value.rar_tool_path) = $event)),
+                  "onUpdate:modelValue": _cache[13] || (_cache[13] = $event => ((localConfig.value.rar_tool_path) = $event)),
                   label: "容器内映射路径",
                   placeholder: "/usr/local/bin/7z",
                   variant: "outlined",
@@ -297,6 +306,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-d2e6b885"]]);
+const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-3ff0f25c"]]);
 
 export { Config as default };

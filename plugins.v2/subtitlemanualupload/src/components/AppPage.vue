@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { mediaLabel, targetLabel, unwrapResponse } from '../provider'
 
 const props = defineProps({
@@ -43,6 +43,18 @@ const status = ref({
     dependency_status: {},
   },
   timeline_fixer: { available: false, modules: {} },
+  ai_subtitle: {
+    enabled: true,
+    installed: false,
+    available: false,
+    running: false,
+    queue_ready: false,
+    plugin_name: 'AI字幕生成(联动版)',
+    plugin_version: '',
+    message: '请先安装并启用 AI字幕生成(联动版)',
+    counts: {},
+    updated_at: '',
+  },
 })
 
 const loading = ref(false)
@@ -52,6 +64,8 @@ const refreshing = ref(false)
 const preparing = ref(false)
 const applying = ref(false)
 const clearing = ref(false)
+const aiSubmitting = ref(false)
+const aiTasksLoading = ref(false)
 const onlineSearching = ref(false)
 const onlineDownloading = ref(false)
 const dragging = ref(false)
@@ -91,6 +105,15 @@ const onlineMessages = ref([])
 const onlineMessagesCollapsed = ref(false)
 const onlineManualLinks = ref([])
 const selectedOnlineResultIds = ref([])
+const aiTaskDialog = ref(false)
+const aiTaskDialogTarget = ref(null)
+const aiTaskData = ref({
+  status: null,
+  summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, ignored: 0, no_audio: 0, failed: 0 },
+  tasks: [],
+  task_by_target: {},
+})
+let aiTaskTimer = null
 
 const onlineProviderItems = [
   { title: 'SubHD', value: 'subhd' },
@@ -189,6 +212,33 @@ const onlineBatchLabel = computed(() => {
   if (selectedMedia.value?.media_type !== 'tv') return '搜索在线字幕'
   if (selectedTargets.value.length) return `搜索选中 ${selectedTargets.value.length} 集`
   return selectedSeason.value === 'all' ? '搜索全部季字幕包' : '搜索本季字幕包'
+})
+const aiStatus = computed(() => aiTaskData.value.status || status.value?.ai_subtitle || {})
+const aiEnabled = computed(() => aiStatus.value.enabled !== false)
+const aiAvailable = computed(() => aiEnabled.value && aiStatus.value.available === true)
+const aiSummary = computed(() => aiTaskData.value.summary || {})
+const aiHasActiveTasks = computed(() => Number(aiSummary.value.active || 0) > 0)
+const aiBatchLabel = computed(() => {
+  if (selectedMedia.value?.media_type !== 'tv') return 'AI 生成字幕'
+  if (selectedTargets.value.length) return `AI 生成选中 ${selectedTargets.value.length} 集`
+  return selectedSeason.value === 'all' ? 'AI 生成全部季' : 'AI 生成本季'
+})
+const aiSummaryText = computed(() => {
+  if (!aiEnabled.value) return 'AI 联动已关闭'
+  if (!aiStatus.value.installed && !aiStatus.value.available) return aiStatus.value.message || '请先安装并启用 AI字幕生成(联动版)'
+  const parts = []
+  if (aiSummary.value.in_progress) parts.push(`${aiSummary.value.in_progress} 个生成中`)
+  if (aiSummary.value.pending) parts.push(`${aiSummary.value.pending} 个排队`)
+  if (aiSummary.value.failed) parts.push(`${aiSummary.value.failed} 个失败`)
+  if (aiSummary.value.completed) parts.push(`${aiSummary.value.completed} 个完成`)
+  if (aiSummary.value.ignored) parts.push(`${aiSummary.value.ignored} 个忽略`)
+  if (aiSummary.value.no_audio) parts.push(`${aiSummary.value.no_audio} 个无音轨`)
+  return parts.length ? `AI：${parts.join(' / ')}` : (aiStatus.value.message || 'AI：暂无当前资源任务')
+})
+const aiDialogTasks = computed(() => {
+  const targetId = aiTaskDialogTarget.value?.id
+  const tasks = aiTaskData.value.tasks || []
+  return targetId ? tasks.filter(item => item.target_id === targetId) : tasks
 })
 const timelineStatus = computed(() => status.value?.timeline_fixer || { available: false, modules: {} })
 const timelineAvailable = computed(() => timelineStatus.value.available === true)
@@ -346,6 +396,145 @@ function providerStatus(providerId) {
   return `${host}${item?.message || ''}`
 }
 
+function stopAiPolling() {
+  if (aiTaskTimer) {
+    clearTimeout(aiTaskTimer)
+    aiTaskTimer = null
+  }
+}
+
+function scheduleAiPolling() {
+  stopAiPolling()
+  if (!aiHasActiveTasks.value || !visibleTargets.value.length) return
+  aiTaskTimer = setTimeout(() => {
+    loadAiTasks({ silent: true })
+  }, 5000)
+}
+
+async function loadAiTasks(options = {}) {
+  if (!visibleTargets.value.length) {
+    aiTaskData.value = {
+      ...aiTaskData.value,
+      summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, ignored: 0, no_audio: 0, failed: 0 },
+      tasks: [],
+      task_by_target: {},
+    }
+    stopAiPolling()
+    return
+  }
+  if (!options.silent) aiTasksLoading.value = true
+  try {
+    const response = await props.api.post(`${pluginBase.value}/ai_tasks`, {
+      target_ids: visibleTargets.value.map(item => item.id),
+    })
+    aiTaskData.value = unwrapResponse(response) || aiTaskData.value
+    if (aiTaskData.value.status) {
+      status.value = { ...status.value, ai_subtitle: aiTaskData.value.status }
+    }
+  } catch (err) {
+    if (!options.silent) {
+      error.value = errorMessage(err, '读取 AI 字幕任务失败')
+    }
+  } finally {
+    if (!options.silent) aiTasksLoading.value = false
+    scheduleAiPolling()
+  }
+}
+
+function aiTaskForTarget(target) {
+  return (aiTaskData.value.task_by_target || {})[target?.id] || null
+}
+
+function aiTaskColor(target) {
+  const task = aiTaskForTarget(target)
+  if (!aiAvailable.value) return undefined
+  if (!task) return 'primary'
+  if (task.status === 'pending') return 'info'
+  if (task.status === 'in_progress') return 'warning'
+  if (task.status === 'completed') return 'success'
+  if (task.status === 'failed') return 'error'
+  if (task.status === 'no_audio') return 'grey'
+  return 'secondary'
+}
+
+function aiTaskIcon(target) {
+  const task = aiTaskForTarget(target)
+  if (!task) return 'mdi-robot-outline'
+  if (task.status === 'pending') return 'mdi-clock-outline'
+  if (task.status === 'in_progress') return 'mdi-robot-happy-outline'
+  if (task.status === 'completed') return 'mdi-check-decagram-outline'
+  if (task.status === 'failed') return 'mdi-alert-circle-outline'
+  if (task.status === 'no_audio') return 'mdi-volume-off'
+  return 'mdi-robot-confused-outline'
+}
+
+function aiTaskTitle(target) {
+  const task = aiTaskForTarget(target)
+  if (!aiEnabled.value) return 'AI 字幕联动已关闭'
+  if (!aiAvailable.value) return aiStatus.value.message || '请先安装并启用 AI字幕生成(联动版)'
+  if (!task) return '调用 AI 字幕生成'
+  return task.message || task.status_label || '查看 AI 任务状态'
+}
+
+function aiTaskStatusClass(target) {
+  const task = aiTaskForTarget(target)
+  return task ? `ai-${task.status}` : 'ai-idle'
+}
+
+function aiStatusText(task) {
+  if (!task) return '未提交'
+  return task.message || task.status_label || task.status
+}
+
+function openAiTaskDialog(target = null) {
+  aiTaskDialogTarget.value = target
+  aiTaskDialog.value = true
+  loadAiTasks({ silent: true })
+}
+
+async function submitAiForTargets(scopeTargets) {
+  const usableTargets = scopeTargets.filter(item => !isLocked(item.id) && item.writable !== false)
+  if (!usableTargets.length) {
+    error.value = '没有可生成 AI 字幕的目标：选中的集数可能都已锁定'
+    return
+  }
+  if (!aiAvailable.value) {
+    error.value = aiStatus.value.message || '请先安装并启用 AI字幕生成(联动版)'
+    return
+  }
+  aiSubmitting.value = true
+  error.value = ''
+  message.value = ''
+  try {
+    const response = await props.api.post(`${pluginBase.value}/ai_submit`, {
+      target_ids: usableTargets.map(item => item.id),
+    })
+    const data = unwrapResponse(response) || {}
+    if (data.tasks) {
+      aiTaskData.value = data.tasks
+    }
+    message.value = response?.message || '已提交 AI 字幕生成任务'
+    await loadAiTasks({ silent: true })
+  } catch (err) {
+    error.value = errorMessage(err, '提交 AI 字幕任务失败')
+  } finally {
+    aiSubmitting.value = false
+  }
+}
+
+function openBatchAiGenerate() {
+  submitAiForTargets(batchUploadTargets.value)
+}
+
+function openSingleAiGenerate(target) {
+  const task = aiTaskForTarget(target)
+  if (task) {
+    openAiTaskDialog(target)
+    return
+  }
+  submitAiForTargets([target])
+}
+
 function clearTargetState() {
   seasons.value = []
   selectedSeason.value = 'all'
@@ -353,6 +542,14 @@ function clearTargetState() {
   selectedTargetIds.value = []
   preview.value = null
   lastWritten.value = []
+  aiTaskDialogTarget.value = null
+  aiTaskData.value = {
+    ...aiTaskData.value,
+    summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, ignored: 0, no_audio: 0, failed: 0 },
+    tasks: [],
+    task_by_target: {},
+  }
+  stopAiPolling()
 }
 
 async function loadStatus() {
@@ -361,6 +558,9 @@ async function loadStatus() {
   try {
     const response = await props.api.get(`${pluginBase.value}/status`)
     status.value = unwrapResponse(response) || status.value
+    if (status.value.ai_subtitle) {
+      aiTaskData.value = { ...aiTaskData.value, status: status.value.ai_subtitle }
+    }
   } catch (err) {
     error.value = errorMessage(err, '加载插件状态失败')
   } finally {
@@ -458,6 +658,7 @@ async function loadTargets(media = selectedMedia.value, season = selectedSeason.
     selectedSeason.value = data.selected_season ?? 'all'
     targets.value = data.targets || []
     selectedTargetIds.value = []
+    await loadAiTasks({ silent: true })
 
     if (!targets.value.length) {
       message.value = `${mediaLabel(selectedMedia.value)} 没有找到本地可写入的视频文件`
@@ -860,6 +1061,10 @@ onMounted(async () => {
   await runSearch()
 })
 
+onBeforeUnmount(() => {
+  stopAiPolling()
+})
+
 defineExpose({
   loadStatus,
   refreshIndex,
@@ -871,6 +1076,8 @@ defineExpose({
   preparing,
   applying,
   clearing,
+  aiSubmitting,
+  aiTasksLoading,
   onlineSearching,
   onlineDownloading,
 })
@@ -1014,6 +1221,26 @@ defineExpose({
             </button>
           </div>
 
+          <button
+            v-if="aiEnabled"
+            class="ai-status-strip"
+            :class="{ unavailable: !aiAvailable, active: aiHasActiveTasks }"
+            type="button"
+            @click="openAiTaskDialog()"
+          >
+            <span class="ai-status-orb">
+              <VProgressCircular
+                v-if="aiTasksLoading || aiHasActiveTasks"
+                size="16"
+                width="2"
+                indeterminate
+              />
+              <VIcon v-else icon="mdi-robot-outline" size="18" />
+            </span>
+            <strong>{{ aiSummaryText }}</strong>
+            <em>{{ aiAvailable ? '点击查看当前资源任务' : aiStatus.message }}</em>
+          </button>
+
           <div class="toolbar-row">
             <VBtn variant="tonal" @click="toggleSelectAll">
               {{ allVisibleSelected ? '取消全选' : '全选当前列表' }}
@@ -1024,6 +1251,17 @@ defineExpose({
               @click="openBatchUpload"
             >
               {{ selectedTargets.length ? '上传选中字幕' : '批量上传整季字幕' }}
+            </VBtn>
+            <VBtn
+              v-if="aiEnabled"
+              color="warning"
+              variant="tonal"
+              prepend-icon="mdi-robot-outline"
+              :disabled="!batchUploadTargets.length || !aiAvailable"
+              :loading="aiSubmitting"
+              @click="openBatchAiGenerate"
+            >
+              {{ aiBatchLabel }}
             </VBtn>
             <VBtn
               color="secondary"
@@ -1099,6 +1337,17 @@ defineExpose({
                 title="暂无外挂字幕"
               />
               <VBtn
+                v-if="aiEnabled"
+                class="ai-row-btn"
+                :class="aiTaskStatusClass(target)"
+                variant="text"
+                :icon="aiTaskIcon(target)"
+                :color="aiTaskColor(target)"
+                :title="aiTaskTitle(target)"
+                :disabled="isLocked(target.id) || (!aiAvailable && !aiTaskForTarget(target))"
+                @click="openSingleAiGenerate(target)"
+              />
+              <VBtn
                 variant="text"
                 icon="mdi-magnify"
                 title="搜索此集在线字幕"
@@ -1140,6 +1389,63 @@ defineExpose({
         </VCardText>
       </VCard>
     </section>
+
+    <VDialog v-model="aiTaskDialog" max-width="860">
+      <VCard class="ai-task-dialog" rounded="xl">
+        <VCardTitle class="dialog-title">
+          <div>
+            <span>{{ aiTaskDialogTarget ? `AI 状态 · ${compactTargetName(aiTaskDialogTarget)}` : 'AI 字幕生成状态' }}</span>
+            <p>{{ aiSummaryText }} · 状态来自 AI字幕生成(联动版) 队列</p>
+          </div>
+          <div class="online-title-actions">
+            <VBtn
+              variant="tonal"
+              color="primary"
+              prepend-icon="mdi-refresh"
+              :loading="aiTasksLoading"
+              @click="loadAiTasks"
+            >
+              刷新
+            </VBtn>
+            <VBtn icon="mdi-close" variant="text" @click="aiTaskDialog = false" />
+          </div>
+        </VCardTitle>
+        <VDivider />
+        <VCardText>
+          <VAlert
+            v-if="!aiAvailable"
+            class="mb-4"
+            type="warning"
+            variant="tonal"
+            :text="aiStatus.message || '请先安装并启用 AI字幕生成(联动版)'"
+          />
+          <div v-if="aiDialogTasks.length" class="ai-task-list">
+            <div
+              v-for="task in aiDialogTasks"
+              :key="task.task_id"
+              class="ai-task-row"
+              :class="`ai-${task.status}`"
+            >
+              <div class="ai-task-badge">
+                <VIcon :icon="aiTaskIcon({ id: task.target_id })" />
+              </div>
+              <div class="ai-task-main">
+                <strong>{{ task.target_label || task.video_name }}</strong>
+                <span>{{ task.video_name }}</span>
+                <p>{{ aiStatusText(task) }}</p>
+              </div>
+              <div class="ai-task-time">
+                <VChip size="small" variant="tonal">{{ task.status_label }}</VChip>
+                <span>{{ task.complete_time || task.add_time || '-' }}</span>
+              </div>
+            </div>
+          </div>
+          <div v-else class="empty-state">
+            当前资源还没有 AI 字幕生成任务。可以点击单集 AI 图标，或使用上方“AI 生成”批量提交。
+          </div>
+        </VCardText>
+      </VCard>
+    </VDialog>
 
     <VDialog v-model="onlineDialog" max-width="1080">
       <VCard class="online-dialog" rounded="xl">
@@ -1795,6 +2101,56 @@ defineExpose({
   font-size: 12px;
 }
 
+.ai-status-strip {
+  display: flex;
+  width: 100%;
+  gap: 10px;
+  align-items: center;
+  padding: 10px 12px;
+  margin-bottom: 12px;
+  border: 1px solid rgba(165, 118, 46, 0.2);
+  border-radius: 18px;
+  background: linear-gradient(90deg, rgba(255, 244, 218, 0.9), rgba(235, 242, 236, 0.72));
+  color: #31463f;
+  text-align: left;
+}
+
+.ai-status-strip.active {
+  border-color: rgba(190, 135, 48, 0.46);
+  box-shadow: inset 0 0 0 1px rgba(190, 135, 48, 0.12);
+}
+
+.ai-status-strip.unavailable {
+  background: rgba(245, 241, 232, 0.78);
+  color: #7a6d61;
+}
+
+.ai-status-orb {
+  display: grid;
+  flex: 0 0 auto;
+  width: 30px;
+  height: 30px;
+  place-items: center;
+  border-radius: 999px;
+  background: #31463f;
+  color: #fff8e8;
+}
+
+.ai-status-strip strong {
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.ai-status-strip em {
+  min-width: 0;
+  overflow: hidden;
+  color: #687873;
+  font-size: 12px;
+  font-style: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .episode-list {
   display: grid;
   gap: 10px;
@@ -1803,7 +2159,7 @@ defineExpose({
 
 .episode-row {
   display: grid;
-  grid-template-columns: auto 58px minmax(0, 1fr) auto auto auto auto;
+  grid-template-columns: auto 58px minmax(0, 1fr) repeat(5, auto);
   gap: 10px;
   align-items: center;
   padding: 10px 12px;
@@ -1846,6 +2202,23 @@ defineExpose({
 
 .cc-btn.has-sub {
   color: #2f7d62;
+}
+
+.ai-row-btn {
+  border-radius: 999px;
+}
+
+.ai-row-btn.ai-pending,
+.ai-row-btn.ai-in_progress {
+  background: rgba(255, 230, 177, 0.72);
+}
+
+.ai-row-btn.ai-completed {
+  background: rgba(219, 243, 226, 0.82);
+}
+
+.ai-row-btn.ai-failed {
+  background: rgba(255, 226, 224, 0.82);
 }
 
 .empty-state {
@@ -1896,6 +2269,87 @@ defineExpose({
     radial-gradient(circle at 12% 0%, rgba(80, 126, 107, 0.14), transparent 30%),
     radial-gradient(circle at 88% 18%, rgba(214, 160, 82, 0.16), transparent 30%),
     #fffaf2;
+}
+
+.ai-task-dialog {
+  background:
+    radial-gradient(circle at 8% 0%, rgba(219, 164, 71, 0.18), transparent 28%),
+    radial-gradient(circle at 90% 20%, rgba(65, 116, 95, 0.14), transparent 32%),
+    #fffaf2;
+}
+
+.ai-task-list {
+  display: grid;
+  gap: 10px;
+}
+
+.ai-task-row {
+  display: grid;
+  grid-template-columns: 42px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  padding: 12px;
+  border: 1px solid rgba(91, 109, 100, 0.14);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.ai-task-row.ai-in_progress,
+.ai-task-row.ai-pending {
+  border-color: rgba(180, 122, 53, 0.3);
+  background: #fff4da;
+}
+
+.ai-task-row.ai-completed {
+  border-color: rgba(77, 143, 100, 0.26);
+  background: rgba(230, 247, 235, 0.78);
+}
+
+.ai-task-row.ai-failed {
+  border-color: rgba(185, 78, 70, 0.3);
+  background: rgba(255, 234, 232, 0.8);
+}
+
+.ai-task-badge {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 999px;
+  background: #31463f;
+  color: #fff8e8;
+}
+
+.ai-task-main {
+  min-width: 0;
+}
+
+.ai-task-main strong,
+.ai-task-main span,
+.ai-task-main p {
+  display: block;
+}
+
+.ai-task-main strong {
+  font-weight: 900;
+  word-break: break-word;
+}
+
+.ai-task-main span,
+.ai-task-main p,
+.ai-task-time span {
+  color: #687873;
+  font-size: 12px;
+}
+
+.ai-task-main p {
+  margin: 4px 0 0;
+}
+
+.ai-task-time {
+  display: grid;
+  justify-items: end;
+  gap: 6px;
 }
 
 .online-search-actions {

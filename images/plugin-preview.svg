@@ -1,0 +1,40 @@
+<svg width="1200" height="630" viewBox="0 0 1200 630" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1200" height="630" rx="42" fill="#17211D"/>
+  <circle cx="1010" cy="96" r="210" fill="#2CBFA3" opacity=".26"/>
+  <circle cx="180" cy="520" r="260" fill="#D39B52" opacity=".22"/>
+  <path d="M92 128C92 91.55 121.55 62 158 62h884c36.45 0 66 29.55 66 66v374c0 36.45-29.55 66-66 66H158c-36.45 0-66-29.55-66-66V128Z" fill="#FFF8EA" fill-opacity=".94"/>
+  <path d="M92 128C92 91.55 121.55 62 158 62h884c36.45 0 66 29.55 66 66v374c0 36.45-29.55 66-66 66H158c-36.45 0-66-29.55-66-66V128Z" stroke="#A9F3DE" stroke-width="3"/>
+  <rect x="138" y="108" width="924" height="414" rx="28" fill="#F6EEDF"/>
+  <rect x="170" y="142" width="330" height="348" rx="24" fill="#263B35"/>
+  <rect x="198" y="170" width="274" height="182" rx="18" fill="#8FDCC2"/>
+  <rect x="220" y="192" width="92" height="126" rx="12" fill="#FAF2E4"/>
+  <rect x="326" y="192" width="124" height="18" rx="9" fill="#FAF2E4"/>
+  <rect x="326" y="224" width="96" height="14" rx="7" fill="#FAF2E4" opacity=".82"/>
+  <rect x="326" y="252" width="116" height="14" rx="7" fill="#FAF2E4" opacity=".62"/>
+  <rect x="198" y="378" width="198" height="20" rx="10" fill="#FAF2E4"/>
+  <rect x="198" y="416" width="242" height="20" rx="10" fill="#1AB394"/>
+  <rect x="198" y="454" width="156" height="20" rx="10" fill="#D39B52"/>
+  <text x="548" y="180" fill="#243730" font-family="Arial, 'Microsoft YaHei', sans-serif" font-size="34" font-weight="800">MoviePilot Plugins</text>
+  <text x="548" y="226" fill="#5F716A" font-family="Arial, 'Microsoft YaHei', sans-serif" font-size="19">媒体库封面生成 · 字幕匹配 · AI字幕生成(联动版)</text>
+  <g>
+    <rect x="548" y="270" width="150" height="136" rx="22" fill="#FFFFFF"/>
+    <circle cx="623" cy="322" r="28" fill="#2F7D62"/>
+    <path d="M607 326l12 12 26-32" stroke="#FFF8EA" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="623" y="374" text-anchor="middle" fill="#263B35" font-family="Arial, 'Microsoft YaHei', sans-serif" font-size="16" font-weight="700">封面生成</text>
+  </g>
+  <g>
+    <rect x="724" y="270" width="150" height="136" rx="22" fill="#FFFFFF"/>
+    <rect x="763" y="304" width="72" height="44" rx="10" fill="#119C87"/>
+    <text x="799" y="335" text-anchor="middle" fill="#FFF8EA" font-family="Arial, sans-serif" font-size="24" font-weight="800">CC</text>
+    <text x="799" y="374" text-anchor="middle" fill="#263B35" font-family="Arial, 'Microsoft YaHei', sans-serif" font-size="16" font-weight="700">字幕匹配</text>
+  </g>
+  <g>
+    <rect x="900" y="270" width="150" height="136" rx="22" fill="#FFFFFF"/>
+    <circle cx="975" cy="323" r="30" fill="#D39B52"/>
+    <path d="M956 323h38M975 304v38" stroke="#FFF8EA" stroke-width="8" stroke-linecap="round"/>
+    <text x="975" y="374" text-anchor="middle" fill="#263B35" font-family="Arial, 'Microsoft YaHei', sans-serif" font-size="16" font-weight="700">AI生成</text>
+  </g>
+  <rect x="548" y="438" width="420" height="20" rx="10" fill="#D9E8DF"/>
+  <rect x="548" y="438" width="265" height="20" rx="10" fill="#2CBFA3"/>
+  <text x="548" y="490" fill="#6B5B44" font-family="Arial, 'Microsoft YaHei', sans-serif" font-size="17" font-weight="700">清晰、可联动、可在线安装的 MoviePilot 插件仓库</text>
+</svg>

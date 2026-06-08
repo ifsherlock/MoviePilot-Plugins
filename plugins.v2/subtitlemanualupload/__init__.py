@@ -23,6 +23,11 @@ from app.db.models.transferhistory import TransferHistory
 from app.log import logger
 from app.plugins import _PluginBase
 
+try:
+    from app.core.plugin import PluginManager
+except Exception:
+    PluginManager = None
+
 from .online_subtitle import (
     DEFAULT_ENGINE,
     DEFAULT_PROVIDER_ROOTS,
@@ -38,7 +43,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "subtitle-match.png"
-    plugin_version = "0.1.26"
+    plugin_version = "0.1.27"
     plugin_author = "jaysherlock"
     author_url = "https://github.com/jaysherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -56,6 +61,7 @@ class SubtitleManualUpload(_PluginBase):
     _online_site_urls = dict(DEFAULT_PROVIDER_ROOTS)
     _assrt_api_key = ""
     _assrt_api_url = "https://api.assrt.net"
+    _ai_link_enabled = True
     _cache_ttl_seconds = 90
     _cache_max_entries = 5000
     _entry_map_max_size = 2000
@@ -126,6 +132,7 @@ class SubtitleManualUpload(_PluginBase):
             config.get("assrt_api_url"),
             "https://api.assrt.net",
         )
+        self._ai_link_enabled = bool(config.get("ai_link_enabled", True))
         if not config.get("assrt_provider_migrated") and not self._assrt_api_key:
             self._online_provider_ids = [item for item in self._online_provider_ids if item != "assrt"]
         type(self)._rar_dependency_mode = self._rar_dependency_mode
@@ -197,6 +204,20 @@ class SubtitleManualUpload(_PluginBase):
                 "methods": ["POST"],
                 "auth": "bear",
                 "summary": "清空选中目标视频的外挂字幕",
+            },
+            {
+                "path": "/ai_submit",
+                "endpoint": self.api_ai_submit,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "提交 AI 字幕生成任务",
+            },
+            {
+                "path": "/ai_tasks",
+                "endpoint": self.api_ai_tasks,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "查询当前资源的 AI 字幕生成任务状态",
             },
             {
                 "path": "/online_status",
@@ -466,6 +487,7 @@ class SubtitleManualUpload(_PluginBase):
             "assrt_url": DEFAULT_PROVIDER_ROOTS["assrt"],
             "assrt_api_key": "",
             "assrt_api_url": "https://api.assrt.net",
+            "ai_link_enabled": True,
         }
 
     def get_page(self) -> List[dict]:
@@ -505,6 +527,7 @@ class SubtitleManualUpload(_PluginBase):
                 "assrt_url": self._online_site_urls["assrt"],
                 "assrt_api_key": self._assrt_api_key,
                 "assrt_api_url": self._assrt_api_url,
+                "ai_link_enabled": self._ai_link_enabled,
             }
         )
 
@@ -971,6 +994,151 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             "media_count": int(cache.get("media_count") or 0),
             "target_cache_count": len(self._entry_map or {}),
             "max_entries": self._cache_max_entries,
+        }
+
+    def _autosub_plugin(self) -> Tuple[Any, str]:
+        if not self._ai_link_enabled:
+            return None, "字幕匹配未启用 AI 字幕联动"
+        if PluginManager is None:
+            return None, "MoviePilot 插件管理器不可用"
+        try:
+            running_plugins = PluginManager().running_plugins or {}
+        except Exception as exc:
+            logger.warning("[SubtitleManualUpload] 读取运行中插件失败: %s", exc)
+            return None, "读取运行中插件失败"
+        plugin = running_plugins.get("AutoSubv3") or running_plugins.get("autosubv3")
+        if not plugin:
+            for candidate in running_plugins.values():
+                if candidate.__class__.__name__ == "AutoSubv3":
+                    plugin = candidate
+                    break
+        if not plugin:
+            return None, "请先安装并启用 AI字幕生成(联动版)"
+        return plugin, ""
+
+    def _autosub_status(self) -> Dict[str, Any]:
+        status = {
+            "enabled": bool(self._ai_link_enabled),
+            "installed": False,
+            "available": False,
+            "running": False,
+            "queue_ready": False,
+            "plugin_name": "AI字幕生成(联动版)",
+            "plugin_version": "",
+            "message": "请先安装并启用 AI字幕生成(联动版)",
+            "counts": {},
+            "updated_at": "",
+        }
+        if not self._ai_link_enabled:
+            status["message"] = "AI 字幕联动已关闭"
+            return status
+        plugin, reason = self._autosub_plugin()
+        if not plugin:
+            status["message"] = reason
+            return status
+        try:
+            if hasattr(plugin, "_status_payload"):
+                plugin_status = plugin._status_payload()
+            else:
+                running = bool(plugin.get_state()) if hasattr(plugin, "get_state") else False
+                plugin_status = {
+                    "available": running,
+                    "running": running,
+                    "queue_ready": running,
+                    "plugin_name": getattr(plugin, "plugin_name", "AI字幕生成(联动版)"),
+                    "plugin_version": getattr(plugin, "plugin_version", ""),
+                    "message": "可提交 AI 字幕生成任务" if running else "AI 字幕插件未运行",
+                    "counts": {},
+                    "updated_at": "",
+                }
+        except Exception as exc:
+            logger.warning("[SubtitleManualUpload] 读取 AI 字幕插件状态失败: %s", exc)
+            status["installed"] = True
+            status["message"] = "读取 AI 字幕插件状态失败"
+            return status
+        status.update(plugin_status)
+        status["enabled"] = bool(self._ai_link_enabled)
+        status["installed"] = True
+        status["available"] = bool(plugin_status.get("available")) and bool(self._ai_link_enabled)
+        return status
+
+    @staticmethod
+    def _autosub_task_summary(tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
+        counts = {
+            "pending": 0,
+            "in_progress": 0,
+            "completed": 0,
+            "ignored": 0,
+            "no_audio": 0,
+            "failed": 0,
+            "active": 0,
+            "total": len(tasks),
+        }
+        for task in tasks:
+            status = task.get("status")
+            if status in counts:
+                counts[status] += 1
+            if task.get("active") or status in {"pending", "in_progress"}:
+                counts["active"] += 1
+        return counts
+
+    def _autosub_tasks_for_entries(self, target_entries: List[Dict[str, Any]]) -> Dict[str, Any]:
+        status = self._autosub_status()
+        paths = [self._normalize_text(entry.get("path")) for entry in target_entries if self._normalize_text(entry.get("path"))]
+        task_by_target: Dict[str, Any] = {}
+        if not status.get("available"):
+            return {
+                "status": status,
+                "summary": self._autosub_task_summary([]),
+                "tasks": [],
+                "task_by_target": task_by_target,
+            }
+        plugin, reason = self._autosub_plugin()
+        if not plugin or not hasattr(plugin, "tasks_payload"):
+            status["available"] = False
+            status["message"] = reason or "AI 字幕插件版本过旧，请更新到联动版"
+            return {
+                "status": status,
+                "summary": self._autosub_task_summary([]),
+                "tasks": [],
+                "task_by_target": task_by_target,
+            }
+        try:
+            payload = plugin.tasks_payload(paths=paths, limit=max(300, len(paths) * 20))
+        except Exception as exc:
+            logger.warning("[SubtitleManualUpload] 读取 AI 字幕任务失败: %s", exc)
+            status["available"] = False
+            status["message"] = "读取 AI 字幕任务失败"
+            return {
+                "status": status,
+                "summary": self._autosub_task_summary([]),
+                "tasks": [],
+                "task_by_target": task_by_target,
+            }
+        status = {**status, **(payload.get("status") or {})}
+        latest_by_path: Dict[str, Dict[str, Any]] = {}
+        for task in payload.get("tasks") or []:
+            path = self._normalize_text(task.get("video_file"))
+            if path and path not in latest_by_path:
+                latest_by_path[path] = task
+
+        tasks: List[Dict[str, Any]] = []
+        for entry in target_entries:
+            target_id = self._normalize_text(entry.get("id"))
+            path = self._normalize_text(entry.get("path"))
+            task = dict(latest_by_path.get(path) or {})
+            if task:
+                task["target_id"] = target_id
+                task["target_label"] = entry.get("target_label") or entry.get("filename") or Path(path).name
+                task_by_target[target_id] = task
+                tasks.append(task)
+            else:
+                task_by_target[target_id] = None
+        return {
+            "status": status,
+            "summary": self._autosub_task_summary(tasks),
+            "tasks": tasks,
+            "task_by_target": task_by_target,
         }
 
     @classmethod
@@ -1830,6 +1998,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     "assrt_api_configured": bool(self._assrt_api_key),
                     "assrt_api_host": self._host_from_url(self._assrt_api_url),
                 },
+                "ai_subtitle": self._autosub_status(),
             }
         )
 
@@ -1843,6 +2012,63 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             },
             message=f"已刷新媒体库资源清单：{cache_status['media_count']} 个媒体，{len(entries)} 个本地视频目标",
         )
+
+    async def api_ai_submit(self, request: Request) -> Dict[str, Any]:
+        body = await request.json()
+        target_ids = self._target_ids_from_body(body)
+        if not target_ids:
+            raise HTTPException(status_code=400, detail="请先选择要生成 AI 字幕的本地视频")
+        target_entries = list(self._resolve_targets(target_ids).values())
+        if not target_entries:
+            raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
+        plugin, reason = self._autosub_plugin()
+        if not plugin:
+            raise HTTPException(status_code=409, detail=reason)
+        if not hasattr(plugin, "submit_tasks"):
+            raise HTTPException(status_code=409, detail="AI 字幕插件版本过旧，请更新到联动版")
+
+        paths = [self._normalize_text(entry.get("path")) for entry in target_entries if self._normalize_text(entry.get("path"))]
+        try:
+            result = plugin.submit_tasks(paths, source="subtitle_manual_upload")
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except Exception as exc:
+            logger.error("[SubtitleManualUpload] AI 字幕任务提交失败: %s", exc)
+            raise HTTPException(status_code=500, detail=f"AI 字幕任务提交失败: {exc}") from exc
+
+        tasks = self._autosub_tasks_for_entries(target_entries)
+        logger.info(
+            "[SubtitleManualUpload] AI 字幕任务提交完成 targets=%s added=%s skipped=%s failed=%s",
+            len(target_entries),
+            len(result.get("added") or []),
+            len(result.get("skipped") or []),
+            len(result.get("failed") or []),
+        )
+        return self._ok(
+            {
+                **result,
+                "targets": [self._target_from_entry(entry) for entry in target_entries],
+                "tasks": tasks,
+            },
+            message=f"已提交 {len(result.get('added') or [])} 个 AI 字幕生成任务，跳过 {len(result.get('skipped') or [])} 个，失败 {len(result.get('failed') or [])} 个",
+        )
+
+    async def api_ai_tasks(self, request: Request) -> Dict[str, Any]:
+        body = await request.json()
+        target_ids = self._target_ids_from_body(body)
+        if not target_ids:
+            return self._ok(
+                {
+                    "status": self._autosub_status(),
+                    "summary": self._autosub_task_summary([]),
+                    "tasks": [],
+                    "task_by_target": {},
+                }
+            )
+        target_entries = list(self._resolve_targets(target_ids).values())
+        if not target_entries:
+            raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
+        return self._ok(self._autosub_tasks_for_entries(target_entries))
 
     async def api_search(self, request: Request) -> Dict[str, Any]:
         keyword = self._normalize_text(request.query_params.get("keyword"))

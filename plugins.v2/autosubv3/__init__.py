@@ -5,7 +5,7 @@ import time
 import traceback
 from datetime import timedelta, datetime
 from pathlib import Path
-from typing import Tuple, Dict, Any, List
+from typing import Tuple, Dict, Any, List, Optional
 from threading import Event, Lock
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
@@ -19,6 +19,7 @@ import queue
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
 from uuid import uuid4
+from fastapi import HTTPException, Request
 from app.core.config import settings
 from app.core.context import MediaInfo
 from app.core.event import eventmanager, Event as MPEvent
@@ -39,6 +40,7 @@ class UserInterruptException(Exception):
 class TaskSource(Enum):
     MANUAL = "manual"
     EVENT = "event"
+    SUBTITLE_MANUAL_UPLOAD = "subtitle_manual_upload"
 
 
 class TaskStatus(Enum):
@@ -58,6 +60,7 @@ class TaskItem:
     add_time: datetime
     status: TaskStatus = TaskStatus.PENDING
     complete_time: datetime = None
+    error_message: str = ""
 
 
 class FileMonitorHandler(FileSystemEventHandler):
@@ -78,15 +81,15 @@ class FileMonitorHandler(FileSystemEventHandler):
 
 class AutoSubv3(_PluginBase):
     # 插件名称
-    plugin_name = "AI字幕生成"
+    plugin_name = "AI字幕生成(联动版)"
     # 插件描述
-    plugin_desc = "自动生成字幕并翻译成中文，支持 faster-whisper 识别、字幕提取和大模型并发翻译。"
+    plugin_desc = "自动生成字幕并翻译成中文，支持 faster-whisper 识别、字幕提取、大模型并发翻译，并可联动字幕匹配功能。"
     # 插件图标
     plugin_icon = "autosubtitles.jpeg"
     # 主题色
     plugin_color = "#2C4F7E"
     # 插件版本
-    plugin_version = "3.5.40"
+    plugin_version = "3.5.41"
     # 插件作者
     plugin_author = "jaysherlock"
     # 作者主页
@@ -232,6 +235,7 @@ class AutoSubv3(_PluginBase):
                     status=TaskStatus(task_dict["status"]),
                     complete_time=datetime.fromisoformat(task_dict["complete_time"])
                     if task_dict.get("complete_time") else None,
+                    error_message=task_dict.get("error_message", ""),
                 )
                 tasks[task_id] = task
             except Exception as e:
@@ -247,11 +251,222 @@ class AutoSubv3(_PluginBase):
             "add_time": task.add_time.isoformat() if task.add_time else None,
             "status": task.status.value,
             "complete_time": task.complete_time.isoformat() if task.complete_time else None,
+            "error_message": task.error_message or "",
         }
 
     def save_tasks(self):
         tasks_dict = {task_id: self._serialize_task(task) for task_id, task in self._tasks.items()}
         self.save_data("tasks", tasks_dict)
+
+    @staticmethod
+    def _ok(data: Any = None, message: str = "ok") -> Dict[str, Any]:
+        return {"success": True, "message": message, "data": data}
+
+    @staticmethod
+    def _normalize_text(value: Any) -> str:
+        return str(value or "").strip()
+
+    @staticmethod
+    def _source_label(source: TaskSource) -> str:
+        return {
+            TaskSource.MANUAL: "手动添加",
+            TaskSource.EVENT: "入库触发",
+            TaskSource.SUBTITLE_MANUAL_UPLOAD: "字幕匹配联动",
+        }.get(source, getattr(source, "value", str(source)))
+
+    @staticmethod
+    def _status_label(status: TaskStatus) -> str:
+        return {
+            TaskStatus.PENDING: "等待中",
+            TaskStatus.IN_PROGRESS: "处理中",
+            TaskStatus.COMPLETED: "已完成",
+            TaskStatus.IGNORED: "已忽略",
+            TaskStatus.NO_AUDIO: "无声音跳过",
+            TaskStatus.FAILED: "失败",
+        }.get(status, getattr(status, "value", str(status)))
+
+    @staticmethod
+    def _status_message(status: TaskStatus) -> str:
+        return {
+            TaskStatus.PENDING: "任务已进入等待队列",
+            TaskStatus.IN_PROGRESS: "正在生成字幕",
+            TaskStatus.COMPLETED: "字幕生成完成",
+            TaskStatus.IGNORED: "已按插件规则跳过，通常是字幕已存在或文件不满足处理条件",
+            TaskStatus.NO_AUDIO: "视频未检测到有效音轨，已跳过",
+            TaskStatus.FAILED: "字幕生成失败，请查看 AI字幕生成(联动版) 日志",
+        }.get(status, "")
+
+    def _queue_positions(self) -> Dict[str, int]:
+        positions: Dict[str, int] = {}
+        if self._current_processing_task:
+            positions[self._current_processing_task.task_id] = 0
+        if not self._task_queue:
+            return positions
+        try:
+            with self._task_queue.mutex:
+                for index, task in enumerate(list(self._task_queue.queue), start=1):
+                    positions[task.task_id] = index
+        except Exception:
+            return positions
+        return positions
+
+    def _task_counts(self) -> Dict[str, int]:
+        counts = {status.value: 0 for status in TaskStatus}
+        for task in (self._tasks or {}).values():
+            key = task.status.value if isinstance(task.status, TaskStatus) else str(task.status)
+            counts[key] = counts.get(key, 0) + 1
+        counts["queue_size"] = self._task_queue.qsize() if self._task_queue else 0
+        return counts
+
+    def _task_to_api(self, task: TaskItem, queue_positions: Optional[Dict[str, int]] = None) -> Dict[str, Any]:
+        queue_positions = queue_positions or {}
+        status = task.status if isinstance(task.status, TaskStatus) else TaskStatus.FAILED
+        source = task.source if isinstance(task.source, TaskSource) else TaskSource.MANUAL
+        queue_position = queue_positions.get(task.task_id)
+        message = task.error_message or self._status_message(status)
+        if status == TaskStatus.PENDING and queue_position:
+            message = f"排队第 {queue_position} 位"
+        if status == TaskStatus.IN_PROGRESS:
+            message = "正在生成字幕"
+        return {
+            "task_id": task.task_id,
+            "video_file": task.video_file,
+            "video_name": os.path.basename(task.video_file or ""),
+            "source": source.value,
+            "source_label": self._source_label(source),
+            "status": status.value,
+            "status_label": self._status_label(status),
+            "message": message,
+            "queue_position": queue_position,
+            "add_time": task.add_time.isoformat(timespec="seconds") if task.add_time else "",
+            "complete_time": task.complete_time.isoformat(timespec="seconds") if task.complete_time else "",
+            "active": status in (TaskStatus.PENDING, TaskStatus.IN_PROGRESS),
+        }
+
+    def _status_payload(self) -> Dict[str, Any]:
+        ready = bool(self._running and self._task_queue)
+        if not self._enabled:
+            message = "插件未启用"
+        elif not ready:
+            message = "插件已启用但任务队列未启动，请检查 Whisper 或 OpenAI 配置"
+        else:
+            message = "可提交 AI 字幕生成任务"
+        latest_time = ""
+        for task in (self._tasks or {}).values():
+            for candidate in (task.complete_time, task.add_time):
+                if candidate and candidate.isoformat() > latest_time:
+                    latest_time = candidate.isoformat(timespec="seconds")
+        return {
+            "available": ready,
+            "enabled": bool(self._enabled),
+            "running": bool(self._running),
+            "queue_ready": bool(self._task_queue),
+            "plugin_name": self.plugin_name,
+            "plugin_version": self.plugin_version,
+            "message": message,
+            "counts": self._task_counts(),
+            "updated_at": latest_time,
+        }
+
+    def api_status(self) -> Dict[str, Any]:
+        return self._ok(self._status_payload())
+
+    def submit_tasks(self, paths: List[str], source: str = TaskSource.MANUAL.value) -> Dict[str, Any]:
+        if not self._running or not self._task_queue:
+            raise RuntimeError(self._status_payload()["message"])
+        try:
+            task_source = TaskSource(self._normalize_text(source) or TaskSource.MANUAL.value)
+        except Exception:
+            task_source = TaskSource.MANUAL
+
+        added: List[Dict[str, Any]] = []
+        skipped: List[Dict[str, str]] = []
+        failed: List[Dict[str, str]] = []
+        seen_paths = set()
+        for raw_path in paths or []:
+            video_file = self._normalize_text(raw_path)
+            if not video_file:
+                continue
+            if video_file in seen_paths:
+                skipped.append({"path": video_file, "reason": "重复路径"})
+                continue
+            seen_paths.add(video_file)
+            if not os.path.isabs(video_file) or not os.path.isfile(video_file):
+                failed.append({"path": video_file, "reason": "视频文件不存在或不是绝对路径"})
+                continue
+            if os.path.splitext(video_file)[-1].lower() not in settings.RMT_MEDIAEXT:
+                failed.append({"path": video_file, "reason": "不是 MoviePilot 支持的视频文件"})
+                continue
+            if self.__is_duplicate_task(video_file):
+                skipped.append({"path": video_file, "reason": "任务已在队列中或正在处理"})
+                continue
+            if self.add_task(video_file, task_source):
+                added.append({"path": video_file})
+            else:
+                skipped.append({"path": video_file, "reason": "任务已存在"})
+
+        logger.info(
+            "[AutoSubv3] 联动任务提交 source=%s requested=%s added=%s skipped=%s failed=%s",
+            task_source.value,
+            len(paths or []),
+            len(added),
+            len(skipped),
+            len(failed),
+        )
+        return {
+            "added": added,
+            "skipped": skipped,
+            "failed": failed,
+            "status": self._status_payload(),
+        }
+
+    async def api_submit(self, request: Request) -> Dict[str, Any]:
+        if not self._running or not self._task_queue:
+            raise HTTPException(status_code=409, detail=self._status_payload()["message"])
+        body = await request.json()
+        paths = body.get("paths") or []
+        if isinstance(paths, str):
+            paths = [paths]
+        if not isinstance(paths, list):
+            paths = []
+        result = self.submit_tasks(paths, source=self._normalize_text(body.get("source")) or TaskSource.MANUAL.value)
+        return self._ok(
+            result,
+            message=f"已提交 {len(result['added'])} 个 AI 字幕生成任务，跳过 {len(result['skipped'])} 个，失败 {len(result['failed'])} 个",
+        )
+
+    def tasks_payload(self, paths: Optional[List[str]] = None, limit: int = 300) -> Dict[str, Any]:
+        filter_paths = {self._normalize_text(item) for item in (paths or []) if self._normalize_text(item)}
+        limit = min(max(limit, 1), 1000)
+        queue_positions = self._queue_positions()
+        tasks = sorted(
+            (self._tasks or {}).values(),
+            key=lambda item: item.add_time or datetime.min,
+            reverse=True,
+        )
+        if filter_paths:
+            tasks = [task for task in tasks if task.video_file in filter_paths]
+        return {
+            "status": self._status_payload(),
+            "tasks": [self._task_to_api(task, queue_positions) for task in tasks[:limit]],
+        }
+
+    def api_tasks(self, request: Request) -> Dict[str, Any]:
+        raw_paths = request.query_params.get("paths") or ""
+        filter_paths = set()
+        if raw_paths:
+            try:
+                parsed = json.loads(raw_paths)
+                if isinstance(parsed, list):
+                    filter_paths = {self._normalize_text(item) for item in parsed if self._normalize_text(item)}
+            except Exception:
+                filter_paths = {self._normalize_text(item) for item in raw_paths.split(",") if self._normalize_text(item)}
+        try:
+            limit = int(request.query_params.get("limit") or 300)
+        except Exception:
+            limit = 300
+        limit = min(max(limit, 1), 1000)
+        return self._ok(self.tasks_payload(paths=list(filter_paths), limit=limit))
 
     def load_skipped_videos(self) -> Dict[str, dict]:
         """加载无声音跳过的视频记录"""
@@ -350,10 +565,12 @@ class AutoSubv3(_PluginBase):
                 self._current_processing_task = task
                 logger.info(f"开始处理任务 {task.task_id}: {task.video_file}")
                 task.status = TaskStatus.IN_PROGRESS
+                task.error_message = ""
                 self._tasks[task.task_id] = task
                 self.save_tasks()
                 task.status = self.__process_autosub(task.video_file)
                 task.complete_time = datetime.now()
+                task.error_message = "" if task.status == TaskStatus.COMPLETED else self._status_message(task.status)
                 self._tasks[task.task_id] = task
                 self.save_tasks()
                 self._task_queue.task_done()
@@ -363,6 +580,12 @@ class AutoSubv3(_PluginBase):
             except Exception as e:
                 logger.error(f"消费任务时发生异常: {e}")
                 logger.error(traceback.format_exc())
+                if self._current_processing_task:
+                    self._current_processing_task.status = TaskStatus.FAILED
+                    self._current_processing_task.complete_time = datetime.now()
+                    self._current_processing_task.error_message = str(e)
+                    self._tasks[self._current_processing_task.task_id] = self._current_processing_task
+                    self.save_tasks()
                 self._current_processing_task = None
         logger.info("消费线程已退出")
 
@@ -1445,7 +1668,29 @@ class AutoSubv3(_PluginBase):
         }
 
     def get_api(self) -> List[Dict[str, Any]]:
-        pass
+        return [
+            {
+                "path": "/status",
+                "endpoint": self.api_status,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "获取 AI 字幕生成联动状态",
+            },
+            {
+                "path": "/submit",
+                "endpoint": self.api_submit,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "提交 AI 字幕生成任务",
+            },
+            {
+                "path": "/tasks",
+                "endpoint": self.api_tasks,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "获取 AI 字幕生成任务状态",
+            },
+        ]
 
     def get_page(self) -> List[dict]:
         # 加载任务并按添加时间倒序排列
@@ -1469,7 +1714,8 @@ class AutoSubv3(_PluginBase):
         for task_id, task in sorted_tasks:
             source_label = {
                 TaskSource.MANUAL: "手动添加",
-                TaskSource.EVENT: "入库触发"
+                TaskSource.EVENT: "入库触发",
+                TaskSource.SUBTITLE_MANUAL_UPLOAD: "字幕匹配联动",
             }.get(task.source, task.source)
 
             status_text = {
