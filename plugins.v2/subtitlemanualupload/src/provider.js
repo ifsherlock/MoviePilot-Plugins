@@ -5,9 +5,9 @@ export function unwrapResponse(response) {
   return response?.data ?? response
 }
 
-export function groupLabel(group) {
-  if (!group) return ''
-  return group.year ? `${group.title} (${group.year})` : `${group.title || ''}`
+export function mediaLabel(media) {
+  if (!media) return ''
+  return media.year ? `${media.title} (${media.year})` : `${media.title || ''}`
 }
 
 export function targetLabel(target) {

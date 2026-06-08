@@ -12,19 +12,20 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 from fastapi import HTTPException, Request
 from starlette.datastructures import UploadFile
 
+from app.chain.media import MediaChain
+from app.chain.tmdb import TmdbChain
 from app.core.config import settings
 from app.core.metainfo import MetaInfoPath
-from app.helper.directory import DirectoryHelper
 from app.log import logger
 from app.plugins import _PluginBase
-from app.utils.system import SystemUtils
+from app.schemas.types import MediaType
 
 
 class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕手传匹配"
     plugin_desc = "手动上传字幕或 ZIP，匹配电影/剧集并按媒体文件名落盘。"
     plugin_icon = "upload.png"
-    plugin_version = "0.1.0"
+    plugin_version = "0.1.1"
     plugin_author = "jaysh"
     author_url = "https://github.com/jaysh"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -33,19 +34,16 @@ class SubtitleManualUpload(_PluginBase):
 
     _enabled = False
     _show_sidebar_nav = True
-    _index_cache: Optional[Dict[str, Any]] = None
     _entry_map: Dict[str, Dict[str, Any]] = {}
 
     _subtitle_exts = {".ass", ".srt", ".ssa", ".sbv", ".sub", ".vtt", ".webvtt"}
     _archive_exts = {".zip"}
     _default_session_hours = 24
-    _default_index_minutes = 30
 
     def init_plugin(self, config: dict = None):
         config = config or {}
         self._enabled = bool(config.get("enabled"))
         self._show_sidebar_nav = bool(config.get("show_sidebar_nav", True))
-        self._index_cache = None
         self._entry_map = {}
         self._save_config()
         self._cleanup_old_sessions()
@@ -75,14 +73,21 @@ class SubtitleManualUpload(_PluginBase):
                 "endpoint": self.api_refresh_index,
                 "methods": ["POST"],
                 "auth": "bear",
-                "summary": "刷新媒体库索引",
+                "summary": "兼容旧版刷新索引入口",
             },
             {
                 "path": "/search",
                 "endpoint": self.api_search,
                 "methods": ["GET"],
                 "auth": "bear",
-                "summary": "搜索媒体库中的电影或剧集",
+                "summary": "使用 MoviePilot 搜索媒体候选",
+            },
+            {
+                "path": "/targets",
+                "endpoint": self.api_targets,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "读取选中媒体的本地文件目标",
             },
             {
                 "path": "/prepare_upload",
@@ -148,7 +153,7 @@ class SubtitleManualUpload(_PluginBase):
                                         "props": {
                                             "type": "info",
                                             "variant": "tonal",
-                                            "text": "当前版本面向本地媒体库：先搜索目标电影或剧集，再拖拽字幕或 ZIP 上传并确认匹配结果。",
+                                            "text": "先用 MoviePilot 搜索媒体并展示封面，再读取已入库文件；剧集可选择季度后上传字幕或 ZIP。",
                                         },
                                     }
                                 ],
@@ -203,13 +208,6 @@ class SubtitleManualUpload(_PluginBase):
     @staticmethod
     def _normalize_text(value: Any) -> str:
         return str(value or "").strip()
-
-    @staticmethod
-    def _normalize_key(value: Any) -> str:
-        text = str(value or "").strip().lower()
-        text = text.replace("_", " ")
-        text = re.sub(r"[^\w\u4e00-\u9fff]+", " ", text)
-        return re.sub(r"\s+", " ", text).strip()
 
     @staticmethod
     def _hash_text(value: str) -> str:
@@ -283,164 +281,6 @@ class SubtitleManualUpload(_PluginBase):
                 return {"season": season, "episode": episode}
         return None
 
-    @staticmethod
-    def _looks_like_season_dir(dir_name: str) -> bool:
-        lowered = str(dir_name or "").strip().lower()
-        return bool(re.fullmatch(r"(season|s)\s*[\d一二三四五六七八九十]+", lowered))
-
-    @classmethod
-    def _guess_show_title(cls, file_path: Path) -> str:
-        parent = file_path.parent
-        if cls._looks_like_season_dir(parent.name) and parent.parent:
-            return parent.parent.name
-        return parent.name
-
-    @classmethod
-    def _looks_like_generic_library_dir(cls, dir_name: str) -> bool:
-        normalized = cls._normalize_key(dir_name)
-        return normalized in {
-            "movie",
-            "movies",
-            "film",
-            "films",
-            "tv",
-            "tvs",
-            "show",
-            "shows",
-            "series",
-            "media",
-            "library",
-            "动漫",
-            "动画",
-            "电影",
-            "电视剧",
-        }
-
-    @classmethod
-    def _guess_tv_series_title(cls, file_path: Path, parsed_title: str) -> str:
-        parent = file_path.parent
-        if cls._looks_like_season_dir(parent.name) and parent.parent:
-            season_parent_title = cls._strip_episode_tokens(parent.parent.name)
-            if season_parent_title:
-                return season_parent_title
-
-        guessed_parent = cls._strip_episode_tokens(parent.name)
-        if guessed_parent and not cls._looks_like_generic_library_dir(parent.name):
-            return guessed_parent
-
-        parsed = cls._strip_episode_tokens(parsed_title)
-        if parsed:
-            return parsed
-        return cls._strip_episode_tokens(file_path.stem)
-
-    @staticmethod
-    def _guess_year(text: str) -> str:
-        match = re.search(r"(19|20)\d{2}", text or "")
-        return match.group(0) if match else ""
-
-    @classmethod
-    def _strip_episode_tokens(cls, text: str) -> str:
-        value = str(text or "")
-        value = re.sub(r"(?i)\bS\d{1,2}[\s._-]*E\d{1,3}\b", " ", value)
-        value = re.sub(r"(?i)\b\d{1,2}x\d{1,3}\b", " ", value)
-        value = re.sub(r"第\s*\d{1,2}\s*季", " ", value)
-        value = re.sub(r"第\s*\d{1,3}\s*[集话話]", " ", value)
-        value = re.sub(r"(19|20)\d{2}", " ", value)
-        value = re.sub(r"[._\-]+", " ", value)
-        return re.sub(r"\s+", " ", value).strip()
-
-    @classmethod
-    def _coerce_media_type(cls, value: Any, file_path: Path) -> str:
-        raw = str(getattr(value, "value", value) or "").strip().lower()
-        if raw in {"movie", "电影"}:
-            return "movie"
-        if raw in {"tv", "电视剧"}:
-            return "tv"
-        hint = cls._extract_episode_hint(file_path.name)
-        return "tv" if hint else "movie"
-
-    @classmethod
-    def _build_entry(cls, file_path: Path, library_name: str) -> Dict[str, Any]:
-        meta = MetaInfoPath(file_path)
-        media_type = cls._coerce_media_type(getattr(meta, "type", None), file_path)
-        year = cls._normalize_text(getattr(meta, "year", None)) or cls._guess_year(file_path.name)
-        season = cls._safe_int(
-            getattr(meta, "begin_season", None) or getattr(meta, "season", None),
-            0,
-        )
-        episode = cls._safe_int(
-            getattr(meta, "begin_episode", None) or getattr(meta, "episode", None),
-            0,
-        )
-
-        episode_hint = cls._extract_episode_hint(file_path.name)
-        if episode_hint:
-            season = season or episode_hint.get("season", 0)
-            episode = episode or episode_hint.get("episode", 0)
-
-        title_candidates = [
-            getattr(meta, "title", None),
-            getattr(meta, "name", None),
-            getattr(meta, "cn_name", None),
-        ]
-        title = next((cls._normalize_text(item) for item in title_candidates if cls._normalize_text(item)), "")
-        if media_type == "tv":
-            show_title = cls._guess_tv_series_title(file_path, title)
-            item_title = show_title
-        else:
-            item_title = title or cls._strip_episode_tokens(file_path.stem)
-            show_title = ""
-
-        item_title = item_title or file_path.stem
-
-        entry_id = cls._hash_text(str(file_path))
-        relative_path = str(file_path).replace("\\", "/")
-        target_label = f"{item_title} ({year})" if media_type == "movie" and year else item_title
-        if media_type == "tv":
-            prefix = f"S{season:02d}E{episode:02d}" if season and episode else file_path.stem
-            target_label = f"{prefix} · {file_path.name}"
-
-        search_blob = cls._normalize_key(
-            " ".join(
-                filter(
-                    None,
-                    [
-                        item_title,
-                        show_title,
-                        year,
-                        file_path.name,
-                        library_name,
-                        relative_path,
-                    ],
-                )
-            )
-        )
-
-        group_title = show_title or item_title
-        group_key = cls._hash_text(f"{media_type}|{cls._normalize_key(group_title)}|{year}")
-
-        return {
-            "id": entry_id,
-            "media_type": media_type,
-            "title": item_title,
-            "group_title": group_title,
-            "year": year,
-            "season": season,
-            "episode": episode,
-            "path": str(file_path),
-            "basename": file_path.stem,
-            "filename": file_path.name,
-            "library_name": library_name,
-            "relative_path": relative_path,
-            "group_key": group_key,
-            "group_label": f"{group_title} ({year})" if year else group_title,
-            "target_label": target_label,
-            "search_blob": search_blob,
-        }
-
-    def _get_index_file(self) -> Path:
-        return self.get_data_path() / "library_index.json"
-
     def _get_session_root(self) -> Path:
         root = self.get_data_path() / "sessions"
         root.mkdir(parents=True, exist_ok=True)
@@ -458,106 +298,296 @@ class SubtitleManualUpload(_PluginBase):
             except Exception as exc:
                 logger.warning("[SubtitleManualUpload] 清理旧会话失败 %s: %s", child, exc)
 
-    def _load_index(self) -> Dict[str, Any]:
-        if self._index_cache:
-            return self._index_cache
+    @classmethod
+    def _media_type_text(cls, value: Any) -> str:
+        raw = str(getattr(value, "value", value) or "").strip().lower()
+        if raw in {"movie", "电影", "mediatype.movie"}:
+            return "movie"
+        if raw in {"tv", "电视剧", "series", "mediatype.tv"}:
+            return "tv"
+        return ""
 
-        cache_file = self._get_index_file()
-        if cache_file.exists():
-            try:
-                self._index_cache = json.loads(cache_file.read_text(encoding="utf-8"))
-                self._entry_map = {
-                    item["id"]: item
-                    for item in self._index_cache.get("entries", [])
-                    if item.get("id")
-                }
-                return self._index_cache
-            except Exception as exc:
-                logger.warning("[SubtitleManualUpload] 读取媒体索引失败，准备重建: %s", exc)
+    @classmethod
+    def _media_type_enum(cls, value: Any) -> Optional[MediaType]:
+        media_type = cls._media_type_text(value)
+        if media_type == "movie":
+            return MediaType.MOVIE
+        if media_type == "tv":
+            return MediaType.TV
+        return None
 
-        self._index_cache = {
-            "updated_at": "",
-            "entry_count": 0,
-            "entries": [],
+    @classmethod
+    def _poster_url(cls, poster_path: Any, prefix: str = "w500") -> str:
+        poster = cls._normalize_text(poster_path)
+        if not poster:
+            return ""
+        if poster.startswith(("http://", "https://")):
+            return poster
+        if not poster.startswith("/"):
+            poster = f"/{poster}"
+        domain = cls._normalize_text(getattr(settings, "TMDB_IMAGE_DOMAIN", "")) or "image.tmdb.org"
+        return f"https://{domain}/t/p/{prefix}{poster}"
+
+    @staticmethod
+    def _model_dump(value: Any) -> Dict[str, Any]:
+        if isinstance(value, dict):
+            return value
+        if hasattr(value, "model_dump"):
+            return value.model_dump()
+        if hasattr(value, "dict"):
+            return value.dict()
+        return {}
+
+    def _media_from_info(self, mediainfo: Any) -> Dict[str, Any]:
+        data = self._model_dump(mediainfo)
+        media_type = self._media_type_text(data.get("type") or getattr(mediainfo, "type", None))
+        title = self._normalize_text(data.get("title") or getattr(mediainfo, "title", ""))
+        year = self._normalize_text(data.get("year") or getattr(mediainfo, "year", ""))
+        tmdb_id = data.get("tmdb_id") or getattr(mediainfo, "tmdb_id", None)
+        douban_id = self._normalize_text(data.get("douban_id") or getattr(mediainfo, "douban_id", ""))
+        poster_path = data.get("poster_path") or getattr(mediainfo, "poster_path", "")
+        media_id = self._normalize_text(data.get("media_id") or getattr(mediainfo, "media_id", ""))
+        if not media_id and tmdb_id:
+            media_id = f"tmdb:{tmdb_id}"
+        return {
+            "id": self._hash_text(f"{media_type}|{tmdb_id}|{douban_id}|{title}|{year}"),
+            "media_id": media_id,
+            "media_type": media_type,
+            "title": title,
+            "en_title": self._normalize_text(data.get("en_title") or getattr(mediainfo, "en_title", "")),
+            "year": year,
+            "tmdb_id": tmdb_id,
+            "douban_id": douban_id,
+            "poster_path": poster_path,
+            "poster_url": self._poster_url(poster_path),
+            "backdrop_url": self._poster_url(data.get("backdrop_path") or getattr(mediainfo, "backdrop_path", ""), "w780"),
+            "overview": self._normalize_text(data.get("overview") or getattr(mediainfo, "overview", "")),
+            "vote_average": data.get("vote_average") or getattr(mediainfo, "vote_average", None) or 0,
         }
-        self._entry_map = {}
-        return self._index_cache
 
-    def _save_index(self, index_data: Dict[str, Any]) -> Dict[str, Any]:
-        cache_file = self._get_index_file()
-        cache_file.parent.mkdir(parents=True, exist_ok=True)
-        cache_file.write_text(json.dumps(index_data, ensure_ascii=False, indent=2), encoding="utf-8")
-        self._index_cache = index_data
-        self._entry_map = {
-            item["id"]: item
-            for item in self._index_cache.get("entries", [])
-            if item.get("id")
-        }
-        return index_data
+    def _resolve_mediainfo(
+        self,
+        media_type: str,
+        tmdb_id: Any = None,
+        douban_id: Any = None,
+        title: str = "",
+        year: str = "",
+    ) -> Any:
+        mtype = self._media_type_enum(media_type)
+        if not mtype:
+            raise HTTPException(status_code=400, detail="媒体类型必须是 movie 或 tv")
 
-    def _build_index(self, force: bool = False) -> Dict[str, Any]:
-        index_data = self._load_index()
-        if not force and index_data.get("updated_at"):
+        chain = MediaChain()
+        clean_tmdb_id = self._safe_int(tmdb_id, 0)
+        clean_douban_id = self._normalize_text(douban_id)
+        if clean_tmdb_id:
+            mediainfo = chain.recognize_media(mtype=mtype, tmdbid=clean_tmdb_id, cache=True)
+            if mediainfo:
+                return mediainfo
+        if clean_douban_id:
+            mediainfo = chain.recognize_media(mtype=mtype, doubanid=clean_douban_id, cache=True)
+            if mediainfo:
+                return mediainfo
+
+        clean_title = self._normalize_text(title)
+        if clean_title:
             try:
-                updated_at = datetime.fromisoformat(index_data["updated_at"])
-                if datetime.now() - updated_at < timedelta(minutes=self._default_index_minutes):
-                    return index_data
-            except Exception:
-                pass
-
-        entries: List[Dict[str, Any]] = []
-        libraries = DirectoryHelper().get_library_dirs()
-        for library in libraries:
-            library_name = self._normalize_text(getattr(library, "name", None))
-            library_path = self._normalize_text(getattr(library, "library_path", None))
-            if not library_name or not library_path:
-                continue
-            root = Path(library_path)
-            if not root.exists():
-                logger.warning("[SubtitleManualUpload] 媒体库目录不存在: %s", root)
-                continue
-            try:
-                files = SystemUtils.list_files(root, settings.RMT_MEDIAEXT)
+                _, medias = chain.search(title=clean_title)
             except Exception as exc:
-                logger.warning("[SubtitleManualUpload] 枚举媒体库失败 %s: %s", root, exc)
-                continue
-            for file_path in files:
-                try:
-                    entries.append(self._build_entry(Path(file_path), library_name))
-                except Exception as exc:
-                    logger.warning("[SubtitleManualUpload] 索引媒体文件失败 %s: %s", file_path, exc)
+                raise HTTPException(status_code=500, detail=f"MoviePilot 搜索媒体失败: {exc}") from exc
+            for media in medias or []:
+                if self._media_type_text(getattr(media, "type", "")) != self._media_type_text(media_type):
+                    continue
+                media_year = self._normalize_text(getattr(media, "year", ""))
+                if year and media_year and media_year != self._normalize_text(year):
+                    continue
+                return media
 
-        entries.sort(
-            key=lambda item: (
-                item.get("media_type", ""),
-                self._normalize_key(item.get("group_title")),
-                item.get("season", 0),
-                item.get("episode", 0),
-                item.get("relative_path", ""),
-            )
-        )
-        return self._save_index(
-            {
-                "updated_at": datetime.now().isoformat(timespec="seconds"),
-                "entry_count": len(entries),
-                "entries": entries,
+        raise HTTPException(status_code=404, detail="未能识别选中的媒体，请重新搜索后选择")
+
+    async def _search_media_candidates(self, keyword: str, media_type: str, limit: int) -> List[Dict[str, Any]]:
+        clean_keyword = self._normalize_text(keyword)
+        if not clean_keyword:
+            return []
+
+        try:
+            _, medias = await MediaChain().async_search(title=clean_keyword)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"MoviePilot 搜索媒体失败: {exc}") from exc
+
+        result: List[Dict[str, Any]] = []
+        expected_type = self._media_type_text(media_type)
+        for media in medias or []:
+            item = self._media_from_info(media)
+            if expected_type and item.get("media_type") != expected_type:
+                continue
+            if not item.get("title") or not item.get("media_type"):
+                continue
+            result.append(item)
+            if len(result) >= limit:
+                break
+        return result
+
+    def _build_entry_from_fileitem(self, fileitem: Any, mediainfo: Any) -> Optional[Dict[str, Any]]:
+        path = self._normalize_text(getattr(fileitem, "path", None))
+        if not path:
+            return None
+
+        file_path = Path(path)
+        basename = self._normalize_text(getattr(fileitem, "basename", None)) or file_path.stem
+        filename = self._normalize_text(getattr(fileitem, "name", None)) or file_path.name
+        storage = self._normalize_text(getattr(fileitem, "storage", None)) or "local"
+        media_type = self._media_type_text(getattr(mediainfo, "type", None))
+        title = self._normalize_text(getattr(mediainfo, "title", ""))
+        year = self._normalize_text(getattr(mediainfo, "year", ""))
+
+        season = 0
+        episode = 0
+        try:
+            meta = MetaInfoPath(file_path)
+            season = self._safe_int(getattr(meta, "begin_season", None) or getattr(meta, "season", None), 0)
+            episode = self._safe_int(getattr(meta, "begin_episode", None) or getattr(meta, "episode", None), 0)
+        except Exception:
+            pass
+
+        episode_hint = self._extract_episode_hint(filename or basename)
+        if episode_hint:
+            season = season or episode_hint.get("season", 0)
+            episode = episode or episode_hint.get("episode", 0)
+        if media_type == "tv" and episode and not season:
+            season = 1
+
+        entry_id = self._hash_text(f"{storage}|{path}")
+        if media_type == "tv":
+            prefix = f"S{season:02d}E{episode:02d}" if season and episode else basename
+            target_label = f"{prefix} · {filename}"
+        else:
+            target_label = filename or (f"{title} ({year})" if year else title)
+
+        return {
+            "id": entry_id,
+            "media_type": media_type,
+            "title": title,
+            "year": year,
+            "season": season,
+            "episode": episode,
+            "path": path,
+            "basename": basename,
+            "filename": filename,
+            "storage": storage,
+            "library_name": "MoviePilot 媒体库",
+            "relative_path": path.replace("\\", "/"),
+            "target_label": target_label,
+            "writable": storage == "local",
+        }
+
+    def _season_catalog(self, tmdb_id: Any) -> Dict[int, Dict[str, Any]]:
+        clean_tmdb_id = self._safe_int(tmdb_id, 0)
+        if not clean_tmdb_id:
+            return {}
+        try:
+            seasons = TmdbChain().tmdb_seasons(tmdbid=clean_tmdb_id) or []
+        except Exception as exc:
+            logger.warning("[SubtitleManualUpload] 获取 TMDB 季信息失败 %s: %s", clean_tmdb_id, exc)
+            return {}
+
+        result: Dict[int, Dict[str, Any]] = {}
+        for season in seasons:
+            season_number = self._safe_int(getattr(season, "season_number", None), -1)
+            if season_number < 0:
+                continue
+            poster_path = getattr(season, "poster_path", "")
+            result[season_number] = {
+                "season": season_number,
+                "name": self._normalize_text(getattr(season, "name", "")) or f"第 {season_number} 季",
+                "episode_count": self._safe_int(getattr(season, "episode_count", None), 0),
+                "poster_url": self._poster_url(poster_path),
+                "local_count": 0,
+                "episodes": [],
+                "available": False,
             }
-        )
+        return result
 
-    def _libraries_summary(self) -> List[Dict[str, Any]]:
-        libraries = []
-        for library in DirectoryHelper().get_library_dirs():
-            library_name = self._normalize_text(getattr(library, "name", None))
-            library_path = self._normalize_text(getattr(library, "library_path", None))
-            if not library_name:
+    def _merge_seasons(self, entries: List[Dict[str, Any]], tmdb_id: Any) -> List[Dict[str, Any]]:
+        seasons = self._season_catalog(tmdb_id)
+        for entry in entries:
+            season = self._safe_int(entry.get("season"), 0)
+            episode = self._safe_int(entry.get("episode"), 0)
+            if not season:
                 continue
-            libraries.append(
+            item = seasons.setdefault(
+                season,
                 {
-                    "name": library_name,
-                    "exists": bool(library_path and Path(library_path).exists()),
-                }
+                    "season": season,
+                    "name": f"第 {season} 季",
+                    "episode_count": 0,
+                    "poster_url": "",
+                    "local_count": 0,
+                    "episodes": [],
+                    "available": False,
+                },
             )
-        return libraries
+            item["local_count"] += 1
+            item["available"] = True
+            if episode and episode not in item["episodes"]:
+                item["episodes"].append(episode)
+
+        result = list(seasons.values())
+        for item in result:
+            item["episodes"] = sorted(item.get("episodes") or [])
+        result.sort(key=lambda item: item.get("season", 0))
+        return result
+
+    def _targets_for_media(
+        self,
+        media_type: str,
+        tmdb_id: Any = None,
+        douban_id: Any = None,
+        title: str = "",
+        year: str = "",
+        season: Any = None,
+    ) -> Dict[str, Any]:
+        mediainfo = self._resolve_mediainfo(
+            media_type=media_type,
+            tmdb_id=tmdb_id,
+            douban_id=douban_id,
+            title=title,
+            year=year,
+        )
+        media = self._media_from_info(mediainfo)
+
+        try:
+            fileitems = MediaChain().media_files(mediainfo) or []
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"读取 MoviePilot 媒体库文件失败: {exc}") from exc
+
+        entries = []
+        for fileitem in fileitems:
+            entry = self._build_entry_from_fileitem(fileitem, mediainfo)
+            if entry:
+                entries.append(entry)
+
+        entries.sort(key=lambda item: (item.get("season", 0), item.get("episode", 0), item.get("filename", "")))
+        seasons = self._merge_seasons(entries, media.get("tmdb_id")) if media.get("media_type") == "tv" else []
+
+        selected_season = self._safe_int(season, 0)
+        if media.get("media_type") == "tv" and not selected_season:
+            available_seasons = [item["season"] for item in seasons if item.get("available")]
+            selected_season = available_seasons[0] if available_seasons else 0
+
+        visible_entries = entries
+        if media.get("media_type") == "tv" and selected_season:
+            visible_entries = [entry for entry in entries if self._safe_int(entry.get("season"), 0) == selected_season]
+
+        self._remember_targets(visible_entries)
+        return {
+            "media": media,
+            "seasons": seasons,
+            "selected_season": selected_season,
+            "targets": [self._target_from_entry(entry) for entry in visible_entries],
+            "target_count": len(visible_entries),
+            "all_target_count": len(entries),
+        }
 
     def _target_from_entry(self, entry: Dict[str, Any]) -> Dict[str, Any]:
         return {
@@ -571,78 +601,17 @@ class SubtitleManualUpload(_PluginBase):
             "year": entry.get("year", ""),
             "library_name": entry.get("library_name"),
             "relative_path": entry.get("relative_path"),
+            "storage": entry.get("storage", "local"),
+            "writable": entry.get("writable", True),
         }
 
-    def _search_groups(self, keyword: str, media_type: str, limit: int) -> List[Dict[str, Any]]:
-        index_data = self._build_index(force=False)
-        entries = index_data.get("entries", [])
-        normalized_keyword = self._normalize_key(keyword)
-        terms = [term for term in normalized_keyword.split(" ") if term]
-        groups: Dict[str, Dict[str, Any]] = {}
-
+    def _remember_targets(self, entries: List[Dict[str, Any]]) -> None:
         for entry in entries:
-            current_type = entry.get("media_type")
-            if media_type in {"movie", "tv"} and current_type != media_type:
-                continue
-            haystack = entry.get("search_blob", "")
-            if terms and not all(term in haystack for term in terms):
-                continue
-
-            group = groups.setdefault(
-                entry["group_key"],
-                {
-                    "group_id": entry["group_key"],
-                    "media_type": current_type,
-                    "title": entry.get("group_title"),
-                    "year": entry.get("year"),
-                    "library_names": set(),
-                    "targets": [],
-                    "score": 0,
-                },
-            )
-            group["library_names"].add(entry.get("library_name"))
-            group["targets"].append(self._target_from_entry(entry))
-
-            score = 1
-            if normalized_keyword:
-                title_key = self._normalize_key(entry.get("group_title"))
-                if title_key.startswith(normalized_keyword):
-                    score += 100
-                if normalized_keyword in title_key:
-                    score += 40
-                if normalized_keyword in haystack:
-                    score += 10
-            group["score"] = max(group["score"], score)
-
-        result_groups: List[Dict[str, Any]] = []
-        for group in groups.values():
-            targets = group["targets"]
-            targets.sort(key=lambda item: (item.get("season", 0), item.get("episode", 0), item.get("label", "")))
-            result_groups.append(
-                {
-                    "group_id": group["group_id"],
-                    "media_type": group["media_type"],
-                    "title": group["title"],
-                    "year": group["year"],
-                    "library_names": sorted(name for name in group["library_names"] if name),
-                    "target_count": len(targets),
-                    "targets": targets,
-                    "summary": f"{len(targets)} 集" if group["media_type"] == "tv" else f"{len(targets)} 个版本",
-                    "score": group["score"],
-                }
-            )
-
-        result_groups.sort(
-            key=lambda item: (
-                -item.get("score", 0),
-                self._normalize_key(item.get("title")),
-                item.get("year", ""),
-            )
-        )
-        return result_groups[:limit]
+            target_id = self._normalize_text(entry.get("id"))
+            if target_id:
+                self._entry_map[target_id] = entry
 
     def _resolve_targets(self, target_ids: Iterable[str]) -> Dict[str, Dict[str, Any]]:
-        self._build_index(force=False)
         result: Dict[str, Dict[str, Any]] = {}
         for target_id in target_ids:
             entry = self._entry_map.get(str(target_id))
@@ -832,6 +801,10 @@ class SubtitleManualUpload(_PluginBase):
             if not upload_info or not target_entry:
                 raise HTTPException(status_code=400, detail="上传项或目标视频不存在，请重新上传")
 
+            storage = cls._normalize_text(target_entry.get("storage")) or "local"
+            if storage != "local":
+                raise HTTPException(status_code=400, detail=f"当前仅支持写入本地媒体文件，目标存储为: {storage}")
+
             video_path = Path(target_entry["path"])
             if not video_path.exists():
                 raise HTTPException(status_code=400, detail=f"目标视频不存在: {video_path}")
@@ -883,41 +856,51 @@ class SubtitleManualUpload(_PluginBase):
             raise HTTPException(status_code=500, detail=f"读取上传会话失败: {exc}") from exc
 
     def api_status(self) -> Dict[str, Any]:
-        index_data = self._load_index()
         return self._ok(
             {
                 "enabled": self.get_state(),
-                "libraries": self._libraries_summary(),
-                "index": {
-                    "ready": bool(index_data.get("updated_at")),
-                    "updated_at": index_data.get("updated_at", ""),
-                    "entry_count": index_data.get("entry_count", 0),
-                },
+                "source": "MoviePilot MediaChain",
+                "index": {"ready": True, "updated_at": "", "entry_count": 0},
             }
         )
 
     def api_refresh_index(self) -> Dict[str, Any]:
-        index_data = self._build_index(force=True)
         return self._ok(
             {
-                "updated_at": index_data.get("updated_at", ""),
-                "entry_count": index_data.get("entry_count", 0),
+                "realtime": True,
             },
-            message="媒体库索引已刷新",
+            message="已改用 MoviePilot 实时媒体搜索，无需刷新索引",
         )
 
-    def api_search(self, request: Request) -> Dict[str, Any]:
+    async def api_search(self, request: Request) -> Dict[str, Any]:
         keyword = self._normalize_text(request.query_params.get("keyword"))
         media_type = self._normalize_text(request.query_params.get("media_type")) or "all"
         limit = min(max(self._safe_int(request.query_params.get("limit"), 20), 1), 100)
-        groups = self._search_groups(keyword=keyword, media_type=media_type, limit=limit)
+        medias = await self._search_media_candidates(keyword=keyword, media_type=media_type, limit=limit)
         return self._ok(
             {
                 "keyword": keyword,
                 "media_type": media_type,
-                "groups": groups,
+                "medias": medias,
             }
         )
+
+    def api_targets(self, request: Request) -> Dict[str, Any]:
+        media_type = self._normalize_text(request.query_params.get("media_type"))
+        tmdb_id = self._normalize_text(request.query_params.get("tmdb_id"))
+        douban_id = self._normalize_text(request.query_params.get("douban_id"))
+        title = self._normalize_text(request.query_params.get("title"))
+        year = self._normalize_text(request.query_params.get("year"))
+        season = self._normalize_text(request.query_params.get("season"))
+        result = self._targets_for_media(
+            media_type=media_type,
+            tmdb_id=tmdb_id,
+            douban_id=douban_id,
+            title=title,
+            year=year,
+            season=season,
+        )
+        return self._ok(result)
 
     async def api_prepare_upload(self, request: Request) -> Dict[str, Any]:
         form = await request.form()
@@ -934,7 +917,7 @@ class SubtitleManualUpload(_PluginBase):
 
         target_entries = list(self._resolve_targets(target_ids).values())
         if not target_entries:
-            raise HTTPException(status_code=400, detail="未找到目标视频，请刷新索引后重试")
+            raise HTTPException(status_code=400, detail="目标视频已失效，请重新搜索媒体并选择季度/文件")
 
         upload_files = [item for item in form.getlist("files") if self._is_upload_file(item)]
         if not upload_files:
@@ -997,6 +980,7 @@ class SubtitleManualUpload(_PluginBase):
             "session_id": session_id,
             "created_at": datetime.now().isoformat(timespec="seconds"),
             "target_ids": list(target_ids),
+            "targets": target_entries,
             "uploads": prepared_uploads,
         }
         self._write_session(session_id, session_payload)
@@ -1032,9 +1016,13 @@ class SubtitleManualUpload(_PluginBase):
             for item in session_payload.get("uploads", [])
             if item.get("upload_id")
         }
-        target_entries = self._resolve_targets(session_payload.get("target_ids", []))
+        target_entries = {
+            item["id"]: item
+            for item in session_payload.get("targets", [])
+            if item.get("id")
+        }
         if not target_entries:
-            raise HTTPException(status_code=400, detail="目标视频已失效，请重新搜索并上传")
+            raise HTTPException(status_code=400, detail="目标视频已失效，请重新搜索媒体并上传")
 
         operations = self._build_write_operations(items, upload_map, target_entries)
         written_results = []

@@ -38,12 +38,13 @@
         "name": "字幕手传匹配",
         "description": "手动上传字幕或 ZIP，选择电影/剧集后自动匹配并按媒体文件名改名落盘。",
         "labels": "字幕,媒体库,整理",
-        "version": "0.1.0",
+        "version": "0.1.1",
         "icon": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/upload.png",
         "author": "jaysh",
         "level": 1,
         "system_version": ">=2.13.5",
         "history": {
+            "v0.1.1": "改用 MoviePilot 原生媒体搜索和媒体库文件读取，展示封面并支持剧集按季度选择",
             "v0.1.0": "新增手动字幕上传、ZIP 自动解包、电影/剧集匹配与改名写入页面"
         }
     }

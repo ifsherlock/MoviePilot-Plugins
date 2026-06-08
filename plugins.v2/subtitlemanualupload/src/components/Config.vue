@@ -61,7 +61,7 @@ onMounted(() => {
             class="mt-4"
             type="info"
             variant="tonal"
-            text="当前版本用于手动上传字幕或 ZIP，并匹配本地媒体库中的电影或剧集文件。"
+            text="当前版本使用 MoviePilot 原生媒体搜索与媒体库文件读取：先选媒体封面，剧集可按季度选择，再上传字幕或 ZIP。"
           />
         </VCardText>
       </VCard>
