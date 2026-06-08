@@ -99,7 +99,7 @@ class LinkExtractor(HTMLParser):
 
 
 class OnlinePageClient:
-    def __init__(self, *, engine: str = DEFAULT_ENGINE, use_proxy: bool = True, timeout: int = 60):
+    def __init__(self, *, engine: str = DEFAULT_ENGINE, use_proxy: bool = False, timeout: int = 60):
         self.engine = normalize_online_engine(engine)
         self.use_proxy = use_proxy
         self.timeout = timeout
@@ -243,7 +243,7 @@ class OnlinePageClient:
 
 
 class OnlineDirectDownloader:
-    def __init__(self, *, use_proxy: bool = True, cookies: str = "", timeout: int = 40):
+    def __init__(self, *, use_proxy: bool = False, cookies: str = "", timeout: int = 40):
         self.timeout = timeout
         self.cookies = cookies
         handlers = []
@@ -608,7 +608,7 @@ class OnlineSubtitleSearchService:
         self,
         *,
         engine: str = DEFAULT_ENGINE,
-        use_proxy: bool = True,
+        use_proxy: bool = False,
         provider_roots: Optional[Dict[str, str]] = None,
     ):
         self.fetcher = OnlinePageClient(engine=engine, use_proxy=use_proxy)

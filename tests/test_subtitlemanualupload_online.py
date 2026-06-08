@@ -133,6 +133,14 @@ def test_socks5h_proxy_is_normalized_for_playwright():
     assert proxy["password"] == "pass"
 
 
+def test_online_service_defaults_to_no_proxy():
+    module = load_online_module()
+
+    service = module.OnlineSubtitleSearchService()
+
+    assert service.fetcher.use_proxy is False
+
+
 def test_provider_network_errors_are_compacted():
     module = load_online_module()
 

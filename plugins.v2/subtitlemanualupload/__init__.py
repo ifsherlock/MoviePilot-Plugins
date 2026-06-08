@@ -37,7 +37,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "subtitle-match.png"
-    plugin_version = "0.1.22"
+    plugin_version = "0.1.23"
     plugin_author = "jaysherlock"
     author_url = "https://github.com/jaysherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -50,7 +50,7 @@ class SubtitleManualUpload(_PluginBase):
     _rar_tool_path = "/usr/local/bin/7z"
     _online_provider_ids = ["subhd", "zimuku", "assrt"]
     _online_engine = DEFAULT_ENGINE
-    _online_use_proxy = True
+    _online_use_proxy = False
     _online_site_urls = dict(DEFAULT_PROVIDER_ROOTS)
     _rar_dependency_status: Dict[str, Any] = {
         "mode": "none",
@@ -106,7 +106,8 @@ class SubtitleManualUpload(_PluginBase):
         self._rar_tool_path = self._normalize_text(config.get("rar_tool_path")) or "/usr/local/bin/7z"
         self._online_provider_ids = self._normalize_provider_ids(config.get("online_providers"))
         self._online_engine = normalize_online_engine(config.get("online_engine"))
-        self._online_use_proxy = bool(config.get("online_use_proxy", True))
+        legacy_proxy_default = "online_proxy_migrated" not in config and config.get("online_use_proxy") is True
+        self._online_use_proxy = False if legacy_proxy_default else bool(config.get("online_use_proxy", False))
         self._online_site_urls = self._normalize_online_site_urls(config)
         type(self)._rar_dependency_mode = self._rar_dependency_mode
         type(self)._rar_tool_path = self._rar_tool_path
@@ -296,7 +297,7 @@ class SubtitleManualUpload(_PluginBase):
                                         "component": "VSwitch",
                                         "props": {
                                             "model": "online_use_proxy",
-                                            "label": "在线搜索使用系统代理",
+                                            "label": "在线搜索使用 MoviePilot 系统代理（默认关闭）",
                                         },
                                     }
                                 ],
@@ -410,7 +411,7 @@ class SubtitleManualUpload(_PluginBase):
             "rar_tool_path": "/usr/local/bin/7z",
             "online_providers": ["subhd", "zimuku", "assrt"],
             "online_engine": DEFAULT_ENGINE,
-            "online_use_proxy": True,
+            "online_use_proxy": False,
             "subhd_url": DEFAULT_PROVIDER_ROOTS["subhd"],
             "zimuku_url": DEFAULT_PROVIDER_ROOTS["zimuku"],
             "assrt_url": DEFAULT_PROVIDER_ROOTS["assrt"],
@@ -446,6 +447,7 @@ class SubtitleManualUpload(_PluginBase):
                 "online_providers": self._online_provider_ids,
                 "online_engine": self._online_engine,
                 "online_use_proxy": self._online_use_proxy,
+                "online_proxy_migrated": True,
                 "subhd_url": self._online_site_urls["subhd"],
                 "zimuku_url": self._online_site_urls["zimuku"],
                 "assrt_url": self._online_site_urls["assrt"],
