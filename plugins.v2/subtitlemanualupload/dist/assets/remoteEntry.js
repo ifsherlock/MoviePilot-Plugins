@@ -2,14 +2,14 @@ const currentImports = {};
       const exportSet = new Set(['Module', '__esModule', 'default', '_export_sfc']);
       let moduleMap = {
 "./Page":()=>{
-      dynamicLoadingCss(["__federation_expose_Page-DOUHv6I3.css","__federation_expose_AppPage-TXmdRq8U.css"], false, './Page');
-      return __federation_import('./__federation_expose_Page-CyT1SWAo.js').then(module =>Object.keys(module).every(item => exportSet.has(item)) ? () => module.default : () => module)},
+      dynamicLoadingCss(["__federation_expose_Page-DOUHv6I3.css","__federation_expose_AppPage-D3V2Vn3v.css"], false, './Page');
+      return __federation_import('./__federation_expose_Page-BQ-57GFW.js').then(module =>Object.keys(module).every(item => exportSet.has(item)) ? () => module.default : () => module)},
 "./Config":()=>{
-      dynamicLoadingCss(["__federation_expose_Config-CtyH5DYD.css"], false, './Config');
-      return __federation_import('./__federation_expose_Config-Bo-IzM8O.js').then(module =>Object.keys(module).every(item => exportSet.has(item)) ? () => module.default : () => module)},
+      dynamicLoadingCss(["__federation_expose_Config-PCmt7epG.css"], false, './Config');
+      return __federation_import('./__federation_expose_Config-YARPYkNT.js').then(module =>Object.keys(module).every(item => exportSet.has(item)) ? () => module.default : () => module)},
 "./AppPage":()=>{
-      dynamicLoadingCss(["__federation_expose_AppPage-TXmdRq8U.css"], false, './AppPage');
-      return __federation_import('./__federation_expose_AppPage-Do4aQVFN.js').then(module =>Object.keys(module).every(item => exportSet.has(item)) ? () => module.default : () => module)},};
+      dynamicLoadingCss(["__federation_expose_AppPage-D3V2Vn3v.css"], false, './AppPage');
+      return __federation_import('./__federation_expose_AppPage-Cx62hSuI.js').then(module =>Object.keys(module).every(item => exportSet.has(item)) ? () => module.default : () => module)},};
       const seen = {};
       const dynamicLoadingCss = (cssFilePaths, dontAppendStylesToHead, exposeItemName) => {
         const metaUrl = import.meta.url;

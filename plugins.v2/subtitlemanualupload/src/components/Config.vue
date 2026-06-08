@@ -89,7 +89,7 @@ onMounted(() => {
             class="mt-4"
             type="info"
             variant="tonal"
-            text="RAR 自动安装只适合临时测试；长期建议在宿主机安装静态 7zz，并映射为容器内 /usr/local/bin/7z。插件不会主动重启 Docker 容器。"
+            text="RAR 自动安装只适合临时测试；长期建议在宿主机把静态 7zz 放到 MoviePilot 部署目录的 tools/7zz，并映射为容器内 /usr/local/bin/7z。插件不会主动重启 Docker 容器。"
           />
         </VCardText>
       </VCard>

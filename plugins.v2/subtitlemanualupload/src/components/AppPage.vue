@@ -927,16 +927,16 @@ apt-get install -y p7zip-full unrar-free</pre>
             </div>
             <div class="help-card">
               <strong>一键下载静态 7zz</strong>
-              <p>在宿主机执行脚本，它会下载官方 Linux 版 7zz，安装到 <code>/opt/bin/7zz</code> 并打印映射片段。</p>
+              <p>在宿主机执行脚本，它会下载官方 Linux 版 7zz，优先安装到 MoviePilot 宿主机部署目录下的 <code>tools/7zz</code> 并打印映射片段。</p>
               <pre>curl -fsSLo /tmp/mp-7zz.sh \
   https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/plugins.v2/subtitlemanualupload/scripts/install-static-7zz.sh
 sudo bash /tmp/mp-7zz.sh</pre>
             </div>
             <div class="help-card">
               <strong>推荐映射静态二进制</strong>
-              <p>把宿主机静态 <code>7zz</code> 映射成容器内 <code>/usr/local/bin/7z</code>，比映射系统 <code>7z</code> 更少动态库问题。</p>
+              <p>把脚本输出的宿主机 <code>7zz</code> 路径映射成容器内 <code>/usr/local/bin/7z</code>，比映射系统 <code>7z</code> 更少动态库问题。</p>
               <pre>volumes:
-  - /opt/bin/7zz:/usr/local/bin/7z:ro
+  - /volume1/docker/moviepilot/tools/7zz:/usr/local/bin/7z:ro
 
 docker exec moviepilot which 7z</pre>
             </div>

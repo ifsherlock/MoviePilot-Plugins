@@ -30,7 +30,7 @@ MoviePilot V2 插件，提供手动上传字幕并匹配改名的页面。
 - 当前版本只支持可从 MoviePilot 本地媒体库读取到的本地视频文件。
 - `rarfile` 是最轻量的 Python RAR 封装层，但不是纯 Python 解压器；RAR5/压缩内容仍依赖外部解压程序。
 - 临时测试可在插件设置中选择“加载插件时尝试容器内安装”，或进入 MoviePilot 容器安装 `p7zip-full` / `unrar-free` / `unrar`；容器重建后可能失效。
-- 长期建议在宿主机安装静态 `7zz` 并映射为容器内 `/usr/local/bin/7z`；普通系统 `7z` 可能还要一并映射动态库，静态 `7zz` 更省心。
+- 长期建议在宿主机把静态 `7zz` 放到 MoviePilot 部署目录的 `tools/7zz`，并映射为容器内 `/usr/local/bin/7z`；普通系统 `7z` 可能还要一并映射动态库，静态 `7zz` 更省心。
 - 智能调轴依赖容器内 `ffmpeg`、`ffprobe`、`numpy`、`pysubs2`；插件会通过 `requirements.txt` 声明 `pysubs2`，缺失时页面会禁用调轴开关。
 - 当前版本不支持 `.7z` 作为上传压缩包。
 - 当前版本会去掉同目录里已有字幕文件名中的 `.default` / `.forced` 标记，但不会自动新增这些标记。
@@ -43,9 +43,17 @@ curl -fsSLo /tmp/mp-7zz.sh \
 sudo bash /tmp/mp-7zz.sh
 ```
 
-脚本默认安装到 `/opt/bin/7zz`，然后按提示给 MoviePilot 服务增加映射：
+脚本会优先自动识别运行中的 MoviePilot 容器挂载目录，默认安装到 `<MoviePilot宿主机目录>/tools/7zz`。飞牛常见会落在 `/vol1/1000/docker/moviepilot/tools/7zz`，群晖常见会落在 `/volume1/docker/moviepilot/tools/7zz`；如果识别不到，会回退到 `/opt/moviepilot/tools/7zz`。
+
+然后按脚本输出的实际路径给 MoviePilot 服务增加映射，例如：
 
 ```yaml
 volumes:
-  - /opt/bin/7zz:/usr/local/bin/7z:ro
+  - /volume1/docker/moviepilot/tools/7zz:/usr/local/bin/7z:ro
+```
+
+如果你的 MoviePilot 路径比较特殊，可以手动指定：
+
+```bash
+sudo env INSTALL_PATH=/volume1/docker/moviepilot/tools/7zz bash /tmp/mp-7zz.sh
 ```

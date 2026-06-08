@@ -1224,8 +1224,8 @@ return (_ctx, _cache) => {
                   _createElementVNode("div", { class: "help-card" }, [
                     _createElementVNode("strong", null, "一键下载静态 7zz"),
                     _createElementVNode("p", null, [
-                      _createTextVNode("在宿主机执行脚本，它会下载官方 Linux 版 7zz，安装到 "),
-                      _createElementVNode("code", null, "/opt/bin/7zz"),
+                      _createTextVNode("在宿主机执行脚本，它会下载官方 Linux 版 7zz，优先安装到 MoviePilot 宿主机部署目录下的 "),
+                      _createElementVNode("code", null, "tools/7zz"),
                       _createTextVNode(" 并打印映射片段。")
                     ]),
                     _createElementVNode("pre", null, "curl -fsSLo /tmp/mp-7zz.sh \\\n  https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/plugins.v2/subtitlemanualupload/scripts/install-static-7zz.sh\nsudo bash /tmp/mp-7zz.sh")
@@ -1233,15 +1233,15 @@ return (_ctx, _cache) => {
                   _createElementVNode("div", { class: "help-card" }, [
                     _createElementVNode("strong", null, "推荐映射静态二进制"),
                     _createElementVNode("p", null, [
-                      _createTextVNode("把宿主机静态 "),
+                      _createTextVNode("把脚本输出的宿主机 "),
                       _createElementVNode("code", null, "7zz"),
-                      _createTextVNode(" 映射成容器内 "),
+                      _createTextVNode(" 路径映射成容器内 "),
                       _createElementVNode("code", null, "/usr/local/bin/7z"),
                       _createTextVNode("，比映射系统 "),
                       _createElementVNode("code", null, "7z"),
                       _createTextVNode(" 更少动态库问题。")
                     ]),
-                    _createElementVNode("pre", null, "volumes:\n  - /opt/bin/7zz:/usr/local/bin/7z:ro\n\ndocker exec moviepilot which 7z")
+                    _createElementVNode("pre", null, "volumes:\n  - /volume1/docker/moviepilot/tools/7zz:/usr/local/bin/7z:ro\n\ndocker exec moviepilot which 7z")
                   ])
                 ], -1)),
                 (rarDependencyStatus.value.message)
@@ -1273,6 +1273,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-cc8b5fa7"]]);
+const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-97231c96"]]);
 
 export { AppPage as default };

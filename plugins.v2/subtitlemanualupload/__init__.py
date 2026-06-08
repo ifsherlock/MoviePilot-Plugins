@@ -28,7 +28,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕手传匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "upload.png"
-    plugin_version = "0.1.9"
+    plugin_version = "0.1.10"
     plugin_author = "jaysherlock"
     author_url = "https://github.com/jaysherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -247,7 +247,7 @@ class SubtitleManualUpload(_PluginBase):
                                         "props": {
                                             "type": "info",
                                             "variant": "tonal",
-                                            "text": "从 MoviePilot 本地整理记录中搜索已有视频资源；RAR 自动安装只适合临时测试，长期建议把宿主机静态 7zz 映射为容器内 /usr/local/bin/7z。",
+                                            "text": "从 MoviePilot 本地整理记录中搜索已有视频资源；长期建议把宿主机静态 7zz 放到 MoviePilot 部署目录的 tools/7zz，并映射为容器内 /usr/local/bin/7z。",
                                         },
                                     }
                                 ],

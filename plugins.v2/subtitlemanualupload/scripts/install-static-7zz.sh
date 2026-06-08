@@ -2,9 +2,10 @@
 set -euo pipefail
 
 VERSION="${VERSION:-26.01}"
-INSTALL_PATH="${INSTALL_PATH:-/opt/bin/7zz}"
+INSTALL_PATH="${INSTALL_PATH:-}"
 MP_CONTAINER="${MP_CONTAINER:-}"
 DOWNLOAD_URL="${DOWNLOAD_URL:-}"
+TOOL_SUBDIR="${TOOL_SUBDIR:-tools}"
 
 log() {
   printf '[SubtitleManualUpload] %s\n' "$*"
@@ -63,13 +64,113 @@ detect_moviepilot_container() {
   if ! command -v docker >/dev/null 2>&1; then
     return
   fi
-  docker ps --format '{{.Names}}' | awk 'tolower($0) ~ /moviepilot|mp/ { print; exit }'
+  docker ps --format '{{.Names}}' | awk 'tolower($0) ~ /movie[-_]?pilot|^mp($|[-_])/ { print; exit }'
+}
+
+path_basename() {
+  local path="${1%/}"
+  printf '%s\n' "${path##*/}"
+}
+
+path_dirname() {
+  local path="${1%/}"
+  local parent="${path%/*}"
+  if [ "$parent" = "$path" ]; then
+    printf '%s\n' "$path"
+    return
+  fi
+  printf '%s\n' "${parent:-/}"
+}
+
+candidate_root_from_mount() {
+  local source="${1%/}"
+  local dest="${2%/}"
+  local source_l="${source,,}"
+  local dest_l="${dest,,}"
+  local base_l
+
+  [ -n "$source" ] || return
+  if [[ "$source_l" != *moviepilot* && "$source_l" != *movie-pilot* && "$source_l" != *movie_pilot* && "$dest_l" != *moviepilot* && "$dest_l" != *movie-pilot* && "$dest_l" != *movie_pilot* && "$dest_l" != "/config" && "$dest_l" != "/app/config" ]]; then
+    return
+  fi
+
+  base_l="$(path_basename "$source")"
+  base_l="${base_l,,}"
+  if [[ "$base_l" =~ ^(config|configs|data|db|logs|log|cache|temp|tmp)$ ]]; then
+    path_dirname "$source"
+    return
+  fi
+  printf '%s\n' "$source"
+}
+
+detect_moviepilot_root_from_container() {
+  local container="$1"
+  local type source dest candidate
+  [ -n "$container" ] || return
+  command -v docker >/dev/null 2>&1 || return
+
+  while IFS=$'\t' read -r type source dest; do
+    [ "$type" = "bind" ] || continue
+    candidate="$(candidate_root_from_mount "$source" "$dest" || true)"
+    if [ -n "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return
+    fi
+  done < <(docker inspect --format '{{range .Mounts}}{{println .Type "\t" .Source "\t" .Destination}}{{end}}' "$container" 2>/dev/null)
+}
+
+detect_moviepilot_root_from_common_paths() {
+  local path
+  for path in \
+    /vol1/1000/docker/moviepilot \
+    /vol1/1000/docker/MoviePilot \
+    /vol1/1000/docker/movie-pilot \
+    /volume1/docker/moviepilot \
+    /volume1/docker/MoviePilot \
+    /volume1/docker/movie-pilot \
+    /volume1/@appdata/moviepilot \
+    /opt/moviepilot \
+    /root/moviepilot \
+    /home/moviepilot
+  do
+    if [ -d "$path" ]; then
+      printf '%s\n' "$path"
+      return
+    fi
+  done
+
+  if [ -d /vol1/1000/docker ]; then
+    printf '%s\n' /vol1/1000/docker/moviepilot
+    return
+  fi
+  if [ -d /volume1/docker ]; then
+    printf '%s\n' /volume1/docker/moviepilot
+    return
+  fi
+  printf '%s\n' /opt/moviepilot
+}
+
+resolve_install_path() {
+  local container="$1"
+  local root
+  if [ -n "$INSTALL_PATH" ]; then
+    printf '%s\n' "$INSTALL_PATH"
+    return
+  fi
+
+  root="$(detect_moviepilot_root_from_container "$container" || true)"
+  if [ -z "$root" ]; then
+    root="$(detect_moviepilot_root_from_common_paths)"
+  fi
+  printf '%s/%s/7zz\n' "${root%/}" "$TOOL_SUBDIR"
 }
 
 need_cmd uname
 need_cmd tar
 tmp_dir="$(mktemp -d)"
 trap 'rm -rf "$tmp_dir"' EXIT
+container="$(detect_moviepilot_container || true)"
+INSTALL_PATH="$(resolve_install_path "$container")"
 
 platform="$(detect_platform)"
 version_num="${VERSION//./}"
@@ -77,6 +178,7 @@ asset="7z${version_num}-${platform}.tar.xz"
 url="${DOWNLOAD_URL:-https://github.com/ip7z/7zip/releases/download/${VERSION}/${asset}}"
 archive="${tmp_dir}/${asset}"
 
+log "install path: ${INSTALL_PATH}"
 log "downloading ${asset}"
 download_file "$url" "$archive"
 
@@ -91,7 +193,6 @@ run_as_root install -m 0755 "${tmp_dir}/7zz" "$INSTALL_PATH"
 "$INSTALL_PATH" -h >/dev/null 2>&1 || fail "installed 7zz is not executable: ${INSTALL_PATH}"
 log "installed static 7zz: ${INSTALL_PATH}"
 
-container="$(detect_moviepilot_container || true)"
 if [ -n "$container" ] && command -v docker >/dev/null 2>&1; then
   log "detected MoviePilot container: ${container}"
   if docker exec "$container" sh -lc 'command -v 7z >/dev/null 2>&1 && 7z i >/dev/null 2>&1' >/dev/null 2>&1; then
@@ -116,4 +217,7 @@ Then recreate or restart MoviePilot, and verify:
 
 If your container name is known, rerun detection with:
   MP_CONTAINER=<moviepilot-container> bash plugins.v2/subtitlemanualupload/scripts/install-static-7zz.sh
+
+You can override the install path manually:
+  INSTALL_PATH=/volume1/docker/moviepilot/tools/7zz bash plugins.v2/subtitlemanualupload/scripts/install-static-7zz.sh
 EOF
