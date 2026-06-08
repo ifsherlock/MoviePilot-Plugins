@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from fastapi import HTTPException, Request
+from starlette.concurrency import run_in_threadpool
 from starlette.datastructures import UploadFile
 
 from app.core.config import settings
@@ -36,7 +37,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "subtitle-match.png"
-    plugin_version = "0.1.20"
+    plugin_version = "0.1.21"
     plugin_author = "jaysherlock"
     author_url = "https://github.com/jaysherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -1827,7 +1828,8 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             raise HTTPException(status_code=400, detail="请至少选择一个在线字幕源")
         scope = self._normalize_text(body.get("scope")) or "auto"
         service = self._online_service()
-        search_result = service.search(
+        search_result = await run_in_threadpool(
+            service.search,
             keywords=keywords,
             providers=providers,
             targets=targets,
@@ -1872,7 +1874,8 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         unsupported_files: List[str] = []
         invalid_files: List[Dict[str, str]] = []
         try:
-            downloads = self._online_service().download(
+            downloads = await run_in_threadpool(
+                self._online_service().download,
                 selected_results,
                 captcha_code=self._normalize_text(body.get("captcha_code")),
             )
