@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import hashlib
+import importlib.util
 import json
 import re
 import shutil
@@ -26,7 +27,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕手传匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "upload.png"
-    plugin_version = "0.1.5"
+    plugin_version = "0.1.6"
     plugin_author = "jaysherlock"
     author_url = "https://github.com/jaysherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -41,6 +42,7 @@ class SubtitleManualUpload(_PluginBase):
     _archive_exts = {".zip", ".rar"}
     _rar_exts = {".rar"}
     _rar_tools = ("unrar", "bsdtar", "7z", "7za")
+    _rar_python_package = "rarfile"
     _stream_exts = {".strm"}
     _default_session_hours = 24
     _language_suffix_aliases = {
@@ -135,6 +137,13 @@ class SubtitleManualUpload(_PluginBase):
                 "methods": ["POST"],
                 "auth": "bear",
                 "summary": "应用字幕匹配结果并写入目标目录",
+            },
+            {
+                "path": "/clear_subtitles",
+                "endpoint": self.api_clear_subtitles,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "清空选中目标视频的外挂字幕",
             },
         ]
 
@@ -706,6 +715,7 @@ class SubtitleManualUpload(_PluginBase):
         }
 
     def _target_from_entry(self, entry: Dict[str, Any]) -> Dict[str, Any]:
+        subtitles = self._subtitle_files_for_target(entry)
         return {
             "id": entry.get("id"),
             "label": entry.get("target_label"),
@@ -719,6 +729,9 @@ class SubtitleManualUpload(_PluginBase):
             "relative_path": entry.get("relative_path"),
             "storage": entry.get("storage", "local"),
             "writable": entry.get("writable", True),
+            "has_subtitle": bool(subtitles),
+            "subtitle_count": len(subtitles),
+            "subtitles": subtitles,
         }
 
     def _remember_targets(self, entries: List[Dict[str, Any]]) -> None:
@@ -782,6 +795,50 @@ class SubtitleManualUpload(_PluginBase):
             ext = f".{ext}"
         return f"{basename}.{language_suffix}{ext.lower()}"
 
+    @classmethod
+    def _subtitle_files_for_target(cls, target_entry: Dict[str, Any]) -> List[Dict[str, Any]]:
+        storage = cls._normalize_text(target_entry.get("storage")) or "local"
+        if storage != "local":
+            return []
+
+        video_path_raw = cls._normalize_text(target_entry.get("path"))
+        if not video_path_raw:
+            return []
+
+        video_path = Path(video_path_raw)
+        media_dir = video_path.parent
+        if not media_dir.exists() or not media_dir.is_dir():
+            return []
+
+        stem = video_path.stem
+        subtitles: List[Dict[str, Any]] = []
+        try:
+            for sub_file in media_dir.iterdir():
+                if not sub_file.is_file():
+                    continue
+                if sub_file.suffix.lower() not in cls._subtitle_exts:
+                    continue
+                if sub_file.stem != stem and not sub_file.name.startswith(f"{stem}."):
+                    continue
+                subtitles.append(
+                    {
+                        "name": sub_file.name,
+                        "path": str(sub_file),
+                        "relative_path": str(sub_file).replace("\\", "/"),
+                        "ext": sub_file.suffix.lower(),
+                        "size": sub_file.stat().st_size,
+                        "modified_at": datetime.fromtimestamp(sub_file.stat().st_mtime).isoformat(timespec="seconds"),
+                    }
+                )
+        except Exception as exc:
+            logger.warning(
+                "[SubtitleManualUpload] 读取外挂字幕失败 video=%s error=%s",
+                video_path.name,
+                exc,
+            )
+        subtitles.sort(key=lambda item: item.get("name", ""))
+        return subtitles
+
     def _remove_ext_marks(self, video_path: Path) -> None:
         for sub_file in video_path.parent.iterdir():
             if not sub_file.is_file():
@@ -809,6 +866,17 @@ class SubtitleManualUpload(_PluginBase):
             if found:
                 return found
         return ""
+
+    @classmethod
+    def _rar_python_available(cls) -> bool:
+        return importlib.util.find_spec(cls._rar_python_package) is not None
+
+    @classmethod
+    def _rarfile_module(cls) -> Any:
+        try:
+            return __import__(cls._rar_python_package)
+        except Exception:
+            return None
 
     @classmethod
     def _run_archive_command(cls, args: List[str], timeout: int = 120) -> bytes:
@@ -860,15 +928,68 @@ class SubtitleManualUpload(_PluginBase):
         raise ValueError("当前容器缺少可用的 RAR 解压工具")
 
     @classmethod
+    def _extract_rar_subtitle_files_with_rarfile(
+        cls,
+        source_name: str,
+        archive_path: Path,
+        session_dir: Path,
+    ) -> List[Dict[str, Any]]:
+        rarfile_module = cls._rarfile_module()
+        if not rarfile_module:
+            raise ValueError(f"未安装 Python 依赖 {cls._rar_python_package}")
+
+        prepared: List[Dict[str, Any]] = []
+        try:
+            with rarfile_module.RarFile(str(archive_path)) as archive:
+                for member in archive.infolist():
+                    if member.isdir():
+                        continue
+                    member_name = re.split(r"[\\/]", member.filename)[-1]
+                    if not member_name or member_name.startswith("."):
+                        continue
+                    member_ext = Path(member_name).suffix.lower()
+                    if member_ext not in cls._subtitle_exts:
+                        continue
+                    member_bytes = archive.read(member)
+                    upload_id = cls._hash_text(
+                        f"{source_name}|{member.filename}|{len(member_bytes)}|{datetime.now().timestamp()}"
+                    )
+                    stored_path = session_dir / f"{upload_id}{member_ext}"
+                    stored_path.write_bytes(member_bytes)
+                    prepared.append(
+                        {
+                            "upload_id": upload_id,
+                            "source_name": member_name,
+                            "archive_name": source_name,
+                            "stored_path": str(stored_path),
+                            "ext": member_ext,
+                        }
+                    )
+        except Exception as exc:
+            raise ValueError(str(exc)) from exc
+        return prepared
+
+    @classmethod
     def _extract_rar_subtitle_files(
         cls,
         source_name: str,
         archive_path: Path,
         session_dir: Path,
     ) -> List[Dict[str, Any]]:
+        if cls._rar_python_available():
+            try:
+                return cls._extract_rar_subtitle_files_with_rarfile(source_name, archive_path, session_dir)
+            except ValueError as exc:
+                logger.warning(
+                    "[SubtitleManualUpload] rarfile 解析 RAR 失败，将尝试外部命令回退 archive=%s error=%s",
+                    source_name,
+                    exc,
+                )
+
         tool_path = cls._rar_tool()
         if not tool_path:
-            raise ValueError("RAR 压缩包需要容器安装 unrar、bsdtar、7z 或 7za 后才能解包")
+            package_note = f"已声明 Python 依赖 {cls._rar_python_package}，但 RAR 内容解压仍需要外部解压程序"
+            raise ValueError(f"{package_note}；请在容器安装 unrar、bsdtar、7z 或 7za")
 
         prepared: List[Dict[str, Any]] = []
         members = cls._list_rar_members(archive_path, tool_path)
@@ -1103,6 +1224,8 @@ class SubtitleManualUpload(_PluginBase):
             raise HTTPException(status_code=500, detail=f"读取上传会话失败: {exc}") from exc
 
     def api_status(self) -> Dict[str, Any]:
+        rar_tool = self._rar_tool()
+        rar_python = self._rar_python_available()
         return self._ok(
             {
                 "enabled": self.get_state(),
@@ -1110,8 +1233,10 @@ class SubtitleManualUpload(_PluginBase):
                 "index": {"ready": True, "updated_at": "", "entry_count": 0},
                 "archive_support": {
                     "zip": True,
-                    "rar": bool(self._rar_tool()),
-                    "rar_tool": Path(self._rar_tool()).name if self._rar_tool() else "",
+                    "rar": bool(rar_tool),
+                    "rar_tool": Path(rar_tool).name if rar_tool else "",
+                    "rar_python": rar_python,
+                    "rar_python_package": self._rar_python_package,
                 },
                 "timeline_fixer": check_timeline_fixer_dependencies(),
             }
@@ -1425,6 +1550,87 @@ class SubtitleManualUpload(_PluginBase):
             {
                 "count": len(written_results),
                 "written": written_results,
+            },
+            message=message,
+        )
+
+    async def api_clear_subtitles(self, request: Request) -> Dict[str, Any]:
+        body = await request.json()
+        target_ids = body.get("target_ids") or []
+        if isinstance(target_ids, str):
+            try:
+                target_ids = json.loads(target_ids)
+            except Exception as exc:
+                logger.warning("[SubtitleManualUpload] 清空外挂字幕失败：目标参数格式错误 %s", exc)
+                raise HTTPException(status_code=400, detail=f"目标参数格式错误: {exc}") from exc
+
+        if not isinstance(target_ids, list) or not target_ids:
+            logger.warning("[SubtitleManualUpload] 清空外挂字幕失败：目标列表为空")
+            raise HTTPException(status_code=400, detail="请至少选择一个目标视频")
+
+        target_entries = self._resolve_targets(target_ids)
+        if not target_entries:
+            logger.warning(
+                "[SubtitleManualUpload] 清空外挂字幕失败：目标视频已失效 target_ids=%s",
+                self._brief_ids(target_ids),
+            )
+            raise HTTPException(status_code=400, detail="目标视频已失效，请重新搜索媒体并选择季度/文件")
+
+        deleted: List[Dict[str, Any]] = []
+        failed: List[Dict[str, str]] = []
+        visited_paths = set()
+        for target_id in target_ids:
+            clean_target_id = self._normalize_text(target_id)
+            target_entry = target_entries.get(clean_target_id)
+            if not target_entry:
+                failed.append({"target_id": clean_target_id, "reason": "目标视频已失效"})
+                continue
+            if self._normalize_text(target_entry.get("storage")) not in {"", "local"}:
+                failed.append({"target_id": clean_target_id, "reason": "当前仅支持清空本地媒体文件的外挂字幕"})
+                continue
+
+            target_label = self._target_from_entry(target_entry).get("label")
+            for subtitle in self._subtitle_files_for_target(target_entry):
+                subtitle_path = Path(subtitle["path"])
+                path_key = str(subtitle_path)
+                if path_key in visited_paths:
+                    continue
+                visited_paths.add(path_key)
+                try:
+                    subtitle_path.unlink()
+                    deleted.append(
+                        {
+                            "target_id": clean_target_id,
+                            "target_label": target_label,
+                            "name": subtitle_path.name,
+                            "path": path_key,
+                        }
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "[SubtitleManualUpload] 删除外挂字幕失败 target=%s subtitle=%s error=%s",
+                        clean_target_id[:8],
+                        subtitle_path.name,
+                        exc,
+                    )
+                    failed.append({"target_id": clean_target_id, "reason": f"{subtitle_path.name}: {exc}"})
+
+        logger.info(
+            "[SubtitleManualUpload] 清空外挂字幕完成 targets=%s deleted=%s failed=%s",
+            len(target_ids),
+            len(deleted),
+            len(failed),
+        )
+
+        message = f"已删除 {len(deleted)} 个外挂字幕"
+        if failed:
+            message += f"，{len(failed)} 个目标处理失败"
+
+        return self._ok(
+            {
+                "count": len(deleted),
+                "deleted": deleted,
+                "failed": failed,
             },
             message=message,
         )
