@@ -133,6 +133,15 @@ function timelineResultText(item) {
   return `未调整：偏移 ${formatOffset(timeline.offset_seconds)} 小于阈值 · ${base}`
 }
 
+function errorMessage(err, fallback) {
+  return err?.response?.data?.detail
+    || err?.response?.data?.message
+    || err?.data?.detail
+    || err?.data?.message
+    || err?.message
+    || fallback
+}
+
 function buildOutputName(target, item) {
   if (!target) return ''
   const basename = target.basename || 'subtitle'
@@ -158,7 +167,7 @@ async function loadStatus() {
     const response = await props.api.get(`${pluginBase.value}/status`)
     status.value = unwrapResponse(response) || status.value
   } catch (err) {
-    error.value = err?.message || '加载插件状态失败'
+    error.value = errorMessage(err, '加载插件状态失败')
   } finally {
     loading.value = false
   }
@@ -171,7 +180,7 @@ async function refreshIndex() {
     const response = await props.api.post(`${pluginBase.value}/refresh_index`, {})
     message.value = response?.message || '已改用 MoviePilot 本地整理记录实时读取，无需刷新索引'
   } catch (err) {
-    error.value = err?.message || '刷新状态失败'
+    error.value = errorMessage(err, '刷新状态失败')
   } finally {
     refreshing.value = false
   }
@@ -198,7 +207,7 @@ async function runSearch() {
         : '本地整理记录里暂时没有可用的视频目标'
     }
   } catch (err) {
-    error.value = err?.message || '搜索本地资源失败'
+    error.value = errorMessage(err, '搜索本地资源失败')
   } finally {
     searching.value = false
   }
@@ -238,7 +247,7 @@ async function loadTargets(media = selectedMedia.value, season = selectedSeason.
       message.value = `${mediaLabel(selectedMedia.value)} 没有找到本地可写入的视频文件`
     }
   } catch (err) {
-    error.value = err?.message || '读取本地视频目标失败'
+    error.value = errorMessage(err, '读取本地视频目标失败')
   } finally {
     resolving.value = false
   }
@@ -326,7 +335,7 @@ async function prepareUpload() {
     lastWritten.value = []
     message.value = response?.message || '已生成匹配预览'
   } catch (err) {
-    error.value = err?.message || '上传预解析失败'
+    error.value = errorMessage(err, '上传预解析失败')
   } finally {
     preparing.value = false
   }
@@ -362,7 +371,7 @@ async function applyUpload() {
     files.value = []
     preview.value = null
   } catch (err) {
-    error.value = err?.message || '写入字幕失败'
+    error.value = errorMessage(err, '写入字幕失败')
   } finally {
     applying.value = false
   }
@@ -481,20 +490,6 @@ defineExpose({
             输入关键词搜索本地已有资源；留空点击搜索会显示最近整理的视频。
           </div>
 
-          <div v-if="selectedMedia?.media_type === 'tv'" class="season-section">
-            <div class="section-kicker">季度</div>
-            <button
-              v-for="season in seasonItems"
-              :key="season.value"
-              class="season-row"
-              :class="{ active: String(selectedSeason) === String(season.value) }"
-              :disabled="resolving"
-              @click="changeSeason(season.value)"
-            >
-              <span>{{ season.title }}</span>
-              <span class="season-dot">{{ season.count }}</span>
-            </button>
-          </div>
         </VCardText>
       </VCard>
 
@@ -511,18 +506,23 @@ defineExpose({
 
           <template v-else>
             <div class="selected-header">
-              <img
-                v-if="selectedMedia.poster_url"
-                class="selected-poster"
-                :src="selectedMedia.poster_url"
-                :alt="mediaLabel(selectedMedia)"
-              >
-              <div>
-                <div class="selected-title">{{ mediaLabel(selectedMedia) }}</div>
-                <div class="selected-subtitle">
-                  {{ selectedMedia.media_type === 'tv' ? (String(selectedSeason) === 'all' ? '全部季度' : seasonLabel(selectedSeason)) : '电影文件' }}
-                </div>
+              <div class="selected-summary">
+                <span class="selected-title">{{ mediaLabel(selectedMedia) }}</span>
+                <span class="selected-subtitle">
+                  {{ formatMediaType(selectedMedia.media_type) }} · {{ selectedTargets.length }} 个本地目标
+                </span>
               </div>
+              <VSelect
+                v-if="selectedMedia.media_type === 'tv'"
+                :model-value="selectedSeason"
+                :items="seasonItems"
+                label="季度范围"
+                variant="outlined"
+                density="compact"
+                hide-details
+                :loading="resolving"
+                @update:model-value="changeSeason"
+              />
               <VBtn size="small" variant="tonal" @click="resetSelection">重选</VBtn>
             </div>
 
@@ -809,15 +809,13 @@ defineExpose({
   gap: 10px;
 }
 
-.media-list,
-.season-section {
+.media-list {
   display: grid;
   gap: 10px;
   margin-top: 16px;
 }
 
-.media-row,
-.season-row {
+.media-row {
   width: 100%;
   border: 1px solid rgba(109, 126, 137, 0.18);
   background: rgba(255, 255, 255, 0.72);
@@ -836,9 +834,7 @@ defineExpose({
 }
 
 .media-row:hover,
-.media-row.active,
-.season-row:hover,
-.season-row.active {
+.media-row.active {
   transform: translateY(-1px);
   border-color: rgba(161, 107, 39, 0.46);
   background: #fff8ea;
@@ -901,16 +897,6 @@ defineExpose({
   margin-top: 5px;
 }
 
-.season-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  padding: 10px 12px;
-  border-radius: 14px;
-}
-
-.season-dot,
 .target-index {
   display: inline-grid;
   min-width: 34px;
@@ -944,17 +930,18 @@ defineExpose({
 
 .selected-header {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) minmax(180px, 220px) auto;
   gap: 12px;
   align-items: center;
   margin-bottom: 14px;
 }
 
-.selected-poster {
-  width: 48px;
-  height: 68px;
-  border-radius: 12px;
-  object-fit: cover;
+.selected-summary {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: baseline;
 }
 
 .target-list {

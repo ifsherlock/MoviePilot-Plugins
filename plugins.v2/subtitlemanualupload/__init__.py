@@ -25,7 +25,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕手传匹配"
     plugin_desc = "手动上传字幕或 ZIP，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "upload.png"
-    plugin_version = "0.1.3"
+    plugin_version = "0.1.4"
     plugin_author = "jaysherlock"
     author_url = "https://github.com/jaysherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -38,6 +38,7 @@ class SubtitleManualUpload(_PluginBase):
 
     _subtitle_exts = {".ass", ".srt", ".ssa", ".sbv", ".sub", ".vtt", ".webvtt"}
     _archive_exts = {".zip"}
+    _stream_exts = {".strm"}
     _default_session_hours = 24
 
     def init_plugin(self, config: dict = None):
@@ -213,6 +214,13 @@ class SubtitleManualUpload(_PluginBase):
     def _hash_text(value: str) -> str:
         return hashlib.sha1(value.encode("utf-8")).hexdigest()
 
+    @classmethod
+    def _brief_ids(cls, values: Iterable[Any], limit: int = 5) -> str:
+        items = [cls._normalize_text(item)[:8] for item in values if cls._normalize_text(item)]
+        if len(items) > limit:
+            return f"{','.join(items[:limit])},+{len(items) - limit}"
+        return ",".join(items)
+
     @staticmethod
     def _decode_preview_bytes(raw_bytes: bytes) -> str:
         if not raw_bytes:
@@ -343,6 +351,7 @@ class SubtitleManualUpload(_PluginBase):
             ext.lower() if str(ext).startswith(".") else f".{str(ext).lower()}"
             for ext in configured_exts
         }
+        allowed_exts.update(cls._stream_exts)
         if suffix and allowed_exts and suffix not in allowed_exts:
             return False
         try:
@@ -659,11 +668,45 @@ class SubtitleManualUpload(_PluginBase):
                 self._entry_map[target_id] = entry
 
     def _resolve_targets(self, target_ids: Iterable[str]) -> Dict[str, Dict[str, Any]]:
+        target_id_list = [self._normalize_text(item) for item in target_ids if self._normalize_text(item)]
+        target_id_set = set(target_id_list)
         result: Dict[str, Dict[str, Any]] = {}
-        for target_id in target_ids:
-            entry = self._entry_map.get(str(target_id))
+        for target_id in target_id_list:
+            entry = self._entry_map.get(target_id)
             if entry:
-                result[str(target_id)] = entry
+                result[target_id] = entry
+        missing_ids = target_id_set - set(result.keys())
+        if not missing_ids:
+            return result
+
+        logger.info(
+            "[SubtitleManualUpload] 目标缓存未命中，回查本地整理记录 target_ids=%s missing=%s",
+            self._brief_ids(target_id_list),
+            len(missing_ids),
+        )
+        try:
+            histories = TransferHistory.list_by_page(db=None, page=1, count=-1, status=True) or []
+        except Exception as exc:
+            logger.error("[SubtitleManualUpload] 回查本地整理记录失败: %s", exc)
+            return result
+
+        for history in histories:
+            entry = self._build_entry_from_history(history)
+            if not entry:
+                continue
+            target_id = self._normalize_text(entry.get("id"))
+            if target_id in missing_ids:
+                self._entry_map[target_id] = entry
+                result[target_id] = entry
+                missing_ids.remove(target_id)
+                if not missing_ids:
+                    break
+        if missing_ids:
+            logger.warning(
+                "[SubtitleManualUpload] 仍有目标无法解析 target_ids=%s missing=%s",
+                self._brief_ids(target_id_list),
+                len(missing_ids),
+            )
         return result
 
     @classmethod
@@ -925,6 +968,12 @@ class SubtitleManualUpload(_PluginBase):
         media_type = self._normalize_text(request.query_params.get("media_type")) or "all"
         limit = min(max(self._safe_int(request.query_params.get("limit"), 20), 1), 100)
         medias = await self._search_media_candidates(keyword=keyword, media_type=media_type, limit=limit)
+        logger.info(
+            "[SubtitleManualUpload] 本地资源搜索完成 keyword=%s media_type=%s result=%s",
+            keyword or "<recent>",
+            media_type,
+            len(medias),
+        )
         return self._ok(
             {
                 "keyword": keyword,
@@ -948,28 +997,56 @@ class SubtitleManualUpload(_PluginBase):
             year=year,
             season=season,
         )
+        logger.info(
+            "[SubtitleManualUpload] 本地目标读取完成 media=%s year=%s type=%s season=%s targets=%s all_targets=%s",
+            title or tmdb_id or douban_id,
+            year or "-",
+            media_type or "-",
+            result.get("selected_season"),
+            result.get("target_count"),
+            result.get("all_target_count"),
+        )
         return self._ok(result)
 
     async def api_prepare_upload(self, request: Request) -> Dict[str, Any]:
         form = await request.form()
         target_ids_raw = self._normalize_text(form.get("target_ids"))
         if not target_ids_raw:
+            logger.warning("[SubtitleManualUpload] 上传预览失败：未提供目标 target_ids")
             raise HTTPException(status_code=400, detail="请先选择目标电影或剧集")
 
         try:
             target_ids = json.loads(target_ids_raw)
         except Exception as exc:
+            logger.warning("[SubtitleManualUpload] 上传预览失败：目标参数格式错误 %s", exc)
             raise HTTPException(status_code=400, detail=f"目标参数格式错误: {exc}") from exc
         if not isinstance(target_ids, list) or not target_ids:
+            logger.warning("[SubtitleManualUpload] 上传预览失败：目标列表为空")
             raise HTTPException(status_code=400, detail="请至少选择一个目标视频")
 
         target_entries = list(self._resolve_targets(target_ids).values())
         if not target_entries:
+            logger.warning(
+                "[SubtitleManualUpload] 上传预览失败：目标视频已失效 target_ids=%s",
+                self._brief_ids(target_ids),
+            )
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新搜索媒体并选择季度/文件")
 
         upload_files = [item for item in form.getlist("files") if self._is_upload_file(item)]
         if not upload_files:
+            logger.warning(
+                "[SubtitleManualUpload] 上传预览失败：未收到字幕文件 target_count=%s target_ids=%s",
+                len(target_entries),
+                self._brief_ids(target_ids),
+            )
             raise HTTPException(status_code=400, detail="请至少上传一个字幕文件或 ZIP")
+
+        logger.info(
+            "[SubtitleManualUpload] 开始上传预览 target_count=%s upload_files=%s target_ids=%s",
+            len(target_entries),
+            len(upload_files),
+            self._brief_ids(target_ids),
+        )
 
         session_id = self._hash_text(f"{datetime.now().isoformat()}|{','.join(sorted(map(str, target_ids)))}")[:16]
         session_dir = self._get_session_root() / session_id
@@ -1002,7 +1079,17 @@ class SubtitleManualUpload(_PluginBase):
             shutil.rmtree(session_dir, ignore_errors=True)
             if invalid_files:
                 first_reason = invalid_files[0]["reason"]
+                logger.warning(
+                    "[SubtitleManualUpload] 上传预览失败：压缩包解析失败 invalid=%s unsupported=%s reason=%s",
+                    len(invalid_files),
+                    len(unsupported_files),
+                    first_reason,
+                )
                 raise HTTPException(status_code=400, detail=f"没有解析到可用字幕文件，{first_reason}")
+            logger.warning(
+                "[SubtitleManualUpload] 上传预览失败：没有可用字幕 unsupported=%s",
+                len(unsupported_files),
+            )
             raise HTTPException(status_code=400, detail="没有解析到可用的字幕文件，请检查文件格式")
 
         targets = [self._target_from_entry(item) for item in target_entries]
@@ -1044,6 +1131,15 @@ class SubtitleManualUpload(_PluginBase):
         if invalid_files:
             message += f" 有 {len(invalid_files)} 个压缩包解析失败。"
 
+        logger.info(
+            "[SubtitleManualUpload] 上传预览完成 session=%s subtitles=%s resolved=%s unsupported=%s invalid=%s",
+            session_id,
+            len(preview_items),
+            resolved_count,
+            len(unsupported_files),
+            len(invalid_files),
+        )
+
         return self._ok(
             {
                 "session_id": session_id,
@@ -1061,6 +1157,7 @@ class SubtitleManualUpload(_PluginBase):
         items = body.get("items") or []
         fix_timeline = bool(body.get("fix_timeline"))
         if not session_id or not isinstance(items, list) or not items:
+            logger.warning("[SubtitleManualUpload] 写入失败：缺少会话或匹配结果 session=%s", session_id or "-")
             raise HTTPException(status_code=400, detail="缺少上传会话或匹配结果")
 
         session_dir, session_payload = self._load_session(session_id)
@@ -1075,8 +1172,16 @@ class SubtitleManualUpload(_PluginBase):
             if item.get("id")
         }
         if not target_entries:
+            logger.warning("[SubtitleManualUpload] 写入失败：会话目标为空 session=%s", session_id)
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新搜索媒体并上传")
 
+        logger.info(
+            "[SubtitleManualUpload] 开始写入字幕 session=%s items=%s targets=%s fix_timeline=%s",
+            session_id,
+            len(items),
+            len(target_entries),
+            fix_timeline,
+        )
         operations = self._build_write_operations(items, upload_map, target_entries)
         fixed_dir = session_dir / "timeline_fixed"
         for operation in operations:
@@ -1145,6 +1250,14 @@ class SubtitleManualUpload(_PluginBase):
         message = f"已写入 {len(written_results)} 个字幕文件"
         if fix_timeline:
             message += f"，智能调轴 {fixed_count} 个"
+
+        logger.info(
+            "[SubtitleManualUpload] 字幕写入完成 session=%s count=%s fix_timeline=%s fixed=%s",
+            session_id,
+            len(written_results),
+            fix_timeline,
+            fixed_count,
+        )
 
         return self._ok(
             {
