@@ -416,12 +416,13 @@ function openSingleUpload(target) {
   openUploadDialog([target], `上传 ${compactTargetName(target)}`)
 }
 
-function onPickFiles(event) {
+async function onPickFiles(event) {
   const pickedFiles = Array.from(event?.target?.files || [])
   mergeFiles(pickedFiles)
   if (fileInputRef.value) {
     fileInputRef.value.value = ''
   }
+  await prepareUploadAfterFiles(pickedFiles)
 }
 
 function mergeFiles(inputFiles) {
@@ -444,11 +445,12 @@ function openFileDialog() {
   fileInputRef.value?.click()
 }
 
-function handleDrop(event) {
+async function handleDrop(event) {
   event.preventDefault()
   dragging.value = false
   const dropped = Array.from(event.dataTransfer?.files || [])
   mergeFiles(dropped)
+  await prepareUploadAfterFiles(dropped)
 }
 
 function handleDragOver(event) {
@@ -462,7 +464,7 @@ function handleDragLeave(event) {
 }
 
 async function prepareUpload() {
-  if (!canPrepare.value) return
+  if (!canPrepare.value || preparing.value) return
   preparing.value = true
   error.value = ''
   try {
@@ -487,6 +489,11 @@ async function prepareUpload() {
   } finally {
     preparing.value = false
   }
+}
+
+async function prepareUploadAfterFiles(inputFiles) {
+  if (!inputFiles.length || hasPreviewItems.value || !canPrepare.value) return
+  await prepareUpload()
 }
 
 function updatePreviewTarget(uploadId, targetId) {
@@ -868,16 +875,6 @@ defineExpose({
           >
             重新选择文件
           </VBtn>
-          <VBtn
-            v-if="!hasPreviewItems"
-            color="primary"
-            variant="tonal"
-            :disabled="!canPrepare"
-            :loading="preparing"
-            @click="prepareUpload"
-          >
-            生成匹配预览
-          </VBtn>
           <VTooltip
             v-if="hasPreviewItems"
             location="top"
@@ -924,7 +921,15 @@ defineExpose({
             <div class="dropzone-text">
               支持字幕文件、ZIP、RAR；RAR 需容器内解压器支持。
             </div>
-            <VBtn color="primary" variant="flat" @click="openFileDialog">选择文件</VBtn>
+            <VBtn
+              color="primary"
+              variant="flat"
+              :disabled="preparing"
+              :loading="preparing"
+              @click="openFileDialog"
+            >
+              选择文件
+            </VBtn>
             <input
               ref="fileInputRef"
               class="hidden-input"
@@ -1279,21 +1284,28 @@ defineExpose({
 .season-strip {
   display: flex;
   gap: 10px;
+  max-width: 100%;
   padding-bottom: 12px;
   margin-bottom: 14px;
   overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: thin;
+  -webkit-overflow-scrolling: touch;
 }
 
 .season-card {
-  display: grid;
-  min-width: 126px;
-  gap: 5px;
-  padding: 12px 14px;
+  display: inline-flex;
+  flex: 0 0 auto;
+  gap: 8px;
+  align-items: center;
+  min-width: max-content;
+  padding: 10px 16px;
   border: 1px solid rgba(91, 109, 100, 0.16);
-  border-radius: 18px;
+  border-radius: 999px;
   background: rgba(255, 255, 255, 0.74);
   color: inherit;
   text-align: left;
+  white-space: nowrap;
 }
 
 .season-card.active {
@@ -1308,7 +1320,7 @@ defineExpose({
 
 .season-card strong {
   color: #6d7b76;
-  font-size: 12px;
+  font-size: 13px;
 }
 
 .toolbar-row {

@@ -522,12 +522,13 @@ function openSingleUpload(target) {
   openUploadDialog([target], `上传 ${compactTargetName(target)}`);
 }
 
-function onPickFiles(event) {
+async function onPickFiles(event) {
   const pickedFiles = Array.from(event?.target?.files || []);
   mergeFiles(pickedFiles);
   if (fileInputRef.value) {
     fileInputRef.value.value = '';
   }
+  await prepareUploadAfterFiles(pickedFiles);
 }
 
 function mergeFiles(inputFiles) {
@@ -550,11 +551,12 @@ function openFileDialog() {
   fileInputRef.value?.click();
 }
 
-function handleDrop(event) {
+async function handleDrop(event) {
   event.preventDefault();
   dragging.value = false;
   const dropped = Array.from(event.dataTransfer?.files || []);
   mergeFiles(dropped);
+  await prepareUploadAfterFiles(dropped);
 }
 
 function handleDragOver(event) {
@@ -568,7 +570,7 @@ function handleDragLeave(event) {
 }
 
 async function prepareUpload() {
-  if (!canPrepare.value) return
+  if (!canPrepare.value || preparing.value) return
   preparing.value = true;
   error.value = '';
   try {
@@ -593,6 +595,11 @@ async function prepareUpload() {
   } finally {
     preparing.value = false;
   }
+}
+
+async function prepareUploadAfterFiles(inputFiles) {
+  if (!inputFiles.length || hasPreviewItems.value || !canPrepare.value) return
+  await prepareUpload();
 }
 
 function updatePreviewTarget(uploadId, targetId) {
@@ -1112,24 +1119,9 @@ return (_ctx, _cache) => {
                       _: 1
                     }))
                   : _createCommentVNode("", true),
-                (!hasPreviewItems.value)
-                  ? (_openBlock(), _createBlock(_component_VBtn, {
-                      key: 1,
-                      color: "primary",
-                      variant: "tonal",
-                      disabled: !canPrepare.value,
-                      loading: preparing.value,
-                      onClick: prepareUpload
-                    }, {
-                      default: _withCtx(() => [...(_cache[22] || (_cache[22] = [
-                        _createTextVNode(" 生成匹配预览 ", -1)
-                      ]))]),
-                      _: 1
-                    }, 8, ["disabled", "loading"]))
-                  : _createCommentVNode("", true),
                 (hasPreviewItems.value)
                   ? (_openBlock(), _createBlock(_component_VTooltip, {
-                      key: 2,
+                      key: 1,
                       location: "top",
                       text: "写入前会分析视频/字幕时间轴，可能占用 CPU 并造成短暂卡顿。"
                     }, {
@@ -1151,13 +1143,13 @@ return (_ctx, _cache) => {
                   : _createCommentVNode("", true),
                 (hasPreviewItems.value)
                   ? (_openBlock(), _createBlock(_component_VBtn, {
-                      key: 3,
+                      key: 2,
                       color: "success",
                       disabled: !canApply.value,
                       loading: applying.value,
                       onClick: applyUpload
                     }, {
-                      default: _withCtx(() => [...(_cache[23] || (_cache[23] = [
+                      default: _withCtx(() => [...(_cache[22] || (_cache[22] = [
                         _createTextVNode(" 写入字幕 ", -1)
                       ]))]),
                       _: 1
@@ -1177,19 +1169,21 @@ return (_ctx, _cache) => {
                       onDragover: handleDragOver,
                       onDragleave: handleDragLeave
                     }, [
-                      _cache[25] || (_cache[25] = _createElementVNode("div", { class: "dropzone-icon" }, "SRT / ASS / ZIP / RAR", -1)),
-                      _cache[26] || (_cache[26] = _createElementVNode("div", { class: "dropzone-title" }, "把字幕或压缩包拖到这里", -1)),
-                      _cache[27] || (_cache[27] = _createElementVNode("div", { class: "dropzone-text" }, " 支持字幕文件、ZIP、RAR；RAR 需容器内解压器支持。 ", -1)),
+                      _cache[24] || (_cache[24] = _createElementVNode("div", { class: "dropzone-icon" }, "SRT / ASS / ZIP / RAR", -1)),
+                      _cache[25] || (_cache[25] = _createElementVNode("div", { class: "dropzone-title" }, "把字幕或压缩包拖到这里", -1)),
+                      _cache[26] || (_cache[26] = _createElementVNode("div", { class: "dropzone-text" }, " 支持字幕文件、ZIP、RAR；RAR 需容器内解压器支持。 ", -1)),
                       _createVNode(_component_VBtn, {
                         color: "primary",
                         variant: "flat",
+                        disabled: preparing.value,
+                        loading: preparing.value,
                         onClick: openFileDialog
                       }, {
-                        default: _withCtx(() => [...(_cache[24] || (_cache[24] = [
-                          _createTextVNode("选择文件", -1)
+                        default: _withCtx(() => [...(_cache[23] || (_cache[23] = [
+                          _createTextVNode(" 选择文件 ", -1)
                         ]))]),
                         _: 1
-                      }),
+                      }, 8, ["disabled", "loading"]),
                       _createElementVNode("input", {
                         ref_key: "fileInputRef",
                         ref: fileInputRef,
@@ -1239,7 +1233,7 @@ return (_ctx, _cache) => {
                             color: "error",
                             onClick: $event => (removeFile(file))
                           }, {
-                            default: _withCtx(() => [...(_cache[28] || (_cache[28] = [
+                            default: _withCtx(() => [...(_cache[27] || (_cache[27] = [
                               _createTextVNode("移除", -1)
                             ]))]),
                             _: 1
@@ -1251,7 +1245,7 @@ return (_ctx, _cache) => {
                 (hasPreviewItems.value)
                   ? (_openBlock(), _createElementBlock("div", _hoisted_33, [
                       _createElementVNode("div", _hoisted_34, [
-                        _cache[30] || (_cache[30] = _createElementVNode("div", null, [
+                        _cache[29] || (_cache[29] = _createElementVNode("div", null, [
                           _createElementVNode("div", { class: "section-kicker" }, "字幕匹配"),
                           _createElementVNode("h3", null, "确认集数与输出文件名")
                         ], -1)),
@@ -1272,7 +1266,7 @@ return (_ctx, _cache) => {
                             disabled: !batchLanguageSuffix.value.trim(),
                             onClick: applyBatchLanguageSuffix
                           }, {
-                            default: _withCtx(() => [...(_cache[29] || (_cache[29] = [
+                            default: _withCtx(() => [...(_cache[28] || (_cache[28] = [
                               _createTextVNode(" 应用到全部 ", -1)
                             ]))]),
                             _: 1
@@ -1306,7 +1300,7 @@ return (_ctx, _cache) => {
                             "onUpdate:modelValue": value => updateLanguageSuffix(item.upload_id, value)
                           }, null, 8, ["model-value", "onUpdate:modelValue"]),
                           _createElementVNode("div", _hoisted_37, [
-                            _cache[31] || (_cache[31] = _createElementVNode("span", null, "改名为", -1)),
+                            _cache[30] || (_cache[30] = _createElementVNode("span", null, "改名为", -1)),
                             _createElementVNode("strong", null, _toDisplayString(item.output_name || buildOutputName(uploadTargets.value.find(target => target.id === item.target_id), item) || '待选择目标'), 1)
                           ])
                         ]))
@@ -1335,7 +1329,7 @@ return (_ctx, _cache) => {
           default: _withCtx(() => [
             _createVNode(_component_VCardTitle, { class: "dialog-title" }, {
               default: _withCtx(() => [
-                _cache[32] || (_cache[32] = _createElementVNode("span", null, "RAR 解压器说明", -1)),
+                _cache[31] || (_cache[31] = _createElementVNode("span", null, "RAR 解压器说明", -1)),
                 _createVNode(_component_VBtn, {
                   icon: "mdi-close",
                   variant: "text",
@@ -1347,7 +1341,7 @@ return (_ctx, _cache) => {
             _createVNode(_component_VDivider),
             _createVNode(_component_VCardText, null, {
               default: _withCtx(() => [
-                _cache[33] || (_cache[33] = _createElementVNode("div", { class: "rar-help-summary" }, [
+                _cache[32] || (_cache[32] = _createElementVNode("div", { class: "rar-help-summary" }, [
                   _createElementVNode("p", null, [
                     _createElementVNode("strong", null, "说明："),
                     _createElementVNode("code", null, "rarfile"),
@@ -1446,6 +1440,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-c25c3975"]]);
+const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-35038b9f"]]);
 
 export { AppPage as default };
