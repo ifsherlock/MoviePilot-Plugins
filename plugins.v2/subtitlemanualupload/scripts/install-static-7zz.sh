@@ -6,6 +6,7 @@ INSTALL_PATH="${INSTALL_PATH:-}"
 MP_HOST_ROOT="${MP_HOST_ROOT:-}"
 MP_CONTAINER="${MP_CONTAINER:-}"
 DOWNLOAD_URL="${DOWNLOAD_URL:-}"
+DOWNLOAD_MIRRORS="${DOWNLOAD_MIRRORS:-}"
 TOOL_SUBDIR="${TOOL_SUBDIR:-tools}"
 DEFAULT_MP_HOST_ROOT="${DEFAULT_MP_HOST_ROOT:-}"
 NONINTERACTIVE="${NONINTERACTIVE:-0}"
@@ -37,14 +38,66 @@ download_file() {
   local url="$1"
   local target="$2"
   if command -v curl >/dev/null 2>&1; then
-    curl -fL --retry 3 --connect-timeout 20 -o "$target" "$url"
+    curl -fsSL --retry 2 --retry-delay 2 --connect-timeout 20 -o "$target" "$url"
     return
   fi
   if command -v wget >/dev/null 2>&1; then
-    wget -O "$target" "$url"
+    wget -q -O "$target" "$url"
     return
   fi
   fail "curl or wget is required to download 7zz"
+}
+
+gentoo_distfile_prefix() {
+  local version="$1"
+  local platform="$2"
+
+  case "${version}:${platform}" in
+    26.01:linux-x64) echo "ff" ;;
+    *) return 1 ;;
+  esac
+}
+
+print_download_candidates() {
+  local prefix
+
+  if [ -n "$DOWNLOAD_URL" ]; then
+    printf '%s\n' "$DOWNLOAD_URL"
+    return
+  fi
+
+  if [ -n "$DOWNLOAD_MIRRORS" ]; then
+    printf '%s\n' $DOWNLOAD_MIRRORS
+  fi
+
+  if prefix="$(gentoo_distfile_prefix "$VERSION" "$platform")"; then
+    printf 'https://mirrors.tuna.tsinghua.edu.cn/gentoo/distfiles/%s/%s\n' "$prefix" "$asset"
+    printf 'https://mirrors.ustc.edu.cn/gentoo/distfiles/%s/%s\n' "$prefix" "$asset"
+  fi
+
+  printf 'https://www.7-zip.org/a/%s\n' "$asset"
+  printf 'https://github.com/ip7z/7zip/releases/download/%s/%s\n' "$VERSION" "$asset"
+}
+
+download_first_available() {
+  local target="$1"
+  local url index
+  index=0
+
+  while IFS= read -r url; do
+    url="$(trim_value "$url")"
+    [ -n "$url" ] || continue
+    index=$((index + 1))
+    log "trying download source ${index}: ${url}"
+    rm -f "$target"
+    if download_file "$url" "$target"; then
+      log "downloaded from: ${url}"
+      return
+    fi
+    log "download source failed, trying next"
+  done < <(print_download_candidates)
+
+  fail "unable to download ${asset}; set DOWNLOAD_URL to override the source"
 }
 
 run_as_root() {
@@ -220,12 +273,11 @@ INSTALL_PATH="$(resolve_install_path "$container")"
 platform="$(detect_platform)"
 version_num="${VERSION//./}"
 asset="7z${version_num}-${platform}.tar.xz"
-url="${DOWNLOAD_URL:-https://github.com/ip7z/7zip/releases/download/${VERSION}/${asset}}"
 archive="${tmp_dir}/${asset}"
 
 log "install path: ${INSTALL_PATH}"
 log "downloading ${asset}"
-download_file "$url" "$archive"
+download_first_available "$archive"
 
 log "extracting 7zz"
 tar -xf "$archive" -C "$tmp_dir" 7zz
@@ -270,4 +322,7 @@ You can override the install path manually:
 
 Or override only the MoviePilot host mapped directory:
   MP_HOST_ROOT=/volume1/docker/moviepilot bash plugins.v2/subtitlemanualupload/scripts/install-static-7zz.sh
+
+If you need a custom download source:
+  DOWNLOAD_URL=https://example.com/7zz.tar.xz bash plugins.v2/subtitlemanualupload/scripts/install-static-7zz.sh
 EOF

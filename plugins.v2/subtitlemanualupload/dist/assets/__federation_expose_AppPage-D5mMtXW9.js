@@ -109,8 +109,12 @@ const rarStaticInstallCommand = `curl -fsSLo /tmp/mp-7zz.sh \\
   https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/plugins.v2/subtitlemanualupload/scripts/install-static-7zz.sh
 sudo bash /tmp/mp-7zz.sh
 
+# 脚本默认优先使用清华/中科大 Gentoo distfiles 镜像下载 7zz。
 # 如果自动检测不准，可直接指定 MoviePilot 宿主机映射目录：
 sudo env MP_HOST_ROOT=/volume1/docker/moviepilot bash /tmp/mp-7zz.sh
+
+# 如果需要指定下载源，可覆盖 DOWNLOAD_URL：
+sudo env DOWNLOAD_URL=https://example.com/7zz.tar.xz bash /tmp/mp-7zz.sh
 
 # 按脚本输出的实际路径添加到 MoviePilot volumes：
 volumes:
@@ -205,7 +209,7 @@ const rarHelpItems = [
   {
     badge: '方案二',
     title: '静态 7zz 下载并映射',
-    description: '推荐长期使用。脚本会自动检测 MoviePilot 宿主机目录，也会提示你手动输入路径；安装后会设置 0755 执行权限，再按输出路径映射到容器。',
+    description: '推荐长期使用。脚本默认优先使用清华/中科大镜像下载，会检测或提示输入 MoviePilot 宿主机目录，并设置 0755 执行权限。',
     button: '复制方案',
     copyLabel: '静态 7zz 安装映射方案',
     command: rarStaticInstallCommand,
@@ -1363,7 +1367,7 @@ return (_ctx, _cache) => {
                   ]),
                   _createElementVNode("p", null, [
                     _createElementVNode("strong", null, "方案："),
-                    _createTextVNode("临时测试可在容器内安装；长期使用推荐下载宿主机静态 "),
+                    _createTextVNode("临时测试可在容器内安装；长期使用推荐通过国内镜像下载宿主机静态 "),
                     _createElementVNode("code", null, "7zz"),
                     _createTextVNode("，设置执行权限后映射到容器内 "),
                     _createElementVNode("code", null, "/usr/local/bin/7z"),
@@ -1440,6 +1444,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-35038b9f"]]);
+const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-184bc733"]]);
 
 export { AppPage as default };
