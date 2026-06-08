@@ -22,7 +22,7 @@ const props = defineProps({
 })
 
 const pluginBase = computed(() => `plugin/${props.pluginId || 'SubtitleManualUpload'}`)
-const status = ref({ enabled: false, source: 'MoviePilot MediaChain' })
+const status = ref({ enabled: false, source: 'MoviePilot MediaChain', timeline_fixer: { available: false, modules: {} } })
 const loading = ref(false)
 const searching = ref(false)
 const resolving = ref(false)
@@ -42,6 +42,8 @@ const selectedTargetIds = ref([])
 const files = ref([])
 const preview = ref(null)
 const fileInputRef = ref(null)
+const fixTimeline = ref(false)
+const lastWritten = ref([])
 
 const availableSeasonItems = computed(() => {
   return seasons.value
@@ -62,6 +64,18 @@ const canApply = computed(() => {
   const items = preview.value?.items || []
   return items.length > 0 && items.every(item => item.target_id)
 })
+const timelineStatus = computed(() => status.value?.timeline_fixer || { available: false, modules: {} })
+const timelineAvailable = computed(() => timelineStatus.value.available === true)
+const timelineMissing = computed(() => {
+  const missing = []
+  if (timelineStatus.value.ffmpeg === false) missing.push('ffmpeg')
+  if (timelineStatus.value.ffprobe === false) missing.push('ffprobe')
+  const modules = timelineStatus.value.modules || {}
+  Object.entries(modules).forEach(([name, ok]) => {
+    if (!ok) missing.push(name)
+  })
+  return missing.join('、')
+})
 
 function formatMediaType(type) {
   return type === 'tv' ? '剧集' : '电影'
@@ -72,12 +86,28 @@ function seasonLabel(season) {
   return value === 0 ? '特别篇' : `第 ${value} 季`
 }
 
+function formatOffset(value) {
+  const number = Number(value || 0)
+  return `${number >= 0 ? '+' : ''}${number.toFixed(3)}s`
+}
+
+function timelineResultText(item) {
+  const timeline = item?.timeline || {}
+  if (!timeline.enabled) return '未启用智能调轴'
+  const base = timeline.base === 'audio' ? '音频基准' : '内置字幕基准'
+  if (timeline.applied) {
+    return `已调轴 ${formatOffset(timeline.offset_seconds)} · ${base} · 倍率 ${Number(timeline.scale_factor || 1).toFixed(4)}`
+  }
+  return `未调整：偏移 ${formatOffset(timeline.offset_seconds)} 小于阈值 · ${base}`
+}
+
 function clearTargetState() {
   seasons.value = []
   selectedSeason.value = null
   targets.value = []
   selectedTargetIds.value = []
   preview.value = null
+  lastWritten.value = []
 }
 
 async function loadStatus() {
@@ -155,6 +185,7 @@ async function loadTargets(media = selectedMedia.value, season = selectedSeason.
   error.value = ''
   message.value = ''
   preview.value = null
+  lastWritten.value = []
   try {
     const params = buildMediaParams(media, season)
     const response = await props.api.get(`${pluginBase.value}/targets?${params.toString()}`)
@@ -211,6 +242,7 @@ function mergeFiles(inputFiles) {
     }
   }
   files.value = Array.from(existing.values())
+  lastWritten.value = []
 }
 
 function removeFile(file) {
@@ -243,6 +275,7 @@ async function prepareUpload() {
     })
     const response = await props.api.post(`${pluginBase.value}/prepare_upload`, formData)
     preview.value = unwrapResponse(response)
+    lastWritten.value = []
     message.value = response?.message || '已生成匹配预览'
   } catch (err) {
     error.value = err?.message || '上传预解析失败'
@@ -266,6 +299,7 @@ async function applyUpload() {
   try {
     const payload = {
       session_id: preview.value.session_id,
+      fix_timeline: fixTimeline.value,
       items: preview.value.items.map(item => ({
         upload_id: item.upload_id,
         target_id: item.target_id,
@@ -276,6 +310,7 @@ async function applyUpload() {
     const response = await props.api.post(`${pluginBase.value}/apply_upload`, payload)
     const data = unwrapResponse(response) || {}
     message.value = response?.message || `已写入 ${data.count || 0} 个字幕文件`
+    lastWritten.value = data.written || []
     files.value = []
     preview.value = null
   } catch (err) {
@@ -493,6 +528,24 @@ defineExpose({
               <div class="target-title">3. 检查并写入</div>
               <div class="target-caption">每个字幕都需要对应一个目标视频；自动匹配不准时可以手动改。</div>
             </div>
+            <div class="timeline-option">
+              <VSwitch
+                v-model="fixTimeline"
+                color="primary"
+                density="comfortable"
+                hide-details
+                :disabled="!timelineAvailable"
+                label="写入前智能调轴"
+              />
+              <div class="timeline-hint">
+                <span v-if="timelineAvailable">
+                  使用容器内 ffmpeg/ffprobe 提取音频或内置字幕，按 CSB/ffsubsync 思路自动计算字幕偏移。
+                </span>
+                <span v-else>
+                  当前容器缺少调轴依赖{{ timelineMissing ? `：${timelineMissing}` : '' }}。
+                </span>
+              </div>
+            </div>
             <div class="preview-list">
               <div
                 v-for="item in preview.items"
@@ -522,6 +575,24 @@ defineExpose({
               <VBtn color="primary" :disabled="!canApply" :loading="applying" @click="applyUpload">
                 写入字幕
               </VBtn>
+            </div>
+          </div>
+
+          <div v-if="lastWritten.length" class="result-shell">
+            <div class="preview-header">
+              <div class="target-title">写入结果</div>
+              <div class="target-caption">字幕已按目标视频文件名落盘，下面是本次智能调轴摘要。</div>
+            </div>
+            <div class="result-list">
+              <div v-for="item in lastWritten" :key="item.output_path" class="result-item">
+                <div>
+                  <div class="file-name">{{ item.output_name }}</div>
+                  <div class="result-meta">{{ item.target_label }}</div>
+                </div>
+                <div class="result-badge" :class="{ active: item.timeline?.applied }">
+                  {{ timelineResultText(item) }}
+                </div>
+              </div>
             </div>
           </div>
         </VCardText>
@@ -735,7 +806,8 @@ defineExpose({
 }
 
 .target-shell,
-.preview-shell {
+.preview-shell,
+.result-shell {
   margin-top: 20px;
   padding-top: 18px;
   border-top: 1px solid rgba(126, 151, 183, 0.18);
@@ -795,6 +867,23 @@ defineExpose({
   opacity: 0.58;
 }
 
+.timeline-option {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  margin-top: 14px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: #f4f8fc;
+}
+
+.timeline-hint {
+  color: #647790;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
 .dropzone {
   position: relative;
   overflow: hidden;
@@ -848,14 +937,16 @@ defineExpose({
 }
 
 .file-list,
-.preview-list {
+.preview-list,
+.result-list {
   display: grid;
   gap: 10px;
   margin-top: 16px;
 }
 
 .file-item,
-.preview-item {
+.preview-item,
+.result-item {
   display: grid;
   gap: 12px;
   align-items: center;
@@ -871,6 +962,31 @@ defineExpose({
 
 .preview-item {
   grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
+}
+
+.result-item {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.result-meta {
+  margin-top: 4px;
+  color: #667890;
+  font-size: 12px;
+}
+
+.result-badge {
+  max-width: 320px;
+  padding: 8px 10px;
+  border-radius: 999px;
+  background: #edf3fa;
+  color: #516880;
+  font-size: 12px;
+  text-align: right;
+}
+
+.result-badge.active {
+  background: #e7f5ed;
+  color: #247149;
 }
 
 .file-name,
@@ -923,7 +1039,9 @@ defineExpose({
   }
 
   .toolbar-row,
-  .preview-item {
+  .preview-item,
+  .timeline-option,
+  .result-item {
     grid-template-columns: 1fr;
   }
 

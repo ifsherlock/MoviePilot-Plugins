@@ -84,12 +84,23 @@ const _hoisted_34 = {
   key: 1,
   class: "preview-shell"
 };
-const _hoisted_35 = { class: "preview-list" };
-const _hoisted_36 = { class: "preview-main" };
-const _hoisted_37 = { class: "preview-name" };
-const _hoisted_38 = { class: "preview-meta" };
-const _hoisted_39 = { key: 0 };
-const _hoisted_40 = { class: "toolbar-actions mt-4" };
+const _hoisted_35 = { class: "timeline-option" };
+const _hoisted_36 = { class: "timeline-hint" };
+const _hoisted_37 = { key: 0 };
+const _hoisted_38 = { key: 1 };
+const _hoisted_39 = { class: "preview-list" };
+const _hoisted_40 = { class: "preview-main" };
+const _hoisted_41 = { class: "preview-name" };
+const _hoisted_42 = { class: "preview-meta" };
+const _hoisted_43 = { key: 0 };
+const _hoisted_44 = { class: "toolbar-actions mt-4" };
+const _hoisted_45 = {
+  key: 2,
+  class: "result-shell"
+};
+const _hoisted_46 = { class: "result-list" };
+const _hoisted_47 = { class: "file-name" };
+const _hoisted_48 = { class: "result-meta" };
 
 const {computed,onMounted,ref} = await importShared('vue');
 
@@ -119,7 +130,7 @@ const _sfc_main = {
 const props = __props;
 
 const pluginBase = computed(() => `plugin/${props.pluginId || 'SubtitleManualUpload'}`);
-const status = ref({ enabled: false, source: 'MoviePilot MediaChain' });
+const status = ref({ enabled: false, source: 'MoviePilot MediaChain', timeline_fixer: { available: false, modules: {} } });
 const loading = ref(false);
 const searching = ref(false);
 const resolving = ref(false);
@@ -139,6 +150,8 @@ const selectedTargetIds = ref([]);
 const files = ref([]);
 const preview = ref(null);
 const fileInputRef = ref(null);
+const fixTimeline = ref(false);
+const lastWritten = ref([]);
 
 const availableSeasonItems = computed(() => {
   return seasons.value
@@ -159,6 +172,18 @@ const canApply = computed(() => {
   const items = preview.value?.items || [];
   return items.length > 0 && items.every(item => item.target_id)
 });
+const timelineStatus = computed(() => status.value?.timeline_fixer || { available: false, modules: {} });
+const timelineAvailable = computed(() => timelineStatus.value.available === true);
+const timelineMissing = computed(() => {
+  const missing = [];
+  if (timelineStatus.value.ffmpeg === false) missing.push('ffmpeg');
+  if (timelineStatus.value.ffprobe === false) missing.push('ffprobe');
+  const modules = timelineStatus.value.modules || {};
+  Object.entries(modules).forEach(([name, ok]) => {
+    if (!ok) missing.push(name);
+  });
+  return missing.join('、')
+});
 
 function formatMediaType(type) {
   return type === 'tv' ? '剧集' : '电影'
@@ -169,12 +194,28 @@ function seasonLabel(season) {
   return value === 0 ? '特别篇' : `第 ${value} 季`
 }
 
+function formatOffset(value) {
+  const number = Number(value || 0);
+  return `${number >= 0 ? '+' : ''}${number.toFixed(3)}s`
+}
+
+function timelineResultText(item) {
+  const timeline = item?.timeline || {};
+  if (!timeline.enabled) return '未启用智能调轴'
+  const base = timeline.base === 'audio' ? '音频基准' : '内置字幕基准';
+  if (timeline.applied) {
+    return `已调轴 ${formatOffset(timeline.offset_seconds)} · ${base} · 倍率 ${Number(timeline.scale_factor || 1).toFixed(4)}`
+  }
+  return `未调整：偏移 ${formatOffset(timeline.offset_seconds)} 小于阈值 · ${base}`
+}
+
 function clearTargetState() {
   seasons.value = [];
   selectedSeason.value = null;
   targets.value = [];
   selectedTargetIds.value = [];
   preview.value = null;
+  lastWritten.value = [];
 }
 
 async function loadStatus() {
@@ -252,6 +293,7 @@ async function loadTargets(media = selectedMedia.value, season = selectedSeason.
   error.value = '';
   message.value = '';
   preview.value = null;
+  lastWritten.value = [];
   try {
     const params = buildMediaParams(media, season);
     const response = await props.api.get(`${pluginBase.value}/targets?${params.toString()}`);
@@ -308,6 +350,7 @@ function mergeFiles(inputFiles) {
     }
   }
   files.value = Array.from(existing.values());
+  lastWritten.value = [];
 }
 
 function removeFile(file) {
@@ -340,6 +383,7 @@ async function prepareUpload() {
     });
     const response = await props.api.post(`${pluginBase.value}/prepare_upload`, formData);
     preview.value = unwrapResponse(response);
+    lastWritten.value = [];
     message.value = response?.message || '已生成匹配预览';
   } catch (err) {
     error.value = err?.message || '上传预解析失败';
@@ -363,6 +407,7 @@ async function applyUpload() {
   try {
     const payload = {
       session_id: preview.value.session_id,
+      fix_timeline: fixTimeline.value,
       items: preview.value.items.map(item => ({
         upload_id: item.upload_id,
         target_id: item.target_id,
@@ -373,6 +418,7 @@ async function applyUpload() {
     const response = await props.api.post(`${pluginBase.value}/apply_upload`, payload);
     const data = unwrapResponse(response) || {};
     message.value = response?.message || `已写入 ${data.count || 0} 个字幕文件`;
+    lastWritten.value = data.written || [];
     files.value = [];
     preview.value = null;
   } catch (err) {
@@ -404,19 +450,20 @@ return (_ctx, _cache) => {
   const _component_VBtn = _resolveComponent("VBtn");
   const _component_VCardText = _resolveComponent("VCardText");
   const _component_VCard = _resolveComponent("VCard");
+  const _component_VSwitch = _resolveComponent("VSwitch");
 
   return (_openBlock(), _createElementBlock("div", _hoisted_1, [
     (!__props.hideTitle)
       ? (_openBlock(), _createElementBlock("div", _hoisted_2, [
-          _cache[5] || (_cache[5] = _createElementVNode("div", { class: "hero-copy" }, [
+          _cache[6] || (_cache[6] = _createElementVNode("div", { class: "hero-copy" }, [
             _createElementVNode("div", { class: "hero-eyebrow" }, "MoviePilot 媒体库字幕工具"),
             _createElementVNode("h1", { class: "hero-title" }, "字幕手传匹配"),
             _createElementVNode("p", { class: "hero-text" }, " 像 CSB 一样先搜索媒体并确认封面，再读取 MoviePilot 已入库文件。剧集可按季度选择目标，然后拖入字幕或 ZIP 自动匹配写入。 ")
           ], -1)),
           _createElementVNode("div", _hoisted_3, [
             _createElementVNode("div", _hoisted_4, [
-              _cache[3] || (_cache[3] = _createElementVNode("div", { class: "meta-label" }, "当前链路", -1)),
-              _cache[4] || (_cache[4] = _createElementVNode("div", { class: "meta-value" }, "MP", -1)),
+              _cache[4] || (_cache[4] = _createElementVNode("div", { class: "meta-label" }, "当前链路", -1)),
+              _cache[5] || (_cache[5] = _createElementVNode("div", { class: "meta-value" }, "MP", -1)),
               _createElementVNode("div", _hoisted_5, _toDisplayString(status.value.source || 'MoviePilot MediaChain'), 1)
             ])
           ])
@@ -447,7 +494,7 @@ return (_ctx, _cache) => {
       }, {
         default: _withCtx(() => [
           _createVNode(_component_VCardTitle, { class: "panel-title" }, {
-            default: _withCtx(() => [...(_cache[6] || (_cache[6] = [
+            default: _withCtx(() => [...(_cache[7] || (_cache[7] = [
               _createTextVNode("1. 搜索并选择媒体", -1)
             ]))]),
             _: 1
@@ -484,7 +531,7 @@ return (_ctx, _cache) => {
                   loading: searching.value,
                   onClick: runSearch
                 }, {
-                  default: _withCtx(() => [...(_cache[7] || (_cache[7] = [
+                  default: _withCtx(() => [...(_cache[8] || (_cache[8] = [
                     _createTextVNode("搜索媒体", -1)
                   ]))]),
                   _: 1
@@ -494,7 +541,7 @@ return (_ctx, _cache) => {
                   loading: refreshing.value,
                   onClick: refreshIndex
                 }, {
-                  default: _withCtx(() => [...(_cache[8] || (_cache[8] = [
+                  default: _withCtx(() => [...(_cache[9] || (_cache[9] = [
                     _createTextVNode("接口状态", -1)
                   ]))]),
                   _: 1
@@ -550,7 +597,7 @@ return (_ctx, _cache) => {
                         : _createCommentVNode("", true),
                       _createElementVNode("div", _hoisted_25, [
                         _createElementVNode("div", _hoisted_26, "已选：" + _toDisplayString(_unref(mediaLabel)(selectedMedia.value)), 1),
-                        _cache[9] || (_cache[9] = _createElementVNode("div", { class: "target-caption" }, " 正在读取 MoviePilot 媒体库中这个条目的实际视频文件。 ", -1))
+                        _cache[10] || (_cache[10] = _createElementVNode("div", { class: "target-caption" }, " 正在读取 MoviePilot 媒体库中这个条目的实际视频文件。 ", -1))
                       ])
                     ]),
                     (selectedMedia.value.media_type === 'tv' && availableSeasonItems.value.length)
@@ -602,7 +649,7 @@ return (_ctx, _cache) => {
       }, {
         default: _withCtx(() => [
           _createVNode(_component_VCardTitle, { class: "panel-title" }, {
-            default: _withCtx(() => [...(_cache[10] || (_cache[10] = [
+            default: _withCtx(() => [...(_cache[11] || (_cache[11] = [
               _createTextVNode("2. 上传并确认匹配", -1)
             ]))]),
             _: 1
@@ -614,15 +661,15 @@ return (_ctx, _cache) => {
                 onDrop: handleDrop,
                 onDragover: handleDragOver
               }, [
-                _cache[12] || (_cache[12] = _createElementVNode("div", { class: "dropzone-icon" }, "SRT / ASS / ZIP", -1)),
-                _cache[13] || (_cache[13] = _createElementVNode("div", { class: "dropzone-title" }, "拖拽字幕文件或 ZIP 到这里", -1)),
-                _cache[14] || (_cache[14] = _createElementVNode("div", { class: "dropzone-text" }, "可以一次选择多个字幕。ZIP 会自动解包，只保留字幕文件参与匹配。", -1)),
+                _cache[13] || (_cache[13] = _createElementVNode("div", { class: "dropzone-icon" }, "SRT / ASS / ZIP", -1)),
+                _cache[14] || (_cache[14] = _createElementVNode("div", { class: "dropzone-title" }, "拖拽字幕文件或 ZIP 到这里", -1)),
+                _cache[15] || (_cache[15] = _createElementVNode("div", { class: "dropzone-text" }, "可以一次选择多个字幕。ZIP 会自动解包，只保留字幕文件参与匹配。", -1)),
                 _createVNode(_component_VBtn, {
                   color: "primary",
                   variant: "flat",
                   onClick: openFileDialog
                 }, {
-                  default: _withCtx(() => [...(_cache[11] || (_cache[11] = [
+                  default: _withCtx(() => [...(_cache[12] || (_cache[12] = [
                     _createTextVNode("选择文件", -1)
                   ]))]),
                   _: 1
@@ -654,7 +701,7 @@ return (_ctx, _cache) => {
                           color: "error",
                           onClick: $event => (removeFile(file))
                         }, {
-                          default: _withCtx(() => [...(_cache[15] || (_cache[15] = [
+                          default: _withCtx(() => [...(_cache[16] || (_cache[16] = [
                             _createTextVNode("移除", -1)
                           ]))]),
                           _: 1
@@ -670,7 +717,7 @@ return (_ctx, _cache) => {
                   loading: preparing.value,
                   onClick: prepareUpload
                 }, {
-                  default: _withCtx(() => [...(_cache[16] || (_cache[16] = [
+                  default: _withCtx(() => [...(_cache[17] || (_cache[17] = [
                     _createTextVNode(" 生成匹配预览 ", -1)
                   ]))]),
                   _: 1
@@ -679,7 +726,7 @@ return (_ctx, _cache) => {
                   variant: "tonal",
                   onClick: resetSelection
                 }, {
-                  default: _withCtx(() => [...(_cache[17] || (_cache[17] = [
+                  default: _withCtx(() => [...(_cache[18] || (_cache[18] = [
                     _createTextVNode("重新选择媒体", -1)
                   ]))]),
                   _: 1
@@ -687,21 +734,37 @@ return (_ctx, _cache) => {
               ]),
               (preview.value?.items?.length)
                 ? (_openBlock(), _createElementBlock("div", _hoisted_34, [
-                    _cache[19] || (_cache[19] = _createElementVNode("div", { class: "preview-header" }, [
+                    _cache[20] || (_cache[20] = _createElementVNode("div", { class: "preview-header" }, [
                       _createElementVNode("div", { class: "target-title" }, "3. 检查并写入"),
                       _createElementVNode("div", { class: "target-caption" }, "每个字幕都需要对应一个目标视频；自动匹配不准时可以手动改。")
                     ], -1)),
                     _createElementVNode("div", _hoisted_35, [
+                      _createVNode(_component_VSwitch, {
+                        modelValue: fixTimeline.value,
+                        "onUpdate:modelValue": _cache[3] || (_cache[3] = $event => ((fixTimeline).value = $event)),
+                        color: "primary",
+                        density: "comfortable",
+                        "hide-details": "",
+                        disabled: !timelineAvailable.value,
+                        label: "写入前智能调轴"
+                      }, null, 8, ["modelValue", "disabled"]),
+                      _createElementVNode("div", _hoisted_36, [
+                        (timelineAvailable.value)
+                          ? (_openBlock(), _createElementBlock("span", _hoisted_37, " 使用容器内 ffmpeg/ffprobe 提取音频或内置字幕，按 CSB/ffsubsync 思路自动计算字幕偏移。 "))
+                          : (_openBlock(), _createElementBlock("span", _hoisted_38, " 当前容器缺少调轴依赖" + _toDisplayString(timelineMissing.value ? `：${timelineMissing.value}` : '') + "。 ", 1))
+                      ])
+                    ]),
+                    _createElementVNode("div", _hoisted_39, [
                       (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(preview.value.items, (item) => {
                         return (_openBlock(), _createElementBlock("div", {
                           key: item.upload_id,
                           class: "preview-item"
                         }, [
-                          _createElementVNode("div", _hoisted_36, [
-                            _createElementVNode("div", _hoisted_37, _toDisplayString(item.source_name), 1),
-                            _createElementVNode("div", _hoisted_38, [
+                          _createElementVNode("div", _hoisted_40, [
+                            _createElementVNode("div", _hoisted_41, _toDisplayString(item.source_name), 1),
+                            _createElementVNode("div", _hoisted_42, [
                               (item.archive_name)
-                                ? (_openBlock(), _createElementBlock("span", _hoisted_39, "来自 " + _toDisplayString(item.archive_name), 1))
+                                ? (_openBlock(), _createElementBlock("span", _hoisted_43, "来自 " + _toDisplayString(item.archive_name), 1))
                                 : _createCommentVNode("", true),
                               _createElementVNode("span", null, _toDisplayString(item.detected_label || '未知语言'), 1),
                               _createElementVNode("span", null, _toDisplayString(item.language_suffix), 1)
@@ -719,18 +782,42 @@ return (_ctx, _cache) => {
                         ]))
                       }), 128))
                     ]),
-                    _createElementVNode("div", _hoisted_40, [
+                    _createElementVNode("div", _hoisted_44, [
                       _createVNode(_component_VBtn, {
                         color: "primary",
                         disabled: !canApply.value,
                         loading: applying.value,
                         onClick: applyUpload
                       }, {
-                        default: _withCtx(() => [...(_cache[18] || (_cache[18] = [
+                        default: _withCtx(() => [...(_cache[19] || (_cache[19] = [
                           _createTextVNode(" 写入字幕 ", -1)
                         ]))]),
                         _: 1
                       }, 8, ["disabled", "loading"])
+                    ])
+                  ]))
+                : _createCommentVNode("", true),
+              (lastWritten.value.length)
+                ? (_openBlock(), _createElementBlock("div", _hoisted_45, [
+                    _cache[21] || (_cache[21] = _createElementVNode("div", { class: "preview-header" }, [
+                      _createElementVNode("div", { class: "target-title" }, "写入结果"),
+                      _createElementVNode("div", { class: "target-caption" }, "字幕已按目标视频文件名落盘，下面是本次智能调轴摘要。")
+                    ], -1)),
+                    _createElementVNode("div", _hoisted_46, [
+                      (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(lastWritten.value, (item) => {
+                        return (_openBlock(), _createElementBlock("div", {
+                          key: item.output_path,
+                          class: "result-item"
+                        }, [
+                          _createElementVNode("div", null, [
+                            _createElementVNode("div", _hoisted_47, _toDisplayString(item.output_name), 1),
+                            _createElementVNode("div", _hoisted_48, _toDisplayString(item.target_label), 1)
+                          ]),
+                          _createElementVNode("div", {
+                            class: _normalizeClass(["result-badge", { active: item.timeline?.applied }])
+                          }, _toDisplayString(timelineResultText(item)), 3)
+                        ]))
+                      }), 128))
                     ])
                   ]))
                 : _createCommentVNode("", true)
@@ -746,6 +833,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-0db45c97"]]);
+const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-9dbb1316"]]);
 
 export { AppPage as default };

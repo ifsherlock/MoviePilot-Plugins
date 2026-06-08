@@ -20,12 +20,14 @@ from app.log import logger
 from app.plugins import _PluginBase
 from app.schemas.types import MediaType
 
+from .timeline_fixer import check_timeline_fixer_dependencies, fix_subtitle_timeline
+
 
 class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕手传匹配"
-    plugin_desc = "手动上传字幕或 ZIP，匹配电影/剧集并按媒体文件名落盘。"
+    plugin_desc = "手动上传字幕或 ZIP，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "upload.png"
-    plugin_version = "0.1.1"
+    plugin_version = "0.1.2"
     plugin_author = "jaysherlock"
     author_url = "https://github.com/jaysherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -861,6 +863,7 @@ class SubtitleManualUpload(_PluginBase):
                 "enabled": self.get_state(),
                 "source": "MoviePilot MediaChain",
                 "index": {"ready": True, "updated_at": "", "entry_count": 0},
+                "timeline_fixer": check_timeline_fixer_dependencies(),
             }
         )
 
@@ -1007,6 +1010,7 @@ class SubtitleManualUpload(_PluginBase):
         body = await request.json()
         session_id = self._normalize_text(body.get("session_id"))
         items = body.get("items") or []
+        fix_timeline = bool(body.get("fix_timeline"))
         if not session_id or not isinstance(items, list) or not items:
             raise HTTPException(status_code=400, detail="缺少上传会话或匹配结果")
 
@@ -1025,14 +1029,43 @@ class SubtitleManualUpload(_PluginBase):
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新搜索媒体并上传")
 
         operations = self._build_write_operations(items, upload_map, target_entries)
+        fixed_dir = session_dir / "timeline_fixed"
+        for operation in operations:
+            operation["write_source_path"] = operation["source_path"]
+            operation["timeline_result"] = None
+            if fix_timeline:
+                fixed_dir.mkdir(parents=True, exist_ok=True)
+                fixed_source_path = fixed_dir / f"{operation['upload_info'].get('upload_id')}{operation['source_path'].suffix}"
+                try:
+                    timeline_result = fix_subtitle_timeline(
+                        video_path=operation["video_path"],
+                        subtitle_path=operation["source_path"],
+                        output_path=fixed_source_path,
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "[SubtitleManualUpload] 智能调轴失败 %s -> %s: %s",
+                        operation["upload_info"].get("source_name"),
+                        operation["destination_name"],
+                        exc,
+                    )
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"智能调轴失败: {operation['upload_info'].get('source_name')} - {exc}",
+                    ) from exc
+                operation["write_source_path"] = fixed_source_path
+                operation["timeline_result"] = timeline_result
+
         written_results = []
         for operation in operations:
             destination_path = operation["destination_path"]
             temp_path = destination_path.with_name(f"{destination_path.name}.mp-uploading")
             if temp_path.exists():
                 temp_path.unlink()
-            shutil.copyfile(operation["source_path"], temp_path)
+
+            shutil.copyfile(operation["write_source_path"], temp_path)
             temp_path.replace(destination_path)
+            timeline_result = operation.get("timeline_result")
             written_results.append(
                 {
                     "source_name": operation["upload_info"].get("source_name"),
@@ -1040,6 +1073,7 @@ class SubtitleManualUpload(_PluginBase):
                     "target_label": self._target_from_entry(operation["target_entry"]).get("label"),
                     "output_name": operation["destination_name"],
                     "output_path": str(destination_path),
+                    "timeline": timeline_result.to_dict() if timeline_result else {"enabled": False},
                 }
             )
 
@@ -1052,10 +1086,21 @@ class SubtitleManualUpload(_PluginBase):
 
         shutil.rmtree(session_dir, ignore_errors=True)
 
+        fixed_count = len(
+            [
+                item
+                for item in written_results
+                if item.get("timeline", {}).get("enabled") and item.get("timeline", {}).get("applied")
+            ]
+        )
+        message = f"已写入 {len(written_results)} 个字幕文件"
+        if fix_timeline:
+            message += f"，智能调轴 {fixed_count} 个"
+
         return self._ok(
             {
                 "count": len(written_results),
                 "written": written_results,
             },
-            message=f"已写入 {len(written_results)} 个字幕文件",
+            message=message,
         )
