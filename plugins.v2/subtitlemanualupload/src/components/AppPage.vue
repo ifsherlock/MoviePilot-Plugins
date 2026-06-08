@@ -81,6 +81,7 @@ const onlineStatus = ref({ providers: [], capabilities: {} })
 const onlineSelectedProviders = ref(['subhd', 'zimuku', 'assrt'])
 const onlineResults = ref([])
 const onlineMessages = ref([])
+const onlineMessagesCollapsed = ref(false)
 const onlineManualLinks = ref([])
 const selectedOnlineResultIds = ref([])
 
@@ -155,6 +156,22 @@ const hasOnlineResults = computed(() => onlineResults.value.length > 0)
 const selectedOnlineResults = computed(() => {
   const picked = new Set(selectedOnlineResultIds.value)
   return onlineResults.value.filter(item => picked.has(onlineResultKey(item)) && isOnlineResultDownloadable(item))
+})
+const onlineMessageSummary = computed(() => {
+  const messages = onlineMessages.value || []
+  if (!messages.length) return ''
+  const warnings = messages.filter(item => item.level !== 'info')
+  const infos = messages.filter(item => item.level === 'info')
+  const source = warnings.length ? warnings : infos
+  const text = source
+    .slice(0, 3)
+    .map(item => item.provider ? `${providerName(item.provider)}：${item.message}` : item.message)
+    .join('；')
+  const extra = source.length > 3 ? `；另有 ${source.length - 3} 条提示` : ''
+  return `${text}${extra}`
+})
+const onlineMessageType = computed(() => {
+  return (onlineMessages.value || []).some(item => item.level !== 'info') ? 'warning' : 'info'
 })
 const onlineBatchLabel = computed(() => {
   if (selectedMedia.value?.media_type !== 'tv') return '搜索在线字幕'
@@ -506,6 +523,7 @@ async function openOnlineDialog(scopeTargets, title, scope) {
   onlineKeyword.value = ''
   onlineResults.value = []
   onlineMessages.value = []
+  onlineMessagesCollapsed.value = false
   onlineManualLinks.value = []
   selectedOnlineResultIds.value = []
   onlineError.value = ''
@@ -565,6 +583,7 @@ async function runOnlineSearch() {
   onlineError.value = ''
   onlineResults.value = []
   onlineMessages.value = []
+  onlineMessagesCollapsed.value = false
   selectedOnlineResultIds.value = []
   try {
     const response = await props.api.post(`${pluginBase.value}/online_search`, onlinePayload())
@@ -1131,16 +1150,24 @@ defineExpose({
             variant="tonal"
             :text="onlineError"
           />
-          <div v-if="onlineMessages.length" class="online-message-list">
-            <VAlert
-              v-for="item in onlineMessages"
-              :key="`${item.provider || 'msg'}-${item.message}`"
-              :type="item.level === 'info' ? 'info' : 'warning'"
-              variant="tonal"
-              density="compact"
-              :text="item.provider ? `${providerName(item.provider)}：${item.message}` : item.message"
-            />
-          </div>
+          <VAlert
+            v-if="onlineMessages.length && !onlineMessagesCollapsed"
+            class="online-message-summary"
+            :type="onlineMessageType"
+            variant="tonal"
+            density="compact"
+          >
+            <div class="online-message-summary-content">
+              <span>{{ onlineMessageSummary }}</span>
+              <VBtn
+                size="x-small"
+                variant="text"
+                @click="onlineMessagesCollapsed = true"
+              >
+                收起
+              </VBtn>
+            </div>
+          </VAlert>
 
           <div class="online-layout">
             <section class="online-results-panel">
@@ -1835,10 +1862,22 @@ defineExpose({
   background: rgba(255, 250, 242, 0.96);
 }
 
-.online-message-list {
-  display: grid;
-  gap: 8px;
+.online-message-summary {
   margin-bottom: 14px;
+}
+
+.online-message-summary-content {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.online-message-summary-content span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .online-layout {

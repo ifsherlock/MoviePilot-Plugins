@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
-from urllib.parse import quote, unquote, urlencode, urljoin
+from urllib.parse import quote, unquote, urlencode, urljoin, urlparse
 
 from app.core.config import settings
 from app.log import logger
@@ -117,6 +117,10 @@ class OnlineFetchClient:
         except urllib.error.HTTPError as exc:
             raw = exc.read()
             return exc.code, self._decode(raw, exc.headers.get_content_charset()), exc.geturl()
+        except urllib.error.URLError as exc:
+            raise ValueError(_format_network_error(url, exc)) from exc
+        except OSError as exc:
+            raise ValueError(_format_network_error(url, exc)) from exc
 
     def get_bytes(self, url: str, *, referer: str = "") -> Tuple[str, bytes, str]:
         headers = self._headers(referer)
@@ -129,6 +133,10 @@ class OnlineFetchClient:
         except urllib.error.HTTPError as exc:
             detail = self._decode(exc.read()[:300], exc.headers.get_content_charset())
             raise ValueError(f"下载失败 HTTP {exc.code}: {detail}") from exc
+        except urllib.error.URLError as exc:
+            raise ValueError(_format_network_error(url, exc)) from exc
+        except OSError as exc:
+            raise ValueError(_format_network_error(url, exc)) from exc
 
     def set_cookie(self, name: str, value: str, domain: str) -> None:
         cookie = Cookie(
@@ -544,6 +552,7 @@ class OnlineSubtitleSearchService:
         for provider_id in provider_ids:
             provider = self.providers[provider_id]
             provider_count = 0
+            provider_errors: List[str] = []
             for keyword in keywords:
                 try:
                     found = provider.search(keyword, targets, scope)
@@ -552,13 +561,9 @@ class OnlineSubtitleSearchService:
                     if found:
                         break
                 except Exception as exc:
-                    provider_messages.append(
-                        {
-                            "provider": provider_id,
-                            "level": "warning",
-                            "message": str(exc),
-                        }
-                    )
+                    message = _compact_error_message(str(exc))
+                    if message not in provider_errors:
+                        provider_errors.append(message)
                     logger.warning(
                         "[SubtitleManualUpload] 在线字幕搜索失败 provider=%s keyword=%s error=%s",
                         provider_id,
@@ -571,6 +576,14 @@ class OnlineSubtitleSearchService:
                 len(keywords),
                 provider_count,
             )
+            if provider_count == 0 and provider_errors:
+                provider_messages.append(
+                    {
+                        "provider": provider_id,
+                        "level": "warning",
+                        "message": _provider_error_summary(provider_errors, len(keywords)),
+                    }
+                )
         results = _dedupe_results(results)
         results.sort(key=lambda item: (item.score, item.provider != "subhd", item.title), reverse=True)
         return {
@@ -737,6 +750,36 @@ def _can_import(module_name: str) -> bool:
         return True
     except Exception:
         return False
+
+
+def _format_network_error(url: str, exc: BaseException) -> str:
+    host = urlparse(url or "").netloc or "字幕站"
+    reason = getattr(exc, "reason", exc)
+    reason_text = str(reason or exc)
+    lowered = reason_text.lower()
+    if "connection reset" in lowered or "errno 104" in lowered or "远程主机强迫关闭" in reason_text:
+        return f"{host} 连接被重置，可能是源站拦截、代理异常或容器网络出口受限"
+    if "timed out" in lowered or "timeout" in lowered:
+        return f"{host} 连接超时，请稍后重试或检查代理"
+    if "name or service not known" in lowered or "nodename nor servname" in lowered:
+        return f"{host} DNS 解析失败，请检查容器网络"
+    return f"{host} 网络请求失败：{reason_text}"
+
+
+def _compact_error_message(message: str) -> str:
+    text = re.sub(r"\s+", " ", str(message or "")).strip()
+    text = re.sub(r"^<urlopen error \[Errno 104\] Connection reset by peer>$", "连接被重置", text, flags=re.I)
+    text = re.sub(r"^<urlopen error ([^>]+)>$", r"\1", text, flags=re.I)
+    return text[:160] or "在线请求失败"
+
+
+def _provider_error_summary(errors: List[str], keyword_count: int) -> str:
+    summary = errors[0]
+    if len(errors) > 1:
+        summary += f"；另有 {len(errors) - 1} 类错误"
+    if keyword_count > 1:
+        summary += f"（已尝试 {keyword_count} 个关键词）"
+    return summary
 
 
 def _is_zimuku_security_page(text: str) -> bool:

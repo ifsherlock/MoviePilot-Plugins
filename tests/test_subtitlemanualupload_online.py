@@ -84,3 +84,33 @@ def test_zimuku_results_are_marked_manual_only():
     assert len(results) == 1
     assert results[0].provider == "zimuku"
     assert results[0].downloadable is False
+
+
+def test_provider_network_errors_are_compacted():
+    module = load_online_module()
+
+    class FailingProvider(module.BaseSubtitleProvider):
+        provider_id = "subhd"
+        display_name = "SubHD"
+
+        def manual_url(self, keyword):
+            return f"https://subhd.tv/search/{keyword}"
+
+        def search(self, keyword, targets, scope):
+            raise ValueError("<urlopen error [Errno 104] Connection reset by peer>")
+
+    service = module.OnlineSubtitleSearchService(use_proxy=False)
+    service.providers = {"subhd": FailingProvider(None)}
+
+    result = service.search(
+        keywords=["Example S01", "Example 第1季", "Example.S01E01"],
+        providers=["subhd"],
+        targets=[],
+        scope="season",
+    )
+
+    assert result["results"] == []
+    assert len(result["messages"]) == 1
+    assert result["messages"][0]["provider"] == "subhd"
+    assert "<urlopen" not in result["messages"][0]["message"]
+    assert "已尝试 3 个关键词" in result["messages"][0]["message"]
