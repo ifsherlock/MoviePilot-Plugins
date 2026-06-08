@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import base64
 import html
+import io
 import re
 import urllib.error
 import urllib.request
@@ -492,25 +493,63 @@ class ZimukuProvider(BaseSubtitleProvider):
         raise ValueError("Zimuku 下载入口存在动态校验，当前请使用手动搜索下载后再上传")
 
     def _solve_security_page(self, text: str, final_url: str) -> str:
+        current_text = text
+        current_url = final_url or self.root_url
+        domain = urlparse(self.root_url).hostname or "zimuku.org"
+        last_error = "OCR 未返回结果"
+        for attempt in range(1, 4):
+            captcha = self._recognize_security_captcha(current_text)
+            if not captcha:
+                last_error = "OCR 未返回结果"
+                logger.warning(
+                    "[SubtitleManualUpload] Zimuku 防火墙验证码 OCR 未返回结果 host=%s attempt=%s",
+                    _host(self.root_url),
+                    attempt,
+                )
+            else:
+                logger.info(
+                    "[SubtitleManualUpload] Zimuku 防火墙验证码 OCR 完成 host=%s attempt=%s length=%s",
+                    _host(self.root_url),
+                    attempt,
+                    len(captcha),
+                )
+                self.fetcher.set_cookie("srcurl", _string_to_hex(current_url), domain=domain)
+                verify_url = urljoin(self.root_url, f"/?security_verify_img={_string_to_hex(captcha)}")
+                status, _, verify_final_url = self.fetcher.get_text(verify_url, referer=current_url)
+                status, solved, _ = self.fetcher.get_text(current_url, referer=verify_final_url or verify_url)
+                if not _is_zimuku_security_page(solved):
+                    return solved
+                last_error = f"验证码未通过，HTTP {status}"
+                logger.warning(
+                    "[SubtitleManualUpload] Zimuku 防火墙验证码未通过 host=%s attempt=%s http=%s",
+                    _host(self.root_url),
+                    attempt,
+                    status,
+                )
+            status, current_text, current_url = self.fetcher.get_text(current_url or self.root_url)
+            if not _is_zimuku_security_page(current_text):
+                return current_text
+        raise ValueError(f"Zimuku 防火墙验证码验证失败: {last_error}")
+
+    @staticmethod
+    def _recognize_security_captcha(text: str) -> str:
         match = re.search(r"data:image/[a-zA-Z0-9.+-]+;base64,([^\"']+)", text)
         if not match:
             raise ValueError("Zimuku 触发防火墙，但未找到验证码图片")
+        image_b64 = match.group(1)
         try:
             from app.helper.ocr import OcrHelper
 
-            captcha = OcrHelper().get_captcha_text(image_b64=match.group(1))
+            helper = OcrHelper()
+            candidates = [image_b64]
+            candidates.extend(_preprocess_zimuku_captcha(image_b64))
+            for candidate in candidates:
+                captcha = _clean_captcha_text(helper.get_captcha_text(image_b64=candidate))
+                if len(captcha) >= 4:
+                    return captcha
+            return ""
         except Exception as exc:
             raise ValueError(f"Zimuku 防火墙验证码 OCR 失败: {exc}") from exc
-        captcha = re.sub(r"\s+", "", captcha or "")
-        if not captcha:
-            raise ValueError("Zimuku 防火墙验证码 OCR 未返回结果")
-        verify_value = _string_to_hex(captcha)
-        domain = urlparse(self.root_url).hostname or "zimuku.org"
-        self.fetcher.set_cookie("security_verify_img", verify_value, domain=domain)
-        status, solved, _ = self.fetcher.get_text(final_url or self.root_url)
-        if _is_zimuku_security_page(solved):
-            raise ValueError(f"Zimuku 防火墙验证未通过，HTTP {status}")
-        return solved
 
 
 class AssrtProvider(BaseSubtitleProvider):
@@ -1024,6 +1063,33 @@ def _provider_error_summary(errors: List[str], keyword_count: int) -> str:
 
 def _is_zimuku_security_page(text: str) -> bool:
     return "security_verify" in (text or "") or "网站防火墙" in (text or "")
+
+
+def _clean_captcha_text(value: str) -> str:
+    return re.sub(r"[^0-9A-Za-z]", "", value or "")
+
+
+def _preprocess_zimuku_captcha(image_b64: str) -> List[str]:
+    try:
+        from PIL import Image, ImageFilter
+
+        image = Image.open(io.BytesIO(base64.b64decode(image_b64))).convert("RGB")
+        scaled = image.resize((image.width * 3, image.height * 3), Image.Resampling.LANCZOS)
+        mask = Image.new("L", scaled.size, 255)
+        source = scaled.load()
+        output = mask.load()
+        for y in range(scaled.height):
+            for x in range(scaled.width):
+                r, g, b = source[x, y]
+                # Zimuku's Yunsuo captcha uses green glyphs on a pale background.
+                output[x, y] = 0 if (g > r + 20 and g > b + 20 and g < 190) else 255
+        mask = mask.filter(ImageFilter.MedianFilter(3))
+        buffer = io.BytesIO()
+        mask.convert("RGB").save(buffer, format="PNG")
+        return [base64.b64encode(buffer.getvalue()).decode()]
+    except Exception as exc:
+        logger.warning("[SubtitleManualUpload] Zimuku 验证码图片预处理失败：%s", exc)
+        return []
 
 
 def _string_to_hex(value: str) -> str:

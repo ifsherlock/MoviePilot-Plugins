@@ -1114,7 +1114,17 @@ defineExpose({
             <span>{{ onlineTitle || '在线字幕搜索' }}</span>
             <p>{{ onlineTargets.length }} 个目标 · 下载后进入匹配预览，不会直接写入</p>
           </div>
-          <VBtn icon="mdi-close" variant="text" @click="onlineDialog = false" />
+          <div class="online-title-actions">
+            <VBtn
+              color="success"
+              :disabled="!selectedOnlineResults.length"
+              :loading="onlineDownloading"
+              @click="downloadOnlinePreview"
+            >
+              下载并生成预览
+            </VBtn>
+            <VBtn icon="mdi-close" variant="text" @click="onlineDialog = false" />
+          </div>
         </VCardTitle>
         <VDivider />
         <VCardActions class="online-search-actions">
@@ -1267,19 +1277,6 @@ defineExpose({
             </aside>
           </div>
         </VCardText>
-        <VDivider />
-        <VCardActions class="dialog-actions">
-          <VBtn variant="text" @click="onlineDialog = false">关闭</VBtn>
-          <VSpacer />
-          <VBtn
-            color="success"
-            :disabled="!selectedOnlineResults.length"
-            :loading="onlineDownloading"
-            @click="downloadOnlinePreview"
-          >
-            下载并生成预览
-          </VBtn>
-        </VCardActions>
       </VCard>
     </VDialog>
 
@@ -2052,6 +2049,13 @@ defineExpose({
   font-weight: 400;
 }
 
+.online-title-actions {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+}
+
 .dropzone {
   position: relative;
   display: grid;
@@ -2336,6 +2340,11 @@ defineExpose({
   .search-head,
   .preview-head {
     display: grid;
+  }
+
+  .online-title-actions {
+    width: 100%;
+    justify-content: flex-end;
   }
 
   .batch-language {

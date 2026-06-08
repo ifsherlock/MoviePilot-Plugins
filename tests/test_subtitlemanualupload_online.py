@@ -46,6 +46,26 @@ class ZimukuFakeFetcher:
         return 200, '<a href="/detail/456">Example Show S01E02 简体字幕</a>', url
 
 
+class ZimukuSecurityFetcher:
+    def __init__(self):
+        self.verified = False
+        self.urls = []
+        self.cookies = []
+
+    def get_text(self, url, *, referer=""):
+        self.urls.append(url)
+        if "security_verify_img=3132333435" in url:
+            self.verified = True
+            return 200, "", url
+        if self.verified:
+            return 200, '<a href="/detail/456">Example Show S01E02 简体字幕</a>', url
+        html = '<title>网站防火墙</title><img src="data:image/bmp;base64,AAAA">'
+        return 404, html, url
+
+    def set_cookie(self, name, value, domain):
+        self.cookies.append((name, value, domain))
+
+
 class AssrtFakeFetcher:
     def get_text(self, url, *, referer=""):
         if "/sub/123" in url:
@@ -91,6 +111,30 @@ def test_zimuku_results_are_marked_manual_only():
     assert len(results) == 1
     assert results[0].provider == "zimuku"
     assert results[0].downloadable is False
+
+
+def test_zimuku_security_page_uses_ocr_verify_jump():
+    helper_module = types.ModuleType("app.helper")
+    ocr_module = types.ModuleType("app.helper.ocr")
+
+    class FakeOcrHelper:
+        def get_captcha_text(self, image_b64=None, **kwargs):
+            return "12345"
+
+    ocr_module.OcrHelper = FakeOcrHelper
+    sys.modules["app.helper"] = helper_module
+    sys.modules["app.helper.ocr"] = ocr_module
+
+    module = load_online_module()
+    fetcher = ZimukuSecurityFetcher()
+    provider = module.ZimukuProvider(fetcher)
+
+    results = provider.search("Example Show S01E02", [{"season": 1, "episode": 2}], "episode")
+
+    assert len(results) == 1
+    assert fetcher.verified is True
+    assert any("security_verify_img=3132333435" in url for url in fetcher.urls)
+    assert fetcher.cookies[0][0] == "srcurl"
 
 
 def test_assrt_provider_parses_web_results_without_token():
