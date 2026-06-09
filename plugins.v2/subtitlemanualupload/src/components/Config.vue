@@ -14,6 +14,7 @@ const localConfig = ref({
   show_sidebar_nav: true,
   online_providers: ['assrt', 'opensubtitles'],
   online_use_proxy: false,
+  traditional_to_simplified: false,
   subhd_url: 'https://subhd.tv',
   zimuku_url: 'https://zimuku.org',
   assrt_url: 'https://2.assrt.net',
@@ -69,6 +70,7 @@ function normalizeConfig(input) {
     online_providers: providers,
     online_use_proxy: Boolean(input?.online_use_proxy),
     online_proxy_migrated: true,
+    traditional_to_simplified: Boolean(input?.traditional_to_simplified),
     subhd_url: normalizeRootUrl(input?.subhd_url, 'https://subhd.tv'),
     zimuku_url: normalizeRootUrl(input?.zimuku_url, 'https://zimuku.org'),
     assrt_url: normalizeRootUrl(input?.assrt_url, 'https://2.assrt.net'),
@@ -129,6 +131,12 @@ onMounted(() => {
               v-model="localConfig.ai_link_enabled"
               label="启用 AI 字幕联动"
               color="warning"
+              hide-details
+            />
+            <VSwitch
+              v-model="localConfig.traditional_to_simplified"
+              label="写入前繁体转简体"
+              color="success"
               hide-details
             />
           </div>

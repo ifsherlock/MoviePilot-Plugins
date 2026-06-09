@@ -39,6 +39,7 @@ from .online_subtitle import (
     normalize_provider_roots,
 )
 from .timeline_fixer import check_timeline_fixer_dependencies, fix_subtitle_timeline
+from .tongwen import convert_subtitle_file_to_simplified
 
 
 class SubtitleManualUpload(_PluginBase):
@@ -71,6 +72,7 @@ class SubtitleManualUpload(_PluginBase):
     _opensubtitles_username = ""
     _opensubtitles_password = ""
     _ai_link_enabled = True
+    _traditional_to_simplified = False
     _cache_ttl_seconds = 90
     _cache_max_entries = 5000
     _entry_map_max_size = 2000
@@ -151,6 +153,7 @@ class SubtitleManualUpload(_PluginBase):
         self._opensubtitles_username = self._normalize_text(config.get("opensubtitles_username"))
         self._opensubtitles_password = self._normalize_text(config.get("opensubtitles_password"))
         self._ai_link_enabled = bool(config.get("ai_link_enabled", True))
+        self._traditional_to_simplified = bool(config.get("traditional_to_simplified", False))
         if not config.get("assrt_provider_migrated") and not self._assrt_api_key:
             self._online_provider_ids = [item for item in self._online_provider_ids if item != "assrt"]
         if self._assrt_api_key and "assrt" not in self._online_provider_ids:
@@ -166,6 +169,7 @@ class SubtitleManualUpload(_PluginBase):
         ]
         type(self)._rar_dependency_mode = self._rar_dependency_mode
         type(self)._rar_tool_path = self._rar_tool_path
+        type(self)._traditional_to_simplified = self._traditional_to_simplified
         self._entry_map = OrderedDict()
         self._local_entries_cache = {"loaded_at": None, "entries": [], "media_count": 0}
         self._save_config()
@@ -295,7 +299,7 @@ class SubtitleManualUpload(_PluginBase):
                         "content": [
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
+                                "props": {"cols": 12, "md": 4},
                                 "content": [
                                     {
                                         "component": "VSwitch",
@@ -308,13 +312,26 @@ class SubtitleManualUpload(_PluginBase):
                             },
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
+                                "props": {"cols": 12, "md": 4},
                                 "content": [
                                     {
                                         "component": "VSwitch",
                                         "props": {
                                             "model": "show_sidebar_nav",
                                             "label": "显示侧边栏入口",
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [
+                                    {
+                                        "component": "VSwitch",
+                                        "props": {
+                                            "model": "traditional_to_simplified",
+                                            "label": "写入前繁体转简体",
                                         },
                                     }
                                 ],
@@ -569,6 +586,7 @@ class SubtitleManualUpload(_PluginBase):
             "show_sidebar_nav": True,
             "rar_dependency_mode": "none",
             "rar_tool_path": "/usr/local/bin/7z",
+            "traditional_to_simplified": False,
             "online_providers": list(self._default_online_provider_ids),
             "online_engine": DEFAULT_ENGINE,
             "online_use_proxy": False,
@@ -612,6 +630,7 @@ class SubtitleManualUpload(_PluginBase):
                 "show_sidebar_nav": self._show_sidebar_nav,
                 "rar_dependency_mode": self._rar_dependency_mode,
                 "rar_tool_path": self._rar_tool_path,
+                "traditional_to_simplified": self._traditional_to_simplified,
                 "online_providers": self._online_provider_ids,
                 "online_engine": self._online_engine,
                 "online_use_proxy": self._online_use_proxy,
@@ -1970,11 +1989,43 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     "target_entry": target_entry,
                     "video_path": video_path,
                     "source_path": source_path,
+                    "language_suffix": item_suffix,
                     "destination_name": destination_name,
                     "destination_path": video_path.parent / destination_name,
                 }
             )
         return operations
+
+    @classmethod
+    def _is_chinese_language_suffix(cls, suffix: Any) -> bool:
+        return cls._normalize_language_suffix(suffix) in {"chi", "cht"}
+
+    def _maybe_convert_operation_to_simplified(self, operation: Dict[str, Any], output_dir: Path) -> None:
+        operation["simplified_result"] = {"enabled": False, "converted": False}
+        if not self._traditional_to_simplified:
+            return
+        if not self._is_chinese_language_suffix(operation.get("language_suffix")):
+            return
+        source_path = Path(operation["write_source_path"])
+        if source_path.suffix.lower() not in self._subtitle_exts:
+            return
+        output_dir.mkdir(parents=True, exist_ok=True)
+        output_path = output_dir / f"{operation['upload_info'].get('upload_id')}{source_path.suffix.lower()}"
+        try:
+            converted = convert_subtitle_file_to_simplified(source_path, output_path)
+        except Exception as exc:
+            logger.error(
+                "[SubtitleManualUpload] 繁转简失败 %s -> %s: %s",
+                operation["upload_info"].get("source_name"),
+                operation["destination_name"],
+                exc,
+            )
+            raise HTTPException(
+                status_code=500,
+                detail=f"繁转简失败: {operation['upload_info'].get('source_name')} - {exc}",
+            ) from exc
+        operation["write_source_path"] = output_path
+        operation["simplified_result"] = {"enabled": True, "converted": converted}
 
     def _write_session(self, session_id: str, payload: Dict[str, Any]) -> None:
         session_dir = self._get_session_root() / session_id
@@ -2629,9 +2680,11 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         )
         operations = self._build_write_operations(items, upload_map, target_entries)
         fixed_dir = session_dir / "timeline_fixed"
+        simplified_dir = session_dir / "simplified"
         for operation in operations:
             operation["write_source_path"] = operation["source_path"]
             operation["timeline_result"] = None
+            operation["simplified_result"] = {"enabled": False, "converted": False}
             if fix_timeline:
                 fixed_dir.mkdir(parents=True, exist_ok=True)
                 fixed_source_path = fixed_dir / f"{operation['upload_info'].get('upload_id')}{operation['source_path'].suffix}"
@@ -2654,6 +2707,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     ) from exc
                 operation["write_source_path"] = fixed_source_path
                 operation["timeline_result"] = timeline_result
+            self._maybe_convert_operation_to_simplified(operation, simplified_dir)
 
         written_results = []
         for operation in operations:
@@ -2673,6 +2727,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     "output_name": operation["destination_name"],
                     "output_path": str(destination_path),
                     "timeline": timeline_result.to_dict() if timeline_result else {"enabled": False},
+                    "simplified": operation.get("simplified_result") or {"enabled": False, "converted": False},
                 }
             )
 
@@ -2695,6 +2750,15 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         message = f"已写入 {len(written_results)} 个字幕文件"
         if fix_timeline:
             message += f"，智能调轴 {fixed_count} 个"
+        simplified_count = len(
+            [
+                item
+                for item in written_results
+                if item.get("simplified", {}).get("enabled") and item.get("simplified", {}).get("converted")
+            ]
+        )
+        if self._traditional_to_simplified:
+            message += f"，繁转简 {simplified_count} 个"
 
         logger.info(
             "[SubtitleManualUpload] 字幕写入完成 session=%s count=%s fix_timeline=%s fixed=%s",
