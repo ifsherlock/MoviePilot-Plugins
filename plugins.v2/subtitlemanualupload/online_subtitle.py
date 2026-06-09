@@ -33,6 +33,7 @@ DEFAULT_PROVIDER_ROOTS = {
 }
 DEFAULT_ASSRT_API_URL = "https://api.assrt.net"
 DEFAULT_OPENSUBTITLES_API_URL = "https://api.opensubtitles.com/api/v1"
+OPENSUBTITLES_SEARCH_LANGUAGES = "zh-cn,zh-tw,ze,en,ja"
 INTERACTIVE_DOWNLOAD_EVENT_TIMEOUT_MS = 12000
 
 
@@ -51,6 +52,7 @@ class OnlineSubtitleResult:
     source: str = ""
     note: str = ""
     downloadable: bool = True
+    language_category: str = ""
     provider_label: str = ""
     requires_captcha: bool = False
     captcha_hint: str = ""
@@ -72,6 +74,7 @@ class OnlineSubtitleResult:
             "source": self.source,
             "note": self.note,
             "downloadable": self.downloadable,
+            "language_category": self.language_category or _language_category_from_text(self.language),
             "requires_captcha": self.requires_captcha,
             "captcha_hint": self.captcha_hint,
             "download_steps": self.download_steps,
@@ -376,6 +379,8 @@ class AssrtProvider(BaseSubtitleProvider):
             if not sid:
                 continue
             title = self._api_subtitle_title(item)
+            language_text = " ".join([title, str(item.get("lang") or ""), str(item.get("desc") or "")])
+            language_label = _guess_language_label(language_text)
             season, episode = _episode_from_text(title) or (0, 0)
             results.append(
                 OnlineSubtitleResult(
@@ -385,7 +390,8 @@ class AssrtProvider(BaseSubtitleProvider):
                     title=title,
                     page_url=f"{self.root_url}/sub/{sid}",
                     download_url=f"assrt-api:{sid}",
-                    language=_guess_language_label(" ".join([title, str(item.get("lang") or ""), str(item.get("desc") or "")])),
+                    language=language_label,
+                    language_category=_language_category_from_text(language_text or language_label),
                     format=_guess_subtitle_format(" ".join([title, str(item.get("subtype") or ""), str(item.get("filename") or "")])),
                     season=season,
                     episode=episode,
@@ -554,24 +560,23 @@ class OpenSubtitlesProvider(BaseSubtitleProvider):
         api_url: str = DEFAULT_OPENSUBTITLES_API_URL,
         username: str = "",
         password: str = "",
-        token: str = "",
     ):
         super().__init__(fetcher, root_url=root_url)
         self.api_key = str(api_key or "").strip()
         self.api_url = normalize_root_url(api_url, DEFAULT_OPENSUBTITLES_API_URL)
         self.username = str(username or "").strip()
         self.password = str(password or "").strip()
-        self.token = str(token or "").strip()
+        self._session_token = ""
 
     def status(self) -> Dict[str, Any]:
         status = super().status()
         status["api_configured"] = bool(self.api_key)
         status["api_host"] = _host(self.api_url)
-        status["download_configured"] = bool(self.token or (self.username and self.password))
+        status["download_configured"] = bool(self.username and self.password)
         if self.api_key and status["download_configured"]:
-            status["message"] = "已配置 API Key 和下载认证，搜索英文字幕"
+            status["message"] = "已配置 API Key 和账号密码，可搜索并下载多语言字幕"
         elif self.api_key:
-            status["message"] = "已配置 API Key，可搜索；下载需 Bearer Token 或账号密码"
+            status["message"] = "已配置 API Key，可搜索；下载需 OpenSubtitles 账号密码"
         else:
             status["message"] = "未配置 API Key；不参与自动搜索"
         return status
@@ -586,7 +591,7 @@ class OpenSubtitlesProvider(BaseSubtitleProvider):
             "/subtitles",
             {
                 "query": keyword,
-                "languages": "en",
+                "languages": OPENSUBTITLES_SEARCH_LANGUAGES,
                 "order_by": "download_count",
                 "order_direction": "desc",
             },
@@ -604,9 +609,17 @@ class OpenSubtitlesProvider(BaseSubtitleProvider):
             if not file_info:
                 continue
             title = self._subtitle_title(attrs, file_info)
-            language = str(attrs.get("language") or attrs.get("languages") or "").lower()
-            if language and language not in {"en", "eng", "english"}:
-                continue
+            language_code = str(attrs.get("language") or attrs.get("languages") or "").strip()
+            language_text = " ".join(
+                [
+                    language_code,
+                    str(attrs.get("language_name") or ""),
+                    title,
+                    str(file_info.get("file_name") or ""),
+                ]
+            )
+            language_category = _language_category_from_text(language_text)
+            language_label = _language_label_from_category(language_category, language_code)
             season, episode = _episode_from_text(title) or (0, 0)
             file_id = str(file_info.get("file_id") or "").strip()
             results.append(
@@ -617,13 +630,14 @@ class OpenSubtitlesProvider(BaseSubtitleProvider):
                     title=title,
                     page_url=str(attrs.get("url") or self.manual_url(keyword)),
                     download_url=f"opensubtitles-api:{file_id}",
-                    language="英文",
+                    language=language_label,
+                    language_category=language_category,
                     format=_guess_subtitle_format(" ".join([title, str(file_info.get("file_name") or "")])),
                     season=season or _safe_int(attrs.get("season_number"), 0),
                     episode=episode or _safe_int(attrs.get("episode_number"), 0),
                     score=_score_result(title, keyword, targets) + 6,
                     source=self.display_name,
-                    note="通过 OpenSubtitles API 搜索英文字幕",
+                    note=f"通过 OpenSubtitles API 搜索{language_label}字幕",
                     downloadable=True,
                 )
             )
@@ -651,10 +665,10 @@ class OpenSubtitlesProvider(BaseSubtitleProvider):
         return filename or name or f"opensubtitles-{result_id}.srt", content
 
     def _auth_token(self) -> str:
-        if self.token:
-            return self.token
+        if self._session_token:
+            return self._session_token
         if not self.username or not self.password:
-            raise ValueError("OpenSubtitles 下载需要 Bearer Token，或在插件设置中填写 OpenSubtitles 用户名和密码")
+            raise ValueError("OpenSubtitles 下载需要在插件设置中填写 OpenSubtitles 用户名和密码")
         payload = self._api_json(
             "/login",
             {"username": self.username, "password": self.password},
@@ -664,7 +678,7 @@ class OpenSubtitlesProvider(BaseSubtitleProvider):
         token = str(payload.get("token") or "").strip()
         if not token:
             raise ValueError("OpenSubtitles 登录未返回 token")
-        self.token = token
+        self._session_token = token
         return token
 
     def _api_json(
@@ -687,7 +701,7 @@ class OpenSubtitlesProvider(BaseSubtitleProvider):
         if token:
             headers["Authorization"] = f"Bearer {token}"
         elif method.upper() == "POST" and not allow_without_token and path != "/login":
-            raise ValueError("OpenSubtitles 下载接口缺少 Bearer Token")
+            raise ValueError("OpenSubtitles 下载接口缺少登录认证 token")
         if method.upper() == "GET":
             query = urlencode({key: value for key, value in params.items() if value not in {None, ""}})
             if query:
@@ -735,7 +749,7 @@ class OpenSubtitlesProvider(BaseSubtitleProvider):
             text = re.sub(r"\s+", " ", html.unescape(str(file_info.get(key) or ""))).strip()
             if text:
                 return text
-        return "OpenSubtitles English"
+        return "OpenSubtitles Subtitle"
 
 
 class OnlineSubtitleSearchService:
@@ -751,7 +765,6 @@ class OnlineSubtitleSearchService:
         opensubtitles_api_url: str = DEFAULT_OPENSUBTITLES_API_URL,
         opensubtitles_username: str = "",
         opensubtitles_password: str = "",
-        opensubtitles_token: str = "",
     ):
         self.fetcher = OnlinePageClient(engine=engine, use_proxy=use_proxy)
         roots = normalize_provider_roots(provider_roots)
@@ -769,7 +782,6 @@ class OnlineSubtitleSearchService:
                 api_url=opensubtitles_api_url,
                 username=opensubtitles_username,
                 password=opensubtitles_password,
-                token=opensubtitles_token,
             ),
         }
         self.manual_providers: Dict[str, BaseSubtitleProvider] = {
@@ -881,7 +893,7 @@ class OnlineSubtitleSearchService:
         finally:
             self.fetcher.close()
         results = _dedupe_results(results)
-        results.sort(key=lambda item: (_provider_priority(item), item.score, item.title), reverse=True)
+        results.sort(key=lambda item: (_language_priority(item), _provider_priority(item), item.score, item.title), reverse=True)
         return {
             "results": [item.to_dict() for item in results[:80]],
             "messages": provider_messages,
@@ -1001,7 +1013,73 @@ def _guess_language_label(value: str) -> str:
         return "简体中文"
     if any(key in text for key in ["eng", "english"]):
         return "英文"
+    if any(key in text for key in ["日文", "日语", "jpn", "japanese"]) or re.search(
+        r"(^|[\s._\-\[\]()])ja(?=$|[\s._\-\[\]()])",
+        text,
+    ):
+        return "日文"
     return ""
+
+
+def _language_category_from_text(value: str) -> str:
+    text = (value or "").lower()
+    if any(
+        key in text
+        for key in [
+            "中文",
+            "简体",
+            "繁体",
+            "简英",
+            "中英",
+            "双语",
+            "chinese",
+            "chs",
+            "cht",
+            "chi",
+            "zho",
+            "cmn",
+            "zh-cn",
+            "zh-tw",
+            "zh-ca",
+            "zh-hans",
+            "zh-hant",
+        ]
+    ) or re.search(r"(^|[\s._\-\[\]()])(?:zh|ze)(?=$|[\s._\-\[\]()])", text):
+        return "chinese"
+    if any(key in text for key in ["英文", "english", "eng"]):
+        return "english"
+    if any(key in text for key in ["日文", "日语", "japanese", "jpn"]):
+        return "japanese"
+    if re.search(r"(^|[\s._\-\[\]()])en(?=$|[\s._\-\[\]()])", text):
+        return "english"
+    if re.search(r"(^|[\s._\-\[\]()])ja(?=$|[\s._\-\[\]()])", text):
+        return "japanese"
+    return "other"
+
+
+def _language_label_from_category(category: str, raw_language: str = "") -> str:
+    raw = (raw_language or "").lower()
+    if category == "chinese":
+        if any(key in raw for key in ["zh-tw", "zh-hant", "cht"]):
+            return "繁体中文"
+        if raw == "ze":
+            return "中英双语"
+        return "简体中文"
+    if category == "english":
+        return "英文"
+    if category == "japanese":
+        return "日文"
+    return raw_language or "其他"
+
+
+def _language_priority(item: OnlineSubtitleResult) -> int:
+    category = item.language_category or _language_category_from_text(f"{item.language} {item.title} {item.note}")
+    return {
+        "chinese": 40,
+        "english": 30,
+        "japanese": 20,
+        "other": 10,
+    }.get(category, 0)
 
 
 def _guess_subtitle_format(value: str) -> str:

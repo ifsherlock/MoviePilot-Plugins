@@ -190,22 +190,23 @@ const hasPreviewItems = computed(() => (preview.value?.items || []).length > 0)
 const hasOnlineResults = computed(() => onlineResults.value.length > 0)
 const filteredOnlineResults = computed(() => {
   if (onlineProviderFilter.value === 'all') return onlineResults.value
-  if (onlineProviderFilter.value === 'english') return onlineResults.value.filter(isEnglishOnlineResult)
-  return onlineResults.value.filter(item => item.provider === onlineProviderFilter.value)
+  return onlineResults.value.filter(item => onlineResultLanguageCategory(item) === onlineProviderFilter.value)
 })
 const onlineProviderFilterItems = computed(() => {
+  const languageItems = [
+    { title: '中文', value: 'chinese' },
+    { title: '英文', value: 'english' },
+    { title: '日文', value: 'japanese' },
+    { title: '其他', value: 'other' },
+  ]
   const counts = onlineResults.value.reduce((acc, item) => {
-    const provider = item.provider || 'unknown'
-    acc[provider] = (acc[provider] || 0) + 1
+    const category = onlineResultLanguageCategory(item)
+    acc[category] = (acc[category] || 0) + 1
     return acc
   }, {})
-  const englishCount = onlineResults.value.filter(isEnglishOnlineResult).length
   return [
     { title: `全部 ${onlineResults.value.length}`, value: 'all' },
-    ...(englishCount ? [{ title: `英文 ${englishCount}`, value: 'english' }] : []),
-    ...onlineProviderItems
-      .filter(item => counts[item.value])
-      .map(item => ({ title: `${item.title} ${counts[item.value]}`, value: item.value })),
+    ...languageItems.map(item => ({ title: `${item.title} ${counts[item.value] || 0}`, value: item.value })),
   ]
 })
 const selectedOnlineResults = computed(() => {
@@ -424,11 +425,34 @@ function isOnlineResultDownloadable(item) {
   return item?.downloadable !== false
 }
 
-function isEnglishOnlineResult(item) {
+function onlineResultLanguageCategory(item) {
+  const category = String(item?.language_category || '').toLowerCase()
+  if (['chinese', 'english', 'japanese', 'other'].includes(category)) return category
   const text = `${item?.language || ''} ${item?.title || ''} ${item?.note || ''}`.toLowerCase()
-  return item?.provider === 'opensubtitles'
-    || /(^|[\s._()\[\]-])(en|eng|english)(?=$|[\s._()\[\]-])/.test(text)
-    || text.includes('英文')
+  if (
+    text.includes('中文')
+    || text.includes('简体')
+    || text.includes('繁体')
+    || text.includes('双语')
+    || text.includes('chinese')
+    || /(^|[\s._()\[\]-])(zh|ze|chi|chs|cht|zho)(?=$|[\s._()\[\]-])/.test(text)
+  ) return 'chinese'
+  if (
+    text.includes('英文')
+    || text.includes('english')
+    || /(^|[\s._()\[\]-])(en|eng)(?=$|[\s._()\[\]-])/.test(text)
+  ) return 'english'
+  if (
+    text.includes('日文')
+    || text.includes('日语')
+    || text.includes('japanese')
+    || /(^|[\s._()\[\]-])(ja|jpn)(?=$|[\s._()\[\]-])/.test(text)
+  ) return 'japanese'
+  return 'other'
+}
+
+function isEnglishOnlineResult(item) {
+  return onlineResultLanguageCategory(item) === 'english'
 }
 
 function providerStatus(providerId) {

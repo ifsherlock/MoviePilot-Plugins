@@ -22,7 +22,6 @@ const localConfig = ref({
   opensubtitles_url: 'https://www.opensubtitles.com',
   opensubtitles_api_key: '',
   opensubtitles_api_url: 'https://api.opensubtitles.com/api/v1',
-  opensubtitles_token: '',
   opensubtitles_username: '',
   opensubtitles_password: '',
   ai_link_enabled: true,
@@ -32,7 +31,7 @@ const localConfig = ref({
 
 const onlineProviderItems = [
   { title: '射手网(伪，需 API Key)', value: 'assrt' },
-  { title: 'OpenSubtitles 英文字幕', value: 'opensubtitles' },
+  { title: 'OpenSubtitles 多语言字幕', value: 'opensubtitles' },
 ]
 
 const rarDependencyModes = [
@@ -55,7 +54,6 @@ function normalizeRootUrl(value, fallback) {
 function normalizeConfig(input) {
   const assrtApiKey = String(input?.assrt_api_key || '').trim()
   const opensubtitlesApiKey = String(input?.opensubtitles_api_key || '').trim()
-  const opensubtitlesToken = String(input?.opensubtitles_token || '').trim()
   const opensubtitlesUsername = String(input?.opensubtitles_username || '').trim()
   const opensubtitlesPassword = String(input?.opensubtitles_password || '').trim()
   const providers = normalizeProviders(input?.online_providers)
@@ -79,7 +77,6 @@ function normalizeConfig(input) {
     opensubtitles_url: normalizeRootUrl(input?.opensubtitles_url, 'https://www.opensubtitles.com'),
     opensubtitles_api_key: opensubtitlesApiKey,
     opensubtitles_api_url: normalizeRootUrl(input?.opensubtitles_api_url, 'https://api.opensubtitles.com/api/v1'),
-    opensubtitles_token: opensubtitlesToken,
     opensubtitles_username: opensubtitlesUsername,
     opensubtitles_password: opensubtitlesPassword,
     ai_link_enabled: input?.ai_link_enabled !== false,
@@ -228,17 +225,7 @@ onMounted(() => {
             <VTextField
               v-model="localConfig.opensubtitles_api_key"
               label="OpenSubtitles API Key"
-              placeholder="用于搜索和下载英文字幕"
-              variant="outlined"
-              density="comfortable"
-              type="password"
-              autocomplete="new-password"
-              hide-details
-            />
-            <VTextField
-              v-model="localConfig.opensubtitles_token"
-              label="OpenSubtitles Bearer Token（可选）"
-              placeholder="下载接口需要；填写后优先使用"
+              placeholder="用于搜索多语言字幕"
               variant="outlined"
               density="comfortable"
               type="password"
@@ -248,7 +235,7 @@ onMounted(() => {
             <VTextField
               v-model="localConfig.opensubtitles_username"
               label="OpenSubtitles 用户名（可选）"
-              placeholder="未填写 Token 时用于登录换取 token"
+              placeholder="下载时用于后台登录换取 token"
               variant="outlined"
               density="comfortable"
               autocomplete="username"
@@ -257,7 +244,7 @@ onMounted(() => {
             <VTextField
               v-model="localConfig.opensubtitles_password"
               label="OpenSubtitles 密码（可选）"
-              placeholder="未填写 Token 时用于登录换取 token"
+              placeholder="下载时用于后台登录换取 token"
               variant="outlined"
               density="comfortable"
               type="password"
@@ -271,7 +258,7 @@ onMounted(() => {
             type="info"
             variant="tonal"
             density="compact"
-            text="OpenSubtitles 搜索需要 API Key；下载需要 Bearer Token，或填写用户名和密码由插件登录换取 token。英文字幕结果可下载后提交给 AI 字幕生成翻译。"
+            text="OpenSubtitles 搜索需要 API Key；下载由插件使用用户名和密码后台登录换取 token。英文字幕结果可下载后提交给 AI 字幕生成翻译。"
           />
 
           <VDivider class="my-5" />

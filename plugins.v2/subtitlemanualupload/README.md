@@ -12,7 +12,7 @@ MoviePilot V2 插件，提供手动上传字幕并匹配改名的页面。
 - 支持在线字幕搜索：剧集可搜索本季/选中集字幕包，单集可点放大镜搜索；自动来源为射手网(伪) API 和 OpenSubtitles API。
 - 在线字幕下载后会进入同一个匹配预览流程，确认语言后缀、集数和文件名后再写入，不会直接落盘。
 - 自动搜索失败时，弹窗右侧仍提供 SubHD、Zimuku、射手网(伪)、OpenSubtitles 的手动搜索链接，可下载后回到本页手动上传。
-- OpenSubtitles 默认搜索英文字幕；英文字幕结果可下载后提交给 `AI字幕生成(联动版)` 执行翻译。
+- OpenSubtitles 默认搜索中文、英文、日文等多语言字幕；英文字幕结果可下载后提交给 `AI字幕生成(联动版)` 执行翻译。
 - 可联动 `AI字幕生成(联动版)`：在整季工具栏或单集行点击 AI 图标提交生成任务，并在字幕匹配页面查看排队、生成、完成、忽略或失败状态。
 - 在线搜索默认不使用 MoviePilot 系统代理，由容器自身网络出口决定；如需代理可在插件设置中手动开启。
 - 插件设置可维护手动跳转站点根地址，以及射手网(伪) / OpenSubtitles API 地址和 API Key，域名、反代地址或 API 入口变化时无需更新插件版本。
@@ -39,7 +39,7 @@ MoviePilot V2 插件，提供手动上传字幕并匹配改名的页面。
 - SubHD 默认地址为 `https://subhd.tv`，当前只保留手动搜索跳转。
 - Zimuku 默认地址为 `https://zimuku.org`，当前只保留手动搜索跳转。
 - 射手网(伪) 配置 API Key 后访问 `https://api.assrt.net` 官方接口；未配置时不参与自动搜索。
-- OpenSubtitles 配置 API Key 后访问 `https://api.opensubtitles.com/api/v1` 搜索英文字幕；下载接口还需要 Bearer Token，或填写 OpenSubtitles 用户名和密码由插件登录换取 token。
+- OpenSubtitles 配置 API Key 后访问 `https://api.opensubtitles.com/api/v1` 搜索中文、英文、日文字幕；下载时由插件使用 OpenSubtitles 用户名和密码后台登录换取 token。
 - 自定义站点地址只填写根地址，例如 `https://subhd.tv` 或反代入口；插件会按各站当前路径拼接搜索页。
 - `rarfile` 是最轻量的 Python RAR 封装层，但不是纯 Python 解压器；RAR5/压缩内容仍依赖外部解压程序。
 - 临时测试可在插件设置中选择“加载插件时尝试容器内安装”，或进入 MoviePilot 容器安装 `p7zip-full` / `unrar-free` / `unrar`；容器重建后可能失效。

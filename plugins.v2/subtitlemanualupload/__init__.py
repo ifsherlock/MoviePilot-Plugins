@@ -70,7 +70,6 @@ class SubtitleManualUpload(_PluginBase):
     _opensubtitles_api_url = "https://api.opensubtitles.com/api/v1"
     _opensubtitles_username = ""
     _opensubtitles_password = ""
-    _opensubtitles_token = ""
     _ai_link_enabled = True
     _cache_ttl_seconds = 90
     _cache_max_entries = 5000
@@ -151,7 +150,6 @@ class SubtitleManualUpload(_PluginBase):
         )
         self._opensubtitles_username = self._normalize_text(config.get("opensubtitles_username"))
         self._opensubtitles_password = self._normalize_text(config.get("opensubtitles_password"))
-        self._opensubtitles_token = self._normalize_text(config.get("opensubtitles_token"))
         self._ai_link_enabled = bool(config.get("ai_link_enabled", True))
         if not config.get("assrt_provider_migrated") and not self._assrt_api_key:
             self._online_provider_ids = [item for item in self._online_provider_ids if item != "assrt"]
@@ -339,7 +337,7 @@ class SubtitleManualUpload(_PluginBase):
                                             "chips": True,
                                             "items": [
                                                 {"title": "射手网(伪，需 API Key)", "value": "assrt"},
-                                                {"title": "OpenSubtitles 英文字幕", "value": "opensubtitles"},
+                                                {"title": "OpenSubtitles 多语言字幕", "value": "opensubtitles"},
                                             ],
                                         },
                                     }
@@ -484,24 +482,9 @@ class SubtitleManualUpload(_PluginBase):
                                     {
                                         "component": "VTextField",
                                         "props": {
-                                            "model": "opensubtitles_token",
-                                            "label": "OpenSubtitles Bearer Token（可选）",
-                                            "type": "password",
-                                            "placeholder": "下载接口需要；填写后优先使用",
-                                        },
-                                    }
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
-                                "content": [
-                                    {
-                                        "component": "VTextField",
-                                        "props": {
                                             "model": "opensubtitles_username",
                                             "label": "OpenSubtitles 用户名（可选）",
-                                            "placeholder": "未填写 Token 时用于登录换取 token",
+                                            "placeholder": "下载时用于后台登录换取 token",
                                         },
                                     }
                                 ],
@@ -516,7 +499,7 @@ class SubtitleManualUpload(_PluginBase):
                                             "model": "opensubtitles_password",
                                             "label": "OpenSubtitles 密码（可选）",
                                             "type": "password",
-                                            "placeholder": "未填写 Token 时用于登录换取 token",
+                                            "placeholder": "下载时用于后台登录换取 token",
                                         },
                                     }
                                 ],
@@ -599,7 +582,6 @@ class SubtitleManualUpload(_PluginBase):
             "opensubtitles_api_url": "https://api.opensubtitles.com/api/v1",
             "opensubtitles_username": "",
             "opensubtitles_password": "",
-            "opensubtitles_token": "",
             "ai_link_enabled": True,
         }
 
@@ -645,7 +627,6 @@ class SubtitleManualUpload(_PluginBase):
                 "opensubtitles_api_url": self._opensubtitles_api_url,
                 "opensubtitles_username": self._opensubtitles_username,
                 "opensubtitles_password": self._opensubtitles_password,
-                "opensubtitles_token": self._opensubtitles_token,
                 "ai_link_enabled": self._ai_link_enabled,
             }
         )
@@ -2022,7 +2003,6 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             opensubtitles_api_url=self._opensubtitles_api_url,
             opensubtitles_username=self._opensubtitles_username,
             opensubtitles_password=self._opensubtitles_password,
-            opensubtitles_token=self._opensubtitles_token,
         )
 
     @classmethod
@@ -2176,8 +2156,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     "opensubtitles_api_configured": bool(self._opensubtitles_api_key),
                     "opensubtitles_api_host": self._host_from_url(self._opensubtitles_api_url),
                     "opensubtitles_download_configured": bool(
-                        self._opensubtitles_token
-                        or (self._opensubtitles_username and self._opensubtitles_password)
+                        self._opensubtitles_username and self._opensubtitles_password
                     ),
                 },
                 "ai_subtitle": self._autosub_status(),
@@ -2311,8 +2290,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         status["opensubtitles_api_configured"] = bool(self._opensubtitles_api_key)
         status["opensubtitles_api_host"] = self._host_from_url(self._opensubtitles_api_url)
         status["opensubtitles_download_configured"] = bool(
-            self._opensubtitles_token
-            or (self._opensubtitles_username and self._opensubtitles_password)
+            self._opensubtitles_username and self._opensubtitles_password
         )
         status["rate_limit_per_minute"] = self._online_rate_limit_per_minute
         return self._ok(status)

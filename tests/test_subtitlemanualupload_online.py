@@ -124,14 +124,14 @@ def test_assrt_provider_uses_official_api_when_key_exists():
     assert results[0].note == "通过 ASSRT 官方 API 搜索"
 
 
-def test_opensubtitles_search_returns_english_api_results():
+def test_opensubtitles_search_returns_multilingual_api_results():
     module = load_online_module()
     provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key")
 
     def fake_api_json(path, params, *, method="GET"):
         assert method == "GET"
         assert path == "/subtitles"
-        assert params["languages"] == "en"
+        assert params["languages"] == "zh-cn,zh-tw,ze,en,ja"
         return {
             "data": [
                 {
@@ -156,17 +156,22 @@ def test_opensubtitles_search_returns_english_api_results():
 
     results = provider.search("Example Show S01E02", [{"season": 1, "episode": 2}], "episode")
 
-    assert len(results) == 1
+    assert len(results) == 2
     assert results[0].provider == "opensubtitles"
     assert results[0].download_url == "opensubtitles-api:987"
     assert results[0].language == "英文"
-    assert results[0].note == "通过 OpenSubtitles API 搜索英文字幕"
+    assert results[0].language_category == "english"
+    assert results[1].download_url == "opensubtitles-api:988"
+    assert results[1].language == "简体中文"
+    assert results[1].language_category == "chinese"
+    assert results[1].note == "通过 OpenSubtitles API 搜索简体中文字幕"
 
 
 def test_opensubtitles_download_uses_download_api_link():
     module = load_online_module()
     module.OnlineDirectDownloader = FakeDirectDownloader
-    provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key", token="jwt-token")
+    provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key", username="demo", password="secret")
+    provider._session_token = "jwt-token"
 
     def fake_api_json(path, params, *, method="GET", token="", allow_without_token=False):
         assert path == "/download"
