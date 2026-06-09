@@ -99,7 +99,7 @@ const onlineScope = ref('auto')
 const onlineKeyword = ref('')
 const onlineTargets = ref([])
 const onlineStatus = ref({ providers: [], capabilities: {} })
-const onlineSelectedProviders = ref(['subhd', 'zimuku'])
+const onlineSelectedProviders = ref(['assrt', 'opensubtitles'])
 const onlineResults = ref([])
 const onlineProviderFilter = ref('all')
 const onlineMessages = ref([])
@@ -122,9 +122,8 @@ const ONLINE_PROVIDER_TIMEOUT_MS = 25000
 const ONLINE_DOWNLOAD_TIMEOUT_MS = 35000
 
 const onlineProviderItems = [
-  { title: 'SubHD', value: 'subhd' },
-  { title: 'Zimuku', value: 'zimuku' },
-  { title: '射手网(伪，需 API Key)', value: 'assrt' },
+  { title: '射手网(伪)', value: 'assrt' },
+  { title: 'OpenSubtitles', value: 'opensubtitles' },
 ]
 
 const rarContainerInstallCommand = `docker exec -it moviepilot bash
@@ -191,6 +190,7 @@ const hasPreviewItems = computed(() => (preview.value?.items || []).length > 0)
 const hasOnlineResults = computed(() => onlineResults.value.length > 0)
 const filteredOnlineResults = computed(() => {
   if (onlineProviderFilter.value === 'all') return onlineResults.value
+  if (onlineProviderFilter.value === 'english') return onlineResults.value.filter(isEnglishOnlineResult)
   return onlineResults.value.filter(item => item.provider === onlineProviderFilter.value)
 })
 const onlineProviderFilterItems = computed(() => {
@@ -199,8 +199,10 @@ const onlineProviderFilterItems = computed(() => {
     acc[provider] = (acc[provider] || 0) + 1
     return acc
   }, {})
+  const englishCount = onlineResults.value.filter(isEnglishOnlineResult).length
   return [
     { title: `全部 ${onlineResults.value.length}`, value: 'all' },
+    ...(englishCount ? [{ title: `英文 ${englishCount}`, value: 'english' }] : []),
     ...onlineProviderItems
       .filter(item => counts[item.value])
       .map(item => ({ title: `${item.title} ${counts[item.value]}`, value: item.value })),
@@ -209,6 +211,9 @@ const onlineProviderFilterItems = computed(() => {
 const selectedOnlineResults = computed(() => {
   const picked = new Set(selectedOnlineResultIds.value)
   return onlineResults.value.filter(item => picked.has(onlineResultKey(item)) && isOnlineResultDownloadable(item))
+})
+const canSubmitOnlineAiTranslate = computed(() => {
+  return aiAvailable.value && selectedOnlineResults.value.length > 0 && selectedOnlineResults.value.every(isEnglishOnlineResult)
 })
 const onlineMessageSummary = computed(() => {
   const messages = onlineMessages.value || []
@@ -230,10 +235,12 @@ const onlineProviderProgressItems = computed(() => onlineSelectedProviders.value
   provider,
   state: onlineProviderProgress.value[provider] || 'idle',
 })))
-const onlineEngineText = computed(() => {
-  const name = onlineStatus.value?.engine_name || 'CloakBrowser'
-  const available = onlineStatus.value?.engine_available !== false
-  return `${name}${available ? ' 可用' : ' 不可用'}`
+const onlineApiStatusText = computed(() => {
+  const parts = []
+  parts.push(`射手网(伪) ${onlineStatus.value?.assrt_api_configured ? '已配置' : '未配置'}`)
+  parts.push(`OpenSubtitles 搜索 ${onlineStatus.value?.opensubtitles_api_configured ? '已配置' : '未配置'}`)
+  parts.push(`OpenSubtitles 下载认证 ${onlineStatus.value?.opensubtitles_download_configured ? '已配置' : '未配置'}`)
+  return `${parts.join(' · ')}。SubHD/Zimuku 仅保留右侧手动跳转。`
 })
 const onlineBatchLabel = computed(() => {
   if (selectedMedia.value?.media_type !== 'tv') return '搜索在线字幕'
@@ -417,8 +424,19 @@ function isOnlineResultDownloadable(item) {
   return item?.downloadable !== false
 }
 
+function isEnglishOnlineResult(item) {
+  const text = `${item?.language || ''} ${item?.title || ''} ${item?.note || ''}`.toLowerCase()
+  return item?.provider === 'opensubtitles'
+    || /(^|[\s._()\[\]-])(en|eng|english)(?=$|[\s._()\[\]-])/.test(text)
+    || text.includes('英文')
+}
+
 function providerStatus(providerId) {
-  const item = (onlineStatus.value.providers || []).find(provider => provider.id === providerId)
+  const providers = [
+    ...(onlineStatus.value.providers || []),
+    ...(onlineStatus.value.manual_providers || []),
+  ]
+  const item = providers.find(provider => provider.id === providerId)
   const host = item?.host ? `${item.host} · ` : ''
   return `${host}${item?.message || ''}`
 }
@@ -441,11 +459,12 @@ function providerProgressColor(state) {
   return 'default'
 }
 
-function ensureAssrtProviderSelected() {
-  if (!onlineStatus.value?.assrt_api_configured) return
-  if (!onlineSelectedProviders.value.includes('assrt')) {
-    onlineSelectedProviders.value = [...onlineSelectedProviders.value, 'assrt']
-  }
+function ensureConfiguredApiProvidersSelected() {
+  const configured = []
+  if (onlineStatus.value?.assrt_api_configured) configured.push('assrt')
+  if (onlineStatus.value?.opensubtitles_api_configured) configured.push('opensubtitles')
+  if (!configured.length) return
+  onlineSelectedProviders.value = configured
 }
 
 function stopAiPolling() {
@@ -628,7 +647,7 @@ async function loadOnlineStatus() {
     if (enabled.length) {
       onlineSelectedProviders.value = enabled
     }
-    ensureAssrtProviderSelected()
+    ensureConfiguredApiProvidersSelected()
   } catch (err) {
     onlineError.value = errorMessage(err, '加载在线字幕源状态失败')
   }
@@ -981,8 +1000,14 @@ function toggleOnlineResult(item, checked) {
   selectedOnlineResultIds.value = Array.from(set)
 }
 
-async function downloadOnlinePreview() {
+async function downloadOnlinePreview(submitAiTranslate = false) {
   if (!selectedOnlineResults.value.length || onlineDownloading.value) return
+  if (submitAiTranslate && !canSubmitOnlineAiTranslate.value) {
+    onlineError.value = aiAvailable.value
+      ? '请只选择英文字幕结果后再提交 AI 翻译。'
+      : 'AI 字幕生成联动当前不可用，无法提交翻译任务。'
+    return
+  }
   const downloadSeq = ++onlineDownloadSeq
   onlineDownloading.value = true
   onlineError.value = ''
@@ -991,6 +1016,7 @@ async function downloadOnlinePreview() {
       props.api.post(`${pluginBase.value}/online_download_preview`, {
         ...onlinePayload(),
         results: selectedOnlineResults.value,
+        submit_ai_translate: submitAiTranslate,
       }),
       ONLINE_DOWNLOAD_TIMEOUT_MS,
       '在线字幕下载仍在源站验证中，已停止等待；可换一个结果重试，或打开手动链接下载后上传。',
@@ -1006,7 +1032,7 @@ async function downloadOnlinePreview() {
     }
     onlineDialog.value = false
     uploadDialog.value = true
-    message.value = response?.message || '已下载在线字幕并生成匹配预览'
+    message.value = response?.message || (submitAiTranslate ? '已下载英文字幕并提交 AI 翻译' : '已下载在线字幕并生成匹配预览')
   } catch (err) {
     if (downloadSeq !== onlineDownloadSeq) return
     onlineError.value = errorMessage(err, '在线字幕下载预览失败')
@@ -1616,6 +1642,15 @@ defineExpose({
               下载并生成预览
             </VBtn>
             <VBtn
+              color="primary"
+              variant="tonal"
+              :disabled="!canSubmitOnlineAiTranslate"
+              :loading="onlineDownloading"
+              @click="downloadOnlinePreview(true)"
+            >
+              下载并提交 AI 翻译
+            </VBtn>
+            <VBtn
               v-if="onlineDownloading"
               color="warning"
               variant="tonal"
@@ -1676,10 +1711,10 @@ defineExpose({
           />
           <VAlert
             class="mb-4"
-            :type="onlineStatus.engine_available === false ? 'warning' : 'info'"
+            type="info"
             variant="tonal"
             density="compact"
-            :text="`当前引擎：${onlineEngineText}。站点地址可在插件设置中维护。`"
+            :text="onlineApiStatusText"
           />
           <VAlert
             v-if="onlineMessages.length && !onlineMessagesCollapsed"
@@ -1739,7 +1774,7 @@ defineExpose({
               </div>
 
               <div v-if="onlineSearching && !filteredOnlineResults.length" class="online-loading">
-                正在从字幕站搜索，先返回的结果会先显示...
+                正在从 API 搜索字幕，先返回的结果会先显示...
               </div>
               <div v-if="filteredOnlineResults.length" class="online-result-list">
                 <div

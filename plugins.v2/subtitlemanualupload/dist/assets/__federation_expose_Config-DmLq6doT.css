@@ -1,43 +1,43 @@
 
-.config-shell[data-v-30a9bff6] {
+.config-shell[data-v-bd382887] {
   padding: 20px;
 }
-.config-card[data-v-30a9bff6] {
+.config-card[data-v-bd382887] {
   border: 1px solid rgba(127, 151, 185, 0.18);
   background: rgba(255, 255, 255, 0.82);
   backdrop-filter: blur(12px);
   box-shadow: 0 18px 50px rgba(30, 63, 108, 0.08);
 }
-.config-grid[data-v-30a9bff6] {
+.config-grid[data-v-bd382887] {
   display: grid;
   gap: 16px;
 }
-.config-grid.two-column[data-v-30a9bff6] {
+.config-grid.two-column[data-v-bd382887] {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
-.config-section[data-v-30a9bff6] {
+.config-section[data-v-bd382887] {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 14px;
 }
-.config-section-title[data-v-30a9bff6] {
+.config-section-title[data-v-bd382887] {
   color: #24362f;
   font-size: 15px;
   font-weight: 800;
   letter-spacing: 0.04em;
 }
-.config-section p[data-v-30a9bff6] {
+.config-section p[data-v-bd382887] {
   margin: 4px 0 0;
   color: #687873;
   font-size: 12px;
 }
-.config-switch-line[data-v-30a9bff6] {
+.config-switch-line[data-v-bd382887] {
   min-height: 48px;
 }
 @media (max-width: 760px) {
-.config-grid.two-column[data-v-30a9bff6] {
+.config-grid.two-column[data-v-bd382887] {
     grid-template-columns: 1fr;
 }
 }

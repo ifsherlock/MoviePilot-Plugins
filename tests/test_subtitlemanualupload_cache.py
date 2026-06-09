@@ -131,35 +131,3 @@ def test_entry_map_is_bounded_lru():
     plugin._remember_targets([{"id": "d"}])
 
     assert list(plugin._entry_map.keys()) == ["b", "d"]
-
-
-def test_cookiecloud_site_cookies_match_url_and_domain():
-    module, _, site_oper = load_plugin_module()
-    plugin = module.SubtitleManualUpload.__new__(module.SubtitleManualUpload)
-    plugin._online_use_cookiecloud = True
-    plugin._online_site_cookies = {"subhd": "", "zimuku": ""}
-    plugin._online_site_urls = {"subhd": "https://subhd.tv", "zimuku": "https://zimuku.org"}
-    site_oper.data = [
-        types.SimpleNamespace(url="https://subhd.tv/login", domain="", cookie="a=1; b=2"),
-        types.SimpleNamespace(url="", domain="www.zimuku.org", cookie="z=1"),
-    ]
-
-    headers = plugin._online_site_cookie_headers(["subhd", "zimuku"])
-
-    assert headers == {"subhd.tv": "a=1; b=2", "zimuku.org": "z=1"}
-
-
-def test_manual_cookie_takes_priority_over_cookiecloud():
-    module, _, site_oper = load_plugin_module()
-    plugin = module.SubtitleManualUpload.__new__(module.SubtitleManualUpload)
-    plugin._online_use_cookiecloud = True
-    plugin._online_site_cookies = {"subhd": "manual=1", "zimuku": ""}
-    plugin._online_site_urls = {"subhd": "https://subhd.tv", "zimuku": "https://zimuku.org"}
-    site_oper.data = [
-        types.SimpleNamespace(url="https://subhd.tv", domain="", cookie="cloud=1"),
-        types.SimpleNamespace(url="https://zimuku.org", domain="", cookie="z=1"),
-    ]
-
-    headers = plugin._online_site_cookie_headers(["subhd", "zimuku"])
-
-    assert headers == {"subhd.tv": "manual=1", "zimuku.org": "z=1"}

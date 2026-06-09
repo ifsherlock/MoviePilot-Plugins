@@ -12,31 +12,27 @@ const emit = defineEmits(['save', 'close'])
 const localConfig = ref({
   enabled: false,
   show_sidebar_nav: true,
-  online_providers: ['subhd', 'zimuku'],
-  online_engine: 'cloakbrowser',
+  online_providers: ['assrt', 'opensubtitles'],
   online_use_proxy: false,
-  online_use_cookiecloud: false,
   subhd_url: 'https://subhd.tv',
   zimuku_url: 'https://zimuku.org',
-  subhd_cookie: '',
-  zimuku_cookie: '',
   assrt_url: 'https://2.assrt.net',
   assrt_api_key: '',
   assrt_api_url: 'https://api.assrt.net',
+  opensubtitles_url: 'https://www.opensubtitles.com',
+  opensubtitles_api_key: '',
+  opensubtitles_api_url: 'https://api.opensubtitles.com/api/v1',
+  opensubtitles_token: '',
+  opensubtitles_username: '',
+  opensubtitles_password: '',
   ai_link_enabled: true,
   rar_dependency_mode: 'none',
   rar_tool_path: '/usr/local/bin/7z',
 })
 
 const onlineProviderItems = [
-  { title: 'SubHD', value: 'subhd' },
-  { title: 'Zimuku', value: 'zimuku' },
   { title: '射手网(伪，需 API Key)', value: 'assrt' },
-]
-
-const onlineEngineItems = [
-  { title: 'CloakBrowser（默认）', value: 'cloakbrowser' },
-  { title: 'MoviePilot 浏览器仿真 / FlareSolverr', value: 'mp_browser' },
+  { title: 'OpenSubtitles 英文字幕', value: 'opensubtitles' },
 ]
 
 const rarDependencyModes = [
@@ -46,9 +42,9 @@ const rarDependencyModes = [
 ]
 
 function normalizeProviders(value) {
-  const allowed = ['subhd', 'zimuku', 'assrt']
+  const allowed = ['assrt', 'opensubtitles']
   const providers = Array.isArray(value) ? value.filter(item => allowed.includes(item)) : []
-  return providers.length ? Array.from(new Set(providers)) : ['subhd', 'zimuku']
+  return providers.length ? Array.from(new Set(providers)) : ['assrt', 'opensubtitles']
 }
 
 function normalizeRootUrl(value, fallback) {
@@ -58,27 +54,34 @@ function normalizeRootUrl(value, fallback) {
 
 function normalizeConfig(input) {
   const assrtApiKey = String(input?.assrt_api_key || '').trim()
+  const opensubtitlesApiKey = String(input?.opensubtitles_api_key || '').trim()
+  const opensubtitlesToken = String(input?.opensubtitles_token || '').trim()
+  const opensubtitlesUsername = String(input?.opensubtitles_username || '').trim()
+  const opensubtitlesPassword = String(input?.opensubtitles_password || '').trim()
   const providers = normalizeProviders(input?.online_providers)
   if (assrtApiKey && !providers.includes('assrt')) {
     providers.push('assrt')
+  }
+  if (opensubtitlesApiKey && !providers.includes('opensubtitles')) {
+    providers.push('opensubtitles')
   }
   return {
     enabled: Boolean(input?.enabled),
     show_sidebar_nav: input?.show_sidebar_nav !== false,
     online_providers: providers,
-    online_engine: ['cloakbrowser', 'mp_browser'].includes(input?.online_engine)
-      ? input.online_engine
-      : 'cloakbrowser',
     online_use_proxy: Boolean(input?.online_use_proxy),
-    online_use_cookiecloud: Boolean(input?.online_use_cookiecloud),
     online_proxy_migrated: true,
     subhd_url: normalizeRootUrl(input?.subhd_url, 'https://subhd.tv'),
     zimuku_url: normalizeRootUrl(input?.zimuku_url, 'https://zimuku.org'),
-    subhd_cookie: String(input?.subhd_cookie || '').trim(),
-    zimuku_cookie: String(input?.zimuku_cookie || '').trim(),
     assrt_url: normalizeRootUrl(input?.assrt_url, 'https://2.assrt.net'),
     assrt_api_key: assrtApiKey,
     assrt_api_url: normalizeRootUrl(input?.assrt_api_url, 'https://api.assrt.net'),
+    opensubtitles_url: normalizeRootUrl(input?.opensubtitles_url, 'https://www.opensubtitles.com'),
+    opensubtitles_api_key: opensubtitlesApiKey,
+    opensubtitles_api_url: normalizeRootUrl(input?.opensubtitles_api_url, 'https://api.opensubtitles.com/api/v1'),
+    opensubtitles_token: opensubtitlesToken,
+    opensubtitles_username: opensubtitlesUsername,
+    opensubtitles_password: opensubtitlesPassword,
     ai_link_enabled: input?.ai_link_enabled !== false,
     rar_dependency_mode: ['none', 'container_install', 'mapped_binary'].includes(input?.rar_dependency_mode)
       ? input.rar_dependency_mode
@@ -138,7 +141,7 @@ onMounted(() => {
           <div class="config-section">
             <div>
               <div class="config-section-title">在线字幕搜索</div>
-              <p>维护字幕站根地址；代理默认关闭，由容器当前网络环境决定。</p>
+              <p>自动搜索仅使用 API；SubHD/Zimuku 保留为右侧手动搜索跳转。</p>
             </div>
           </div>
 
@@ -154,30 +157,19 @@ onMounted(() => {
               hide-details
             />
             <VSelect
-              v-model="localConfig.online_engine"
-              :items="onlineEngineItems"
-              label="在线搜索引擎"
+              v-model="localConfig.online_use_proxy"
+              :items="[
+                { title: '不使用系统代理', value: false },
+                { title: '使用 MoviePilot 系统代理', value: true },
+              ]"
+              label="API 请求代理"
               variant="outlined"
               density="comfortable"
               hide-details
             />
-            <VSwitch
-              v-model="localConfig.online_use_proxy"
-              class="config-switch-line"
-              label="在线搜索使用 MoviePilot 系统代理（默认关闭）"
-              color="primary"
-              hide-details
-            />
-            <VSwitch
-              v-model="localConfig.online_use_cookiecloud"
-              class="config-switch-line"
-              label="从 CookieCloud/站点库读取 SubHD 与 Zimuku Cookie"
-              color="success"
-              hide-details
-            />
             <VTextField
               v-model="localConfig.subhd_url"
-              label="SubHD 站点地址"
+              label="SubHD 手动搜索地址"
               placeholder="https://subhd.tv"
               variant="outlined"
               density="comfortable"
@@ -185,35 +177,15 @@ onMounted(() => {
             />
             <VTextField
               v-model="localConfig.zimuku_url"
-              label="Zimuku 站点地址"
+              label="Zimuku 手动搜索地址"
               placeholder="https://zimuku.org"
               variant="outlined"
               density="comfortable"
               hide-details
             />
             <VTextField
-              v-model="localConfig.subhd_cookie"
-              label="SubHD Cookie（可选）"
-              placeholder="登录后复制 Cookie；优先于 CookieCloud"
-              variant="outlined"
-              density="comfortable"
-              type="password"
-              autocomplete="new-password"
-              hide-details
-            />
-            <VTextField
-              v-model="localConfig.zimuku_cookie"
-              label="Zimuku Cookie（可选）"
-              placeholder="登录后复制 Cookie；优先于 CookieCloud"
-              variant="outlined"
-              density="comfortable"
-              type="password"
-              autocomplete="new-password"
-              hide-details
-            />
-            <VTextField
               v-model="localConfig.assrt_url"
-              label="射手网(伪) 站点地址"
+              label="射手网(伪) 手动搜索地址"
               placeholder="https://2.assrt.net"
               variant="outlined"
               density="comfortable"
@@ -237,6 +209,61 @@ onMounted(() => {
               autocomplete="new-password"
               hide-details
             />
+            <VTextField
+              v-model="localConfig.opensubtitles_url"
+              label="OpenSubtitles 手动搜索地址"
+              placeholder="https://www.opensubtitles.com"
+              variant="outlined"
+              density="comfortable"
+              hide-details
+            />
+            <VTextField
+              v-model="localConfig.opensubtitles_api_url"
+              label="OpenSubtitles API 地址"
+              placeholder="https://api.opensubtitles.com/api/v1"
+              variant="outlined"
+              density="comfortable"
+              hide-details
+            />
+            <VTextField
+              v-model="localConfig.opensubtitles_api_key"
+              label="OpenSubtitles API Key"
+              placeholder="用于搜索和下载英文字幕"
+              variant="outlined"
+              density="comfortable"
+              type="password"
+              autocomplete="new-password"
+              hide-details
+            />
+            <VTextField
+              v-model="localConfig.opensubtitles_token"
+              label="OpenSubtitles Bearer Token（可选）"
+              placeholder="下载接口需要；填写后优先使用"
+              variant="outlined"
+              density="comfortable"
+              type="password"
+              autocomplete="new-password"
+              hide-details
+            />
+            <VTextField
+              v-model="localConfig.opensubtitles_username"
+              label="OpenSubtitles 用户名（可选）"
+              placeholder="未填写 Token 时用于登录换取 token"
+              variant="outlined"
+              density="comfortable"
+              autocomplete="username"
+              hide-details
+            />
+            <VTextField
+              v-model="localConfig.opensubtitles_password"
+              label="OpenSubtitles 密码（可选）"
+              placeholder="未填写 Token 时用于登录换取 token"
+              variant="outlined"
+              density="comfortable"
+              type="password"
+              autocomplete="new-password"
+              hide-details
+            />
           </div>
 
           <VAlert
@@ -244,14 +271,7 @@ onMounted(() => {
             type="info"
             variant="tonal"
             density="compact"
-            text="站点地址只填写根地址；射手网(伪) 默认不启用，填写 API Key 后可勾选并优先使用官方 API。"
-          />
-          <VAlert
-            class="mt-3"
-            type="warning"
-            variant="tonal"
-            density="compact"
-            text="SubHD/Zimuku 登录 Cookie 仅用于降低验证码触发概率。插件内部按平台限制为每分钟 5 次自动搜索/下载请求。"
+            text="OpenSubtitles 搜索需要 API Key；下载需要 Bearer Token，或填写用户名和密码由插件登录换取 token。英文字幕结果可下载后提交给 AI 字幕生成翻译。"
           />
 
           <VDivider class="my-5" />
