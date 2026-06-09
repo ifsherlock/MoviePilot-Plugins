@@ -95,6 +95,7 @@ const copyMessage = ref('')
 const copyError = ref('')
 const lastWritten = ref([])
 const onlineDialog = ref(false)
+const onlineAiConfirmDialog = ref(false)
 const onlineTitle = ref('')
 const onlineScope = ref('auto')
 const onlineKeyword = ref('')
@@ -242,7 +243,12 @@ const onlineApiStatusText = computed(() => {
   parts.push(`射手网(伪) ${onlineStatus.value?.assrt_api_configured ? '已配置' : '未配置'}`)
   parts.push(`OpenSubtitles 搜索 ${onlineStatus.value?.opensubtitles_api_configured ? '已配置' : '未配置'}`)
   parts.push(`OpenSubtitles 下载认证 ${onlineStatus.value?.opensubtitles_download_configured ? '已配置' : '未配置'}`)
-  return `${parts.join(' · ')}。SubHD/Zimuku 仅保留右侧手动跳转。`
+  return `${parts.join(' · ')}。右侧有 SubHD/Zimuku 手动跳转入口。`
+})
+const onlineAiConfirmText = computed(() => {
+  const count = selectedOnlineResults.value.length
+  const targetCount = onlineTargets.value.length
+  return `将下载 ${count} 个英文字幕结果，并提交给 AI字幕生成(联动版) 翻译；当前范围包含 ${targetCount} 个目标。`
 })
 const onlineBatchLabel = computed(() => {
   if (selectedMedia.value?.media_type !== 'tv') return '搜索在线字幕'
@@ -1069,6 +1075,23 @@ function toggleOnlineResult(item, checked) {
   selectedOnlineResultIds.value = Array.from(set)
 }
 
+function requestOnlineAiTranslate() {
+  if (!selectedOnlineResults.value.length || onlineDownloading.value) return
+  if (!canSubmitOnlineAiTranslate.value) {
+    onlineError.value = aiAvailable.value
+      ? '请只选择英文字幕结果后再提交 AI 翻译。'
+      : 'AI 字幕生成联动当前不可用，无法提交翻译任务。'
+    return
+  }
+  onlineError.value = ''
+  onlineAiConfirmDialog.value = true
+}
+
+function confirmOnlineAiTranslate() {
+  onlineAiConfirmDialog.value = false
+  downloadOnlinePreview(true)
+}
+
 async function downloadOnlinePreview(submitAiTranslate = false) {
   if (!selectedOnlineResults.value.length || onlineDownloading.value) return
   if (submitAiTranslate && !canSubmitOnlineAiTranslate.value) {
@@ -1736,7 +1759,7 @@ defineExpose({
               variant="tonal"
               :disabled="!canSubmitOnlineAiTranslate"
               :loading="onlineDownloading"
-              @click="downloadOnlinePreview(true)"
+              @click="requestOnlineAiTranslate"
             >
               下载并提交 AI 翻译
             </VBtn>
@@ -1938,6 +1961,36 @@ defineExpose({
             </aside>
           </div>
         </VCardText>
+      </VCard>
+    </VDialog>
+
+    <VDialog v-model="onlineAiConfirmDialog" max-width="520">
+      <VCard rounded="lg">
+        <VCardTitle class="dialog-title compact">
+          <div>
+            <span>确认提交 AI 翻译</span>
+            <p>{{ onlineAiConfirmText }}</p>
+          </div>
+        </VCardTitle>
+        <VDivider />
+        <VCardText>
+          <VAlert
+            type="warning"
+            variant="tonal"
+            text="确认后会下载所选英文字幕并提交 AI 翻译任务；误触后可在 AI 状态里取消。"
+          />
+        </VCardText>
+        <VCardActions class="justify-end">
+          <VBtn variant="text" @click="onlineAiConfirmDialog = false">取消</VBtn>
+          <VBtn
+            color="primary"
+            variant="flat"
+            :loading="onlineDownloading"
+            @click="confirmOnlineAiTranslate"
+          >
+            确认提交
+          </VBtn>
+        </VCardActions>
       </VCard>
     </VDialog>
 
