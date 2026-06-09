@@ -222,3 +222,28 @@ def test_online_download_name_prefers_archive_magic_over_filename_suffix():
 
     assert rar_named_zip == "Spider-Man.Into.the.Spider-Verse.2018.1080p.WEB-DL.DD5.1.H264-FGT.rar"
     assert zip_named_unknown == "subtitle.zip"
+
+
+def test_language_suffix_supports_bilingual_codes():
+    module, _, _ = load_plugin_module()
+    cls = module.SubtitleManualUpload
+
+    assert cls._normalize_language_suffix("chi&eng") == "chi&eng"
+    assert cls._normalize_language_suffix("zh/en") == "chi&eng"
+    assert cls._normalize_language_suffix("chi+jpn") == "chi&jp"
+    assert cls._normalize_language_suffix("chi,kor") == "chi&kr"
+    assert cls._is_chinese_language_suffix("chi&eng") is True
+
+
+def test_detect_language_profile_marks_bilingual_subtitles():
+    module, _, _ = load_plugin_module()
+    cls = module.SubtitleManualUpload
+
+    chinese = "这是中文字幕文本" * 30
+    english = " This is an English subtitle line" * 30
+    japanese = "これは日本語字幕です" * 30
+    korean = "이것은 한국어 자막입니다" * 30
+
+    assert cls._detect_language_profile("movie.zh.en.srt", f"{chinese}{english}".encode())["suffix"] == "chi&eng"
+    assert cls._detect_language_profile("movie.srt", f"{chinese}{japanese}".encode())["suffix"] == "chi&jp"
+    assert cls._detect_language_profile("movie.srt", f"{chinese}{korean}".encode())["suffix"] == "chi&kr"

@@ -66,7 +66,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/subtitle-match.png"
-    plugin_version = "0.1.43"
+    plugin_version = "0.1.44"
     plugin_author = "jaysherlock"
     author_url = "https://github.com/jaysherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -952,6 +952,15 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         suffix = cls._normalize_text(value).strip().lower()
         if not suffix:
             return "und"
+        if any(separator in suffix for separator in ("&", "+", "/", ",")):
+            parts = []
+            for part in re.split(r"[&+/,]+", suffix):
+                normalized = cls._language_suffix_aliases.get(part.strip(), part.strip())
+                normalized = {"jpn": "jp", "kor": "kr"}.get(normalized, normalized)
+                normalized = re.sub(r"[^a-z0-9-]", "", normalized)
+                if normalized and normalized not in parts:
+                    parts.append(normalized)
+            return "&".join(parts) or "und"
         suffix = cls._language_suffix_aliases.get(suffix, suffix)
         return re.sub(r"[^a-z0-9-]", "", suffix) or "und"
 
@@ -963,11 +972,36 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         has_kana = len(re.findall(r"[\u3040-\u30ff]", preview)) >= 20
         has_hangul = len(re.findall(r"[\uac00-\ud7af]", preview)) >= 20
         has_ascii = len(re.findall(r"[A-Za-z]{3,}", preview)) >= 20
+        has_chinese_name = bool(
+            re.search(r"(^|[\s._\-\[\]()])(?:zh|chi|chs|cht|zho|cmn)(?=$|[\s._\-\[\]()])", lowered)
+            or any(token in lowered for token in ("中英", "中日", "中韩", "中文", "中字", "双语", "bilingual"))
+        )
+        has_english_name = bool(
+            re.search(r"(^|[\s._\-\[\]()])(?:en|eng)(?=$|[\s._\-\[\]()])", lowered)
+            or any(token in lowered for token in ("english", "英文", "英语", "中英"))
+        )
+        has_japanese_name = bool(
+            re.search(r"(^|[\s._\-\[\]()])(?:ja|jp|jpn)(?=$|[\s._\-\[\]()])", lowered)
+            or any(token in lowered for token in ("japanese", "日文", "日语", "中日"))
+        )
+        has_korean_name = bool(
+            re.search(r"(^|[\s._\-\[\]()])(?:ko|kr|kor)(?=$|[\s._\-\[\]()])", lowered)
+            or any(token in lowered for token in ("korean", "韩文", "韩语", "中韩"))
+        )
 
         suffix = "und"
         label = "未知"
 
-        if any(token in lowered for token in ("zh-hant", "zh_tw", "zh-tw", "cht", "繁体", "繁中", "big5")) or re.search(
+        if (has_chinese_name or has_cjk) and (has_japanese_name or has_kana):
+            suffix = "chi&jp"
+            label = "中日双语"
+        elif (has_chinese_name or has_cjk) and (has_korean_name or has_hangul):
+            suffix = "chi&kr"
+            label = "中韩双语"
+        elif has_chinese_name and (has_english_name or has_ascii):
+            suffix = "chi&eng"
+            label = "中英双语"
+        elif any(token in lowered for token in ("zh-hant", "zh_tw", "zh-tw", "cht", "繁体", "繁中", "big5")) or re.search(
             r"(^|[\s._\-\[\]()])(?:tw|hk)(?=$|[\s._\-\[\]()])",
             lowered,
         ):
@@ -1008,6 +1042,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             label = "俄文"
 
         if suffix == "chi" and has_ascii:
+            suffix = "chi&eng"
             label = f"{label}/双语"
 
         return {
@@ -2282,7 +2317,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
 
     @classmethod
     def _is_chinese_language_suffix(cls, suffix: Any) -> bool:
-        return cls._normalize_language_suffix(suffix) in {"chi", "cht"}
+        return any(part in {"chi", "cht"} for part in cls._normalize_language_suffix(suffix).split("&"))
 
     def _maybe_convert_operation_to_simplified(self, operation: Dict[str, Any], output_dir: Path) -> None:
         operation["simplified_result"] = {"enabled": False, "converted": False}
