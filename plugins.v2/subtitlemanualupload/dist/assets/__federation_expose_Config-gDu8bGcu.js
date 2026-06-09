@@ -1,7 +1,7 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 
-const {createElementVNode:_createElementVNode,resolveComponent:_resolveComponent,createVNode:_createVNode,withCtx:_withCtx,openBlock:_openBlock,createElementBlock:_createElementBlock} = await importShared('vue');
+const {createElementVNode:_createElementVNode,resolveComponent:_resolveComponent,createVNode:_createVNode,withCtx:_withCtx,openBlock:_openBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,createElementBlock:_createElementBlock} = await importShared('vue');
 
 
 const _hoisted_1 = { class: "subtitlemanualupload-config" };
@@ -28,6 +28,7 @@ const _sfc_main = {
 const props = __props;
 
 const emit = __emit;
+const configError = ref('');
 const localConfig = ref({
   enabled: false,
   show_sidebar_nav: true,
@@ -111,7 +112,13 @@ function normalizeConfig(input) {
 }
 
 function saveConfig() {
-  emit('save', normalizeConfig(localConfig.value));
+  const normalized = normalizeConfig(localConfig.value);
+  if (normalized.opensubtitles_username.includes('@')) {
+    configError.value = '请输入用户名而非邮箱！';
+    return
+  }
+  configError.value = '';
+  emit('save', normalized);
 }
 
 onMounted(() => {
@@ -123,10 +130,10 @@ return (_ctx, _cache) => {
   const _component_VBtn = _resolveComponent("VBtn");
   const _component_VToolbar = _resolveComponent("VToolbar");
   const _component_VDivider = _resolveComponent("VDivider");
+  const _component_VAlert = _resolveComponent("VAlert");
   const _component_VSwitch = _resolveComponent("VSwitch");
   const _component_VSelect = _resolveComponent("VSelect");
   const _component_VTextField = _resolveComponent("VTextField");
-  const _component_VAlert = _resolveComponent("VAlert");
   const _component_VCardText = _resolveComponent("VCardText");
   const _component_VCard = _resolveComponent("VCard");
 
@@ -162,6 +169,16 @@ return (_ctx, _cache) => {
         default: _withCtx(() => [
           _createVNode(_component_VCardText, null, {
             default: _withCtx(() => [
+              (configError.value)
+                ? (_openBlock(), _createBlock(_component_VAlert, {
+                    key: 0,
+                    class: "mb-4",
+                    type: "error",
+                    variant: "tonal",
+                    density: "compact",
+                    text: configError.value
+                  }, null, 8, ["text"]))
+                : _createCommentVNode("", true),
               _cache[21] || (_cache[21] = _createElementVNode("div", { class: "config-section" }, [
                 _createElementVNode("div", { class: "config-section-title" }, "基础设置")
               ], -1)),
@@ -317,8 +334,9 @@ return (_ctx, _cache) => {
                   variant: "outlined",
                   density: "comfortable",
                   autocomplete: "username",
-                  "hide-details": ""
-                }, null, 8, ["modelValue"]),
+                  error: localConfig.value.opensubtitles_username.includes('@'),
+                  "error-messages": localConfig.value.opensubtitles_username.includes('@') ? '请输入用户名而非邮箱！' : ''
+                }, null, 8, ["modelValue", "error", "error-messages"]),
                 _createVNode(_component_VTextField, {
                   modelValue: localConfig.value.opensubtitles_password,
                   "onUpdate:modelValue": _cache[17] || (_cache[17] = $event => ((localConfig.value.opensubtitles_password) = $event)),
@@ -380,6 +398,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-d261012c"]]);
+const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-963c8a51"]]);
 
 export { Config as default };

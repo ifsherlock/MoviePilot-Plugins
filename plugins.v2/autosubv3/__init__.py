@@ -92,7 +92,7 @@ class AutoSubv3(_PluginBase):
     # 主题色
     plugin_color = "#2C4F7E"
     # 插件版本
-    plugin_version = "3.5.43"
+    plugin_version = "3.5.44"
     # 插件作者
     plugin_author = "jaysherlock"
     # 作者主页
@@ -1867,6 +1867,10 @@ class AutoSubv3(_PluginBase):
                 "summary": "取消 AI 字幕生成任务",
             },
         ]
+
+    @staticmethod
+    def get_render_mode() -> Tuple[str, str]:
+        return "vue", "dist/assets"
 
     def get_page(self) -> List[dict]:
         # 加载任务并按添加时间倒序排列

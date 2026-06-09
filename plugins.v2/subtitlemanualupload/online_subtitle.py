@@ -5,10 +5,13 @@ import html
 import io
 import json
 import re
+import ssl
+import time
 import tempfile
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
+from datetime import datetime
 from html.parser import HTMLParser
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -57,6 +60,9 @@ class OnlineSubtitleResult:
     requires_captcha: bool = False
     captcha_hint: str = ""
     download_steps: str = ""
+    result_years: Optional[List[int]] = None
+    match_year: int = 0
+    relevance_status: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -78,6 +84,9 @@ class OnlineSubtitleResult:
             "requires_captcha": self.requires_captcha,
             "captcha_hint": self.captcha_hint,
             "download_steps": self.download_steps,
+            "result_years": self.result_years or [],
+            "match_year": self.match_year,
+            "relevance_status": self.relevance_status,
         }
 
 
@@ -204,18 +213,33 @@ class OnlineDirectDownloader:
         if self.cookies:
             headers["Cookie"] = self.cookies
         request = urllib.request.Request(url, headers=headers)
-        try:
-            with self.opener.open(request, timeout=self.timeout) as response:
-                content = response.read()
-                filename = self._filename_from_response(response.headers, response.geturl() or url)
-                return filename, content, response.geturl()
-        except urllib.error.HTTPError as exc:
-            detail = _decode_bytes(exc.read()[:300], exc.headers.get_content_charset())
-            raise ValueError(f"下载失败 HTTP {exc.code}: {detail}") from exc
-        except urllib.error.URLError as exc:
-            raise ValueError(_format_network_error(url, exc)) from exc
-        except OSError as exc:
-            raise ValueError(_format_network_error(url, exc)) from exc
+        last_error: Optional[Exception] = None
+        for attempt in range(3):
+            try:
+                with self.opener.open(request, timeout=self.timeout) as response:
+                    content = response.read()
+                    filename = self._filename_from_response(response.headers, response.geturl() or url)
+                    logger.info(
+                        "[SubtitleManualUpload] 在线字幕下载摘要 host=%s content_type=%s filename=%s magic=%s size=%s",
+                        _host(response.geturl() or url),
+                        response.headers.get("Content-Type", ""),
+                        filename,
+                        _content_magic(content),
+                        len(content),
+                    )
+                    return filename, content, response.geturl()
+            except urllib.error.HTTPError as exc:
+                detail = _decode_bytes(exc.read()[:300], exc.headers.get_content_charset())
+                raise ValueError(f"下载失败 HTTP {exc.code}: {detail}") from exc
+            except (urllib.error.URLError, OSError, ssl.SSLError) as exc:
+                last_error = exc
+                if attempt < 2 and _is_retryable_network_error(exc):
+                    time.sleep(0.5 * (2 ** attempt))
+                    continue
+                break
+        if last_error:
+            raise ValueError(_format_network_error(url, last_error)) from last_error
+        raise ValueError(f"下载失败: {_host(url)} 未返回数据")
 
     @staticmethod
     def _filename_from_response(headers: Any, url: str) -> str:
@@ -233,6 +257,20 @@ def _looks_like_html_bytes(content: bytes, filename: str = "") -> bool:
         return False
     head = (content or b"")[:300].lstrip().lower()
     return head.startswith(b"<!doctype html") or head.startswith(b"<html") or b"<title>" in head
+
+
+def _content_magic(content: bytes) -> str:
+    head = (content or b"")[:16]
+    if head.startswith(b"PK\x03\x04"):
+        return "zip"
+    if head.startswith(b"Rar!\x1a\x07"):
+        return "rar"
+    text = _decode_bytes(head, None).lstrip().lower()
+    if text.startswith("<!do") or text.startswith("<htm"):
+        return "html"
+    if re.match(r"^\d+\s*", text):
+        return "text"
+    return head.hex()[:16] or "-"
 
 
 class BaseSubtitleProvider:
@@ -582,11 +620,15 @@ class OpenSubtitlesProvider(BaseSubtitleProvider):
         return status
 
     def manual_url(self, keyword: str) -> str:
-        return f"{self.root_url}/zh-cn/search2/moviename-{quote(keyword)}"
+        return (
+            f"{self.root_url}/en/en,zh-CN/search-all/q-{quote(keyword)}"
+            "/hearing_impaired-include/machine_translated-/trusted_sources-"
+        )
 
     def search(self, keyword: str, targets: List[Dict[str, Any]], scope: str) -> List[OnlineSubtitleResult]:
         if not self.api_key:
             raise ValueError("OpenSubtitles 未配置 API Key，已跳过自动搜索")
+        target_year = _target_year_from_targets(targets)
         payload = self._api_json(
             "/subtitles",
             {
@@ -622,6 +664,15 @@ class OpenSubtitlesProvider(BaseSubtitleProvider):
             language_label = _language_label_from_category(language_category, language_code)
             season, episode = _episode_from_text(title) or (0, 0)
             file_id = str(file_info.get("file_id") or "").strip()
+            result_years = _years_from_opensubtitles_attrs(attrs, file_info, title)
+            if target_year and result_years and target_year not in result_years:
+                continue
+            upload_year = _year_from_upload_date(attrs.get("upload_date") or attrs.get("uploaded_at"))
+            if target_year and upload_year and upload_year < target_year:
+                continue
+            relevance_status = _relevance_status(title, keyword, targets)
+            if relevance_status == "weak":
+                continue
             results.append(
                 OnlineSubtitleResult(
                     provider=self.provider_id,
@@ -635,10 +686,13 @@ class OpenSubtitlesProvider(BaseSubtitleProvider):
                     format=_guess_subtitle_format(" ".join([title, str(file_info.get("file_name") or "")])),
                     season=season or _safe_int(attrs.get("season_number"), 0),
                     episode=episode or _safe_int(attrs.get("episode_number"), 0),
-                    score=_score_result(title, keyword, targets) + 6,
+                    score=_score_result(title, keyword, targets) + 6 + (12 if target_year and target_year in result_years else 0),
                     source=self.display_name,
                     note=f"通过 OpenSubtitles API 搜索{language_label}字幕",
                     downloadable=True,
+                    result_years=result_years,
+                    match_year=target_year if target_year and target_year in result_years else 0,
+                    relevance_status=relevance_status,
                 )
             )
         return _dedupe_results(results)[:30]
@@ -713,17 +767,25 @@ class OpenSubtitlesProvider(BaseSubtitleProvider):
         if proxies:
             handlers.append(urllib.request.ProxyHandler(proxies))
         opener = urllib.request.build_opener(*handlers)
-        try:
-            request = urllib.request.Request(url, data=data, headers=headers, method=method.upper())
-            with opener.open(request, timeout=40) as response:
-                raw = response.read()
-        except urllib.error.HTTPError as exc:
-            detail = _decode_bytes(exc.read()[:500], exc.headers.get_content_charset())
-            raise ValueError(f"OpenSubtitles API 请求失败 HTTP {exc.code}: {_compact_error_message(detail)}") from exc
-        except urllib.error.URLError as exc:
-            raise ValueError(_format_network_error(self.api_url, exc)) from exc
-        except OSError as exc:
-            raise ValueError(_format_network_error(self.api_url, exc)) from exc
+        last_error: Optional[Exception] = None
+        raw = b""
+        for attempt in range(3):
+            try:
+                request = urllib.request.Request(url, data=data, headers=headers, method=method.upper())
+                with opener.open(request, timeout=40) as response:
+                    raw = response.read()
+                break
+            except urllib.error.HTTPError as exc:
+                detail = _decode_bytes(exc.read()[:500], exc.headers.get_content_charset())
+                raise ValueError(f"OpenSubtitles API 请求失败 HTTP {exc.code}: {_compact_error_message(detail)}") from exc
+            except (urllib.error.URLError, OSError, ssl.SSLError) as exc:
+                last_error = exc
+                if attempt < 2 and _is_retryable_network_error(exc):
+                    time.sleep(0.5 * (2 ** attempt))
+                    continue
+                break
+        if not raw and last_error:
+            raise ValueError(_format_network_error(self.api_url, last_error)) from last_error
         try:
             payload = json.loads(_decode_bytes(raw, None) or "{}")
         except Exception as exc:
@@ -923,6 +985,7 @@ class OnlineSubtitleSearchService:
 
 def build_search_keywords(media: Dict[str, Any], targets: List[Dict[str, Any]], scope: str) -> List[str]:
     title = _clean_keyword(media.get("title") or (targets[0].get("title") if targets else ""))
+    english_titles = _english_search_titles(media, targets)
     year = _clean_keyword(media.get("year") or (targets[0].get("year") if targets else ""))
     media_type = media.get("media_type") or (targets[0].get("media_type") if targets else "")
     keywords: List[str] = []
@@ -948,7 +1011,9 @@ def build_search_keywords(media: Dict[str, Any], targets: List[Dict[str, Any]], 
     elif title:
         if year:
             keywords.append(f"{title} {year}")
+            keywords.extend([f"{item} {year}" for item in english_titles])
         keywords.append(title)
+        keywords.extend(english_titles)
     return _unique_keywords([item for item in keywords if item])
 
 
@@ -1093,9 +1158,18 @@ def _guess_subtitle_format(value: str) -> str:
 def _score_result(title: str, keyword: str, targets: List[Dict[str, Any]]) -> int:
     haystack = (title or "").lower()
     score = 0
-    for part in re.split(r"[\s._-]+", (keyword or "").lower()):
-        if len(part) >= 2 and part in haystack:
+    for part in _keyword_match_parts(keyword):
+        if _is_cjk_text(part):
+            if len(part) >= 3 and part in haystack:
+                score += 12
+        elif part in haystack:
             score += 5
+    for target in targets:
+        for field in ["title", "original_title", "en_title", "basename", "filename"]:
+            value = _clean_keyword(target.get(field))
+            if value and _title_matches(value, title):
+                score += 18
+                break
     hint = _episode_from_text(title)
     if hint:
         season, episode = hint
@@ -1120,8 +1194,11 @@ def _filter_relevant_results(
 
 def _has_relevance_signal(title: str, keyword: str, targets: List[Dict[str, Any]]) -> bool:
     haystack = (title or "").lower()
-    for part in re.split(r"[\s._-]+", (keyword or "").lower()):
-        if len(part) >= 2 and part in haystack:
+    for part in _keyword_match_parts(keyword):
+        if _is_cjk_text(part):
+            if len(part) >= 3 and part in haystack:
+                return True
+        elif part in haystack:
             return True
     hint = _episode_from_text(title)
     if hint:
@@ -1134,18 +1211,109 @@ def _has_relevance_signal(title: str, keyword: str, targets: List[Dict[str, Any]
     for target in targets:
         for field in ["title", "basename", "filename"]:
             value = str(target.get(field) or "").lower()
-            for part in re.split(r"[\s._-]+", value):
-                if len(part) >= 2 and part in haystack:
-                    return True
+            if _title_matches(value, title):
+                return True
     return False
 
 
 def _provider_priority(item: OnlineSubtitleResult) -> int:
-    if item.provider == "opensubtitles":
-        return 30
     if item.provider == "assrt":
+        return 30
+    if item.provider == "opensubtitles":
         return 20
     return 0
+
+
+def _target_year_from_targets(targets: List[Dict[str, Any]]) -> int:
+    for target in targets or []:
+        for field in ["basename", "filename", "path", "title", "year"]:
+            years = _extract_years(str(target.get(field) or ""))
+            if years:
+                return years[0]
+    return 0
+
+
+def _years_from_opensubtitles_attrs(attrs: Dict[str, Any], file_info: Dict[str, Any], title: str) -> List[int]:
+    values = [
+        title,
+        attrs.get("release"),
+        attrs.get("movie_name"),
+        attrs.get("feature_details"),
+        file_info.get("file_name"),
+    ]
+    years: List[int] = []
+    for value in values:
+        if isinstance(value, dict):
+            for key in ["year", "release_year"]:
+                year = _safe_int(value.get(key), 0)
+                if year:
+                    years.append(year)
+            value = " ".join(str(item or "") for item in value.values())
+        years.extend(_extract_years(str(value or "")))
+    return sorted(set(years))
+
+
+def _extract_years(value: str) -> List[int]:
+    current_year = datetime.now().year + 1
+    years = []
+    for match in re.finditer(r"(?<!\d)(19\d{2}|20\d{2})(?!\d)", value or ""):
+        year = int(match.group(1))
+        if 1900 <= year <= current_year:
+            years.append(year)
+    return sorted(set(years))
+
+
+def _year_from_upload_date(value: Any) -> int:
+    match = re.match(r"\s*(19\d{2}|20\d{2})", str(value or ""))
+    return int(match.group(1)) if match else 0
+
+
+def _relevance_status(title: str, keyword: str, targets: List[Dict[str, Any]]) -> str:
+    return "matched" if _has_relevance_signal(title, keyword, targets) else "weak"
+
+
+def _is_cjk_text(value: str) -> bool:
+    return bool(re.search(r"[\u3400-\u9fff]", value or ""))
+
+
+def _keyword_match_parts(value: str) -> List[str]:
+    stopwords = {"a", "an", "and", "of", "the", "to", "in", "on", "for", "with", "part"}
+    parts: List[str] = []
+    for raw in re.split(r"[\s._\-:：,，]+", (value or "").lower()):
+        part = raw.strip()
+        if not part:
+            continue
+        if re.fullmatch(r"(19\d{2}|20\d{2})", part):
+            continue
+        if _is_cjk_text(part):
+            if len(part) >= 3:
+                parts.append(part)
+        elif len(part) >= 3 and part not in stopwords:
+            parts.append(part)
+    return parts
+
+
+def _title_matches(needle: str, haystack: str) -> bool:
+    clean_needle = _normalize_title_for_match(needle)
+    clean_haystack = _normalize_title_for_match(haystack)
+    if not clean_needle or not clean_haystack:
+        return False
+    if _is_cjk_text(clean_needle):
+        if len(clean_needle) < 3:
+            return False
+        return clean_needle in clean_haystack or clean_haystack in clean_needle
+    parts = [part for part in re.split(r"\s+", clean_needle.lower()) if len(part) >= 2]
+    if not parts:
+        return False
+    haystack_lower = clean_haystack.lower()
+    return all(part in haystack_lower for part in parts)
+
+
+def _normalize_title_for_match(value: Any) -> str:
+    text = str(value or "").lower()
+    text = re.sub(r"[\[\]【】()（）{}<>《》:：,，.!！?？'\"“”‘’._\-]+", " ", text)
+    text = re.sub(r"\b(?:1080p|2160p|720p|bluray|web-dl|webrip|hdr|x264|x265|h264|h265)\b", " ", text)
+    return re.sub(r"\s+", " ", text).strip()
 
 
 def _safe_int(value: Any, default: int = 0) -> int:
@@ -1196,6 +1364,18 @@ def _unique_keywords(values: Iterable[str]) -> List[str]:
         seen.add(key)
         result.append(normalized)
     return result[:8]
+
+
+def _english_search_titles(media: Dict[str, Any], targets: List[Dict[str, Any]]) -> List[str]:
+    values: List[str] = []
+    for source in [media, *(targets or [])]:
+        if not isinstance(source, dict):
+            continue
+        for field in ["en_title", "original_title", "original_name", "title_en", "name_en"]:
+            value = _clean_keyword(source.get(field))
+            if value and not _is_cjk_text(value):
+                values.append(value)
+    return _unique_keywords(values)
 
 
 def _can_import(module_name: str) -> bool:
@@ -1295,6 +1475,8 @@ def _format_network_error(url: str, exc: BaseException) -> str:
     reason = getattr(exc, "reason", exc)
     reason_text = str(reason or exc)
     lowered = reason_text.lower()
+    if "unexpected_eof_while_reading" in lowered or "eof occurred in violation of protocol" in lowered:
+        return f"{host} TLS 连接被提前断开，已重试仍失败；请检查代理、NAS 出口网络或稍后再试"
     if "connection reset" in lowered or "errno 104" in lowered or "远程主机强迫关闭" in reason_text:
         return f"{host} 连接被重置，可能是源站拦截、代理异常或容器网络出口受限"
     if "timed out" in lowered or "timeout" in lowered:
@@ -1302,6 +1484,22 @@ def _format_network_error(url: str, exc: BaseException) -> str:
     if "name or service not known" in lowered or "nodename nor servname" in lowered:
         return f"{host} DNS 解析失败，请检查容器网络"
     return f"{host} 网络请求失败：{reason_text}"
+
+
+def _is_retryable_network_error(exc: BaseException) -> bool:
+    reason = getattr(exc, "reason", exc)
+    text = str(reason or exc).lower()
+    return any(
+        token in text
+        for token in [
+            "unexpected_eof_while_reading",
+            "eof occurred in violation of protocol",
+            "connection reset",
+            "timed out",
+            "timeout",
+            "temporarily unavailable",
+        ]
+    )
 
 
 def _format_browser_error(url: str, exc: BaseException, *, engine: str) -> str:

@@ -9,6 +9,7 @@ const props = defineProps({
 })
 
 const emit = defineEmits(['save', 'close'])
+const configError = ref('')
 const localConfig = ref({
   enabled: false,
   show_sidebar_nav: true,
@@ -92,7 +93,13 @@ function normalizeConfig(input) {
 }
 
 function saveConfig() {
-  emit('save', normalizeConfig(localConfig.value))
+  const normalized = normalizeConfig(localConfig.value)
+  if (normalized.opensubtitles_username.includes('@')) {
+    configError.value = '请输入用户名而非邮箱！'
+    return
+  }
+  configError.value = ''
+  emit('save', normalized)
 }
 
 onMounted(() => {
@@ -113,6 +120,14 @@ onMounted(() => {
     <div class="config-shell">
       <VCard rounded="xl" elevation="0" class="config-card">
         <VCardText>
+          <VAlert
+            v-if="configError"
+            class="mb-4"
+            type="error"
+            variant="tonal"
+            density="compact"
+            :text="configError"
+          />
           <div class="config-section">
             <div class="config-section-title">基础设置</div>
           </div>
@@ -255,7 +270,8 @@ onMounted(() => {
               variant="outlined"
               density="comfortable"
               autocomplete="username"
-              hide-details
+              :error="localConfig.opensubtitles_username.includes('@')"
+              :error-messages="localConfig.opensubtitles_username.includes('@') ? '请输入用户名而非邮箱！' : ''"
             />
             <VTextField
               v-model="localConfig.opensubtitles_password"

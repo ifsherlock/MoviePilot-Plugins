@@ -69,6 +69,8 @@ const aiCancelling = ref(false)
 const aiTasksLoading = ref(false)
 const onlineSearching = ref(false)
 const onlineDownloading = ref(false)
+const onlinePreviewDownloading = ref(false)
+const onlineAiDownloading = ref(false)
 const dragging = ref(false)
 const message = ref('')
 const error = ref('')
@@ -103,6 +105,7 @@ const onlineTargets = ref([])
 const onlineStatus = ref({ providers: [], capabilities: {} })
 const onlineSelectedProviders = ref(['assrt', 'opensubtitles'])
 const onlineResults = ref([])
+const onlineLanguageFilter = ref('all')
 const onlineProviderFilter = ref('all')
 const onlineMessages = ref([])
 const onlineMessagesCollapsed = ref(false)
@@ -185,16 +188,20 @@ const targetSelectItems = computed(() => uploadTargets.value.map(target => ({
 })))
 const canPrepare = computed(() => uploadTargets.value.length > 0 && files.value.length > 0)
 const canApply = computed(() => {
-  const items = preview.value?.items || []
+  const items = selectedPreviewItems.value
   return items.length > 0 && items.every(item => item.target_id)
 })
 const hasPreviewItems = computed(() => (preview.value?.items || []).length > 0)
+const selectedPreviewItems = computed(() => (preview.value?.items || []).filter(item => item.selected !== false))
 const hasOnlineResults = computed(() => onlineResults.value.length > 0)
 const filteredOnlineResults = computed(() => {
-  if (onlineProviderFilter.value === 'all') return onlineResults.value
-  return onlineResults.value.filter(item => onlineResultLanguageCategory(item) === onlineProviderFilter.value)
+  return onlineResults.value.filter(item => {
+    const languageMatched = onlineLanguageFilter.value === 'all' || onlineResultLanguageCategory(item) === onlineLanguageFilter.value
+    const providerMatched = onlineProviderFilter.value === 'all' || item.provider === onlineProviderFilter.value
+    return languageMatched && providerMatched
+  })
 })
-const onlineProviderFilterItems = computed(() => {
+const onlineLanguageFilterItems = computed(() => {
   const languageItems = [
     { title: '中文', value: 'chinese' },
     { title: '英文', value: 'english' },
@@ -209,6 +216,17 @@ const onlineProviderFilterItems = computed(() => {
   return [
     { title: `全部 ${onlineResults.value.length}`, value: 'all' },
     ...languageItems.map(item => ({ title: `${item.title} ${counts[item.value] || 0}`, value: item.value })),
+  ]
+})
+const onlineProviderFilterItems = computed(() => {
+  const counts = onlineResults.value.reduce((acc, item) => {
+    const provider = item.provider || 'unknown'
+    acc[provider] = (acc[provider] || 0) + 1
+    return acc
+  }, {})
+  return [
+    { title: `全部 ${onlineResults.value.length}`, value: 'all' },
+    ...onlineProviderItems.map(item => ({ title: `${item.title} ${counts[item.value] || 0}`, value: item.value })),
   ]
 })
 const selectedOnlineResults = computed(() => {
@@ -418,6 +436,12 @@ function onlineResultKey(item) {
 function providerName(providerId) {
   const known = onlineProviderItems.find(item => item.value === providerId)
   return known?.title || providerId || '未知来源'
+}
+
+function providerPriority(providerId) {
+  if (providerId === 'assrt') return 30
+  if (providerId === 'opensubtitles') return 20
+  return 0
 }
 
 function onlineResultMeta(item) {
@@ -902,6 +926,7 @@ async function openOnlineDialog(scopeTargets, title, scope) {
   uploadTitle.value = `${title} · 在线字幕`
   onlineKeyword.value = ''
   onlineResults.value = []
+  onlineLanguageFilter.value = 'all'
   onlineProviderFilter.value = 'all'
   onlineMessages.value = []
   onlineMessagesCollapsed.value = false
@@ -967,6 +992,7 @@ async function runOnlineSearch() {
   onlineSearching.value = true
   onlineError.value = ''
   onlineResults.value = []
+  onlineLanguageFilter.value = 'all'
   onlineProviderFilter.value = 'all'
   onlineMessages.value = []
   onlineMessagesCollapsed.value = false
@@ -1045,6 +1071,8 @@ function mergeOnlineResults(items) {
     if (item) merged.set(onlineResultKey(item), item)
   })
   onlineResults.value = Array.from(merged.values()).sort((a, b) => {
+    const provider = providerPriority(b.provider) - providerPriority(a.provider)
+    if (provider) return provider
     const score = Number(b.score || 0) - Number(a.score || 0)
     if (score) return score
     return providerName(a.provider).localeCompare(providerName(b.provider), 'zh-Hans-CN')
@@ -1100,6 +1128,11 @@ async function downloadOnlinePreview(submitAiTranslate = false) {
   }
   const downloadSeq = ++onlineDownloadSeq
   onlineDownloading.value = true
+  if (submitAiTranslate) {
+    onlineAiDownloading.value = true
+  } else {
+    onlinePreviewDownloading.value = true
+  }
   onlineError.value = ''
   try {
     const response = await withTimeout(
@@ -1115,9 +1148,11 @@ async function downloadOnlinePreview(submitAiTranslate = false) {
     preview.value = unwrapResponse(response)
     batchLanguageSuffix.value = ''
     if (preview.value?.items) {
-      preview.value.items.forEach(item => {
+      const preferSingleCandidate = preview.value.source === 'online' && preview.value.items.length > 1
+      preview.value.items.forEach((item, index) => {
         const target = uploadTargets.value.find(targetItem => targetItem.id === item.target_id)
         item.output_name = item.output_name || buildOutputName(target, item)
+        item.selected = item.selected !== false && (!preferSingleCandidate || index === 0)
       })
     }
     onlineDialog.value = false
@@ -1129,6 +1164,8 @@ async function downloadOnlinePreview(submitAiTranslate = false) {
   } finally {
     if (downloadSeq === onlineDownloadSeq) {
       onlineDownloading.value = false
+      onlinePreviewDownloading.value = false
+      onlineAiDownloading.value = false
     }
   }
 }
@@ -1137,6 +1174,8 @@ function stopOnlineDownload() {
   if (!onlineDownloading.value) return
   onlineDownloadSeq += 1
   onlineDownloading.value = false
+  onlinePreviewDownloading.value = false
+  onlineAiDownloading.value = false
   onlineError.value = '已停止等待在线字幕下载，当前搜索结果仍可继续选择。'
 }
 
@@ -1202,9 +1241,11 @@ async function prepareUpload() {
     preview.value = unwrapResponse(response)
     batchLanguageSuffix.value = ''
     if (preview.value?.items) {
-      preview.value.items.forEach(item => {
+      const preferSingleCandidate = preview.value.source === 'online' && preview.value.items.length > 1
+      preview.value.items.forEach((item, index) => {
         const target = uploadTargets.value.find(targetItem => targetItem.id === item.target_id)
         item.output_name = item.output_name || buildOutputName(target, item)
+        item.selected = item.selected !== false && (!preferSingleCandidate || index === 0)
       })
     }
     message.value = response?.message || '已生成匹配预览'
@@ -1236,10 +1277,16 @@ function updateLanguageSuffix(uploadId, value) {
   item.output_name = buildOutputName(target, item)
 }
 
+function togglePreviewItem(uploadId, checked) {
+  const item = (preview.value?.items || []).find(previewItem => previewItem.upload_id === uploadId)
+  if (!item) return
+  item.selected = Boolean(checked)
+}
+
 function applyBatchLanguageSuffix() {
   const suffix = batchLanguageSuffix.value.trim()
   if (!suffix || !preview.value?.items?.length) return
-  preview.value.items.forEach(item => {
+  selectedPreviewItems.value.forEach(item => {
     item.language_suffix = suffix
     const target = uploadTargets.value.find(targetItem => targetItem.id === item.target_id)
     item.output_name = buildOutputName(target, item)
@@ -1280,7 +1327,7 @@ async function applyUpload() {
     const payload = {
       session_id: preview.value.session_id,
       fix_timeline: fixTimeline.value,
-      items: preview.value.items.map(item => ({
+      items: selectedPreviewItems.value.map(item => ({
         upload_id: item.upload_id,
         target_id: item.target_id,
         ext: item.ext,
@@ -1746,8 +1793,8 @@ defineExpose({
           <div class="online-title-actions">
             <VBtn
               color="success"
-              :disabled="!selectedOnlineResults.length"
-              :loading="onlineDownloading"
+              :disabled="!selectedOnlineResults.length || onlineAiDownloading"
+              :loading="onlinePreviewDownloading"
               @click="downloadOnlinePreview(false)"
             >
               下载并生成预览
@@ -1755,8 +1802,8 @@ defineExpose({
             <VBtn
               color="primary"
               variant="tonal"
-              :disabled="!canSubmitOnlineAiTranslate"
-              :loading="onlineDownloading"
+              :disabled="!canSubmitOnlineAiTranslate || onlinePreviewDownloading"
+              :loading="onlineAiDownloading"
               @click="requestOnlineAiTranslate"
             >
               下载并提交 AI 翻译
@@ -1855,6 +1902,23 @@ defineExpose({
                 </div>
                 <span>{{ hasOnlineResults ? `${filteredOnlineResults.length}/${onlineResults.length} 条结果` : '暂无结果' }}</span>
               </div>
+              <VChipGroup
+                v-if="hasOnlineResults"
+                v-model="onlineLanguageFilter"
+                class="online-provider-filter"
+                mandatory
+                selected-class="online-provider-filter-active"
+              >
+                <VChip
+                  v-for="item in onlineLanguageFilterItems"
+                  :key="item.value"
+                  :value="item.value"
+                  size="small"
+                  variant="tonal"
+                >
+                  {{ item.title }}
+                </VChip>
+              </VChipGroup>
               <VChipGroup
                 v-if="hasOnlineResults"
                 v-model="onlineProviderFilter"
@@ -1983,7 +2047,7 @@ defineExpose({
           <VBtn
             color="primary"
             variant="flat"
-            :loading="onlineDownloading"
+            :loading="onlineAiDownloading"
             @click="confirmOnlineAiTranslate"
           >
             确认提交
@@ -2128,7 +2192,14 @@ defineExpose({
               v-for="item in preview.items"
               :key="item.upload_id"
               class="preview-row"
+              :class="{ disabled: item.selected === false }"
             >
+              <VCheckbox
+                :model-value="item.selected !== false"
+                density="compact"
+                hide-details
+                @update:model-value="value => togglePreviewItem(item.upload_id, value)"
+              />
               <div class="subtitle-source">
                 <strong>{{ item.source_name }}</strong>
                 <span>
@@ -2142,6 +2213,7 @@ defineExpose({
                 variant="outlined"
                 density="comfortable"
                 hide-details
+                :disabled="item.selected === false"
                 @update:model-value="value => updatePreviewTarget(item.upload_id, value)"
               />
               <VTextField
@@ -2150,6 +2222,7 @@ defineExpose({
                 variant="outlined"
                 density="comfortable"
                 hide-details
+                :disabled="item.selected === false"
                 @update:model-value="value => updateLanguageSuffix(item.upload_id, value)"
               />
               <div class="output-name">
@@ -3177,10 +3250,14 @@ defineExpose({
 
 .preview-row {
   display: grid;
-  grid-template-columns: minmax(160px, 1fr) minmax(210px, 1fr) 116px minmax(180px, 1fr);
+  grid-template-columns: auto minmax(160px, 1fr) minmax(210px, 1fr) 116px minmax(180px, 1fr);
   gap: 10px;
   align-items: center;
   padding: 12px;
+}
+
+.preview-row.disabled {
+  opacity: 0.58;
 }
 
 .subtitle-source strong,

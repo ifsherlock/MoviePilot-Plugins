@@ -167,6 +167,56 @@ def test_opensubtitles_search_returns_multilingual_api_results():
     assert results[1].note == "通过 OpenSubtitles API 搜索简体中文字幕"
 
 
+def test_opensubtitles_manual_url_uses_search_all_path():
+    module = load_online_module()
+    provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key")
+
+    url = provider.manual_url("指环王")
+
+    assert "search-all/q-" in url
+    assert "moviename-" not in url
+    assert "%E6%8C%87%E7%8E%AF%E7%8E%8B" in url
+
+
+def test_opensubtitles_filters_wrong_title_and_year():
+    module = load_online_module()
+    provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key")
+
+    def fake_api_json(path, params, *, method="GET"):
+        return {
+            "data": [
+                {
+                    "attributes": {
+                        "language": "zh",
+                        "release": "千王之王.2000.1080p",
+                        "upload_date": "2001-01-01T00:00:00Z",
+                        "files": [{"file_id": 1, "file_name": "千王之王.2000.srt"}],
+                    }
+                },
+                {
+                    "attributes": {
+                        "language": "zh",
+                        "release": "指环王.2003.1080p",
+                        "upload_date": "2003-12-20T00:00:00Z",
+                        "files": [{"file_id": 2, "file_name": "指环王.2003.srt"}],
+                    }
+                },
+            ]
+        }
+
+    provider._api_json = fake_api_json
+
+    results = provider.search(
+        "指环王 2003",
+        [{"title": "指环王", "filename": "指环王 (2003) - 1080p.mkv", "year": "2003"}],
+        "movie",
+    )
+
+    assert len(results) == 1
+    assert results[0].result_id == "2"
+    assert results[0].match_year == 2003
+
+
 def test_opensubtitles_download_uses_download_api_link():
     module = load_online_module()
     module.OnlineDirectDownloader = FakeDirectDownloader
