@@ -15,6 +15,7 @@ const localConfig = ref({
   online_providers: ['assrt', 'opensubtitles'],
   online_use_proxy: false,
   traditional_to_simplified: false,
+  auto_search_on_transfer: false,
   subhd_url: 'https://subhd.tv',
   zimuku_url: 'https://zimuku.org',
   assrt_url: 'https://2.assrt.net',
@@ -71,6 +72,7 @@ function normalizeConfig(input) {
     online_use_proxy: Boolean(input?.online_use_proxy),
     online_proxy_migrated: true,
     traditional_to_simplified: Boolean(input?.traditional_to_simplified),
+    auto_search_on_transfer: Boolean(input?.auto_search_on_transfer),
     subhd_url: normalizeRootUrl(input?.subhd_url, 'https://subhd.tv'),
     zimuku_url: normalizeRootUrl(input?.zimuku_url, 'https://zimuku.org'),
     assrt_url: normalizeRootUrl(input?.assrt_url, 'https://2.assrt.net'),
@@ -137,6 +139,12 @@ onMounted(() => {
               v-model="localConfig.traditional_to_simplified"
               label="写入前繁体转简体"
               color="success"
+              hide-details
+            />
+            <VSwitch
+              v-model="localConfig.auto_search_on_transfer"
+              label="入库后自动搜索匹配字幕"
+              color="info"
               hide-details
             />
           </div>

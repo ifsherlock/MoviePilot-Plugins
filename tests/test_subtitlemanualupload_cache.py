@@ -168,6 +168,32 @@ def test_stale_persisted_cache_returns_before_background_refresh():
     assert started["value"] is True
 
 
+def test_transfer_event_entries_can_merge_into_local_cache(tmp_path):
+    module, histories, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    histories.calls = 0
+    video = tmp_path / "Example.Show.S01E02.mkv"
+    video.write_text("video")
+    meta = types.SimpleNamespace(begin_season=1, begin_episode=2, episode_list=[2])
+    mediainfo = types.SimpleNamespace(type="电视剧", title="Example Show", year="2024", tmdb_id=123)
+    transferinfo = types.SimpleNamespace(file_list_new=[str(video)])
+
+    entries = plugin._entries_from_transfer_event(
+        {
+            "meta": meta,
+            "mediainfo": mediainfo,
+            "transferinfo": transferinfo,
+        }
+    )
+    plugin._merge_local_entries_cache(entries)
+
+    assert len(entries) == 1
+    assert entries[0]["media_type"] == "tv"
+    assert entries[0]["season"] == 1
+    assert entries[0]["episode"] == 2
+    assert plugin._cache_status()["entry_count"] == 1
+
+
 def test_entry_map_is_bounded_lru():
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)

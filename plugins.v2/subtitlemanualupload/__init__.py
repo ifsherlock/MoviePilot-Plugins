@@ -30,6 +30,25 @@ try:
 except Exception:
     PluginManager = None
 
+try:
+    from app.core.event import eventmanager, Event as MPEvent
+    from app.schemas.types import EventType
+except Exception:
+    class _NoopEventManager:
+        @staticmethod
+        def register(_event_type):
+            def decorator(func):
+                return func
+
+            return decorator
+
+    class _NoopEventType:
+        TransferComplete = "transfer.complete"
+
+    eventmanager = _NoopEventManager()
+    MPEvent = Any
+    EventType = _NoopEventType
+
 from .online_subtitle import (
     CaptchaRequiredError,
     DEFAULT_ENGINE,
@@ -74,6 +93,8 @@ class SubtitleManualUpload(_PluginBase):
     _opensubtitles_password = ""
     _ai_link_enabled = True
     _traditional_to_simplified = False
+    _auto_search_on_transfer = False
+    _auto_search_min_score = 20
     _cache_ttl_seconds = 90
     _cache_max_entries = 5000
     _entry_map_max_size = 2000
@@ -157,6 +178,7 @@ class SubtitleManualUpload(_PluginBase):
         self._opensubtitles_password = self._normalize_text(config.get("opensubtitles_password"))
         self._ai_link_enabled = bool(config.get("ai_link_enabled", True))
         self._traditional_to_simplified = bool(config.get("traditional_to_simplified", False))
+        self._auto_search_on_transfer = bool(config.get("auto_search_on_transfer", False))
         if not config.get("assrt_provider_migrated") and not self._assrt_api_key:
             self._online_provider_ids = [item for item in self._online_provider_ids if item != "assrt"]
         if self._assrt_api_key and "assrt" not in self._online_provider_ids:
@@ -173,6 +195,7 @@ class SubtitleManualUpload(_PluginBase):
         type(self)._rar_dependency_mode = self._rar_dependency_mode
         type(self)._rar_tool_path = self._rar_tool_path
         type(self)._traditional_to_simplified = self._traditional_to_simplified
+        type(self)._auto_search_on_transfer = self._auto_search_on_transfer
         self._entry_map = OrderedDict()
         self._cache_refreshing = False
         self._local_entries_cache = {"loaded_at": None, "entries": [], "media_count": 0, "persisted": False}
@@ -304,7 +327,7 @@ class SubtitleManualUpload(_PluginBase):
                         "content": [
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 4},
+                                "props": {"cols": 12, "md": 3},
                                 "content": [
                                     {
                                         "component": "VSwitch",
@@ -317,7 +340,7 @@ class SubtitleManualUpload(_PluginBase):
                             },
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 4},
+                                "props": {"cols": 12, "md": 3},
                                 "content": [
                                     {
                                         "component": "VSwitch",
@@ -330,13 +353,26 @@ class SubtitleManualUpload(_PluginBase):
                             },
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 4},
+                                "props": {"cols": 12, "md": 3},
                                 "content": [
                                     {
                                         "component": "VSwitch",
                                         "props": {
                                             "model": "traditional_to_simplified",
                                             "label": "写入前繁体转简体",
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 3},
+                                "content": [
+                                    {
+                                        "component": "VSwitch",
+                                        "props": {
+                                            "model": "auto_search_on_transfer",
+                                            "label": "入库后自动搜索匹配字幕",
                                         },
                                     }
                                 ],
@@ -592,6 +628,7 @@ class SubtitleManualUpload(_PluginBase):
             "rar_dependency_mode": "none",
             "rar_tool_path": "/usr/local/bin/7z",
             "traditional_to_simplified": False,
+            "auto_search_on_transfer": False,
             "online_providers": list(self._default_online_provider_ids),
             "online_engine": DEFAULT_ENGINE,
             "online_use_proxy": False,
@@ -628,6 +665,25 @@ class SubtitleManualUpload(_PluginBase):
     def stop_service(self):
         pass
 
+    @eventmanager.register(EventType.TransferComplete)
+    def listen_transfer_complete(self, event: MPEvent):
+        if not self.get_state() or not self._auto_search_on_transfer:
+            return
+        event_data = getattr(event, "event_data", None) or {}
+        if not isinstance(event_data, dict):
+            return
+        entries = self._entries_from_transfer_event(event_data)
+        if not entries:
+            logger.info("[SubtitleManualUpload] 入库事件未解析到本地视频目标，跳过自动字幕搜索")
+            return
+        self._merge_local_entries_cache(entries)
+        threading.Thread(
+            target=self._process_transfer_auto_subtitles,
+            args=(entries,),
+            name="SubtitleManualUploadTransferAutoSearch",
+            daemon=True,
+        ).start()
+
     def _save_config(self) -> None:
         self.update_config(
             {
@@ -636,6 +692,7 @@ class SubtitleManualUpload(_PluginBase):
                 "rar_dependency_mode": self._rar_dependency_mode,
                 "rar_tool_path": self._rar_tool_path,
                 "traditional_to_simplified": self._traditional_to_simplified,
+                "auto_search_on_transfer": self._auto_search_on_transfer,
                 "online_providers": self._online_provider_ids,
                 "online_engine": self._online_engine,
                 "online_use_proxy": self._online_use_proxy,
@@ -1105,6 +1162,124 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             "writable": True,
             "date": self._normalize_text(getattr(history, "date", "")),
         }
+
+    @classmethod
+    def _event_value(cls, obj: Any, *names: str, default: Any = "") -> Any:
+        for name in names:
+            if isinstance(obj, dict) and name in obj:
+                return obj.get(name)
+            if hasattr(obj, name):
+                return getattr(obj, name)
+        return default
+
+    def _transfer_event_paths(self, transferinfo: Any) -> List[str]:
+        raw_paths = self._event_value(transferinfo, "file_list_new", default=[]) or []
+        if isinstance(raw_paths, (str, Path)):
+            raw_paths = [raw_paths]
+        paths = [self._normalize_text(item) for item in raw_paths if self._normalize_text(item)]
+        if not paths:
+            target_path = self._normalize_text(self._event_value(transferinfo, "target_path", default=""))
+            if target_path:
+                paths = [target_path]
+        result = []
+        for path in paths:
+            if self._is_local_video_path("local", path):
+                result.append(path)
+        return result
+
+    def _entries_from_transfer_event(self, event_data: Dict[str, Any]) -> List[Dict[str, Any]]:
+        meta = event_data.get("meta") if isinstance(event_data, dict) else None
+        mediainfo = event_data.get("mediainfo") if isinstance(event_data, dict) else None
+        transferinfo = event_data.get("transferinfo") if isinstance(event_data, dict) else None
+        paths = self._transfer_event_paths(transferinfo)
+        if not paths:
+            return []
+
+        media_type = self._media_type_text(self._event_value(mediainfo, "type", default=""))
+        title = self._normalize_text(
+            self._event_value(mediainfo, "title", "name", default="")
+            or self._event_value(meta, "name", "title", default="")
+        )
+        year = self._normalize_text(self._event_value(mediainfo, "year", "release_year", default=""))
+        tmdb_id = self._safe_int(self._event_value(mediainfo, "tmdb_id", "tmdbid", default=0), 0)
+        douban_id = self._normalize_text(self._event_value(mediainfo, "douban_id", "doubanid", default=""))
+        season = self._safe_int(
+            self._event_value(meta, "begin_season", "season", default=0)
+            or self._event_value(mediainfo, "season", default=0),
+            0,
+        )
+        episode = self._safe_int(
+            self._event_value(meta, "begin_episode", "episode", default=0)
+            or self._event_value(mediainfo, "episode", default=0),
+            0,
+        )
+        episode_list = self._event_value(meta, "episode_list", default=[]) or []
+        if not episode and isinstance(episode_list, list) and len(episode_list) == 1:
+            episode = self._safe_int(episode_list[0], 0)
+        if not media_type:
+            media_type = "tv" if season or episode else "movie"
+
+        entries: List[Dict[str, Any]] = []
+        for path in paths:
+            video_path = Path(path)
+            basename = video_path.stem
+            filename = video_path.name
+            hint = self._extract_episode_hint(filename) or {}
+            item_season = season or self._safe_int(hint.get("season"), 0)
+            item_episode = episode or self._safe_int(hint.get("episode"), 0)
+            item_title = title or basename
+            media_key = self._hash_text(f"{media_type}|{tmdb_id}|{douban_id}|{item_title}|{year}")
+            target_label = (
+                f"S{item_season:02d}E{item_episode:02d} · {filename}"
+                if media_type == "tv" and item_season and item_episode
+                else filename
+            )
+            entries.append(
+                {
+                    "id": self._hash_text(f"local|{path}"),
+                    "media_key": media_key,
+                    "media_type": media_type,
+                    "title": item_title,
+                    "year": year,
+                    "tmdb_id": tmdb_id,
+                    "douban_id": douban_id,
+                    "poster_url": self._poster_url(self._event_value(mediainfo, "poster_path", "image", default="")),
+                    "season": item_season,
+                    "episode": item_episode,
+                    "path": path,
+                    "basename": basename,
+                    "filename": filename,
+                    "storage": "local",
+                    "library_name": "MoviePilot 入库事件",
+                    "relative_path": path.replace("\\", "/"),
+                    "target_label": target_label,
+                    "writable": True,
+                    "date": datetime.now().isoformat(timespec="seconds"),
+                }
+            )
+        return entries
+
+    def _merge_local_entries_cache(self, entries: List[Dict[str, Any]]) -> None:
+        if not entries:
+            return
+        cache = self._local_entries_cache or {}
+        existing = [item for item in cache.get("entries") or [] if isinstance(item, dict)]
+        by_path = {entry.get("path"): entry for entry in entries if entry.get("path")}
+        merged = list(entries)
+        for entry in existing:
+            if entry.get("path") not in by_path:
+                merged.append(entry)
+            if len(merged) >= self._cache_max_entries:
+                break
+        media_count = len({entry.get("media_key") for entry in merged if entry.get("media_key")})
+        self._local_entries_cache = {
+            "loaded_at": datetime.now(),
+            "entries": merged[: self._cache_max_entries],
+            "media_count": media_count,
+            "persisted": False,
+        }
+        self._remember_targets(entries)
+        self._persist_local_cache()
 
     def _local_cache_file(self) -> Path:
         return self.get_data_path() / "local_entries_cache.json"
@@ -2125,6 +2300,88 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         operation["write_source_path"] = output_path
         operation["simplified_result"] = {"enabled": True, "converted": converted}
 
+    def _write_operations_to_disk(
+        self,
+        *,
+        session_dir: Path,
+        operations: List[Dict[str, Any]],
+        fix_timeline: bool = False,
+    ) -> Tuple[List[Dict[str, Any]], int, int]:
+        fixed_dir = session_dir / "timeline_fixed"
+        simplified_dir = session_dir / "simplified"
+        for operation in operations:
+            operation["write_source_path"] = operation["source_path"]
+            operation["timeline_result"] = None
+            operation["simplified_result"] = {"enabled": False, "converted": False}
+            if fix_timeline:
+                fixed_dir.mkdir(parents=True, exist_ok=True)
+                fixed_source_path = fixed_dir / f"{operation['upload_info'].get('upload_id')}{operation['source_path'].suffix}"
+                try:
+                    timeline_result = fix_subtitle_timeline(
+                        video_path=operation["video_path"],
+                        subtitle_path=operation["source_path"],
+                        output_path=fixed_source_path,
+                    )
+                except Exception as exc:
+                    logger.error(
+                        "[SubtitleManualUpload] 智能调轴失败 %s -> %s: %s",
+                        operation["upload_info"].get("source_name"),
+                        operation["destination_name"],
+                        exc,
+                    )
+                    raise HTTPException(
+                        status_code=500,
+                        detail=f"智能调轴失败: {operation['upload_info'].get('source_name')} - {exc}",
+                    ) from exc
+                operation["write_source_path"] = fixed_source_path
+                operation["timeline_result"] = timeline_result
+            self._maybe_convert_operation_to_simplified(operation, simplified_dir)
+
+        written_results = []
+        for operation in operations:
+            destination_path = operation["destination_path"]
+            temp_path = destination_path.with_name(f"{destination_path.name}.mp-uploading")
+            if temp_path.exists():
+                temp_path.unlink()
+
+            shutil.copyfile(operation["write_source_path"], temp_path)
+            temp_path.replace(destination_path)
+            timeline_result = operation.get("timeline_result")
+            written_results.append(
+                {
+                    "source_name": operation["upload_info"].get("source_name"),
+                    "archive_name": operation["upload_info"].get("archive_name"),
+                    "target_label": self._target_from_entry(operation["target_entry"]).get("label"),
+                    "output_name": operation["destination_name"],
+                    "output_path": str(destination_path),
+                    "timeline": timeline_result.to_dict() if timeline_result else {"enabled": False},
+                    "simplified": operation.get("simplified_result") or {"enabled": False, "converted": False},
+                }
+            )
+
+        touched_videos: Dict[str, Path] = {
+            str(operation["video_path"]): operation["video_path"]
+            for operation in operations
+        }
+        for video_path in touched_videos.values():
+            self._remove_ext_marks(video_path)
+
+        fixed_count = len(
+            [
+                item
+                for item in written_results
+                if item.get("timeline", {}).get("enabled") and item.get("timeline", {}).get("applied")
+            ]
+        )
+        simplified_count = len(
+            [
+                item
+                for item in written_results
+                if item.get("simplified", {}).get("enabled") and item.get("simplified", {}).get("converted")
+            ]
+        )
+        return written_results, fixed_count, simplified_count
+
     def _write_session(self, session_id: str, payload: Dict[str, Any]) -> None:
         session_dir = self._get_session_root() / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
@@ -2187,6 +2444,129 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         if manual_keyword:
             keywords = [manual_keyword, *[item for item in keywords if item != manual_keyword]]
         return keywords[:8]
+
+    def _auto_search_keywords_for_entry(self, entry: Dict[str, Any], target: Dict[str, Any]) -> List[str]:
+        media = {
+            "media_type": entry.get("media_type"),
+            "title": entry.get("title"),
+            "year": entry.get("year"),
+        }
+        return build_search_keywords(media, [target], "auto")[:8]
+
+    def _auto_search_and_write_entry(self, entry: Dict[str, Any]) -> Dict[str, Any]:
+        target = self._target_from_entry(entry)
+        if target.get("has_subtitle"):
+            return {"status": "skipped", "reason": "目标已有外挂字幕", "target": target.get("label")}
+        providers = list(self._online_provider_ids or [])
+        if not providers:
+            return {"status": "skipped", "reason": "未配置可用 API 字幕源", "target": target.get("label")}
+        keywords = self._auto_search_keywords_for_entry(entry, target)
+        if not keywords:
+            return {"status": "skipped", "reason": "没有可用搜索关键词", "target": target.get("label")}
+
+        self._check_online_rate_limit(providers)
+        service = self._online_service()
+        search_result = service.search(
+            keywords=keywords,
+            providers=providers,
+            targets=[target],
+            scope="auto",
+        )
+        candidates = [
+            item
+            for item in search_result.get("results") or []
+            if item.get("downloadable") is not False and self._safe_int(item.get("score"), 0) >= self._auto_search_min_score
+        ]
+        if len(candidates) != 1:
+            return {
+                "status": "skipped",
+                "reason": f"高置信可下载结果数量为 {len(candidates)}",
+                "target": target.get("label"),
+                "results": len(search_result.get("results") or []),
+            }
+
+        selected = candidates[0]
+        session_id = self._hash_text(f"auto|{datetime.now().isoformat()}|{entry.get('id')}")[:16]
+        session_dir = self._get_session_root() / session_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            downloads = service.download([selected])
+            prepared_uploads: List[Dict[str, Any]] = []
+            for downloaded in downloads:
+                result = downloaded.get("result") or {}
+                source_name = self._normalize_online_download_name(
+                    downloaded.get("source_name", ""),
+                    downloaded.get("content") or b"",
+                    result,
+                )
+                extracted = self._extract_subtitle_files(
+                    source_name,
+                    downloaded.get("content") or b"",
+                    session_dir,
+                )
+                for item in extracted:
+                    item["online_source"] = downloaded.get("provider")
+                    item["online_title"] = result.get("title", "")
+                    if not item.get("archive_name") and source_name != item.get("source_name"):
+                        item["archive_name"] = source_name
+                prepared_uploads.extend(extracted)
+            if len(prepared_uploads) != 1:
+                return {
+                    "status": "skipped",
+                    "reason": f"下载包解析出 {len(prepared_uploads)} 个字幕，需人工确认",
+                    "target": target.get("label"),
+                }
+
+            prepared = prepared_uploads[0]
+            raw_bytes = Path(prepared["stored_path"]).read_bytes()
+            language_profile = self._detect_language_profile(prepared["source_name"], raw_bytes)
+            item = {
+                "upload_id": prepared["upload_id"],
+                "target_id": entry["id"],
+                "ext": prepared["ext"],
+                "language_suffix": language_profile["suffix"],
+            }
+            operations = self._build_write_operations(
+                [item],
+                {prepared["upload_id"]: prepared},
+                {entry["id"]: entry},
+            )
+            written, _, simplified_count = self._write_operations_to_disk(
+                session_dir=session_dir,
+                operations=operations,
+                fix_timeline=False,
+            )
+            if selected.get("language_category") == "english":
+                try:
+                    self._submit_autosub_for_entries([entry])
+                except Exception as exc:
+                    logger.warning("[SubtitleManualUpload] 自动入库英文字幕提交 AI 翻译失败: %s", exc)
+            return {
+                "status": "written",
+                "target": target.get("label"),
+                "result": selected.get("title"),
+                "written": written,
+                "simplified_count": simplified_count,
+            }
+        finally:
+            shutil.rmtree(session_dir, ignore_errors=True)
+
+    def _process_transfer_auto_subtitles(self, entries: List[Dict[str, Any]]) -> None:
+        for entry in entries:
+            try:
+                result = self._auto_search_and_write_entry(entry)
+                logger.info(
+                    "[SubtitleManualUpload] 入库自动字幕处理完成 target=%s status=%s reason=%s",
+                    result.get("target"),
+                    result.get("status"),
+                    result.get("reason", ""),
+                )
+            except Exception as exc:
+                logger.warning(
+                    "[SubtitleManualUpload] 入库自动字幕处理失败 target=%s error=%s",
+                    entry.get("target_label") or entry.get("filename"),
+                    exc,
+                )
 
     @classmethod
     def _normalize_online_download_name(cls, name: str, content: bytes, result: Dict[str, Any]) -> str:
@@ -2285,6 +2665,8 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         return self._ok(
             {
                 "enabled": self.get_state(),
+                "auto_search_on_transfer": bool(self._auto_search_on_transfer),
+                "traditional_to_simplified": bool(self._traditional_to_simplified),
                 "source": "MoviePilot 本地整理记录",
                 "index": self._cache_status(),
                 "archive_support": {
@@ -2777,84 +3159,17 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             fix_timeline,
         )
         operations = self._build_write_operations(items, upload_map, target_entries)
-        fixed_dir = session_dir / "timeline_fixed"
-        simplified_dir = session_dir / "simplified"
-        for operation in operations:
-            operation["write_source_path"] = operation["source_path"]
-            operation["timeline_result"] = None
-            operation["simplified_result"] = {"enabled": False, "converted": False}
-            if fix_timeline:
-                fixed_dir.mkdir(parents=True, exist_ok=True)
-                fixed_source_path = fixed_dir / f"{operation['upload_info'].get('upload_id')}{operation['source_path'].suffix}"
-                try:
-                    timeline_result = fix_subtitle_timeline(
-                        video_path=operation["video_path"],
-                        subtitle_path=operation["source_path"],
-                        output_path=fixed_source_path,
-                    )
-                except Exception as exc:
-                    logger.error(
-                        "[SubtitleManualUpload] 智能调轴失败 %s -> %s: %s",
-                        operation["upload_info"].get("source_name"),
-                        operation["destination_name"],
-                        exc,
-                    )
-                    raise HTTPException(
-                        status_code=500,
-                        detail=f"智能调轴失败: {operation['upload_info'].get('source_name')} - {exc}",
-                    ) from exc
-                operation["write_source_path"] = fixed_source_path
-                operation["timeline_result"] = timeline_result
-            self._maybe_convert_operation_to_simplified(operation, simplified_dir)
-
-        written_results = []
-        for operation in operations:
-            destination_path = operation["destination_path"]
-            temp_path = destination_path.with_name(f"{destination_path.name}.mp-uploading")
-            if temp_path.exists():
-                temp_path.unlink()
-
-            shutil.copyfile(operation["write_source_path"], temp_path)
-            temp_path.replace(destination_path)
-            timeline_result = operation.get("timeline_result")
-            written_results.append(
-                {
-                    "source_name": operation["upload_info"].get("source_name"),
-                    "archive_name": operation["upload_info"].get("archive_name"),
-                    "target_label": self._target_from_entry(operation["target_entry"]).get("label"),
-                    "output_name": operation["destination_name"],
-                    "output_path": str(destination_path),
-                    "timeline": timeline_result.to_dict() if timeline_result else {"enabled": False},
-                    "simplified": operation.get("simplified_result") or {"enabled": False, "converted": False},
-                }
-            )
-
-        touched_videos: Dict[str, Path] = {
-            str(operation["video_path"]): operation["video_path"]
-            for operation in operations
-        }
-        for video_path in touched_videos.values():
-            self._remove_ext_marks(video_path)
+        written_results, fixed_count, simplified_count = self._write_operations_to_disk(
+            session_dir=session_dir,
+            operations=operations,
+            fix_timeline=fix_timeline,
+        )
 
         shutil.rmtree(session_dir, ignore_errors=True)
 
-        fixed_count = len(
-            [
-                item
-                for item in written_results
-                if item.get("timeline", {}).get("enabled") and item.get("timeline", {}).get("applied")
-            ]
-        )
         message = f"已写入 {len(written_results)} 个字幕文件"
         if fix_timeline:
             message += f"，智能调轴 {fixed_count} 个"
-        simplified_count = len(
-            [
-                item
-                for item in written_results
-                if item.get("simplified", {}).get("enabled") and item.get("simplified", {}).get("converted")
-            ]
-        )
         if self._traditional_to_simplified:
             message += f"，繁转简 {simplified_count} 个"
 
