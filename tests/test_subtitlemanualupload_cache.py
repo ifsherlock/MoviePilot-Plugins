@@ -203,3 +203,22 @@ def test_entry_map_is_bounded_lru():
     plugin._remember_targets([{"id": "d"}])
 
     assert list(plugin._entry_map.keys()) == ["b", "d"]
+
+
+def test_online_download_name_prefers_archive_magic_over_filename_suffix():
+    module, _, _ = load_plugin_module()
+    cls = module.SubtitleManualUpload
+
+    rar_named_zip = cls._normalize_online_download_name(
+        "Spider-Man.Into.the.Spider-Verse.2018.1080p.WEB-DL.DD5.1.H264-FGT.zip",
+        b"Rar!\x1a\x07\x00subtitle-data",
+        {"title": "Spider-Man Into the Spider-Verse"},
+    )
+    zip_named_unknown = cls._normalize_online_download_name(
+        "subtitle.bin",
+        b"PK\x03\x04subtitle-data",
+        {"title": "Spider-Man Into the Spider-Verse"},
+    )
+
+    assert rar_named_zip == "Spider-Man.Into.the.Spider-Verse.2018.1080p.WEB-DL.DD5.1.H264-FGT.rar"
+    assert zip_named_unknown == "subtitle.zip"

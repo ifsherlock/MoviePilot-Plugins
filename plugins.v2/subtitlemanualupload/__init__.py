@@ -66,7 +66,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/subtitle-match.png"
-    plugin_version = "0.1.41"
+    plugin_version = "0.1.42"
     plugin_author = "jaysherlock"
     author_url = "https://github.com/jaysherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -2583,6 +2583,12 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
     def _normalize_online_download_name(cls, name: str, content: bytes, result: Dict[str, Any]) -> str:
         safe_name = Path(cls._normalize_text(name)).name
         suffix = Path(safe_name).suffix.lower()
+        magic_suffix = cls._archive_suffix_from_content(content)
+        if magic_suffix:
+            stem = Path(safe_name).stem if safe_name else ""
+            if not stem:
+                stem = re.sub(r"[\\/:*?\"<>|]+", " ", cls._normalize_text(result.get("title")) or "online-subtitle").strip()
+            return f"{stem or 'online-subtitle'}{magic_suffix}"
         if suffix in cls._subtitle_exts or suffix in cls._archive_exts:
             return safe_name
         title = re.sub(r"[\\/:*?\"<>|]+", " ", cls._normalize_text(result.get("title")) or "online-subtitle").strip()
@@ -2596,6 +2602,15 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         if "[Script Info]" in text_head or "[V4+ Styles]" in text_head:
             return f"{title}.ass"
         return safe_name or f"{title}.zip"
+
+    @staticmethod
+    def _archive_suffix_from_content(content: bytes) -> str:
+        head = (content or b"")[:8]
+        if head.startswith(b"PK\x03\x04") or head.startswith(b"PK\x05\x06") or head.startswith(b"PK\x07\x08"):
+            return ".zip"
+        if head.startswith(b"Rar!\x1a\x07"):
+            return ".rar"
+        return ""
 
     def _build_preview_response_from_uploads(
         self,
