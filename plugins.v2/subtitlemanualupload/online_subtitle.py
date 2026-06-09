@@ -31,6 +31,7 @@ DEFAULT_PROVIDER_ROOTS = {
     "assrt": "https://2.assrt.net",
 }
 DEFAULT_ASSRT_API_URL = "https://api.assrt.net"
+INTERACTIVE_DOWNLOAD_EVENT_TIMEOUT_MS = 12000
 
 
 @dataclass
@@ -206,7 +207,7 @@ class OnlinePageClient:
             if referer:
                 page.goto(referer, wait_until="domcontentloaded", timeout=self.timeout * 1000)
             try:
-                with page.expect_download(timeout=self.timeout * 1000) as download_info:
+                with page.expect_download(timeout=INTERACTIVE_DOWNLOAD_EVENT_TIMEOUT_MS) as download_info:
                     page.goto(url, wait_until="domcontentloaded", timeout=self.timeout * 1000)
                 return self._read_playwright_download(download_info.value, url)
             except Exception:
@@ -218,7 +219,7 @@ class OnlinePageClient:
             if captcha:
                 if self._fill_first_captcha_input(page, captcha):
                     try:
-                        with page.expect_download(timeout=self.timeout * 1000) as download_info:
+                        with page.expect_download(timeout=INTERACTIVE_DOWNLOAD_EVENT_TIMEOUT_MS) as download_info:
                             self._click_first_download_submit(page)
                         logger.info("[SubtitleManualUpload] 下载页验证码 OCR 提交完成 host=%s", _host(page.url or url))
                         return self._read_playwright_download(download_info.value, page.url or url)
@@ -232,7 +233,7 @@ class OnlinePageClient:
                         if loaded:
                             return loaded
             try:
-                with page.expect_download(timeout=self.timeout * 1000) as download_info:
+                with page.expect_download(timeout=INTERACTIVE_DOWNLOAD_EVENT_TIMEOUT_MS) as download_info:
                     self._click_first_download_submit(page)
                 logger.info("[SubtitleManualUpload] 下载页点击下载按钮完成 host=%s", _host(page.url or url))
                 return self._read_playwright_download(download_info.value, page.url or url)
@@ -244,7 +245,7 @@ class OnlinePageClient:
             captcha = self._recognize_page_captcha(page)
             if captcha and self._fill_first_captcha_input(page, captcha):
                 try:
-                    with page.expect_download(timeout=self.timeout * 1000) as download_info:
+                    with page.expect_download(timeout=INTERACTIVE_DOWNLOAD_EVENT_TIMEOUT_MS) as download_info:
                         self._click_first_download_submit(page)
                     logger.info("[SubtitleManualUpload] 下载页点击后验证码 OCR 提交完成 host=%s", _host(page.url or url))
                     return self._read_playwright_download(download_info.value, page.url or url)

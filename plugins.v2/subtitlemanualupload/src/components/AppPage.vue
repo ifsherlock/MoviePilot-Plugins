@@ -117,7 +117,9 @@ const aiTaskData = ref({
 })
 let aiTaskTimer = null
 let onlineSearchSeq = 0
+let onlineDownloadSeq = 0
 const ONLINE_PROVIDER_TIMEOUT_MS = 25000
+const ONLINE_DOWNLOAD_TIMEOUT_MS = 35000
 
 const onlineProviderItems = [
   { title: 'SubHD', value: 'subhd' },
@@ -981,13 +983,19 @@ function toggleOnlineResult(item, checked) {
 
 async function downloadOnlinePreview() {
   if (!selectedOnlineResults.value.length || onlineDownloading.value) return
+  const downloadSeq = ++onlineDownloadSeq
   onlineDownloading.value = true
   onlineError.value = ''
   try {
-    const response = await props.api.post(`${pluginBase.value}/online_download_preview`, {
-      ...onlinePayload(),
-      results: selectedOnlineResults.value,
-    })
+    const response = await withTimeout(
+      props.api.post(`${pluginBase.value}/online_download_preview`, {
+        ...onlinePayload(),
+        results: selectedOnlineResults.value,
+      }),
+      ONLINE_DOWNLOAD_TIMEOUT_MS,
+      '在线字幕下载仍在源站验证中，已停止等待；可换一个结果重试，或打开手动链接下载后上传。',
+    )
+    if (downloadSeq !== onlineDownloadSeq) return
     preview.value = unwrapResponse(response)
     batchLanguageSuffix.value = ''
     if (preview.value?.items) {
@@ -1000,10 +1008,20 @@ async function downloadOnlinePreview() {
     uploadDialog.value = true
     message.value = response?.message || '已下载在线字幕并生成匹配预览'
   } catch (err) {
+    if (downloadSeq !== onlineDownloadSeq) return
     onlineError.value = errorMessage(err, '在线字幕下载预览失败')
   } finally {
-    onlineDownloading.value = false
+    if (downloadSeq === onlineDownloadSeq) {
+      onlineDownloading.value = false
+    }
   }
+}
+
+function stopOnlineDownload() {
+  if (!onlineDownloading.value) return
+  onlineDownloadSeq += 1
+  onlineDownloading.value = false
+  onlineError.value = '已停止等待在线字幕下载，当前搜索结果仍可继续选择。'
 }
 
 async function onPickFiles(event) {
@@ -1596,6 +1614,14 @@ defineExpose({
               @click="downloadOnlinePreview"
             >
               下载并生成预览
+            </VBtn>
+            <VBtn
+              v-if="onlineDownloading"
+              color="warning"
+              variant="tonal"
+              @click="stopOnlineDownload"
+            >
+              停止等待
             </VBtn>
             <VBtn icon="mdi-close" variant="text" @click="onlineDialog = false" />
           </div>
