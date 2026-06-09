@@ -66,7 +66,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/subtitle-match.png"
-    plugin_version = "0.1.37"
+    plugin_version = "0.1.38"
     plugin_author = "jaysherlock"
     author_url = "https://github.com/jaysherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -279,6 +279,13 @@ class SubtitleManualUpload(_PluginBase):
                 "methods": ["POST"],
                 "auth": "bear",
                 "summary": "查询当前资源的 AI 字幕生成任务状态",
+            },
+            {
+                "path": "/ai_cancel",
+                "endpoint": self.api_ai_cancel,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "取消 AI 字幕生成任务",
             },
             {
                 "path": "/online_status",
@@ -1516,6 +1523,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             "ignored": 0,
             "no_audio": 0,
             "failed": 0,
+            "cancelled": 0,
             "active": 0,
             "total": len(tasks),
         }
@@ -2742,6 +2750,49 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             len(result.get("added") or []),
             len(result.get("skipped") or []),
             len(result.get("failed") or []),
+        )
+        return {
+            **result,
+            "targets": [self._target_from_entry(entry) for entry in target_entries],
+            "tasks": tasks,
+        }
+
+    async def api_ai_cancel(self, request: Request) -> Dict[str, Any]:
+        body = await request.json()
+        target_ids = self._target_ids_from_body(body)
+        if not target_ids:
+            raise HTTPException(status_code=400, detail="请先选择要取消的 AI 字幕任务")
+        target_entries = list(self._resolve_targets(target_ids).values())
+        if not target_entries:
+            raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
+        result = self._cancel_autosub_for_entries(target_entries)
+        return self._ok(
+            result,
+            message=f"已取消 {len(result.get('cancelled') or [])} 个 AI 字幕任务，跳过 {len(result.get('skipped') or [])} 个",
+        )
+
+    def _cancel_autosub_for_entries(self, target_entries: List[Dict[str, Any]]) -> Dict[str, Any]:
+        plugin, reason = self._autosub_plugin()
+        if not plugin:
+            raise HTTPException(status_code=409, detail=reason)
+        if not hasattr(plugin, "cancel_tasks"):
+            raise HTTPException(status_code=409, detail="AI 字幕插件版本过旧，请更新到支持取消任务的联动版")
+
+        paths = [self._normalize_text(entry.get("path")) for entry in target_entries if self._normalize_text(entry.get("path"))]
+        try:
+            result = plugin.cancel_tasks(paths=paths)
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except Exception as exc:
+            logger.error("[SubtitleManualUpload] AI 字幕任务取消失败: %s", exc)
+            raise HTTPException(status_code=500, detail=f"AI 字幕任务取消失败: {exc}") from exc
+
+        tasks = self._autosub_tasks_for_entries(target_entries)
+        logger.info(
+            "[SubtitleManualUpload] AI 字幕任务取消完成 targets=%s cancelled=%s skipped=%s",
+            len(target_entries),
+            len(result.get("cancelled") or []),
+            len(result.get("skipped") or []),
         )
         return {
             **result,

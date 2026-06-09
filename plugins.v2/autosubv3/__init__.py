@@ -50,6 +50,7 @@ class TaskStatus(Enum):
     IGNORED = "ignored"
     NO_AUDIO = "no_audio"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 @dataclass
@@ -62,6 +63,7 @@ class TaskItem:
     status: TaskStatus = TaskStatus.PENDING
     complete_time: datetime = None
     error_message: str = ""
+    cancel_requested: bool = False
 
 
 class FileMonitorHandler(FileSystemEventHandler):
@@ -90,7 +92,7 @@ class AutoSubv3(_PluginBase):
     # 主题色
     plugin_color = "#2C4F7E"
     # 插件版本
-    plugin_version = "3.5.42"
+    plugin_version = "3.5.43"
     # 插件作者
     plugin_author = "jaysherlock"
     # 作者主页
@@ -238,6 +240,7 @@ class AutoSubv3(_PluginBase):
                     complete_time=datetime.fromisoformat(task_dict["complete_time"])
                     if task_dict.get("complete_time") else None,
                     error_message=task_dict.get("error_message", ""),
+                    cancel_requested=bool(task_dict.get("cancel_requested", False)),
                 )
                 tasks[task_id] = task
             except Exception as e:
@@ -255,6 +258,7 @@ class AutoSubv3(_PluginBase):
             "status": task.status.value,
             "complete_time": task.complete_time.isoformat() if task.complete_time else None,
             "error_message": task.error_message or "",
+            "cancel_requested": bool(task.cancel_requested),
         }
 
     def save_tasks(self):
@@ -286,6 +290,7 @@ class AutoSubv3(_PluginBase):
             TaskStatus.IGNORED: "已忽略",
             TaskStatus.NO_AUDIO: "无声音跳过",
             TaskStatus.FAILED: "失败",
+            TaskStatus.CANCELLED: "已取消",
         }.get(status, getattr(status, "value", str(status)))
 
     @staticmethod
@@ -297,6 +302,7 @@ class AutoSubv3(_PluginBase):
             TaskStatus.IGNORED: "已按插件规则跳过，通常是字幕已存在或文件不满足处理条件",
             TaskStatus.NO_AUDIO: "视频未检测到有效音轨，已跳过",
             TaskStatus.FAILED: "字幕生成失败，请查看 AI字幕生成(联动版) 日志",
+            TaskStatus.CANCELLED: "用户已取消",
         }.get(status, "")
 
     def _queue_positions(self) -> Dict[str, int]:
@@ -331,6 +337,8 @@ class AutoSubv3(_PluginBase):
             message = f"排队第 {queue_position} 位"
         if status == TaskStatus.IN_PROGRESS:
             message = "正在生成字幕"
+        if bool(task.cancel_requested):
+            message = task.error_message or "已请求取消，当前步骤结束后停止"
         return {
             "task_id": task.task_id,
             "video_file": task.video_file,
@@ -344,7 +352,8 @@ class AutoSubv3(_PluginBase):
             "queue_position": queue_position,
             "add_time": task.add_time.isoformat(timespec="seconds") if task.add_time else "",
             "complete_time": task.complete_time.isoformat(timespec="seconds") if task.complete_time else "",
-            "active": status in (TaskStatus.PENDING, TaskStatus.IN_PROGRESS),
+            "cancel_requested": bool(task.cancel_requested),
+            "active": status in (TaskStatus.PENDING, TaskStatus.IN_PROGRESS) and not bool(task.cancel_requested),
         }
 
     def _status_payload(self) -> Dict[str, Any]:
@@ -438,6 +447,90 @@ class AutoSubv3(_PluginBase):
         return self._ok(
             result,
             message=f"已提交 {len(result['added'])} 个 AI 字幕生成任务，跳过 {len(result['skipped'])} 个，失败 {len(result['failed'])} 个",
+        )
+
+    def cancel_tasks(self, task_ids: Optional[List[str]] = None, paths: Optional[List[str]] = None) -> Dict[str, Any]:
+        filter_task_ids = {self._normalize_text(item) for item in (task_ids or []) if self._normalize_text(item)}
+        filter_paths = {self._normalize_text(item) for item in (paths or []) if self._normalize_text(item)}
+        if not filter_task_ids and not filter_paths:
+            return {
+                "cancelled": [],
+                "skipped": [{"reason": "未提供要取消的任务"}],
+                "status": self._status_payload(),
+            }
+
+        cancelled: List[Dict[str, str]] = []
+        skipped: List[Dict[str, str]] = []
+        matched_task_ids = set()
+        matched_paths = set()
+
+        for task in list((self._tasks or {}).values()):
+            match_task = bool(filter_task_ids and task.task_id in filter_task_ids)
+            match_path = bool(filter_paths and task.video_file in filter_paths)
+            if not (match_task or match_path):
+                continue
+            matched_task_ids.add(task.task_id)
+            matched_paths.add(task.video_file)
+            if task.status == TaskStatus.PENDING:
+                task.status = TaskStatus.CANCELLED
+                task.cancel_requested = True
+                task.complete_time = datetime.now()
+                task.error_message = "用户已取消"
+                cancelled.append({"task_id": task.task_id, "path": task.video_file, "status": task.status.value})
+                continue
+            if task.status == TaskStatus.IN_PROGRESS:
+                task.status = TaskStatus.CANCELLED
+                task.cancel_requested = True
+                task.complete_time = datetime.now()
+                task.error_message = "已请求取消，当前步骤结束后停止"
+                cancelled.append({"task_id": task.task_id, "path": task.video_file, "status": task.status.value})
+                continue
+            skipped.append({
+                "task_id": task.task_id,
+                "path": task.video_file,
+                "reason": f"任务已是 {self._status_label(task.status)}",
+            })
+
+        if self._task_queue:
+            try:
+                with self._task_queue.mutex:
+                    kept_tasks = [task for task in self._task_queue.queue if task.task_id not in matched_task_ids]
+                    removed_count = len(self._task_queue.queue) - len(kept_tasks)
+                    self._task_queue.queue = type(self._task_queue.queue)(kept_tasks)
+                    self._task_queue.unfinished_tasks = max(0, self._task_queue.unfinished_tasks - removed_count)
+                    if self._task_queue.unfinished_tasks == 0:
+                        self._task_queue.all_tasks_done.notify_all()
+            except Exception as exc:
+                logger.warning("[AutoSubv3] 从队列移除取消任务失败: %s", exc)
+
+        for item in filter_task_ids:
+            if item not in matched_task_ids:
+                skipped.append({"task_id": item, "reason": "未找到任务"})
+        for item in filter_paths:
+            if item not in matched_paths:
+                skipped.append({"path": item, "reason": "未找到任务"})
+
+        if cancelled:
+            self.save_tasks()
+        logger.info("[AutoSubv3] 取消任务 requested=%s cancelled=%s skipped=%s", len(filter_task_ids) + len(filter_paths), len(cancelled), len(skipped))
+        return {
+            "cancelled": cancelled,
+            "skipped": skipped,
+            "status": self._status_payload(),
+        }
+
+    async def api_cancel(self, request: Request) -> Dict[str, Any]:
+        body = await request.json()
+        paths = body.get("paths") or []
+        task_ids = body.get("task_ids") or []
+        if isinstance(paths, str):
+            paths = [paths]
+        if isinstance(task_ids, str):
+            task_ids = [task_ids]
+        result = self.cancel_tasks(task_ids=task_ids if isinstance(task_ids, list) else [], paths=paths if isinstance(paths, list) else [])
+        return self._ok(
+            result,
+            message=f"已取消 {len(result.get('cancelled') or [])} 个 AI 字幕任务，跳过 {len(result.get('skipped') or [])} 个",
         )
 
     def tasks_payload(self, paths: Optional[List[str]] = None, limit: int = 300) -> Dict[str, Any]:
@@ -555,10 +648,16 @@ class AutoSubv3(_PluginBase):
     def __is_duplicate_task(self, video_file: str) -> bool:
         with self._task_queue.mutex:
             for task in self._task_queue.queue:
-                if task.video_file == video_file:
+                if task.video_file == video_file and task.status in (TaskStatus.PENDING, TaskStatus.IN_PROGRESS) and not task.cancel_requested:
                     return True
             # 还要检查当前正在处理的任务（即可能不在队列中，但正在被消费）
-            if self._consumer_thread and self._current_processing_task and self._current_processing_task.video_file == video_file:
+            if (
+                self._consumer_thread
+                and self._current_processing_task
+                and self._current_processing_task.video_file == video_file
+                and self._current_processing_task.status in (TaskStatus.PENDING, TaskStatus.IN_PROGRESS)
+                and not self._current_processing_task.cancel_requested
+            ):
                 return True
         return False
 
@@ -568,19 +667,33 @@ class AutoSubv3(_PluginBase):
                 task = self._task_queue.get(timeout=1)
                 if task is None:
                     continue
+                if task.cancel_requested or task.status == TaskStatus.CANCELLED:
+                    task.status = TaskStatus.CANCELLED
+                    task.complete_time = task.complete_time or datetime.now()
+                    task.error_message = task.error_message or "用户已取消"
+                    self._tasks[task.task_id] = task
+                    self.save_tasks()
+                    self._task_queue.task_done()
+                    continue
                 self._current_processing_task = task
                 logger.info(f"开始处理任务 {task.task_id}: {task.video_file}")
                 task.status = TaskStatus.IN_PROGRESS
                 task.error_message = ""
                 self._tasks[task.task_id] = task
                 self.save_tasks()
-                task.status = self.__process_autosub(
+                result_status = self.__process_autosub(
                     task.video_file,
                     source=task.source,
                     force_generate=task.force_generate,
                 )
-                task.complete_time = datetime.now()
-                task.error_message = "" if task.status == TaskStatus.COMPLETED else self._status_message(task.status)
+                if task.cancel_requested or task.status == TaskStatus.CANCELLED:
+                    task.status = TaskStatus.CANCELLED
+                    task.complete_time = task.complete_time or datetime.now()
+                    task.error_message = task.error_message or "用户已取消"
+                else:
+                    task.status = result_status
+                    task.complete_time = datetime.now()
+                    task.error_message = "" if task.status == TaskStatus.COMPLETED else self._status_message(task.status)
                 self._tasks[task.task_id] = task
                 self.save_tasks()
                 self._task_queue.task_done()
@@ -591,9 +704,14 @@ class AutoSubv3(_PluginBase):
                 logger.error(f"消费任务时发生异常: {e}")
                 logger.error(traceback.format_exc())
                 if self._current_processing_task:
-                    self._current_processing_task.status = TaskStatus.FAILED
-                    self._current_processing_task.complete_time = datetime.now()
-                    self._current_processing_task.error_message = str(e)
+                    if self._current_processing_task.cancel_requested or self._current_processing_task.status == TaskStatus.CANCELLED:
+                        self._current_processing_task.status = TaskStatus.CANCELLED
+                        self._current_processing_task.complete_time = self._current_processing_task.complete_time or datetime.now()
+                        self._current_processing_task.error_message = self._current_processing_task.error_message or "用户已取消"
+                    else:
+                        self._current_processing_task.status = TaskStatus.FAILED
+                        self._current_processing_task.complete_time = datetime.now()
+                        self._current_processing_task.error_message = str(e)
                     self._tasks[self._current_processing_task.task_id] = self._current_processing_task
                     self.save_tasks()
                 self._current_processing_task = None
@@ -683,6 +801,14 @@ class AutoSubv3(_PluginBase):
             return source == TaskSource.SUBTITLE_MANUAL_UPLOAD
         return str(source or "").strip() == TaskSource.SUBTITLE_MANUAL_UPLOAD.value
 
+    def _is_current_task_cancelled(self) -> bool:
+        task = self._current_processing_task
+        return bool(task and (task.cancel_requested or task.status == TaskStatus.CANCELLED))
+
+    def _raise_if_task_cancelled(self):
+        if self._event.is_set() or self._is_current_task_cancelled():
+            raise UserInterruptException("用户中断当前任务")
+
     def __process_autosub(
         self,
         video_file,
@@ -719,6 +845,7 @@ class AutoSubv3(_PluginBase):
                 return TaskStatus.IGNORED
 
         try:
+            self._raise_if_task_cancelled()
             logger.info(f"[Step 4] 判断目的字幕是否已存在：{video_file}")
             # 字幕匹配来源是用户显式触发，允许绕过已有外挂/内嵌字幕检查；监控规则保持原样。
             if not linked_force_generate and self.__target_subtitle_exists(video_file):
@@ -729,6 +856,7 @@ class AutoSubv3(_PluginBase):
             logger.info(f"[Step 5] 生成字幕")
             # 生成字幕
             ret, lang, gen_sub_path = self.__generate_subtitle(video_file, file_path, self._enable_asr)
+            self._raise_if_task_cancelled()
             if not ret:
                 # 检查是否是无声音跳过（刚记录的）
                 if self.is_video_skipped(video_file):
@@ -753,6 +881,7 @@ class AutoSubv3(_PluginBase):
                 logger.info(f"开始翻译字幕为中文 ...")
                 self.__translate_zh_subtitle(lang, gen_sub_path, f"{file_path}.zh.机翻.srt",
                                               output_mode=self._subtitle_output_mode)
+                self._raise_if_task_cancelled()
                 logger.info(f"翻译字幕完成：{file_name}.zh.机翻.srt")
                 translated_to_zh = True
 
@@ -771,7 +900,7 @@ class AutoSubv3(_PluginBase):
             logger.info(f"用户中断当前任务：{video_file}")
             logger.info("")  # 空行分隔
             logger.info("")  # 空行分隔
-            return TaskStatus.FAILED
+            return TaskStatus.CANCELLED
         except Exception as e:
             logger.error(f"自动字幕生成 处理异常：{e}")
             end_time = time.time()
@@ -860,7 +989,7 @@ class AutoSubv3(_PluginBase):
             idx = 0
             last_pct = 0
             for segment in seg_list:
-                if self._event.is_set():
+                if self._event.is_set() or self._is_current_task_cancelled():
                     logger.info(f"[Whisper音频提取文本] {video_name} - 用户中断，停止提取")
                     raise UserInterruptException(f"用户中断当前任务")
                 pct = int(segment.end / total_duration * 100) if total_duration > 0 else 0
@@ -902,12 +1031,15 @@ class AutoSubv3(_PluginBase):
                 logger.info(f"[Whisper音频提取文本] {video_name} - 提取的字幕内容为空，标记为无声音")
                 return None, None
 
+            self._raise_if_task_cancelled()
             self.__save_srt(f"{audio_file}.srt", subs)
             logger.info(f"[Whisper音频提取文本] {video_name} - 音轨转字幕完成")
             return True, lang
         except ImportError:
             logger.warn(f"[Whisper音频提取文本] faster-whisper 未安装，不进行处理")
             return False, None
+        except UserInterruptException:
+            raise
         except Exception as e:
             traceback.print_exc()
             logger.error(f"[Whisper音频提取文本] {video_name} - 处理异常：{e}")
@@ -1040,6 +1172,7 @@ class AutoSubv3(_PluginBase):
             elif ret:
                 logger.info(f"生成字幕成功，原始语言：{lang}")
                 # 复制字幕文件
+                self._raise_if_task_cancelled()
                 SystemUtils.copy(Path(f"{audio_file.name}.srt"), Path(f"{subtitle_file}.{lang}.srt"))
                 logger.info(f"复制字幕文件：{subtitle_file}.{lang}.srt")
                 # 删除临时文件
@@ -1306,8 +1439,7 @@ class AutoSubv3(_PluginBase):
         return [self.__process_single(all_subs, item) for item in items]
 
     def __translate_to_zh(self, text: str, context: str = None, max_retries: int = None) -> str:
-        if self._event.is_set():
-            raise UserInterruptException("用户中断当前任务")
+        self._raise_if_task_cancelled()
         if max_retries is None:
             max_retries = self._max_retries
         return self._openai.translate_to_zh(text, context, max_retries=max_retries)
@@ -1331,6 +1463,8 @@ class AutoSubv3(_PluginBase):
                 item.content = f"{trans}\n{item.content}"
             self._stats['batch_success'] += len(batch)
             return batch
+        except UserInterruptException:
+            raise
         except Exception as e:
             logger.warning(f"[翻译] 批量翻译失败：{e}，降级逐行翻译")
             self._stats['batch_fail'] += 1
@@ -1387,6 +1521,7 @@ class AutoSubv3(_PluginBase):
         else:
             logger.info(f"[翻译] 逐条模式 - 共 {len(valid_subs)} 条（效果更好，速度较慢）")
             processed = [self.__process_single(valid_subs, item) for item in valid_subs]
+        self._raise_if_task_cancelled()
         self.__save_srt(dest_subtitle, processed)
 
         # 计算翻译耗时和速度
@@ -1438,6 +1573,7 @@ class AutoSubv3(_PluginBase):
 
         def process_batch(batch_start_idx, batch_map, stats):
             """在子线程中执行：尝试批量翻译，失败则降级单行"""
+            self._raise_if_task_cancelled()
             batch_list = list(batch_map.values())
             indices = list(batch_map.keys())
 
@@ -1445,6 +1581,7 @@ class AutoSubv3(_PluginBase):
             try:
                 batch_texts = [item.content.strip() for item in batch_list]
                 ret, translations = self._openai.translate_batch_to_zh(batch_texts)
+                self._raise_if_task_cancelled()
                 # 严格检查：ret=True 且 translations 不为空 且 所有条目均非 None
                 if ret and translations and all(t is not None for t in translations):
                     for item, trans in zip(batch_list, translations):
@@ -1455,6 +1592,8 @@ class AutoSubv3(_PluginBase):
                     stats["batch_ok"] += 1
                     stats["line_ok"] += len(translations)
                     return {gidx: batch_map[gidx] for gidx in indices}
+            except UserInterruptException:
+                raise
             except Exception as e:
                 logger.debug(f"批次 {batch_start_idx} 批量翻译异常，降级单行：{e}")
 
@@ -1462,6 +1601,7 @@ class AutoSubv3(_PluginBase):
             # 逐条调用翻译（不走批量），失败时最多再重试1次，避免对已失败的条目无限重试
             line_ok_count = 0
             for gidx in indices:
+                self._raise_if_task_cancelled()
                 item = batch_map[gidx]
                 context = self.__get_context(valid_subs, [gidx], is_batch=False) if self._context_window > 0 else None
                 # 单条翻译，max_retries=1（只重试1次，避免过度调用）
@@ -1493,6 +1633,7 @@ class AutoSubv3(_PluginBase):
                        for start_idx, bmap in batches}
 
             for future in as_completed(futures):
+                self._raise_if_task_cancelled()
                 batch_results = future.result()
                 results.update(batch_results)
                 done_count = len(results)
@@ -1718,6 +1859,13 @@ class AutoSubv3(_PluginBase):
                 "auth": "bear",
                 "summary": "获取 AI 字幕生成任务状态",
             },
+            {
+                "path": "/cancel",
+                "endpoint": self.api_cancel,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "取消 AI 字幕生成任务",
+            },
         ]
 
     def get_page(self) -> List[dict]:
@@ -1735,7 +1883,8 @@ class AutoSubv3(_PluginBase):
             TaskStatus.COMPLETED: "text-success",
             TaskStatus.IGNORED: "text-muted",
             TaskStatus.NO_AUDIO: "text-muted",
-            TaskStatus.FAILED: "text-error"
+            TaskStatus.FAILED: "text-error",
+            TaskStatus.CANCELLED: "text-muted"
         }
 
         rows = []
@@ -1752,7 +1901,8 @@ class AutoSubv3(_PluginBase):
                 TaskStatus.COMPLETED: "已完成",
                 TaskStatus.IGNORED: "已忽略",
                 TaskStatus.NO_AUDIO: "无声音跳过",
-                TaskStatus.FAILED: "失败"
+                TaskStatus.FAILED: "失败",
+                TaskStatus.CANCELLED: "已取消"
             }.get(task.status, task.status)
 
             status_class = status_classes.get(task.status, "")

@@ -65,6 +65,7 @@ const preparing = ref(false)
 const applying = ref(false)
 const clearing = ref(false)
 const aiSubmitting = ref(false)
+const aiCancelling = ref(false)
 const aiTasksLoading = ref(false)
 const onlineSearching = ref(false)
 const onlineDownloading = ref(false)
@@ -111,7 +112,7 @@ const aiTaskDialog = ref(false)
 const aiTaskDialogTarget = ref(null)
 const aiTaskData = ref({
   status: null,
-  summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, ignored: 0, no_audio: 0, failed: 0 },
+  summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, ignored: 0, no_audio: 0, failed: 0, cancelled: 0 },
   tasks: [],
   task_by_target: {},
 })
@@ -253,6 +254,7 @@ const aiEnabled = computed(() => aiStatus.value.enabled !== false)
 const aiAvailable = computed(() => aiEnabled.value && aiStatus.value.available === true)
 const aiSummary = computed(() => aiTaskData.value.summary || {})
 const aiHasActiveTasks = computed(() => Number(aiSummary.value.active || 0) > 0)
+const aiBatchCancelTargets = computed(() => batchUploadTargets.value.filter(target => isAiTaskActive(aiTaskForTarget(target))))
 const aiBatchLabel = computed(() => {
   if (selectedMedia.value?.media_type !== 'tv') return 'AI 生成字幕'
   if (selectedTargets.value.length) return `AI 生成选中 ${selectedTargets.value.length} 集`
@@ -268,6 +270,7 @@ const aiSummaryText = computed(() => {
   if (aiSummary.value.completed) parts.push(`${aiSummary.value.completed} 个完成`)
   if (aiSummary.value.ignored) parts.push(`${aiSummary.value.ignored} 个忽略`)
   if (aiSummary.value.no_audio) parts.push(`${aiSummary.value.no_audio} 个无音轨`)
+  if (aiSummary.value.cancelled) parts.push(`${aiSummary.value.cancelled} 个取消`)
   return parts.length ? `AI：${parts.join(' / ')}` : (aiStatus.value.message || 'AI：暂无当前资源任务')
 })
 const aiDialogTasks = computed(() => {
@@ -275,6 +278,7 @@ const aiDialogTasks = computed(() => {
   const tasks = aiTaskData.value.tasks || []
   return targetId ? tasks.filter(item => item.target_id === targetId) : tasks
 })
+const aiDialogHasActiveTasks = computed(() => aiDialogTasks.value.some(task => isAiTaskActive(task)))
 const timelineStatus = computed(() => status.value?.timeline_fixer || { available: false, modules: {} })
 const timelineAvailable = computed(() => timelineStatus.value.available === true)
 const indexStatus = computed(() => status.value?.index || {})
@@ -510,7 +514,7 @@ async function loadAiTasks(options = {}) {
   if (!visibleTargets.value.length) {
     aiTaskData.value = {
       ...aiTaskData.value,
-      summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, ignored: 0, no_audio: 0, failed: 0 },
+      summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, ignored: 0, no_audio: 0, failed: 0, cancelled: 0 },
       tasks: [],
       task_by_target: {},
     }
@@ -540,6 +544,10 @@ function aiTaskForTarget(target) {
   return (aiTaskData.value.task_by_target || {})[target?.id] || null
 }
 
+function isAiTaskActive(task) {
+  return Boolean(task && (task.active || ['pending', 'in_progress'].includes(task.status)))
+}
+
 function aiTaskColor(target) {
   const task = aiTaskForTarget(target)
   if (!aiAvailable.value) return undefined
@@ -549,6 +557,7 @@ function aiTaskColor(target) {
   if (task.status === 'completed') return 'success'
   if (task.status === 'failed') return 'error'
   if (task.status === 'no_audio') return 'grey'
+  if (task.status === 'cancelled') return 'grey'
   return 'secondary'
 }
 
@@ -560,6 +569,7 @@ function aiTaskIcon(target) {
   if (task.status === 'completed') return 'mdi-check-decagram-outline'
   if (task.status === 'failed') return 'mdi-alert-circle-outline'
   if (task.status === 'no_audio') return 'mdi-volume-off'
+  if (task.status === 'cancelled') return 'mdi-cancel'
   return 'mdi-robot-confused-outline'
 }
 
@@ -617,8 +627,43 @@ async function submitAiForTargets(scopeTargets) {
   }
 }
 
+async function cancelAiForTargets(scopeTargets) {
+  const activeTargets = scopeTargets.filter(target => isAiTaskActive(aiTaskForTarget(target)))
+  if (!activeTargets.length) {
+    message.value = '当前范围没有可取消的 AI 字幕任务'
+    return
+  }
+  aiCancelling.value = true
+  error.value = ''
+  message.value = ''
+  try {
+    const response = await props.api.post(`${pluginBase.value}/ai_cancel`, {
+      target_ids: activeTargets.map(item => item.id),
+    })
+    const data = unwrapResponse(response) || {}
+    if (data.tasks) {
+      aiTaskData.value = data.tasks
+    }
+    message.value = response?.message || '已取消 AI 字幕任务'
+    await loadAiTasks({ silent: true })
+  } catch (err) {
+    error.value = errorMessage(err, '取消 AI 字幕任务失败')
+  } finally {
+    aiCancelling.value = false
+  }
+}
+
 function openBatchAiGenerate() {
   submitAiForTargets(batchUploadTargets.value)
+}
+
+function cancelBatchAiGenerate() {
+  cancelAiForTargets(batchUploadTargets.value)
+}
+
+function cancelDialogAiTasks() {
+  const scopeTargets = aiTaskDialogTarget.value ? [aiTaskDialogTarget.value] : visibleTargets.value
+  cancelAiForTargets(scopeTargets)
 }
 
 function openSingleAiGenerate(target) {
@@ -640,7 +685,7 @@ function clearTargetState() {
   aiTaskDialogTarget.value = null
   aiTaskData.value = {
     ...aiTaskData.value,
-    summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, ignored: 0, no_audio: 0, failed: 0 },
+    summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, ignored: 0, no_audio: 0, failed: 0, cancelled: 0 },
     tasks: [],
     task_by_target: {},
   }
@@ -1278,6 +1323,7 @@ defineExpose({
   applying,
   clearing,
   aiSubmitting,
+  aiCancelling,
   aiTasksLoading,
   onlineSearching,
   onlineDownloading,
@@ -1465,6 +1511,16 @@ defineExpose({
               {{ aiBatchLabel }}
             </VBtn>
             <VBtn
+              v-if="aiEnabled && aiBatchCancelTargets.length"
+              color="error"
+              variant="tonal"
+              prepend-icon="mdi-cancel"
+              :loading="aiCancelling"
+              @click="cancelBatchAiGenerate"
+            >
+              取消 AI
+            </VBtn>
+            <VBtn
               class="online-batch-btn"
               color="success"
               variant="flat"
@@ -1600,6 +1656,16 @@ defineExpose({
             <p>{{ aiSummaryText }} · 状态来自 AI字幕生成(联动版) 队列</p>
           </div>
           <div class="online-title-actions">
+            <VBtn
+              v-if="aiDialogHasActiveTasks"
+              variant="tonal"
+              color="error"
+              prepend-icon="mdi-cancel"
+              :loading="aiCancelling"
+              @click="cancelDialogAiTasks"
+            >
+              取消任务
+            </VBtn>
             <VBtn
               variant="tonal"
               color="primary"
@@ -2476,6 +2542,10 @@ defineExpose({
   background: rgba(255, 226, 224, 0.82);
 }
 
+.ai-row-btn.ai-cancelled {
+  background: rgba(229, 232, 231, 0.82);
+}
+
 .empty-state {
   padding: 28px 18px;
   border-radius: 22px;
@@ -2568,6 +2638,11 @@ defineExpose({
 .ai-task-row.ai-failed {
   border-color: rgba(185, 78, 70, 0.3);
   background: rgba(255, 234, 232, 0.8);
+}
+
+.ai-task-row.ai-cancelled {
+  border-color: rgba(109, 123, 117, 0.24);
+  background: rgba(239, 242, 240, 0.84);
 }
 
 .ai-task-badge {
