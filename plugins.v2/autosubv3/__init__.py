@@ -90,7 +90,7 @@ class AutoSubv3(_PluginBase):
     # 主题色
     plugin_color = "#2C4F7E"
     # 插件版本
-    plugin_version = "3.5.41"
+    plugin_version = "3.5.42"
     # 插件作者
     plugin_author = "jaysherlock"
     # 作者主页
@@ -574,7 +574,11 @@ class AutoSubv3(_PluginBase):
                 task.error_message = ""
                 self._tasks[task.task_id] = task
                 self.save_tasks()
-                task.status = self.__process_autosub(task.video_file, force_generate=task.force_generate)
+                task.status = self.__process_autosub(
+                    task.video_file,
+                    source=task.source,
+                    force_generate=task.force_generate,
+                )
                 task.complete_time = datetime.now()
                 task.error_message = "" if task.status == TaskStatus.COMPLETED else self._status_message(task.status)
                 self._tasks[task.task_id] = task
@@ -673,7 +677,19 @@ class AutoSubv3(_PluginBase):
             return False
         return True
 
-    def __process_autosub(self, video_file, *, force_generate: bool = False) -> TaskStatus:
+    @staticmethod
+    def _is_subtitle_manual_upload_source(source: Any) -> bool:
+        if isinstance(source, TaskSource):
+            return source == TaskSource.SUBTITLE_MANUAL_UPLOAD
+        return str(source or "").strip() == TaskSource.SUBTITLE_MANUAL_UPLOAD.value
+
+    def __process_autosub(
+        self,
+        video_file,
+        *,
+        source: TaskSource = TaskSource.MANUAL,
+        force_generate: bool = False,
+    ) -> TaskStatus:
         if not video_file:
             logger.error(f"[Step 0] video_file 为空")
             return TaskStatus.FAILED
@@ -691,21 +707,25 @@ class AutoSubv3(_PluginBase):
         start_time = time.time()
         file_path, file_ext = os.path.splitext(video_file)
         file_name = os.path.basename(video_file)
+        linked_force_generate = force_generate or self._is_subtitle_manual_upload_source(source)
         if self._skip_chinese and self.is_video_skip_chinese(video_file):
-            logger.info(f"[Step 3] 视频已标记为中文跳过翻译：{video_file}")
-            message = f" 媒体: {file_name}\n 中文视频跳过翻译"
-            if self._send_notify:
-                self.post_message(mtype=NotificationType.Plugin, title="【自动字幕生成】", text=message)
-            return TaskStatus.IGNORED
+            if linked_force_generate:
+                logger.info(f"[Step 3] 联动强制生成：跳过中文视频历史忽略记录")
+            else:
+                logger.info(f"[Step 3] 视频已标记为中文跳过翻译：{video_file}")
+                message = f" 媒体: {file_name}\n 中文视频跳过翻译"
+                if self._send_notify:
+                    self.post_message(mtype=NotificationType.Plugin, title="【自动字幕生成】", text=message)
+                return TaskStatus.IGNORED
 
         try:
             logger.info(f"[Step 4] 判断目的字幕是否已存在：{video_file}")
-            # 判断目的字幕（和内嵌）是否已存在
-            if not force_generate and self.__target_subtitle_exists(video_file):
+            # 字幕匹配来源是用户显式触发，允许绕过已有外挂/内嵌字幕检查；监控规则保持原样。
+            if not linked_force_generate and self.__target_subtitle_exists(video_file):
                 logger.warn(f"[Step 4] 字幕文件已经存在，不进行处理")
                 return TaskStatus.IGNORED
-            if force_generate:
-                logger.info(f"[Step 4] 联动强制生成：跳过已有外挂/内嵌字幕检查")
+            if linked_force_generate:
+                logger.info(f"[Step 4] 联动强制生成：跳过已有外挂/内嵌字幕检查 source={source.value if isinstance(source, TaskSource) else source}")
             logger.info(f"[Step 5] 生成字幕")
             # 生成字幕
             ret, lang, gen_sub_path = self.__generate_subtitle(video_file, file_path, self._enable_asr)
