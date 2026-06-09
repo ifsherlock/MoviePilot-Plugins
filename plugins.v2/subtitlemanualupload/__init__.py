@@ -66,7 +66,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/subtitle-match.png"
-    plugin_version = "0.1.39"
+    plugin_version = "0.1.40"
     plugin_author = "jaysherlock"
     author_url = "https://github.com/jaysherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -3006,6 +3006,8 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             raise HTTPException(status_code=400, detail="请至少选择一个在线字幕结果")
         self._check_online_rate_limit([item.get("provider") for item in selected_results if isinstance(item, dict)])
         submit_ai_translate = bool(body.get("submit_ai_translate"))
+        if submit_ai_translate and any((item.get("language_category") or "").lower() == "chinese" for item in selected_results):
+            raise HTTPException(status_code=400, detail="请只选择外语字幕结果后再提交 AI 翻译")
 
         session_id = self._hash_text(f"online|{datetime.now().isoformat()}|{','.join(sorted(map(str, target_ids)))}")[:16]
         session_dir = self._get_session_root() / session_id

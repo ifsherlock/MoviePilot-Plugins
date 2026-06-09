@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { mediaLabel, targetLabel, unwrapResponse } from '../provider'
 
 const props = defineProps({
@@ -216,7 +216,7 @@ const selectedOnlineResults = computed(() => {
   return onlineResults.value.filter(item => picked.has(onlineResultKey(item)) && isOnlineResultDownloadable(item))
 })
 const canSubmitOnlineAiTranslate = computed(() => {
-  return aiAvailable.value && selectedOnlineResults.value.length > 0 && selectedOnlineResults.value.every(isEnglishOnlineResult)
+  return aiAvailable.value && selectedOnlineResults.value.length > 0 && selectedOnlineResults.value.every(isForeignOnlineResult)
 })
 const onlineMessageSummary = computed(() => {
   const messages = onlineMessages.value || []
@@ -248,7 +248,7 @@ const onlineApiStatusText = computed(() => {
 const onlineAiConfirmText = computed(() => {
   const count = selectedOnlineResults.value.length
   const targetCount = onlineTargets.value.length
-  return `将下载 ${count} 个英文字幕结果，并提交给 AI字幕生成(联动版) 翻译；当前范围包含 ${targetCount} 个目标。`
+  return `将下载 ${count} 个外语字幕结果，并提交给 AI字幕生成(联动版) 翻译；当前范围包含 ${targetCount} 个目标。`
 })
 const onlineBatchLabel = computed(() => {
   if (selectedMedia.value?.media_type !== 'tv') return '搜索在线字幕'
@@ -461,8 +461,8 @@ function onlineResultLanguageCategory(item) {
   return 'other'
 }
 
-function isEnglishOnlineResult(item) {
-  return onlineResultLanguageCategory(item) === 'english'
+function isForeignOnlineResult(item) {
+  return onlineResultLanguageCategory(item) !== 'chinese'
 }
 
 function providerStatus(providerId) {
@@ -972,16 +972,14 @@ async function runOnlineSearch() {
   onlineMessagesCollapsed.value = false
   selectedOnlineResultIds.value = []
   onlineProviderProgress.value = Object.fromEntries(providers.map(provider => [provider, 'searching']))
-  let settledCount = 0
-  const finishProvider = () => {
-    settledCount += 1
-    if (settledCount < providers.length || searchSeq !== onlineSearchSeq) return
+  const finishSearch = () => {
+    if (searchSeq !== onlineSearchSeq) return
     if (!onlineResults.value.length && !onlineMessages.value.length) {
       onlineMessages.value = [{ level: 'info', message: '没有搜索到可自动下载的字幕，可使用右侧手动搜索链接。' }]
     }
     onlineSearching.value = false
   }
-  providers.forEach(async provider => {
+  const searchProvider = async (provider) => {
     try {
       const response = await withTimeout(
         props.api.post(`${pluginBase.value}/online_search_provider`, {
@@ -996,6 +994,7 @@ async function runOnlineSearch() {
       const data = unwrapResponse(response) || {}
       mergeOnlineResults(data.results || [])
       appendOnlineMessages(data.messages || [])
+      await nextTick()
       onlineProviderProgress.value = { ...onlineProviderProgress.value, [provider]: 'done' }
     } catch (err) {
       if (searchSeq !== onlineSearchSeq) return
@@ -1008,10 +1007,9 @@ async function runOnlineSearch() {
         level: err?.name === 'TimeoutError' ? 'info' : 'warning',
         message: errorMessage(err, `${providerName(provider)} 在线字幕搜索失败`),
       }])
-    } finally {
-      finishProvider()
     }
-  })
+  }
+  Promise.allSettled(providers.map(provider => searchProvider(provider))).then(finishSearch)
 }
 
 function stopOnlineSearch() {
@@ -1079,7 +1077,7 @@ function requestOnlineAiTranslate() {
   if (!selectedOnlineResults.value.length || onlineDownloading.value) return
   if (!canSubmitOnlineAiTranslate.value) {
     onlineError.value = aiAvailable.value
-      ? '请只选择英文字幕结果后再提交 AI 翻译。'
+      ? '请只选择外语字幕结果后再提交 AI 翻译。'
       : 'AI 字幕生成联动当前不可用，无法提交翻译任务。'
     return
   }
@@ -1096,7 +1094,7 @@ async function downloadOnlinePreview(submitAiTranslate = false) {
   if (!selectedOnlineResults.value.length || onlineDownloading.value) return
   if (submitAiTranslate && !canSubmitOnlineAiTranslate.value) {
     onlineError.value = aiAvailable.value
-      ? '请只选择英文字幕结果后再提交 AI 翻译。'
+      ? '请只选择外语字幕结果后再提交 AI 翻译。'
       : 'AI 字幕生成联动当前不可用，无法提交翻译任务。'
     return
   }
@@ -1750,7 +1748,7 @@ defineExpose({
               color="success"
               :disabled="!selectedOnlineResults.length"
               :loading="onlineDownloading"
-              @click="downloadOnlinePreview"
+              @click="downloadOnlinePreview(false)"
             >
               下载并生成预览
             </VBtn>
@@ -1977,7 +1975,7 @@ defineExpose({
           <VAlert
             type="warning"
             variant="tonal"
-            text="确认后会下载所选英文字幕并提交 AI 翻译任务；误触后可在 AI 状态里取消。"
+            text="确认后会下载所选外语字幕并提交 AI 翻译任务；误触后可在 AI 状态里取消。"
           />
         </VCardText>
         <VCardActions class="justify-end">
