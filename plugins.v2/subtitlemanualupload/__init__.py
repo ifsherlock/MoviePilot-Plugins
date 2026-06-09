@@ -45,7 +45,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/subtitle-match.png"
-    plugin_version = "0.1.33"
+    plugin_version = "0.1.34"
     plugin_author = "jaysherlock"
     author_url = "https://github.com/jaysherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -625,6 +625,36 @@ class SubtitleManualUpload(_PluginBase):
         match = re.match(r"^https?://([^/?#]+)", cls._normalize_text(value), flags=re.I)
         return match.group(1) if match else ""
 
+    @classmethod
+    def _site_hosts(cls, site: Any) -> List[str]:
+        hosts: List[str] = []
+        for attr in ("url", "domain"):
+            host = cls._normalize_site_host(getattr(site, attr, ""))
+            if host and host not in hosts:
+                hosts.append(host)
+        return hosts
+
+    @classmethod
+    def _normalize_site_host(cls, value: Any) -> str:
+        text = cls._normalize_text(value)
+        if not text:
+            return ""
+        host = cls._host_from_url(text)
+        if not host:
+            text = re.sub(r"^[a-z][a-z0-9+.-]*://", "", text, flags=re.I)
+            host = re.split(r"[/?#]", text, maxsplit=1)[0]
+        if "@" in host:
+            host = host.rsplit("@", 1)[-1]
+        if ":" in host:
+            host = host.split(":", 1)[0]
+        return host.strip(".").lower()
+
+    @staticmethod
+    def _site_host_matches(site_host: str, target_host: str) -> bool:
+        site_host = site_host.lower().removeprefix("www.")
+        target_host = target_host.lower().removeprefix("www.")
+        return site_host == target_host or site_host.endswith(f".{target_host}") or target_host.endswith(f".{site_host}")
+
     @staticmethod
     def _hash_text(value: str) -> str:
         return hashlib.sha1(value.encode("utf-8")).hexdigest()
@@ -724,34 +754,62 @@ class SubtitleManualUpload(_PluginBase):
     def _load_cookiecloud_site_cookies(self, providers: Iterable[str]) -> Dict[str, str]:
         provider_ids = set(providers)
         matched: Dict[str, str] = {}
-        try:
-            from app.db.models.site import Site
-        except Exception as exc:
-            logger.info("[SubtitleManualUpload] CookieCloud/站点库不可用，跳过在线字幕 Cookie 读取 error=%s", exc)
-            return matched
         hosts = {
             provider_id: self._host_from_url(self._online_site_urls.get(provider_id))
             for provider_id in provider_ids
             if provider_id in {"subhd", "zimuku"}
         }
         try:
-            sites = Site.select()
+            sites = self._list_moviepilot_sites()
         except Exception as exc:
             logger.info("[SubtitleManualUpload] 读取 MoviePilot 站点 Cookie 失败 error=%s", exc)
             return matched
         for site in sites:
-            site_url = self._normalize_text(getattr(site, "url", ""))
-            site_host = self._host_from_url(site_url).lower()
+            site_hosts = self._site_hosts(site)
             cookie = self._normalize_cookie_header(getattr(site, "cookie", ""))
-            if not site_host or not cookie:
+            if not site_hosts or not cookie:
                 continue
             for provider_id, target_host in hosts.items():
                 target_host = target_host.lower()
-                if site_host == target_host or site_host.endswith(f".{target_host}") or target_host.endswith(f".{site_host}"):
+                if any(self._site_host_matches(site_host, target_host) for site_host in site_hosts):
                     matched[provider_id] = cookie
         if matched:
             logger.info("[SubtitleManualUpload] 已从 MoviePilot 站点库读取在线字幕 Cookie providers=%s", ",".join(sorted(matched)))
         return matched
+
+    @classmethod
+    def _list_moviepilot_sites(cls) -> List[Any]:
+        errors: List[str] = []
+        try:
+            from app.db.site_oper import SiteOper
+
+            site_oper = SiteOper()
+            for method_name in ("list", "list_order_by_pri", "list_active"):
+                method = getattr(site_oper, method_name, None)
+                if not callable(method):
+                    continue
+                try:
+                    return list(method() or [])
+                except Exception as exc:
+                    errors.append(f"SiteOper.{method_name}: {exc}")
+        except Exception as exc:
+            errors.append(f"SiteOper: {exc}")
+        try:
+            from app.db.models.site import Site
+
+            for method_name in ("get_actives", "list_order_by_pri"):
+                method = getattr(Site, method_name, None)
+                if not callable(method):
+                    continue
+                try:
+                    return list(method() or [])
+                except Exception as exc:
+                    errors.append(f"Site.{method_name}: {exc}")
+        except Exception as exc:
+            errors.append(f"Site: {exc}")
+        if errors:
+            logger.info("[SubtitleManualUpload] CookieCloud/站点库不可用，跳过在线字幕 Cookie 读取 error=%s", "; ".join(errors))
+        return []
 
     def _check_online_rate_limit(self, providers: Iterable[str]) -> None:
         now = time.time()

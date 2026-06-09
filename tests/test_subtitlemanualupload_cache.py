@@ -29,6 +29,12 @@ def load_plugin_module():
             cls.calls += 1
             return list(cls.data)
 
+    class FakeSiteOper:
+        data = []
+
+        def list(self):
+            return list(self.data)
+
     async def run_in_threadpool(func, *args, **kwargs):
         return func(*args, **kwargs)
 
@@ -44,6 +50,7 @@ def load_plugin_module():
         ),
         "app.core.metainfo": types.SimpleNamespace(MetaInfoPath=lambda path: types.SimpleNamespace()),
         "app.db": types.ModuleType("app.db"),
+        "app.db.site_oper": types.SimpleNamespace(SiteOper=FakeSiteOper),
         "app.db.models": types.ModuleType("app.db.models"),
         "app.db.models.transferhistory": types.SimpleNamespace(TransferHistory=FakeTransferHistory),
         "app.log": types.SimpleNamespace(
@@ -71,7 +78,7 @@ def load_plugin_module():
     module = importlib.util.module_from_spec(spec)
     sys.modules[package_name] = module
     spec.loader.exec_module(module)
-    return module, FakeTransferHistory
+    return module, FakeTransferHistory, FakeSiteOper
 
 
 def make_plugin(module):
@@ -86,7 +93,7 @@ def make_plugin(module):
 
 
 def test_local_entries_cache_hits_until_forced_refresh():
-    module, histories = load_plugin_module()
+    module, histories, _ = load_plugin_module()
     plugin = make_plugin(module)
     histories.calls = 0
     histories.data = [{"id": "a", "path": "/media/a.mkv", "media_key": "movie-a"}]
@@ -102,7 +109,7 @@ def test_local_entries_cache_hits_until_forced_refresh():
 
 
 def test_refresh_local_cache_rebuilds_entries():
-    module, histories = load_plugin_module()
+    module, histories, _ = load_plugin_module()
     plugin = make_plugin(module)
     histories.calls = 0
     histories.data = [{"id": "a", "path": "/media/a.mkv", "media_key": "movie-a"}]
@@ -116,7 +123,7 @@ def test_refresh_local_cache_rebuilds_entries():
 
 
 def test_entry_map_is_bounded_lru():
-    module, _ = load_plugin_module()
+    module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
 
     plugin._remember_targets([{"id": "a"}, {"id": "b"}, {"id": "c"}])
@@ -124,3 +131,35 @@ def test_entry_map_is_bounded_lru():
     plugin._remember_targets([{"id": "d"}])
 
     assert list(plugin._entry_map.keys()) == ["b", "d"]
+
+
+def test_cookiecloud_site_cookies_match_url_and_domain():
+    module, _, site_oper = load_plugin_module()
+    plugin = module.SubtitleManualUpload.__new__(module.SubtitleManualUpload)
+    plugin._online_use_cookiecloud = True
+    plugin._online_site_cookies = {"subhd": "", "zimuku": ""}
+    plugin._online_site_urls = {"subhd": "https://subhd.tv", "zimuku": "https://zimuku.org"}
+    site_oper.data = [
+        types.SimpleNamespace(url="https://subhd.tv/login", domain="", cookie="a=1; b=2"),
+        types.SimpleNamespace(url="", domain="www.zimuku.org", cookie="z=1"),
+    ]
+
+    headers = plugin._online_site_cookie_headers(["subhd", "zimuku"])
+
+    assert headers == {"subhd.tv": "a=1; b=2", "zimuku.org": "z=1"}
+
+
+def test_manual_cookie_takes_priority_over_cookiecloud():
+    module, _, site_oper = load_plugin_module()
+    plugin = module.SubtitleManualUpload.__new__(module.SubtitleManualUpload)
+    plugin._online_use_cookiecloud = True
+    plugin._online_site_cookies = {"subhd": "manual=1", "zimuku": ""}
+    plugin._online_site_urls = {"subhd": "https://subhd.tv", "zimuku": "https://zimuku.org"}
+    site_oper.data = [
+        types.SimpleNamespace(url="https://subhd.tv", domain="", cookie="cloud=1"),
+        types.SimpleNamespace(url="https://zimuku.org", domain="", cookie="z=1"),
+    ]
+
+    headers = plugin._online_site_cookie_headers(["subhd", "zimuku"])
+
+    assert headers == {"subhd.tv": "manual=1", "zimuku.org": "z=1"}
