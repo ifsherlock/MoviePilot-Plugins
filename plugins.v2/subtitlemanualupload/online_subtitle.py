@@ -426,7 +426,7 @@ class AssrtProvider(BaseSubtitleProvider):
                     provider_label=self.display_name,
                     result_id=sid,
                     title=title,
-                    page_url=f"{self.root_url}/sub/{sid}",
+                    page_url=self._detail_url(sid),
                     download_url=f"assrt-api:{sid}",
                     language=language_label,
                     language_category=_language_category_from_text(language_text or language_label),
@@ -440,6 +440,12 @@ class AssrtProvider(BaseSubtitleProvider):
                 )
             )
         return _dedupe_results(results)[:30]
+
+    def _detail_url(self, subtitle_id: str) -> str:
+        sid = str(subtitle_id or "").strip()
+        if sid.isdigit():
+            return f"{self.root_url}/xml/sub/{int(sid) // 1000}/{sid}.xml"
+        return f"{self.root_url}/sub/{quote(sid)}"
 
     def _download_api(self, subtitle_id: str) -> Tuple[str, bytes]:
         if not subtitle_id:

@@ -119,6 +119,8 @@ def test_assrt_provider_uses_official_api_when_key_exists():
 
     assert len(results) == 1
     assert results[0].result_id == "602333"
+    assert results[0].page_url == "https://2.assrt.net/xml/sub/602/602333.xml"
+    assert provider._detail_url("652400") == "https://2.assrt.net/xml/sub/652/652400.xml"
     assert results[0].download_url == "assrt-api:602333"
     assert results[0].language == "英文"
     assert results[0].note == "通过 ASSRT 官方 API 搜索"
