@@ -83,12 +83,16 @@ def load_plugin_module():
 
 def make_plugin(module):
     plugin = module.SubtitleManualUpload.__new__(module.SubtitleManualUpload)
-    plugin._local_entries_cache = {"loaded_at": None, "entries": [], "media_count": 0}
+    plugin._local_entries_cache = {"loaded_at": None, "entries": [], "media_count": 0, "persisted": False}
     plugin._entry_map = module.OrderedDict()
+    plugin._cache_refreshing = False
     plugin._cache_ttl_seconds = 90
     plugin._cache_max_entries = 10
     plugin._entry_map_max_size = 2
     plugin._build_entry_from_history = lambda history: dict(history)
+    cache_file = plugin._local_cache_file()
+    if cache_file.exists():
+        cache_file.unlink()
     return plugin
 
 
@@ -120,6 +124,48 @@ def test_refresh_local_cache_rebuilds_entries():
 
     assert [item["id"] for item in refreshed] == ["b"]
     assert list(plugin._entry_map.keys()) == ["b"]
+
+
+def test_local_entries_cache_persists_between_plugin_instances():
+    module, histories, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    histories.calls = 0
+    histories.data = [{"id": "a", "path": "/media/a.mkv", "media_key": "movie-a"}]
+
+    first = plugin._load_local_entries()
+    plugin2 = module.SubtitleManualUpload.__new__(module.SubtitleManualUpload)
+    plugin2._local_entries_cache = {"loaded_at": None, "entries": [], "media_count": 0, "persisted": False}
+    plugin2._entry_map = module.OrderedDict()
+    plugin2._cache_refreshing = False
+    plugin2._cache_ttl_seconds = 90
+    plugin2._cache_max_entries = 10
+    plugin2._entry_map_max_size = 2
+    plugin2._build_entry_from_history = lambda history: dict(history)
+
+    restored = plugin2._load_local_entries()
+
+    assert restored == first
+    assert histories.calls == 1
+    assert plugin2._cache_status()["persisted"] is True
+
+
+def test_stale_persisted_cache_returns_before_background_refresh():
+    module, histories, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    old_time = module.datetime.now() - module.timedelta(seconds=120)
+    plugin._local_entries_cache = {
+        "loaded_at": old_time,
+        "entries": [{"id": "stale", "path": "/media/stale.mkv", "media_key": "movie-stale"}],
+        "media_count": 1,
+        "persisted": True,
+    }
+    started = {"value": False}
+    plugin._start_background_cache_refresh = lambda: started.update(value=True)
+
+    entries = plugin._load_local_entries(allow_stale=True)
+
+    assert [item["id"] for item in entries] == ["stale"]
+    assert started["value"] is True
 
 
 def test_entry_map_is_bounded_lru():

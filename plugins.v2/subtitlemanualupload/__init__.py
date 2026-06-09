@@ -7,6 +7,7 @@ import os
 import re
 import shutil
 import subprocess
+import threading
 import time
 import zipfile
 from collections import OrderedDict
@@ -83,10 +84,12 @@ class SubtitleManualUpload(_PluginBase):
         "checked_at": "",
     }
     _entry_map: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
+    _cache_refreshing = False
     _local_entries_cache: Dict[str, Any] = {
         "loaded_at": None,
         "entries": [],
         "media_count": 0,
+        "persisted": False,
     }
 
     _subtitle_exts = {".ass", ".srt", ".ssa", ".sbv", ".sub", ".vtt", ".webvtt"}
@@ -171,7 +174,9 @@ class SubtitleManualUpload(_PluginBase):
         type(self)._rar_tool_path = self._rar_tool_path
         type(self)._traditional_to_simplified = self._traditional_to_simplified
         self._entry_map = OrderedDict()
-        self._local_entries_cache = {"loaded_at": None, "entries": [], "media_count": 0}
+        self._cache_refreshing = False
+        self._local_entries_cache = {"loaded_at": None, "entries": [], "media_count": 0, "persisted": False}
+        self._restore_persisted_local_cache()
         self._save_config()
         self._prepare_rar_dependency()
         self._cleanup_old_sessions()
@@ -1101,11 +1106,96 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             "date": self._normalize_text(getattr(history, "date", "")),
         }
 
-    def _load_local_entries(self, *, force: bool = False) -> List[Dict[str, Any]]:
+    def _local_cache_file(self) -> Path:
+        return self.get_data_path() / "local_entries_cache.json"
+
+    @classmethod
+    def _cache_loaded_at(cls, value: Any) -> Optional[datetime]:
+        if isinstance(value, datetime):
+            return value
+        text = cls._normalize_text(value)
+        if not text:
+            return None
+        try:
+            return datetime.fromisoformat(text)
+        except Exception:
+            return None
+
+    def _persist_local_cache(self) -> None:
         cache = self._local_entries_cache or {}
-        loaded_at = cache.get("loaded_at")
+        loaded_at = self._cache_loaded_at(cache.get("loaded_at"))
+        payload = {
+            "loaded_at": loaded_at.isoformat(timespec="seconds") if loaded_at else "",
+            "entries": cache.get("entries") or [],
+            "media_count": int(cache.get("media_count") or 0),
+        }
+        try:
+            cache_file = self._local_cache_file()
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            cache_file.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        except Exception as exc:
+            logger.warning("[SubtitleManualUpload] 写入本地资源持久化缓存失败: %s", exc)
+
+    def _restore_persisted_local_cache(self) -> bool:
+        try:
+            cache_file = self._local_cache_file()
+            if not cache_file.exists():
+                return False
+            payload = json.loads(cache_file.read_text(encoding="utf-8"))
+        except Exception as exc:
+            logger.warning("[SubtitleManualUpload] 读取本地资源持久化缓存失败: %s", exc)
+            return False
+        entries = payload.get("entries") if isinstance(payload, dict) else []
+        loaded_at = self._cache_loaded_at(payload.get("loaded_at")) if isinstance(payload, dict) else None
+        if not loaded_at or not isinstance(entries, list):
+            return False
+        media_count = int(payload.get("media_count") or len({entry.get("media_key") for entry in entries if isinstance(entry, dict) and entry.get("media_key")}))
+        self._local_entries_cache = {
+            "loaded_at": loaded_at,
+            "entries": [entry for entry in entries if isinstance(entry, dict)],
+            "media_count": media_count,
+            "persisted": True,
+        }
+        self._remember_targets(self._local_entries_cache["entries"])
+        logger.info(
+            "[SubtitleManualUpload] 已恢复本地资源持久化缓存 entries=%s medias=%s",
+            len(self._local_entries_cache["entries"]),
+            media_count,
+        )
+        return True
+
+    def _start_background_cache_refresh(self) -> None:
+        if self._cache_refreshing:
+            return
+        self._cache_refreshing = True
+
+        def worker():
+            try:
+                self._load_local_entries(force=True)
+            except Exception as exc:
+                logger.warning("[SubtitleManualUpload] 后台刷新本地资源缓存失败: %s", exc)
+            finally:
+                self._cache_refreshing = False
+
+        threading.Thread(
+            target=worker,
+            name="SubtitleManualUploadCacheRefresh",
+            daemon=True,
+        ).start()
+
+    def _load_local_entries(self, *, force: bool = False, allow_stale: bool = False) -> List[Dict[str, Any]]:
+        cache = self._local_entries_cache or {}
+        loaded_at = self._cache_loaded_at(cache.get("loaded_at"))
         now = datetime.now()
         if not force and loaded_at and (now - loaded_at).total_seconds() < self._cache_ttl_seconds:
+            return list(cache.get("entries") or [])
+        if not force and not loaded_at and self._restore_persisted_local_cache():
+            cache = self._local_entries_cache or {}
+            loaded_at = self._cache_loaded_at(cache.get("loaded_at"))
+            if loaded_at and (now - loaded_at).total_seconds() < self._cache_ttl_seconds:
+                return list(cache.get("entries") or [])
+        if not force and allow_stale and cache.get("entries"):
+            self._start_background_cache_refresh()
             return list(cache.get("entries") or [])
 
         try:
@@ -1137,8 +1227,10 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             "loaded_at": now,
             "entries": entries,
             "media_count": media_count,
+            "persisted": False,
         }
         self._remember_targets(entries)
+        self._persist_local_cache()
         logger.info(
             "[SubtitleManualUpload] 本地资源缓存已刷新 entries=%s medias=%s",
             len(entries),
@@ -1148,17 +1240,23 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
 
     def _refresh_local_cache(self) -> List[Dict[str, Any]]:
         self._entry_map = OrderedDict()
-        self._local_entries_cache = {"loaded_at": None, "entries": [], "media_count": 0}
+        self._local_entries_cache = {"loaded_at": None, "entries": [], "media_count": 0, "persisted": False}
         return self._load_local_entries(force=True)
 
     def _cache_status(self) -> Dict[str, Any]:
         cache = self._local_entries_cache or {}
-        loaded_at = cache.get("loaded_at")
+        loaded_at = self._cache_loaded_at(cache.get("loaded_at"))
         expires_in = 0
+        stale = False
         if loaded_at:
-            expires_in = max(0, int(self._cache_ttl_seconds - (datetime.now() - loaded_at).total_seconds()))
+            age = (datetime.now() - loaded_at).total_seconds()
+            expires_in = max(0, int(self._cache_ttl_seconds - age))
+            stale = age >= self._cache_ttl_seconds
         return {
             "ready": bool(loaded_at),
+            "persisted": bool(cache.get("persisted")),
+            "stale": stale,
+            "refreshing": bool(self._cache_refreshing),
             "ttl_seconds": self._cache_ttl_seconds,
             "expires_in": expires_in,
             "updated_at": loaded_at.isoformat(timespec="seconds") if loaded_at else "",
@@ -1328,7 +1426,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         clean_keyword = self._normalize_text(keyword)
         expected_type = self._media_type_text(media_type)
         entries: List[Dict[str, Any]] = []
-        for entry in self._load_local_entries():
+        for entry in self._load_local_entries(allow_stale=True):
             if expected_type and entry.get("media_type") != expected_type:
                 continue
             if not self._entry_matches_keyword(entry, clean_keyword):
@@ -1440,7 +1538,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
 
         entries = []
         seen_paths = set()
-        for entry in self._load_local_entries():
+        for entry in self._load_local_entries(allow_stale=True):
             if clean_type and entry.get("media_type") != clean_type:
                 continue
             if clean_tmdb_id and self._safe_int(entry.get("tmdb_id"), 0) != clean_tmdb_id:
@@ -1550,7 +1648,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     break
 
         try:
-            take_matches(self._load_local_entries())
+            take_matches(self._load_local_entries(allow_stale=True))
             if missing_ids:
                 take_matches(self._load_local_entries(force=True))
         except Exception as exc:
