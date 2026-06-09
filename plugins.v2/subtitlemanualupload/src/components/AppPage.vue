@@ -79,6 +79,7 @@ const searchKeyword = ref('')
 const mediaType = ref('all')
 const medias = ref([])
 const selectedMedia = ref(null)
+const detailTab = ref('match')
 const seasons = ref([])
 const selectedSeason = ref('all')
 const targets = ref([])
@@ -279,6 +280,7 @@ const aiAvailable = computed(() => aiEnabled.value && aiStatus.value.available =
 const aiSummary = computed(() => aiTaskData.value.summary || {})
 const aiHasActiveTasks = computed(() => Number(aiSummary.value.active || 0) > 0)
 const aiBatchCancelTargets = computed(() => batchUploadTargets.value.filter(target => isAiTaskActive(aiTaskForTarget(target))))
+const aiCapableBatchTargets = computed(() => batchUploadTargets.value.filter(target => !isStreamTarget(target)))
 const aiBatchLabel = computed(() => {
   if (selectedMedia.value?.media_type !== 'tv') return 'AI 生成字幕'
   if (selectedTargets.value.length) return `AI 生成选中 ${selectedTargets.value.length} 集`
@@ -305,6 +307,18 @@ const aiDialogTasks = computed(() => {
 const aiDialogHasActiveTasks = computed(() => aiDialogTasks.value.some(task => isAiTaskActive(task)))
 const timelineStatus = computed(() => status.value?.timeline_fixer || { available: false, modules: {} })
 const timelineAvailable = computed(() => timelineStatus.value.available === true)
+const selectedPreviewTargets = computed(() => {
+  const targetMap = new Map(uploadTargets.value.map(target => [target.id, target]))
+  return selectedPreviewItems.value
+    .map(item => targetMap.get(item.target_id))
+    .filter(Boolean)
+})
+const allSelectedPreviewTargetsAreStream = computed(() => {
+  const items = selectedPreviewTargets.value
+  return items.length > 0 && items.every(isStreamTarget)
+})
+const hasSelectedPreviewStreamTargets = computed(() => selectedPreviewTargets.value.some(isStreamTarget))
+const timelineEnabledForApply = computed(() => fixTimeline.value && timelineAvailable.value && !allSelectedPreviewTargetsAreStream.value)
 const indexStatus = computed(() => status.value?.index || {})
 const indexSummary = computed(() => {
   if (!indexStatus.value.ready) return '媒体库清单尚未缓存'
@@ -339,6 +353,21 @@ const allVisibleSelected = computed(() => {
   const picked = new Set(selectedTargetIds.value || [])
   return visibleTargets.value.every(item => picked.has(item.id))
 })
+const matchHistoryRows = computed(() => visibleTargets.value.map(target => {
+  const subtitles = target.subtitles || []
+  const task = aiTaskForTarget(target)
+  const written = (lastWritten.value || []).filter(item => (
+    item.target_label === target.label
+    || subtitles.some(subtitle => subtitle.path === item.output_path || subtitle.name === item.output_name)
+  ))
+  return {
+    target,
+    subtitles,
+    task,
+    written,
+    hasTimelineRunning: applying.value && selectedPreviewTargets.value.some(item => item.id === target.id) && timelineEnabledForApply.value,
+  }
+}))
 const timelineMissing = computed(() => {
   const missing = []
   if (timelineStatus.value.ffmpeg === false) missing.push('ffmpeg')
@@ -427,6 +456,17 @@ function buildOutputName(target, item) {
 
 function isLocked(targetId) {
   return lockedTargetIds.value.includes(targetId)
+}
+
+function isStreamTarget(target) {
+  if (!target) return false
+  if (target.is_stream === true) return true
+  const text = `${target.path || ''} ${target.relative_path || ''} ${target.basename || ''}`.toLowerCase()
+  return /\.strm(?:$|[\s?#])/.test(text)
+}
+
+function isTargetActionDisabled(target) {
+  return isLocked(target.id) || target.writable === false
 }
 
 function onlineResultKey(item) {
@@ -605,6 +645,7 @@ function aiTaskIcon(target) {
 
 function aiTaskTitle(target) {
   const task = aiTaskForTarget(target)
+  if (isStreamTarget(target)) return 'STRM 资源暂不支持 AI 生成字幕'
   if (!aiEnabled.value) return 'AI 字幕联动已关闭'
   if (!aiAvailable.value) return aiStatus.value.message || '请先安装并启用 AI字幕生成(联动版)'
   if (!task) return '调用 AI 字幕生成'
@@ -628,9 +669,13 @@ function openAiTaskDialog(target = null) {
 }
 
 async function submitAiForTargets(scopeTargets) {
+  const streamCount = scopeTargets.filter(isStreamTarget).length
   const usableTargets = scopeTargets.filter(item => !isLocked(item.id) && item.writable !== false)
-  if (!usableTargets.length) {
-    error.value = '没有可生成 AI 字幕的目标：选中的集数可能都已锁定'
+  const capableTargets = usableTargets.filter(item => !isStreamTarget(item))
+  if (!usableTargets.length || !capableTargets.length) {
+    error.value = streamCount
+      ? 'STRM 资源暂不支持 AI 生成字幕，请选择本地视频文件'
+      : '没有可生成 AI 字幕的目标：选中的集数可能都已锁定'
     return
   }
   if (!aiAvailable.value) {
@@ -707,6 +752,7 @@ function openSingleAiGenerate(target) {
 
 function clearTargetState() {
   seasons.value = []
+  detailTab.value = 'match'
   selectedSeason.value = 'all'
   targets.value = []
   selectedTargetIds.value = []
@@ -849,6 +895,7 @@ async function selectMedia(media) {
 
 async function changeSeason(season) {
   selectedSeason.value = season
+  detailTab.value = 'match'
   selectedTargetIds.value = []
   await loadTargets(selectedMedia.value, season)
 }
@@ -885,6 +932,34 @@ function toggleLock(targetId) {
   lockedTargetIds.value = [...lockedTargetIds.value, targetId]
 }
 
+function timelineResultForTarget(row) {
+  if (row.hasTimelineRunning) return '智能调轴处理中'
+  const latest = [...(row.written || [])].reverse().find(item => item.timeline)
+  if (latest) return timelineResultText(latest)
+  if (isStreamTarget(row.target)) return 'STRM 资源不启用智能调轴'
+  return '暂无调轴记录'
+}
+
+async function deleteSubtitle(target, subtitle) {
+  if (!target || !subtitle) return
+  clearing.value = true
+  error.value = ''
+  message.value = ''
+  try {
+    const response = await props.api.post(`${pluginBase.value}/delete_subtitle`, {
+      target_id: target.id,
+      subtitle_path: subtitle.path,
+      subtitle_name: subtitle.name,
+    })
+    message.value = response?.message || `已删除外挂字幕：${subtitle.name}`
+    await loadTargets(selectedMedia.value, selectedSeason.value)
+  } catch (err) {
+    error.value = errorMessage(err, '删除外挂字幕失败')
+  } finally {
+    clearing.value = false
+  }
+}
+
 function openUploadDialog(scopeTargets, title) {
   const usableTargets = scopeTargets.filter(item => !isLocked(item.id) && item.writable !== false)
   if (!usableTargets.length) {
@@ -893,6 +968,9 @@ function openUploadDialog(scopeTargets, title) {
   }
   uploadScopeTargets.value = usableTargets
   uploadTitle.value = title
+  if (usableTargets.every(isStreamTarget)) {
+    fixTimeline.value = false
+  }
   files.value = []
   preview.value = null
   batchLanguageSuffix.value = ''
@@ -1326,7 +1404,7 @@ async function applyUpload() {
   try {
     const payload = {
       session_id: preview.value.session_id,
-      fix_timeline: fixTimeline.value,
+      fix_timeline: timelineEnabledForApply.value,
       items: selectedPreviewItems.value.map(item => ({
         upload_id: item.upload_id,
         target_id: item.target_id,
@@ -1556,6 +1634,24 @@ defineExpose({
             <em>{{ aiAvailable ? '点击查看当前资源任务' : aiStatus.message }}</em>
           </button>
 
+          <div class="detail-tabs">
+            <button
+              type="button"
+              :class="{ active: detailTab === 'match' }"
+              @click="detailTab = 'match'"
+            >
+              字幕匹配
+            </button>
+            <button
+              type="button"
+              :class="{ active: detailTab === 'history' }"
+              @click="detailTab = 'history'"
+            >
+              匹配历史
+            </button>
+          </div>
+
+          <div v-if="detailTab === 'match'" class="match-panel">
           <div class="toolbar-row">
             <VBtn variant="tonal" @click="toggleSelectAll">
               {{ allVisibleSelected ? '取消全选' : '全选当前列表' }}
@@ -1572,7 +1668,7 @@ defineExpose({
               color="warning"
               variant="tonal"
               prepend-icon="mdi-robot-outline"
-              :disabled="!batchUploadTargets.length || !aiAvailable"
+              :disabled="!aiCapableBatchTargets.length || !aiAvailable"
               :loading="aiSubmitting"
               @click="openBatchAiGenerate"
             >
@@ -1670,14 +1766,14 @@ defineExpose({
                 :icon="aiTaskIcon(target)"
                 :color="aiTaskColor(target)"
                 :title="aiTaskTitle(target)"
-                :disabled="isLocked(target.id) || (!aiAvailable && !aiTaskForTarget(target))"
+                :disabled="isTargetActionDisabled(target) || isStreamTarget(target) || (!aiAvailable && !aiTaskForTarget(target))"
                 @click="openSingleAiGenerate(target)"
               />
               <VBtn
                 variant="text"
                 icon="mdi-magnify"
                 title="搜索此集在线字幕"
-                :disabled="isLocked(target.id)"
+                :disabled="isTargetActionDisabled(target)"
                 @click="openSingleOnlineSearch(target)"
               />
               <VBtn
@@ -1691,7 +1787,7 @@ defineExpose({
                 color="primary"
                 variant="tonal"
                 size="small"
-                :disabled="isLocked(target.id)"
+                :disabled="isTargetActionDisabled(target)"
                 @click="openSingleUpload(target)"
               >
                 单集上传
@@ -1710,6 +1806,72 @@ defineExpose({
                 <span>{{ item.target_label }}</span>
               </div>
               <em>{{ timelineResultText(item) }}</em>
+            </div>
+          </div>
+          </div>
+
+          <div v-else class="history-panel">
+            <div v-if="matchHistoryRows.length" class="history-list">
+              <div
+                v-for="row in matchHistoryRows"
+                :key="row.target.id"
+                class="history-row"
+              >
+                <div class="history-main">
+                  <div class="episode-title">{{ compactTargetName(row.target) }}</div>
+                  <div class="episode-path">{{ row.target.relative_path }}</div>
+                  <div class="history-status">
+                    <span>{{ row.subtitles.length ? `${row.subtitles.length} 个外挂字幕` : '暂无外挂字幕' }}</span>
+                    <span v-if="row.task">AI：{{ aiStatusText(row.task) }}</span>
+                    <span>{{ timelineResultForTarget(row) }}</span>
+                    <span v-if="isStreamTarget(row.target)">STRM 资源不启用 AI 生成和智能调轴</span>
+                  </div>
+                </div>
+                <div class="history-actions">
+                  <VBtn
+                    size="small"
+                    variant="tonal"
+                    prepend-icon="mdi-magnify"
+                    :disabled="isTargetActionDisabled(row.target)"
+                    @click="openSingleOnlineSearch(row.target)"
+                  >
+                    重新搜索
+                  </VBtn>
+                  <VBtn
+                    v-if="aiEnabled && row.task"
+                    size="small"
+                    variant="text"
+                    prepend-icon="mdi-robot-outline"
+                    @click="openAiTaskDialog(row.target)"
+                  >
+                    AI 状态
+                  </VBtn>
+                </div>
+                <div v-if="row.subtitles.length" class="subtitle-history-list">
+                  <div
+                    v-for="subtitle in row.subtitles"
+                    :key="subtitle.path"
+                    class="subtitle-history-item"
+                  >
+                    <div>
+                      <strong>{{ subtitle.name }}</strong>
+                      <span>{{ formatBytes(subtitle.size) }} · {{ subtitle.modified_at || '未知时间' }}</span>
+                    </div>
+                    <VBtn
+                      size="small"
+                      variant="text"
+                      color="error"
+                      :loading="clearing"
+                      @click="deleteSubtitle(row.target, subtitle)"
+                    >
+                      删除
+                    </VBtn>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div v-else class="empty-state">
+              当前列表暂无匹配历史。
             </div>
           </div>
         </VCardText>
@@ -2076,7 +2238,7 @@ defineExpose({
           <VTooltip
             v-if="hasPreviewItems"
             location="top"
-            text="写入前会分析视频/字幕时间轴，可能占用 CPU 并造成短暂卡顿。"
+            :text="allSelectedPreviewTargetsAreStream ? 'STRM 资源暂不支持智能调轴。' : (hasSelectedPreviewStreamTargets ? 'STRM 目标会跳过调轴，其余本地视频正常处理。' : '写入前会分析视频/字幕时间轴，可能占用 CPU 并造成短暂卡顿。')"
           >
             <template #activator="{ props: tooltipProps }">
               <div
@@ -2088,8 +2250,8 @@ defineExpose({
                   color="primary"
                   density="comfortable"
                   hide-details
-                  :disabled="!timelineAvailable"
-                  label="智能调轴"
+                  :disabled="!timelineAvailable || allSelectedPreviewTargetsAreStream"
+                  :label="hasSelectedPreviewStreamTargets ? '智能调轴（STRM跳过）' : '智能调轴'"
                 />
               </div>
             </template>
@@ -2596,6 +2758,34 @@ defineExpose({
   white-space: nowrap;
 }
 
+.detail-tabs {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.detail-tabs button {
+  padding: 8px 14px;
+  border: 1px solid rgba(91, 109, 100, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.74);
+  color: #53655f;
+  font-weight: 900;
+}
+
+.detail-tabs button.active {
+  border-color: rgba(150, 99, 40, 0.58);
+  background: #fff4da;
+  color: #30443f;
+  box-shadow: inset 0 -3px 0 #b47a35;
+}
+
+.match-panel,
+.history-panel {
+  min-width: 0;
+}
+
 .episode-list {
   display: grid;
   gap: 10px;
@@ -2705,6 +2895,79 @@ defineExpose({
   color: #687873;
   font-size: 12px;
   font-style: normal;
+}
+
+.history-list {
+  display: grid;
+  gap: 12px;
+}
+
+.history-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid rgba(91, 109, 100, 0.14);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.history-main {
+  min-width: 0;
+}
+
+.history-status {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.history-status span {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: rgba(232, 237, 240, 0.72);
+  color: #53655f;
+  font-size: 12px;
+}
+
+.history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.subtitle-history-list {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 8px;
+}
+
+.subtitle-history-item {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  padding: 10px 12px;
+  border-radius: 14px;
+  background: rgba(245, 241, 232, 0.68);
+}
+
+.subtitle-history-item div {
+  min-width: 0;
+}
+
+.subtitle-history-item strong,
+.subtitle-history-item span {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.subtitle-history-item span {
+  color: #687873;
+  font-size: 12px;
 }
 
 .upload-dialog {
@@ -3307,6 +3570,29 @@ defineExpose({
   .search-head,
   .preview-head {
     display: grid;
+  }
+
+  .detail-tabs {
+    justify-content: stretch;
+  }
+
+  .detail-tabs button {
+    flex: 1 1 0;
+  }
+
+  .history-row,
+  .subtitle-history-item {
+    grid-template-columns: 1fr;
+  }
+
+  .subtitle-history-item {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .history-actions,
+  .subtitle-history-item {
+    justify-content: flex-start;
   }
 
   .online-title-actions {

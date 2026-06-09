@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import sys
 import types
@@ -89,11 +90,20 @@ def make_plugin(module):
     plugin._cache_ttl_seconds = 90
     plugin._cache_max_entries = 10
     plugin._entry_map_max_size = 2
+    plugin._ai_link_enabled = False
     plugin._build_entry_from_history = lambda history: dict(history)
     cache_file = plugin._local_cache_file()
     if cache_file.exists():
         cache_file.unlink()
     return plugin
+
+
+class FakeRequest:
+    def __init__(self, body):
+        self._body = body
+
+    async def json(self):
+        return self._body
 
 
 def test_local_entries_cache_hits_until_forced_refresh():
@@ -281,3 +291,53 @@ def test_strm_target_skips_timeline_fixing(tmp_path):
     assert results[0]["timeline"]["enabled"] is True
     assert results[0]["timeline"]["applied"] is False
     assert results[0]["timeline"]["base"] == "strm"
+
+
+def test_target_payload_marks_strm_resources(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.strm"
+    video.write_text("http://example.invalid/movie.mkv", encoding="utf-8")
+
+    target = plugin._target_from_entry(
+        {"id": "t1", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}
+    )
+
+    assert target["path"] == str(video)
+    assert target["is_stream"] is True
+
+
+def test_ai_submit_skips_strm_without_requiring_autosub_plugin(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.strm"
+    video.write_text("http://example.invalid/movie.mkv", encoding="utf-8")
+
+    result = plugin._submit_autosub_for_entries(
+        [{"id": "t1", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}]
+    )
+
+    assert result["added"] == []
+    assert result["failed"] == []
+    assert result["skipped"][0]["reason"] == "STRM 资源暂不支持 AI 生成字幕"
+
+
+def test_delete_single_subtitle_only_allows_target_subtitles(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    subtitle = tmp_path / "Movie.chi.srt"
+    unrelated = tmp_path / "Other.chi.srt"
+    video.write_text("video", encoding="utf-8")
+    subtitle.write_text("subtitle", encoding="utf-8")
+    unrelated.write_text("other", encoding="utf-8")
+    entry = {"id": "t1", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}
+    plugin._remember_targets([entry])
+
+    response = asyncio.run(
+        plugin.api_delete_subtitle(FakeRequest({"target_id": "t1", "subtitle_path": str(subtitle)}))
+    )
+
+    assert response["success"] is True
+    assert not subtitle.exists()
+    assert unrelated.exists()

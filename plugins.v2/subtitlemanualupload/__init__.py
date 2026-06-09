@@ -66,7 +66,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/subtitle-match.png"
-    plugin_version = "0.1.45"
+    plugin_version = "0.1.46"
     plugin_author = "jaysherlock"
     author_url = "https://github.com/jaysherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -268,6 +268,13 @@ class SubtitleManualUpload(_PluginBase):
                 "methods": ["POST"],
                 "auth": "bear",
                 "summary": "清空选中目标视频的外挂字幕",
+            },
+            {
+                "path": "/delete_subtitle",
+                "endpoint": self.api_delete_subtitle,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "删除单个已匹配外挂字幕",
             },
             {
                 "path": "/ai_submit",
@@ -1809,12 +1816,18 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             "all_target_count": len(entries),
         }
 
+    @classmethod
+    def _is_stream_path(cls, path: Any) -> bool:
+        return Path(cls._normalize_text(path)).suffix.lower() in cls._stream_exts
+
     def _target_from_entry(self, entry: Dict[str, Any]) -> Dict[str, Any]:
         subtitles = self._subtitle_files_for_target(entry)
+        path = self._normalize_text(entry.get("path"))
         return {
             "id": entry.get("id"),
             "label": entry.get("target_label"),
             "basename": entry.get("basename"),
+            "path": path,
             "media_type": entry.get("media_type"),
             "title": entry.get("title"),
             "season": entry.get("season", 0),
@@ -1824,6 +1837,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             "relative_path": entry.get("relative_path"),
             "storage": entry.get("storage", "local"),
             "writable": entry.get("writable", True),
+            "is_stream": self._is_stream_path(path),
             "has_subtitle": bool(subtitles),
             "subtitle_count": len(subtitles),
             "subtitles": subtitles,
@@ -2801,13 +2815,34 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         )
 
     def _submit_autosub_for_entries(self, target_entries: List[Dict[str, Any]]) -> Dict[str, Any]:
+        stream_entries = [entry for entry in target_entries if self._is_stream_path(entry.get("path"))]
+        submit_entries = [entry for entry in target_entries if not self._is_stream_path(entry.get("path"))]
+        paths = [self._normalize_text(entry.get("path")) for entry in submit_entries if self._normalize_text(entry.get("path"))]
+        if not paths and not stream_entries:
+            raise HTTPException(status_code=400, detail="没有可提交 AI 字幕生成的本地视频")
+        skipped_streams = [
+            {
+                "path": self._normalize_text(entry.get("path")),
+                "reason": "STRM 资源暂不支持 AI 生成字幕",
+            }
+            for entry in stream_entries
+        ]
+        if not paths:
+            tasks = self._autosub_tasks_for_entries(target_entries)
+            return {
+                "added": [],
+                "skipped": skipped_streams,
+                "failed": [],
+                "targets": [self._target_from_entry(entry) for entry in target_entries],
+                "tasks": tasks,
+            }
+
         plugin, reason = self._autosub_plugin()
         if not plugin:
             raise HTTPException(status_code=409, detail=reason)
         if not hasattr(plugin, "submit_tasks"):
             raise HTTPException(status_code=409, detail="AI 字幕插件版本过旧，请更新到联动版")
 
-        paths = [self._normalize_text(entry.get("path")) for entry in target_entries if self._normalize_text(entry.get("path"))]
         try:
             result = plugin.submit_tasks(paths, source="subtitle_manual_upload")
         except RuntimeError as exc:
@@ -2817,6 +2852,12 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             raise HTTPException(status_code=500, detail=f"AI 字幕任务提交失败: {exc}") from exc
 
         tasks = self._autosub_tasks_for_entries(target_entries)
+        result = {
+            **result,
+            "added": result.get("added") or [],
+            "skipped": [*(result.get("skipped") or []), *skipped_streams],
+            "failed": result.get("failed") or [],
+        }
         logger.info(
             "[SubtitleManualUpload] AI 字幕任务提交完成 targets=%s added=%s skipped=%s failed=%s",
             len(target_entries),
@@ -3394,4 +3435,64 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                 "failed": failed,
             },
             message=message,
+        )
+
+    async def api_delete_subtitle(self, request: Request) -> Dict[str, Any]:
+        body = await request.json()
+        target_id = self._normalize_text(body.get("target_id"))
+        subtitle_path_raw = self._normalize_text(body.get("subtitle_path"))
+        subtitle_name = self._normalize_text(body.get("subtitle_name"))
+        if not target_id:
+            raise HTTPException(status_code=400, detail="请先选择目标视频")
+        if not subtitle_path_raw and not subtitle_name:
+            raise HTTPException(status_code=400, detail="请指定要删除的字幕")
+
+        target_entries = self._resolve_targets([target_id])
+        target_entry = target_entries.get(target_id)
+        if not target_entry:
+            raise HTTPException(status_code=400, detail="目标视频已失效，请重新搜索媒体并选择季度/文件")
+        if self._normalize_text(target_entry.get("storage")) not in {"", "local"}:
+            raise HTTPException(status_code=400, detail="当前仅支持删除本地媒体文件的外挂字幕")
+
+        allowed_subtitles = self._subtitle_files_for_target(target_entry)
+        target_path: Optional[Path] = None
+        for subtitle in allowed_subtitles:
+            subtitle_path = Path(subtitle["path"])
+            if subtitle_path_raw and str(subtitle_path) == subtitle_path_raw:
+                target_path = subtitle_path
+                break
+            if subtitle_name and subtitle_path.name == subtitle_name:
+                target_path = subtitle_path
+                break
+        if not target_path:
+            raise HTTPException(status_code=400, detail="字幕不属于当前目标或已经被删除")
+
+        try:
+            target_path.unlink()
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="字幕文件已经不存在") from None
+        except Exception as exc:
+            logger.error(
+                "[SubtitleManualUpload] 删除单个外挂字幕失败 target=%s subtitle=%s error=%s",
+                target_id[:8],
+                target_path.name,
+                exc,
+            )
+            raise HTTPException(status_code=500, detail=f"删除字幕失败: {exc}") from exc
+
+        logger.info(
+            "[SubtitleManualUpload] 删除单个外挂字幕完成 target=%s subtitle=%s",
+            target_id[:8],
+            target_path.name,
+        )
+        return self._ok(
+            {
+                "deleted": {
+                    "target_id": target_id,
+                    "target_label": self._target_from_entry(target_entry).get("label"),
+                    "name": target_path.name,
+                    "path": str(target_path),
+                },
+            },
+            message=f"已删除外挂字幕：{target_path.name}",
         )
