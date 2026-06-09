@@ -105,9 +105,8 @@ const onlineProviderFilter = ref('all')
 const onlineMessages = ref([])
 const onlineMessagesCollapsed = ref(false)
 const onlineManualLinks = ref([])
+const onlineProviderProgress = ref({})
 const selectedOnlineResultIds = ref([])
-const onlineCaptcha = ref(null)
-const onlineCaptchaCode = ref('')
 const aiTaskDialog = ref(false)
 const aiTaskDialogTarget = ref(null)
 const aiTaskData = ref({
@@ -117,6 +116,8 @@ const aiTaskData = ref({
   task_by_target: {},
 })
 let aiTaskTimer = null
+let onlineSearchSeq = 0
+const ONLINE_PROVIDER_TIMEOUT_MS = 25000
 
 const onlineProviderItems = [
   { title: 'SubHD', value: 'subhd' },
@@ -223,6 +224,10 @@ const onlineMessageSummary = computed(() => {
 const onlineMessageType = computed(() => {
   return (onlineMessages.value || []).some(item => item.level !== 'info') ? 'warning' : 'info'
 })
+const onlineProviderProgressItems = computed(() => onlineSelectedProviders.value.map(provider => ({
+  provider,
+  state: onlineProviderProgress.value[provider] || 'idle',
+})))
 const onlineEngineText = computed(() => {
   const name = onlineStatus.value?.engine_name || 'CloakBrowser'
   const available = onlineStatus.value?.engine_available !== false
@@ -414,6 +419,24 @@ function providerStatus(providerId) {
   const item = (onlineStatus.value.providers || []).find(provider => provider.id === providerId)
   const host = item?.host ? `${item.host} · ` : ''
   return `${host}${item?.message || ''}`
+}
+
+function providerProgressText(state) {
+  if (state === 'searching') return '搜索中'
+  if (state === 'done') return '已完成'
+  if (state === 'timeout') return '超时'
+  if (state === 'cancelled') return '已停止'
+  if (state === 'error') return '失败'
+  return '等待'
+}
+
+function providerProgressColor(state) {
+  if (state === 'searching') return 'info'
+  if (state === 'done') return 'success'
+  if (state === 'timeout') return 'warning'
+  if (state === 'cancelled') return 'default'
+  if (state === 'error') return 'warning'
+  return 'default'
 }
 
 function ensureAssrtProviderSelected() {
@@ -787,9 +810,8 @@ async function openOnlineDialog(scopeTargets, title, scope) {
   onlineMessages.value = []
   onlineMessagesCollapsed.value = false
   onlineManualLinks.value = []
+  onlineProviderProgress.value = {}
   selectedOnlineResultIds.value = []
-  onlineCaptcha.value = null
-  onlineCaptchaCode.value = ''
   onlineError.value = ''
   error.value = ''
   message.value = ''
@@ -843,6 +865,9 @@ async function runOnlineSearch() {
     onlineError.value = '请至少选择一个在线字幕源'
     return
   }
+  const searchSeq = ++onlineSearchSeq
+  const providers = [...onlineSelectedProviders.value]
+  const payload = onlinePayload()
   onlineSearching.value = true
   onlineError.value = ''
   onlineResults.value = []
@@ -850,22 +875,96 @@ async function runOnlineSearch() {
   onlineMessages.value = []
   onlineMessagesCollapsed.value = false
   selectedOnlineResultIds.value = []
-  onlineCaptcha.value = null
-  onlineCaptchaCode.value = ''
-  try {
-    const response = await props.api.post(`${pluginBase.value}/online_search`, onlinePayload())
-    const data = unwrapResponse(response) || {}
-    onlineResults.value = data.results || []
-    onlineMessages.value = data.messages || []
-    onlineManualLinks.value = data.manual_links || onlineManualLinks.value
+  onlineProviderProgress.value = Object.fromEntries(providers.map(provider => [provider, 'searching']))
+  let settledCount = 0
+  const finishProvider = () => {
+    settledCount += 1
+    if (settledCount < providers.length || searchSeq !== onlineSearchSeq) return
     if (!onlineResults.value.length && !onlineMessages.value.length) {
       onlineMessages.value = [{ level: 'info', message: '没有搜索到可自动下载的字幕，可使用右侧手动搜索链接。' }]
     }
-  } catch (err) {
-    onlineError.value = errorMessage(err, '在线字幕搜索失败')
-  } finally {
     onlineSearching.value = false
   }
+  providers.forEach(async provider => {
+    try {
+      const response = await withTimeout(
+        props.api.post(`${pluginBase.value}/online_search_provider`, {
+          ...payload,
+          provider,
+          providers: [provider],
+        }),
+        ONLINE_PROVIDER_TIMEOUT_MS,
+        `${providerName(provider)} 搜索超时，已保留其它字幕源结果。`,
+      )
+      if (searchSeq !== onlineSearchSeq) return
+      const data = unwrapResponse(response) || {}
+      mergeOnlineResults(data.results || [])
+      appendOnlineMessages(data.messages || [])
+      onlineProviderProgress.value = { ...onlineProviderProgress.value, [provider]: 'done' }
+    } catch (err) {
+      if (searchSeq !== onlineSearchSeq) return
+      onlineProviderProgress.value = {
+        ...onlineProviderProgress.value,
+        [provider]: err?.name === 'TimeoutError' ? 'timeout' : 'error',
+      }
+      appendOnlineMessages([{
+        provider,
+        level: err?.name === 'TimeoutError' ? 'info' : 'warning',
+        message: errorMessage(err, `${providerName(provider)} 在线字幕搜索失败`),
+      }])
+    } finally {
+      finishProvider()
+    }
+  })
+}
+
+function stopOnlineSearch() {
+  if (!onlineSearching.value) return
+  onlineSearchSeq += 1
+  onlineSearching.value = false
+  onlineProviderProgress.value = Object.fromEntries(
+    Object.entries(onlineProviderProgress.value).map(([provider, state]) => [
+      provider,
+      state === 'searching' ? 'cancelled' : state,
+    ]),
+  )
+  appendOnlineMessages([{ level: 'info', message: '已停止等待未返回的字幕源，已显示的结果会保留。' }])
+}
+
+function withTimeout(promise, timeoutMs, message) {
+  let timer = null
+  const timeout = new Promise((resolve, reject) => {
+    timer = window.setTimeout(() => {
+      const err = new Error(message)
+      err.name = 'TimeoutError'
+      reject(err)
+    }, timeoutMs)
+  })
+  return Promise.race([promise, timeout]).finally(() => {
+    if (timer) window.clearTimeout(timer)
+  })
+}
+
+function mergeOnlineResults(items) {
+  const merged = new Map(onlineResults.value.map(item => [onlineResultKey(item), item]))
+  ;(items || []).forEach(item => {
+    if (item) merged.set(onlineResultKey(item), item)
+  })
+  onlineResults.value = Array.from(merged.values()).sort((a, b) => {
+    const score = Number(b.score || 0) - Number(a.score || 0)
+    if (score) return score
+    return providerName(a.provider).localeCompare(providerName(b.provider), 'zh-Hans-CN')
+  })
+}
+
+function appendOnlineMessages(items) {
+  const merged = new Map((onlineMessages.value || []).map(item => [`${item.provider || ''}:${item.level || ''}:${item.message || ''}`, item]))
+  ;(items || []).forEach(item => {
+    if (item?.message) {
+      merged.set(`${item.provider || ''}:${item.level || ''}:${item.message || ''}`, item)
+    }
+  })
+  onlineMessages.value = Array.from(merged.values())
 }
 
 function toggleOnlineResult(item, checked) {
@@ -888,7 +987,6 @@ async function downloadOnlinePreview() {
     const response = await props.api.post(`${pluginBase.value}/online_download_preview`, {
       ...onlinePayload(),
       results: selectedOnlineResults.value,
-      captcha_code: onlineCaptchaCode.value.trim(),
     })
     preview.value = unwrapResponse(response)
     batchLanguageSuffix.value = ''
@@ -902,13 +1000,7 @@ async function downloadOnlinePreview() {
     uploadDialog.value = true
     message.value = response?.message || '已下载在线字幕并生成匹配预览'
   } catch (err) {
-    const detail = err?.response?.data?.detail || err?.data?.detail
-    if (detail?.captcha_required) {
-      onlineCaptcha.value = detail
-      onlineError.value = detail.message || '下载需要验证码或站点验证'
-    } else {
-      onlineError.value = errorMessage(err, '在线字幕下载预览失败')
-    }
+    onlineError.value = errorMessage(err, '在线字幕下载预览失败')
   } finally {
     onlineDownloading.value = false
   }
@@ -1538,6 +1630,14 @@ defineExpose({
           >
             搜索
           </VBtn>
+          <VBtn
+            v-if="onlineSearching"
+            color="warning"
+            variant="tonal"
+            @click="stopOnlineSearch"
+          >
+            停止等待
+          </VBtn>
         </VCardActions>
         <VDivider />
         <VCardText>
@@ -1548,36 +1648,6 @@ defineExpose({
             variant="tonal"
             :text="onlineError"
           />
-          <VAlert
-            v-if="onlineCaptcha"
-            class="mb-4"
-            type="warning"
-            variant="tonal"
-          >
-            <div class="captcha-panel">
-              <div>
-                <strong>{{ providerName(onlineCaptcha.provider) }} 需要验证码或站点验证</strong>
-                <p>{{ onlineCaptcha.captcha_hint || onlineCaptcha.message }}</p>
-                <a
-                  v-if="onlineCaptcha.verify_url"
-                  :href="onlineCaptcha.verify_url"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  打开验证页
-                </a>
-              </div>
-              <VTextField
-                v-model="onlineCaptchaCode"
-                label="验证码（可选）"
-                placeholder="输入后再次点击下载并生成预览"
-                density="compact"
-                variant="outlined"
-                hide-details
-                clearable
-              />
-            </div>
-          </VAlert>
           <VAlert
             class="mb-4"
             :type="onlineStatus.engine_available === false ? 'warning' : 'info'"
@@ -1630,11 +1700,22 @@ defineExpose({
                   {{ item.title }}
                 </VChip>
               </VChipGroup>
-
-              <div v-if="onlineSearching" class="online-loading">
-                正在从字幕站搜索，请稍等...
+              <div v-if="onlineProviderProgressItems.length" class="online-provider-progress">
+                <VChip
+                  v-for="item in onlineProviderProgressItems"
+                  :key="item.provider"
+                  size="small"
+                  variant="tonal"
+                  :color="providerProgressColor(item.state)"
+                >
+                  {{ providerName(item.provider) }} · {{ providerProgressText(item.state) }}
+                </VChip>
               </div>
-              <div v-else-if="filteredOnlineResults.length" class="online-result-list">
+
+              <div v-if="onlineSearching && !filteredOnlineResults.length" class="online-loading">
+                正在从字幕站搜索，先返回的结果会先显示...
+              </div>
+              <div v-if="filteredOnlineResults.length" class="online-result-list">
                 <div
                   v-for="item in filteredOnlineResults"
                   :key="onlineResultKey(item)"
@@ -1673,7 +1754,7 @@ defineExpose({
                   </a>
                 </div>
               </div>
-              <div v-else class="empty-state">
+              <div v-else-if="!onlineSearching" class="empty-state">
                 {{ hasOnlineResults ? '当前平台筛选下没有结果。' : '没有可自动下载的字幕结果。可以换关键词重试，或使用右侧手动搜索。' }}
               </div>
             </section>
@@ -2472,22 +2553,6 @@ defineExpose({
   white-space: nowrap;
 }
 
-.captcha-panel {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(220px, 320px);
-  gap: 14px;
-  align-items: center;
-}
-
-.captcha-panel p {
-  margin: 4px 0;
-}
-
-.captcha-panel a {
-  color: #2f604f;
-  font-weight: 900;
-}
-
 .online-layout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 300px;
@@ -2527,6 +2592,13 @@ defineExpose({
 
 .online-provider-filter {
   margin: -4px 0 12px;
+}
+
+.online-provider-progress {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
 }
 
 .online-provider-filter-active {
@@ -2929,7 +3001,6 @@ defineExpose({
   .search-bar,
   .online-search-actions,
   .online-layout,
-  .captcha-panel,
   .detail-head,
   .preview-row {
     grid-template-columns: 1fr;

@@ -41,9 +41,49 @@ class FakeFetcher:
         return 404, "", url
 
 
+class SubhdInteractiveDownloadFetcher(FakeFetcher):
+    def __init__(self, *, interactive_ok=True):
+        self.interactive_ok = interactive_ok
+        self.interactive_calls = []
+
+    def get_bytes(self, url, *, referer=""):
+        html = "<html><title>验证</title><body>请输入验证码后下载字幕</body></html>".encode()
+        return "verify.html", html, url
+
+    def get_bytes_interactive(self, url, *, referer="", captcha_code=""):
+        self.interactive_calls.append((url, referer, captcha_code))
+        if not self.interactive_ok:
+            raise ValueError("ocr failed")
+        return "Example.Show.S01E02.zip", b"PK\x03\x04subtitle", url
+
+
 class ZimukuFakeFetcher:
     def get_text(self, url, *, referer=""):
         return 200, '<a href="/detail/456">Example Show S01E02 简体字幕</a>', url
+
+
+class ZimukuDirectDownloadFetcher:
+    def __init__(self):
+        self.direct_calls = []
+        self.interactive_calls = []
+
+    def get_bytes(self, url, *, referer=""):
+        self.direct_calls.append((url, referer))
+        return "example.srt", b"1\r\n00:00:01,000 --> 00:00:02,000\r\nHi", url
+
+    def get_bytes_interactive(self, url, *, referer="", captcha_code=""):
+        self.interactive_calls.append((url, referer, captcha_code))
+        raise AssertionError("Zimuku direct download should not use interactive flow first")
+
+
+class ZimukuInteractiveFallbackFetcher(ZimukuDirectDownloadFetcher):
+    def get_bytes(self, url, *, referer=""):
+        self.direct_calls.append((url, referer))
+        return "404.html", b"<html><body>404</body></html>", url
+
+    def get_bytes_interactive(self, url, *, referer="", captcha_code=""):
+        self.interactive_calls.append((url, referer, captcha_code))
+        return "example.srt", b"1\r\n00:00:01,000 --> 00:00:02,000\r\nHi", "https://s.zimuku.org/download/token"
 
 
 class ZimukuSecurityFetcher:
@@ -101,6 +141,20 @@ def test_subhd_provider_parses_detail_subtitle_rows():
     assert results[0].episode == 2
 
 
+def test_subhd_result_links_keep_longer_duplicate_title():
+    module = load_online_module()
+    provider = module.SubhdProvider(FakeFetcher())
+
+    links = provider._collect_result_links(
+        '<a href="/a/abc">灵魂战车</a>'
+        '<a href="/a/abc">Ghost.Rider.2007.Extended.Cut.1080p.BluRay.chseng</a>'
+    )
+
+    assert links == [
+        ("https://subhd.tv/a/abc", "Ghost.Rider.2007.Extended.Cut.1080p.BluRay.chseng")
+    ]
+
+
 def test_subhd_html_download_response_is_reported_as_verification():
     module = load_online_module()
 
@@ -108,7 +162,50 @@ def test_subhd_html_download_response_is_reported_as_verification():
     reason = module.SubhdProvider._html_download_reason(html, "https://subhd.tv/down/abc")
 
     assert "验证码" in reason
-    assert "手动下载" in reason
+    assert "OCR" in reason
+
+
+def test_subhd_html_download_uses_interactive_without_user_captcha():
+    module = load_online_module()
+    fetcher = SubhdInteractiveDownloadFetcher()
+    provider = module.SubhdProvider(fetcher)
+
+    filename, content = provider.download({
+        "result_id": "abc",
+        "page_url": "https://subhd.tv/a/abc",
+        "download_url": "https://subhd.tv/down/abc",
+        "title": "Example Show S01E02",
+    })
+
+    assert filename == "Example.Show.S01E02.zip"
+    assert content.startswith(b"PK")
+    assert fetcher.interactive_calls == [("https://subhd.tv/down/abc", "https://subhd.tv/a/abc", "")]
+
+    result = provider._parse_subtitle_page(
+        "https://subhd.tv/a/abc",
+        "Example Show S01E02",
+        [{"season": 1, "episode": 2}],
+        "Example.Show.S01E02.1080p.chs&eng.ass",
+    )
+    assert "/api/sub/down" in result.download_steps
+
+
+def test_subhd_interactive_failure_is_plain_download_error():
+    module = load_online_module()
+    fetcher = SubhdInteractiveDownloadFetcher(interactive_ok=False)
+    provider = module.SubhdProvider(fetcher)
+
+    try:
+        provider.download({
+            "result_id": "abc",
+            "page_url": "https://subhd.tv/a/abc",
+            "download_url": "https://subhd.tv/down/abc",
+            "title": "Example Show S01E02",
+        })
+    except ValueError as exc:
+        assert "自动仿真下载失败" in str(exc)
+    else:
+        raise AssertionError("SubHD interactive failure should raise ValueError")
 
 
 def test_zimuku_results_are_downloadable_and_keep_steps():
@@ -122,7 +219,9 @@ def test_zimuku_results_are_downloadable_and_keep_steps():
     assert results[0].provider == "zimuku"
     assert results[0].downloadable is True
     assert results[0].requires_captcha is True
-    assert "下载源" in results[0].download_steps
+    assert "/dld" in results[0].download_steps
+    assert "/download" in results[0].download_steps
+    assert "security_verify_img" in results[0].download_steps
 
 
 def test_zimuku_security_page_uses_ocr_verify_jump():
@@ -147,6 +246,68 @@ def test_zimuku_security_page_uses_ocr_verify_jump():
     assert fetcher.verified is True
     assert any("security_verify_img=3132333435" in url for url in fetcher.urls)
     assert fetcher.cookies[0][0] == "srcurl"
+
+
+def test_zimuku_download_source_tries_direct_file_before_interactive():
+    module = load_online_module()
+    fetcher = ZimukuDirectDownloadFetcher()
+    provider = module.ZimukuProvider(fetcher)
+
+    filename, content = provider._try_download_candidates(
+        ["https://zimuku.org/download/token/svr/d0"],
+        referer="https://zimuku.org/dld/456.html",
+    )
+
+    assert filename == "example.srt"
+    assert content.startswith(b"1\r\n")
+    assert fetcher.direct_calls == [
+        ("https://zimuku.org/download/token/svr/d0", "https://zimuku.org/dld/456.html")
+    ]
+    assert fetcher.interactive_calls == []
+
+
+def test_zimuku_download_source_falls_back_to_interactive_navigation_for_html():
+    module = load_online_module()
+    fetcher = ZimukuInteractiveFallbackFetcher()
+    provider = module.ZimukuProvider(fetcher)
+
+    filename, content = provider._try_download_candidates(
+        ["https://zimuku.org/download/token/svr/d0"],
+        referer="https://zimuku.org/dld/456.html",
+    )
+
+    assert filename == "example.srt"
+    assert content.startswith(b"1\r\n")
+    assert fetcher.direct_calls == [
+        ("https://zimuku.org/download/token/svr/d0", "https://zimuku.org/dld/456.html")
+    ]
+    assert fetcher.interactive_calls == [
+        ("https://zimuku.org/download/token/svr/d0", "https://zimuku.org/dld/456.html", "")
+    ]
+
+
+def test_loaded_subtitle_page_without_extension_is_read_as_srt():
+    module = load_online_module()
+
+    class BodyLocator:
+        def inner_text(self, timeout=0):
+            return "1\n00:00:01,000 --> 00:00:02,000\nHi"
+
+    class Page:
+        url = "https://s.zimuku.org/download/encoded-token"
+
+        def locator(self, selector):
+            assert selector == "body"
+            return BodyLocator()
+
+    filename, content, final_url = module.OnlinePageClient._read_loaded_subtitle_page(
+        Page(),
+        "https://zimuku.org/download/token/svr/d0",
+    )
+
+    assert filename == "zimuku-subtitle.srt"
+    assert b"00:00:01,000 --> 00:00:02,000" in content
+    assert final_url == "https://s.zimuku.org/download/encoded-token"
 
 
 def test_assrt_provider_parses_web_results_without_api_key():

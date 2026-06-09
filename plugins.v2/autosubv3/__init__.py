@@ -58,6 +58,7 @@ class TaskItem:
     video_file: str
     source: TaskSource
     add_time: datetime
+    force_generate: bool = False
     status: TaskStatus = TaskStatus.PENDING
     complete_time: datetime = None
     error_message: str = ""
@@ -232,6 +233,7 @@ class AutoSubv3(_PluginBase):
                     video_file=task_dict["video_file"],
                     source=TaskSource(task_dict["source"]),
                     add_time=datetime.fromisoformat(task_dict["add_time"]),
+                    force_generate=bool(task_dict.get("force_generate", False)),
                     status=TaskStatus(task_dict["status"]),
                     complete_time=datetime.fromisoformat(task_dict["complete_time"])
                     if task_dict.get("complete_time") else None,
@@ -249,6 +251,7 @@ class AutoSubv3(_PluginBase):
             "video_file": task.video_file,
             "source": task.source.value,
             "add_time": task.add_time.isoformat() if task.add_time else None,
+            "force_generate": bool(task.force_generate),
             "status": task.status.value,
             "complete_time": task.complete_time.isoformat() if task.complete_time else None,
             "error_message": task.error_message or "",
@@ -334,6 +337,7 @@ class AutoSubv3(_PluginBase):
             "video_name": os.path.basename(task.video_file or ""),
             "source": source.value,
             "source_label": self._source_label(source),
+            "force_generate": bool(task.force_generate),
             "status": status.value,
             "status_label": self._status_label(status),
             "message": message,
@@ -400,7 +404,8 @@ class AutoSubv3(_PluginBase):
             if self.__is_duplicate_task(video_file):
                 skipped.append({"path": video_file, "reason": "任务已在队列中或正在处理"})
                 continue
-            if self.add_task(video_file, task_source):
+            force_generate = task_source == TaskSource.SUBTITLE_MANUAL_UPLOAD
+            if self.add_task(video_file, task_source, force_generate=force_generate):
                 added.append({"path": video_file})
             else:
                 skipped.append({"path": video_file, "reason": "任务已存在"})
@@ -515,7 +520,7 @@ class AutoSubv3(_PluginBase):
     def is_video_skip_chinese(self, video_file: str) -> bool:
         return video_file in self.load_skip_chinese_videos()
 
-    def add_task(self, video_file: str, source: TaskSource):
+    def add_task(self, video_file: str, source: TaskSource, force_generate: bool = False):
         """
         添加新任务到队列和任务列表中，若任务已存在则跳过。
         :param video_file: 视频文件路径
@@ -525,6 +530,7 @@ class AutoSubv3(_PluginBase):
             task_id=str(uuid4()),
             video_file=video_file,
             source=source,
+            force_generate=force_generate,
             add_time=datetime.now()
         )
 
@@ -535,7 +541,7 @@ class AutoSubv3(_PluginBase):
         self._task_queue.put(task)
         self._tasks[task.task_id] = task
         self.save_tasks()
-        logger.info(f"加入任务队列: {video_file}")
+        logger.info(f"加入任务队列: {video_file} force_generate={force_generate}")
         return True
 
     def clear_tasks(self):
@@ -568,7 +574,7 @@ class AutoSubv3(_PluginBase):
                 task.error_message = ""
                 self._tasks[task.task_id] = task
                 self.save_tasks()
-                task.status = self.__process_autosub(task.video_file)
+                task.status = self.__process_autosub(task.video_file, force_generate=task.force_generate)
                 task.complete_time = datetime.now()
                 task.error_message = "" if task.status == TaskStatus.COMPLETED else self._status_message(task.status)
                 self._tasks[task.task_id] = task
@@ -667,7 +673,7 @@ class AutoSubv3(_PluginBase):
             return False
         return True
 
-    def __process_autosub(self, video_file) -> TaskStatus:
+    def __process_autosub(self, video_file, *, force_generate: bool = False) -> TaskStatus:
         if not video_file:
             logger.error(f"[Step 0] video_file 为空")
             return TaskStatus.FAILED
@@ -695,9 +701,11 @@ class AutoSubv3(_PluginBase):
         try:
             logger.info(f"[Step 4] 判断目的字幕是否已存在：{video_file}")
             # 判断目的字幕（和内嵌）是否已存在
-            if self.__target_subtitle_exists(video_file):
+            if not force_generate and self.__target_subtitle_exists(video_file):
                 logger.warn(f"[Step 4] 字幕文件已经存在，不进行处理")
                 return TaskStatus.IGNORED
+            if force_generate:
+                logger.info(f"[Step 4] 联动强制生成：跳过已有外挂/内嵌字幕检查")
             logger.info(f"[Step 5] 生成字幕")
             # 生成字幕
             ret, lang, gen_sub_path = self.__generate_subtitle(video_file, file_path, self._enable_asr)

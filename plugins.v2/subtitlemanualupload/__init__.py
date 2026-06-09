@@ -45,7 +45,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/subtitle-match.png"
-    plugin_version = "0.1.31"
+    plugin_version = "0.1.33"
     plugin_author = "jaysherlock"
     author_url = "https://github.com/jaysherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -251,6 +251,13 @@ class SubtitleManualUpload(_PluginBase):
                 "methods": ["POST"],
                 "auth": "bear",
                 "summary": "搜索在线字幕",
+            },
+            {
+                "path": "/online_search_provider",
+                "endpoint": self.api_online_search_provider,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "搜索单个在线字幕源",
             },
             {
                 "path": "/online_download_preview",
@@ -2361,6 +2368,50 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             }
         )
 
+    async def api_online_search_provider(self, request: Request) -> Dict[str, Any]:
+        body = await request.json()
+        target_ids = self._target_ids_from_body(body)
+        if not target_ids:
+            raise HTTPException(status_code=400, detail="请先选择要搜索字幕的本地视频")
+        target_entries = list(self._resolve_targets(target_ids).values())
+        if not target_entries:
+            raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
+        targets = [self._target_from_entry(item) for item in target_entries]
+        keywords = self._online_keywords(body, targets)
+        if not keywords:
+            raise HTTPException(status_code=400, detail="没有可用搜索关键词，请手动输入关键词")
+        provider_id = self._normalize_text(body.get("provider"))
+        providers = self._normalize_provider_ids([provider_id], fallback=False)
+        if not providers:
+            raise HTTPException(status_code=400, detail="未知或未启用的在线字幕源")
+        self._check_online_rate_limit(providers)
+        scope = self._normalize_text(body.get("scope")) or "auto"
+        service = self._online_service()
+        search_result = await run_in_threadpool(
+            service.search,
+            keywords=keywords,
+            providers=providers,
+            targets=targets,
+            scope=scope,
+        )
+        logger.info(
+            "[SubtitleManualUpload] 在线字幕单源搜索完成 scope=%s provider=%s targets=%s results=%s",
+            scope,
+            providers[0],
+            len(targets),
+            len(search_result.get("results") or []),
+        )
+        return self._ok(
+            {
+                "keywords": keywords,
+                "provider": providers[0],
+                "providers": providers,
+                "targets": targets,
+                "results": search_result.get("results") or [],
+                "messages": search_result.get("messages") or [],
+            }
+        )
+
     async def api_online_download_preview(self, request: Request) -> Dict[str, Any]:
         body = await request.json()
         target_ids = self._target_ids_from_body(body)
@@ -2385,7 +2436,6 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             downloads = await run_in_threadpool(
                 self._online_service().download,
                 selected_results,
-                captcha_code=self._normalize_text(body.get("captcha_code")),
             )
             for downloaded in downloads:
                 result = downloaded.get("result") or {}
@@ -2414,8 +2464,8 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                 prepared_uploads.extend(extracted)
         except CaptchaRequiredError as exc:
             shutil.rmtree(session_dir, ignore_errors=True)
-            logger.warning("[SubtitleManualUpload] 在线字幕下载需要验证码 provider=%s message=%s", exc.provider, exc)
-            raise HTTPException(status_code=409, detail=exc.to_payload()) from exc
+            logger.warning("[SubtitleManualUpload] 在线字幕自动仿真下载失败 provider=%s message=%s", exc.provider, exc)
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
         except ValueError as exc:
             shutil.rmtree(session_dir, ignore_errors=True)
             logger.warning("[SubtitleManualUpload] 在线字幕下载预览失败：%s", exc)
