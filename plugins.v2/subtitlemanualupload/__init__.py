@@ -58,7 +58,7 @@ from .online_subtitle import (
     normalize_online_engine,
     normalize_provider_roots,
 )
-from .timeline_fixer import check_timeline_fixer_dependencies, fix_subtitle_timeline
+from .timeline_fixer import TimelineFixResult, check_timeline_fixer_dependencies, fix_subtitle_timeline
 from .tongwen import convert_subtitle_file_to_simplified
 
 
@@ -66,7 +66,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/subtitle-match.png"
-    plugin_version = "0.1.44"
+    plugin_version = "0.1.45"
     plugin_author = "jaysherlock"
     author_url = "https://github.com/jaysherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -2362,6 +2362,25 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             if fix_timeline:
                 fixed_dir.mkdir(parents=True, exist_ok=True)
                 fixed_source_path = fixed_dir / f"{operation['upload_info'].get('upload_id')}{operation['source_path'].suffix}"
+                if operation["video_path"].suffix.lower() in self._stream_exts:
+                    shutil.copyfile(operation["source_path"], fixed_source_path)
+                    operation["write_source_path"] = fixed_source_path
+                    operation["timeline_result"] = TimelineFixResult(
+                        enabled=True,
+                        applied=False,
+                        reason="stream target skipped",
+                        base="strm",
+                        offset_seconds=0.0,
+                        scale_factor=1.0,
+                        score=0.0,
+                    )
+                    logger.info(
+                        "[SubtitleManualUpload] STRM 目标跳过智能调轴 %s -> %s",
+                        operation["upload_info"].get("source_name"),
+                        operation["destination_name"],
+                    )
+                    self._maybe_convert_operation_to_simplified(operation, simplified_dir)
+                    continue
                 try:
                     timeline_result = fix_subtitle_timeline(
                         video_path=operation["video_path"],

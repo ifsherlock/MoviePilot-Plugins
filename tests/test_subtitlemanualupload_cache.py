@@ -247,3 +247,37 @@ def test_detect_language_profile_marks_bilingual_subtitles():
     assert cls._detect_language_profile("movie.zh.en.srt", f"{chinese}{english}".encode())["suffix"] == "chi&eng"
     assert cls._detect_language_profile("movie.srt", f"{chinese}{japanese}".encode())["suffix"] == "chi&jp"
     assert cls._detect_language_profile("movie.srt", f"{chinese}{korean}".encode())["suffix"] == "chi&kr"
+
+
+def test_strm_target_skips_timeline_fixing(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    video = tmp_path / "Movie.strm"
+    video.write_text("http://example.invalid/movie.mkv", encoding="utf-8")
+    source = tmp_path / "subtitle.srt"
+    source.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+    destination = tmp_path / "Movie.chi.srt"
+
+    results, fixed_count, _ = plugin._write_operations_to_disk(
+        session_dir=session_dir,
+        operations=[
+            {
+                "upload_info": {"upload_id": "u1", "source_name": "subtitle.srt", "archive_name": ""},
+                "target_entry": {"id": "t1", "path": str(video), "basename": "Movie", "storage": "local"},
+                "video_path": video,
+                "source_path": source,
+                "language_suffix": "chi",
+                "destination_name": destination.name,
+                "destination_path": destination,
+            }
+        ],
+        fix_timeline=True,
+    )
+
+    assert destination.read_text(encoding="utf-8") == source.read_text(encoding="utf-8")
+    assert fixed_count == 0
+    assert results[0]["timeline"]["enabled"] is True
+    assert results[0]["timeline"]["applied"] is False
+    assert results[0]["timeline"]["base"] == "strm"
