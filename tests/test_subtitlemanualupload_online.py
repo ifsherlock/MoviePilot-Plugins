@@ -502,6 +502,30 @@ def test_build_search_keywords_filters_plot_summary_aliases():
     assert keywords[0] == "도가니 2011"
 
 
+def test_build_search_keywords_filters_native_language_name_aliases():
+    module = load_online_module()
+    media = {
+        "media_type": "movie",
+        "title": "恶灵骑士",
+        "year": "2007",
+        "en_title": "Ghost Rider",
+        "original_title": "Ghost Rider",
+        "original_language": "en",
+        "origin_country": ["US"],
+        "translations": [
+            {"name": "French", "english_name": "French", "data": {"title": "Français"}},
+            {"name": "German", "english_name": "German", "data": {"title": "Deutsch"}},
+            {"name": "Dutch", "english_name": "Dutch", "data": {"title": "Nederlands"}},
+            {"name": "Turkish", "english_name": "Turkish", "data": {"title": "Türkçe"}},
+        ],
+    }
+
+    keywords = module.build_search_keywords(media, [media], "movie")
+
+    assert keywords[0] == "Ghost Rider 2007"
+    assert all(item not in keywords for item in ["Français 2007", "Deutsch 2007", "Nederlands 2007", "Türkçe 2007"])
+
+
 def test_opensubtitles_rejects_generic_english_query_match():
     module = load_online_module()
     provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key")
