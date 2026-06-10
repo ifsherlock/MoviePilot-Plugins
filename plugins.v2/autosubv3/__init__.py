@@ -1,5 +1,6 @@
 ﻿import copy
 import os
+import re
 import tempfile
 import time
 import traceback
@@ -97,7 +98,7 @@ class AutoSubv3(_PluginBase):
     # 主题色
     plugin_color = "#2C4F7E"
     # 插件版本
-    plugin_version = "3.5.49"
+    plugin_version = "3.5.50"
     # 插件作者
     plugin_author = "ifsherlock"
     # 作者主页
@@ -679,6 +680,15 @@ class AutoSubv3(_PluginBase):
         if not lang:
             return False
         return lang.lower() in ('zh', 'chi', 'chs', 'cht', 'zh-cn', 'zh-tw', 'zh-hk', 'chinese')
+
+    @staticmethod
+    def __subtitle_content_looks_chinese(subs: List[srt.Subtitle]) -> bool:
+        text = "\n".join(str(getattr(item, "content", "") or "") for item in subs[:80])
+        if not text.strip():
+            return False
+        chinese_chars = len(re.findall(r"[\u3400-\u9fff]", text))
+        latin_chars = len(re.findall(r"[A-Za-z]", text))
+        return chinese_chars >= 8 and chinese_chars >= latin_chars
 
     def load_skip_chinese_videos(self):
         return self.get_data("skip_chinese_videos") or {}
@@ -1610,55 +1620,61 @@ class AutoSubv3(_PluginBase):
         :param output_mode: 输出模式，'bilingual'=双语（翻译+原文），'chinese_only'=纯中文
         """
         self._stats = {'total': 0, 'batch_success': 0, 'batch_fail': 0, 'line_fallback': 0, 'translated': 0, 'failed': 0}
-        # 如果检测到的字幕语言是中文，强制使用纯中文字幕模式（双语模式没必要）
-        # 但如果"中文视频不翻译"开关已开，主流程会在进入这里之前直接跳过翻译
-        if not self._skip_chinese and self.__is_chinese_lang(source_lang):
-            logger.info(f"检测字幕语言为中文，强制使用纯中文字幕输出模式")
-            self._subtitle_output_mode = 'chinese_only'
         subs = self.__load_srt(source_subtitle)
         valid_subs = subs  # ASR阶段已统一做word-level合并，翻译时不再重复合并
+        configured_output_mode = output_mode or self._subtitle_output_mode or 'bilingual'
+        effective_output_mode = configured_output_mode
+        chinese_source = self.__is_chinese_lang(source_lang) or self.__subtitle_content_looks_chinese(valid_subs)
+        if not self._skip_chinese and chinese_source:
+            logger.info(f"检测字幕内容为中文，强制使用纯中文字幕输出模式")
+            effective_output_mode = 'chinese_only'
+        previous_output_mode = self._subtitle_output_mode
+        self._subtitle_output_mode = effective_output_mode
 
-        if not valid_subs:
-            logger.warning("字幕文件为空或没有有效的字幕条目，跳过翻译")
-            # 创建一个空的字幕文件
-            self.__save_srt(dest_subtitle, [])
-            return
+        try:
+            if not valid_subs:
+                logger.warning("字幕文件为空或没有有效的字幕条目，跳过翻译")
+                # 创建一个空的字幕文件
+                self.__save_srt(dest_subtitle, [])
+                return
 
-        self._stats['total'] = len(valid_subs)
-        translate_start_time = time.time()
-        if self._enable_batch:
-            processed = self.__translate_parallel(valid_subs)
-        else:
-            logger.info(f"[翻译] 逐条模式 - 共 {len(valid_subs)} 条（效果更好，速度较慢）")
-            processed = [self.__process_single(valid_subs, item) for item in valid_subs]
-        self._raise_if_task_cancelled()
-        translated_count, failed_count, failure_rate = self.__enforce_translation_quality()
-        self.__save_srt(dest_subtitle, processed)
+            self._stats['total'] = len(valid_subs)
+            translate_start_time = time.time()
+            if self._enable_batch:
+                processed = self.__translate_parallel(valid_subs)
+            else:
+                logger.info(f"[翻译] 逐条模式 - 共 {len(valid_subs)} 条（效果更好，速度较慢）")
+                processed = [self.__process_single(valid_subs, item) for item in valid_subs]
+            self._raise_if_task_cancelled()
+            translated_count, failed_count, failure_rate = self.__enforce_translation_quality()
+            self.__save_srt(dest_subtitle, processed)
 
-        # 计算翻译耗时和速度
-        translate_elapsed = time.time() - translate_start_time
-        speed = len(valid_subs) / translate_elapsed if translate_elapsed > 0 else 0
+            # 计算翻译耗时和速度
+            translate_elapsed = time.time() - translate_start_time
+            speed = len(valid_subs) / translate_elapsed if translate_elapsed > 0 else 0
 
-        # 统计报告
-        batch_success_count = self._stats['batch_success']
-        batch_fail_count = self._stats['batch_fail']
-        line_fallback_count = self._stats['line_fallback']
+            # 统计报告
+            batch_success_count = self._stats['batch_success']
+            batch_fail_count = self._stats['batch_fail']
+            line_fallback_count = self._stats['line_fallback']
 
-        # 构建日志消息
-        log_msg = f"[翻译] 完成 - 总计 {self._stats['total']} 条，耗时 {translate_elapsed:.1f} 秒，速度 {speed:.1f} 条/秒"
-        if self._enable_batch:
-            log_msg += f"，批量成功 {batch_success_count} 批"
-            if batch_fail_count > 0:
-                log_msg += f"，批量失败 {batch_fail_count} 批（降级成功 {line_fallback_count} 条）"
-        log_msg += f"，翻译成功 {translated_count} 条，失败 {failed_count} 条，失败率 {failure_rate:.0%}"
+            # 构建日志消息
+            log_msg = f"[翻译] 完成 - 总计 {self._stats['total']} 条，耗时 {translate_elapsed:.1f} 秒，速度 {speed:.1f} 条/秒"
+            if self._enable_batch:
+                log_msg += f"，批量成功 {batch_success_count} 批"
+                if batch_fail_count > 0:
+                    log_msg += f"，批量失败 {batch_fail_count} 批（降级成功 {line_fallback_count} 条）"
+            log_msg += f"，翻译成功 {translated_count} 条，失败 {failed_count} 条，失败率 {failure_rate:.0%}"
 
-        logger.info(log_msg)
+            logger.info(log_msg)
 
-        # 批量失败次数过多时警告
-        if self._enable_batch and batch_fail_count > 0:
-            fail_rate = batch_fail_count / (batch_success_count + batch_fail_count) if (batch_success_count + batch_fail_count) > 0 else 0
-            if fail_rate > 0.5:
-                logger.warning(f"[翻译] 批量失败率过高（{fail_rate:.0%}），建议检查：1) LLM API稳定性 2) 降低batch_size 3) 检查prompt格式")
+            # 批量失败次数过多时警告
+            if self._enable_batch and batch_fail_count > 0:
+                fail_rate = batch_fail_count / (batch_success_count + batch_fail_count) if (batch_success_count + batch_fail_count) > 0 else 0
+                if fail_rate > 0.5:
+                    logger.warning(f"[翻译] 批量失败率过高（{fail_rate:.0%}），建议检查：1) LLM API稳定性 2) 降低batch_size 3) 检查prompt格式")
+        finally:
+            self._subtitle_output_mode = previous_output_mode
 
     def __translate_parallel(self, valid_subs: list):
         """

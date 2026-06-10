@@ -82,6 +82,8 @@ const mediaPage = ref(1)
 const mediaPageSize = 24
 const mediaTotal = ref(0)
 const mediaHasMore = ref(false)
+const mediaPrefetchPages = ref({})
+let mediaSearchToken = 0
 const rootTab = ref('match')
 const matchHistoryLoading = ref(false)
 const matchHistoryItems = ref([])
@@ -975,10 +977,81 @@ async function refreshIndex() {
   }
 }
 
+function mediaRequestKey(keyword, type, page) {
+  return `${type || 'all'}\u0000${keyword || ''}\u0000${page}`
+}
+
+function clearMediaPrefetch() {
+  mediaPrefetchPages.value = {}
+}
+
+async function fetchMediaPage(keyword, type, page) {
+  const params = new URLSearchParams()
+  params.set('keyword', keyword)
+  params.set('media_type', type)
+  params.set('page', String(page))
+  params.set('page_size', String(mediaPageSize))
+  const response = await props.api.get(`${pluginBase.value}/search?${params.toString()}`)
+  return unwrapResponse(response) || {}
+}
+
+function applyMediaPage(data, page, append) {
+  mediaPage.value = Number(data.page || page)
+  mediaTotal.value = Number(data.total || 0)
+  mediaHasMore.value = Boolean(data.has_more)
+  medias.value = append ? [...medias.value, ...(data.medias || [])] : (data.medias || [])
+  if (!medias.value.length) {
+    const keyword = searchKeyword.value.trim()
+    message.value = keyword
+      ? '本地资源库里没有匹配的视频目标，请换个关键词试试'
+      : '本地整理记录里暂时没有可用的视频目标'
+  }
+}
+
+async function prefetchMediaPage(page, token) {
+  if (!mediaHasMore.value || page <= mediaPage.value) return
+  const keyword = searchKeyword.value.trim()
+  const type = mediaType.value
+  const key = mediaRequestKey(keyword, type, page)
+  if (mediaPrefetchPages.value[key]?.loading || mediaPrefetchPages.value[key]?.data) return
+  mediaPrefetchPages.value = {
+    ...mediaPrefetchPages.value,
+    [key]: { loading: true },
+  }
+  try {
+    const data = await fetchMediaPage(keyword, type, page)
+    if (token !== mediaSearchToken) return
+    mediaPrefetchPages.value = {
+      ...mediaPrefetchPages.value,
+      [key]: { data },
+    }
+  } catch (err) {
+    if (token !== mediaSearchToken) return
+    const nextCache = { ...mediaPrefetchPages.value }
+    delete nextCache[key]
+    mediaPrefetchPages.value = nextCache
+  }
+}
+
 async function runSearch(options = {}) {
   const keyword = searchKeyword.value.trim()
   const append = Boolean(options.append)
   const page = append ? mediaPage.value + 1 : 1
+  if (!append) {
+    mediaSearchToken += 1
+    clearMediaPrefetch()
+  }
+  const token = mediaSearchToken
+  const cacheKey = mediaRequestKey(keyword, mediaType.value, page)
+  const cachedPage = append ? mediaPrefetchPages.value[cacheKey]?.data : null
+  if (cachedPage) {
+    const nextCache = { ...mediaPrefetchPages.value }
+    delete nextCache[cacheKey]
+    mediaPrefetchPages.value = nextCache
+    applyMediaPage(cachedPage, page, true)
+    prefetchMediaPage(page + 1, token)
+    return
+  }
   searching.value = true
   error.value = ''
   message.value = ''
@@ -987,26 +1060,16 @@ async function runSearch(options = {}) {
     clearTargetState()
   }
   try {
-    const params = new URLSearchParams()
-    params.set('keyword', keyword)
-    params.set('media_type', mediaType.value)
-    params.set('page', String(page))
-    params.set('page_size', String(mediaPageSize))
-    const response = await props.api.get(`${pluginBase.value}/search?${params.toString()}`)
-    const data = unwrapResponse(response) || {}
-    mediaPage.value = Number(data.page || page)
-    mediaTotal.value = Number(data.total || 0)
-    mediaHasMore.value = Boolean(data.has_more)
-    medias.value = append ? [...medias.value, ...(data.medias || [])] : (data.medias || [])
-    if (!medias.value.length) {
-      message.value = keyword
-        ? '本地资源库里没有匹配的视频目标，请换个关键词试试'
-        : '本地整理记录里暂时没有可用的视频目标'
-    }
+    const data = await fetchMediaPage(keyword, mediaType.value, page)
+    if (token !== mediaSearchToken) return
+    applyMediaPage(data, page, append)
+    prefetchMediaPage(page + 1, token)
   } catch (err) {
     error.value = errorMessage(err, '搜索本地资源失败')
   } finally {
-    searching.value = false
+    if (token === mediaSearchToken) {
+      searching.value = false
+    }
   }
 }
 
@@ -1670,9 +1733,9 @@ async function clearSelectedSubtitles() {
   }
 }
 
-onMounted(async () => {
-  await loadStatus()
-  await runSearch()
+onMounted(() => {
+  loadStatus()
+  runSearch()
 })
 
 onBeforeUnmount(() => {

@@ -331,3 +331,25 @@ def test_translation_failure_rate_at_threshold_allows_subtitle_output():
     plugin._AutoSubv3__translate_zh_subtitle("en", "source.srt", "dest.srt")
 
     assert saved == [("dest.srt", subtitles)]
+
+
+def test_chinese_subtitle_content_forces_chinese_only_output_mode():
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._subtitle_output_mode = "bilingual"
+    plugin._skip_chinese = False
+    plugin._enable_batch = False
+    plugin._context_window = 0
+    plugin._max_translation_failure_rate = 0.3
+    sub = types.SimpleNamespace(content="这是繁體中文字幕內容，應該只輸出潤色後的簡體中文。")
+    saved = []
+
+    plugin._AutoSubv3__load_srt = lambda _path: [sub]
+    plugin._AutoSubv3__save_srt = lambda _path, items: saved.extend(item.content for item in items)
+    plugin._AutoSubv3__translate_to_zh = lambda *_args, **_kwargs: (True, "这是简体中文字幕内容。")
+    plugin._AutoSubv3__raise_if_task_cancelled = lambda: None
+
+    plugin._AutoSubv3__translate_zh_subtitle("und", "source.srt", "dest.srt", output_mode="bilingual")
+
+    assert saved == ["这是简体中文字幕内容。"]
+    assert plugin._subtitle_output_mode == "bilingual"

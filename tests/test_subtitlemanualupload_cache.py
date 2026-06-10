@@ -86,10 +86,12 @@ def make_plugin(module):
     plugin = module.SubtitleManualUpload.__new__(module.SubtitleManualUpload)
     plugin._local_entries_cache = {"loaded_at": None, "entries": [], "media_count": 0, "persisted": False}
     plugin._entry_map = module.OrderedDict()
+    plugin._media_index_cache = module.OrderedDict()
     plugin._cache_refreshing = False
-    plugin._cache_ttl_seconds = 90
+    plugin._cache_ttl_seconds = 1800
     plugin._cache_max_entries = 10
     plugin._entry_map_max_size = 2
+    plugin._media_index_cache_max_keys = 20
     plugin._ai_link_enabled = False
     plugin._build_entry_from_history = lambda history: dict(history)
     cache_file = plugin._local_cache_file()
@@ -146,10 +148,12 @@ def test_local_entries_cache_persists_between_plugin_instances():
     plugin2 = module.SubtitleManualUpload.__new__(module.SubtitleManualUpload)
     plugin2._local_entries_cache = {"loaded_at": None, "entries": [], "media_count": 0, "persisted": False}
     plugin2._entry_map = module.OrderedDict()
+    plugin2._media_index_cache = module.OrderedDict()
     plugin2._cache_refreshing = False
-    plugin2._cache_ttl_seconds = 90
+    plugin2._cache_ttl_seconds = 1800
     plugin2._cache_max_entries = 10
     plugin2._entry_map_max_size = 2
+    plugin2._media_index_cache_max_keys = 20
     plugin2._build_entry_from_history = lambda history: dict(history)
 
     restored = plugin2._load_local_entries()
@@ -162,7 +166,7 @@ def test_local_entries_cache_persists_between_plugin_instances():
 def test_stale_persisted_cache_returns_before_background_refresh():
     module, histories, _ = load_plugin_module()
     plugin = make_plugin(module)
-    old_time = module.datetime.now() - module.timedelta(seconds=120)
+    old_time = module.datetime.now() - module.timedelta(seconds=1900)
     plugin._local_entries_cache = {
         "loaded_at": old_time,
         "entries": [{"id": "stale", "path": "/media/stale.mkv", "media_key": "movie-stale"}],
@@ -351,16 +355,40 @@ def test_search_media_candidates_returns_total_with_page_slice():
         {"id": "b", "path": "/media/b.mkv", "media_key": "movie-b", "media_type": "movie", "title": "B", "date": "2024-01-02"},
         {"id": "c", "path": "/media/c.mkv", "media_key": "movie-c", "media_type": "movie", "title": "C", "date": "2024-01-03"},
     ]
-    plugin._targets_for_media = lambda **kwargs: {
-        "media": {"poster_url": ""},
-        "all_target_count": 1,
-        "seasons": [],
-    }
+    plugin._targets_for_media = lambda **kwargs: (_ for _ in ()).throw(
+        AssertionError("media list search should not load target details")
+    )
 
     candidates, total = asyncio.run(plugin._search_media_candidates(keyword="", media_type="movie", limit=2, offset=1))
 
     assert total == 3
     assert [item["title"] for item in candidates] == ["B", "A"]
+
+
+def test_search_media_candidates_reuses_media_index_cache():
+    module, histories, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    histories.data = [
+        {"id": "a", "path": "/media/a.mkv", "media_key": "movie-a", "media_type": "movie", "title": "A", "date": "2024-01-01"},
+        {"id": "b", "path": "/media/b.mkv", "media_key": "movie-b", "media_type": "movie", "title": "B", "date": "2024-01-02"},
+        {"id": "c", "path": "/media/c.mkv", "media_key": "movie-c", "media_type": "movie", "title": "C", "date": "2024-01-03"},
+    ]
+    calls = {"count": 0}
+    original_group = plugin._group_entries_as_media
+
+    def counted_group(entries, limit):
+        calls["count"] += 1
+        return original_group(entries, limit)
+
+    plugin._group_entries_as_media = counted_group
+
+    first, first_total = asyncio.run(plugin._search_media_candidates(keyword="", media_type="movie", limit=2, offset=0))
+    second, second_total = asyncio.run(plugin._search_media_candidates(keyword="", media_type="movie", limit=2, offset=2))
+
+    assert first_total == second_total == 3
+    assert [item["title"] for item in first] == ["C", "B"]
+    assert [item["title"] for item in second] == ["A"]
+    assert calls["count"] == 1
 
 
 def test_match_history_groups_targets_with_subtitles(tmp_path):

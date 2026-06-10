@@ -63,7 +63,28 @@ def test_build_search_keywords_prefers_season_package():
 
     keywords = module.build_search_keywords(media, targets, "season")
 
-    assert keywords[:2] == ["Example Show S01", "Example Show 第1季"]
+    assert keywords[:1] == ["Example Show S01"]
+    assert all("第1季" not in keyword for keyword in keywords)
+
+
+def test_build_search_keywords_episode_ignores_episode_title_suffix():
+    module = load_online_module()
+    media = {"media_type": "tv", "title": "如积雪般的永寂", "year": "2024"}
+    targets = [
+        {
+            "media_type": "tv",
+            "title": "如积雪般的永寂",
+            "season": 1,
+            "episode": 1,
+            "basename": "如积雪般的永寂 - S01E01 - 第 1 集",
+            "filename": "如积雪般的永寂 - S01E01 - 第 1 集.mkv",
+        },
+    ]
+
+    keywords = module.build_search_keywords(media, targets, "episode")
+
+    assert keywords[0] == "如积雪般的永寂 S01E01"
+    assert all("第 1 集" not in keyword and "第1集" not in keyword for keyword in keywords)
 
 
 def test_manual_providers_keep_subhd_zimuku_links_only():

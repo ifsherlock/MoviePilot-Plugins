@@ -81,7 +81,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/subtitle-match.png"
-    plugin_version = "0.1.55"
+    plugin_version = "0.1.56"
     plugin_author = "ifsherlock"
     author_url = "https://github.com/ifsherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -110,9 +110,10 @@ class SubtitleManualUpload(_PluginBase):
     _traditional_to_simplified = False
     _auto_search_on_transfer = False
     _auto_search_min_score = 20
-    _cache_ttl_seconds = 90
+    _cache_ttl_seconds = 1800
     _cache_max_entries = 5000
     _entry_map_max_size = 2000
+    _media_index_cache_max_keys = 20
     _rar_dependency_status: Dict[str, Any] = {
         "mode": "none",
         "state": "idle",
@@ -120,6 +121,7 @@ class SubtitleManualUpload(_PluginBase):
         "checked_at": "",
     }
     _entry_map: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
+    _media_index_cache: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
     _cache_refreshing = False
     _local_entries_cache: Dict[str, Any] = {
         "loaded_at": None,
@@ -216,6 +218,7 @@ class SubtitleManualUpload(_PluginBase):
         type(self)._traditional_to_simplified = self._traditional_to_simplified
         type(self)._auto_search_on_transfer = self._auto_search_on_transfer
         self._entry_map = OrderedDict()
+        self._media_index_cache = OrderedDict()
         self._cache_refreshing = False
         self._local_entries_cache = {"loaded_at": None, "entries": [], "media_count": 0, "persisted": False}
         self._restore_persisted_local_cache()
@@ -1354,6 +1357,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             "persisted": False,
         }
         self._remember_targets(entries)
+        self._reset_media_index_cache()
         self._persist_local_cache()
 
     def _local_cache_file(self) -> Path:
@@ -1407,6 +1411,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             "persisted": True,
         }
         self._remember_targets(self._local_entries_cache["entries"])
+        self._reset_media_index_cache()
         logger.info(
             "[SubtitleManualUpload] 已恢复本地资源持久化缓存 entries=%s medias=%s",
             len(self._local_entries_cache["entries"]),
@@ -1480,6 +1485,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             "persisted": False,
         }
         self._remember_targets(entries)
+        self._reset_media_index_cache()
         self._persist_local_cache()
         logger.info(
             "[SubtitleManualUpload] 本地资源缓存已刷新 entries=%s medias=%s",
@@ -1490,6 +1496,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
 
     def _refresh_local_cache(self) -> List[Dict[str, Any]]:
         self._entry_map = OrderedDict()
+        self._reset_media_index_cache()
         self._local_entries_cache = {"loaded_at": None, "entries": [], "media_count": 0, "persisted": False}
         return self._load_local_entries(force=True)
 
@@ -1512,6 +1519,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             "updated_at": loaded_at.isoformat(timespec="seconds") if loaded_at else "",
             "entry_count": len(cache.get("entries") or []),
             "media_count": int(cache.get("media_count") or 0),
+            "media_index_count": len(self._media_index_cache or {}),
             "target_cache_count": len(self._entry_map or {}),
             "max_entries": self._cache_max_entries,
         }
@@ -1673,33 +1681,57 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         )
         return all(part in haystack for part in re.split(r"\s+", clean_keyword) if part)
 
+    def _reset_media_index_cache(self) -> None:
+        self._media_index_cache = OrderedDict()
+
+    def _media_index_cache_key(self, keyword: str, media_type: str) -> str:
+        clean_keyword = self._normalize_text(keyword).lower()
+        expected_type = self._media_type_text(media_type) or "all"
+        return f"{expected_type}\0{clean_keyword}"
+
+    def _media_index_cache_get(self, key: str, entries: List[Dict[str, Any]]) -> Optional[List[Dict[str, Any]]]:
+        cache = self._media_index_cache or OrderedDict()
+        item = cache.get(key)
+        if not item:
+            return None
+        loaded_at = self._cache_loaded_at((self._local_entries_cache or {}).get("loaded_at"))
+        cached_loaded_at = self._cache_loaded_at(item.get("loaded_at"))
+        if cached_loaded_at != loaded_at or int(item.get("entry_count") or 0) != len(entries):
+            cache.pop(key, None)
+            return None
+        cache.move_to_end(key)
+        return [dict(media) for media in item.get("medias") or [] if isinstance(media, dict)]
+
+    def _media_index_cache_set(self, key: str, entries: List[Dict[str, Any]], medias: List[Dict[str, Any]]) -> None:
+        cache = self._media_index_cache or OrderedDict()
+        cache[key] = {
+            "loaded_at": (self._local_entries_cache or {}).get("loaded_at"),
+            "entry_count": len(entries),
+            "medias": [dict(media) for media in medias],
+        }
+        cache.move_to_end(key)
+        while len(cache) > self._media_index_cache_max_keys:
+            cache.popitem(last=False)
+        self._media_index_cache = cache
+
     async def _search_media_candidates(self, keyword: str, media_type: str, limit: int, offset: int = 0) -> Tuple[List[Dict[str, Any]], int]:
         clean_keyword = self._normalize_text(keyword)
         expected_type = self._media_type_text(media_type)
-        entries: List[Dict[str, Any]] = []
-        for entry in self._load_local_entries(allow_stale=True):
-            if expected_type and entry.get("media_type") != expected_type:
-                continue
-            if not self._entry_matches_keyword(entry, clean_keyword):
-                continue
-            entries.append(entry)
-        all_candidates = self._group_entries_as_media(entries, 0)
+        all_entries = self._load_local_entries(allow_stale=True)
+        cache_key = self._media_index_cache_key(clean_keyword, media_type)
+        all_candidates = self._media_index_cache_get(cache_key, all_entries)
+        if all_candidates is None:
+            entries: List[Dict[str, Any]] = []
+            for entry in all_entries:
+                if expected_type and entry.get("media_type") != expected_type:
+                    continue
+                if not self._entry_matches_keyword(entry, clean_keyword):
+                    continue
+                entries.append(entry)
+            all_candidates = self._group_entries_as_media(entries, 0)
+            self._media_index_cache_set(cache_key, all_entries, all_candidates)
         total = len(all_candidates)
         candidates = all_candidates[offset: offset + limit]
-        for media in candidates:
-            detail = self._targets_for_media(
-                media_type=media.get("media_type"),
-                tmdb_id=media.get("tmdb_id"),
-                douban_id=media.get("douban_id"),
-                title=media.get("title"),
-                year=media.get("year"),
-                season="all",
-            )
-            detail_media = detail.get("media") or {}
-            media["local_count"] = detail.get("all_target_count", media.get("local_count", 0))
-            media["seasons"] = detail.get("seasons", media.get("seasons", []))
-            media["season_count"] = len(media["seasons"])
-            media["poster_url"] = detail_media.get("poster_url") or media.get("poster_url", "")
         return candidates, total
 
     def _group_entries_as_media(self, entries: List[Dict[str, Any]], limit: int) -> List[Dict[str, Any]]:

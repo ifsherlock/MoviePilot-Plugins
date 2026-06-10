@@ -1127,25 +1127,41 @@ def build_search_keywords(media: Dict[str, Any], targets: List[Dict[str, Any]], 
         episodes = sorted({int(target.get("episode") or 0) for target in targets if int(target.get("episode") or 0)})
         if search_titles and seasons:
             season = seasons[0]
-            primary_title = search_titles[0]
             if scope in {"season", "batch"} or len(episodes) > 1:
                 for item in search_titles[:4]:
                     keywords.append(f"{item} S{season:02d}")
-                keywords.append(f"{primary_title} 第{season}季")
             elif episodes:
                 episode = episodes[0]
                 for item in search_titles[:4]:
                     keywords.append(f"{item} S{season:02d}E{episode:02d}")
-                keywords.append(f"{primary_title} 第{season}季第{episode}集")
-        for target in targets[:3]:
-            basename = _clean_keyword(target.get("basename") or target.get("filename"))
-            if basename:
-                keywords.append(basename)
+        if not keywords:
+            for target in targets[:3]:
+                basename = _clean_tv_basename_keyword(target.get("basename") or target.get("filename"))
+                if basename:
+                    keywords.append(basename)
     elif search_titles:
         if year:
             keywords.extend([f"{item} {year}" for item in search_titles[:5]])
         keywords.extend(search_titles[:5])
     return _unique_keywords([item for item in keywords if item])
+
+
+def _clean_tv_basename_keyword(value: Any) -> str:
+    basename = _clean_keyword(value)
+    if not basename:
+        return ""
+    basename = re.sub(r"\.(mkv|mp4|avi|ts|m2ts|mov|wmv|flv|webm)$", "", basename, flags=re.I)
+    episode_match = re.search(r"(?i)(.*?)(S\d{1,2}E\d{1,3})\b", basename)
+    if episode_match:
+        prefix = re.sub(r"[\s._-]+$", "", episode_match.group(1)).strip()
+        code = episode_match.group(2).upper()
+        return f"{prefix} {code}".strip() if prefix else code
+    season_match = re.search(r"(?i)(.*?)(S\d{1,2})\b", basename)
+    if season_match:
+        prefix = re.sub(r"[\s._-]+$", "", season_match.group(1)).strip()
+        code = season_match.group(2).upper()
+        return f"{prefix} {code}".strip() if prefix else code
+    return basename
 
 
 def _query_plan_for_keyword(keyword: str, targets: List[Dict[str, Any]]) -> Dict[str, str]:
