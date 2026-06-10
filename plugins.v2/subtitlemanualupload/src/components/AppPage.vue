@@ -90,6 +90,7 @@ const matchHistoryPageSize = 20
 const matchHistoryTotal = ref(0)
 const matchHistoryHasMore = ref(false)
 const expandedHistoryIds = ref([])
+const selectedHistoryTargetIds = ref({})
 const selectedMedia = ref(null)
 const detailTab = ref('match')
 const seasons = ref([])
@@ -442,6 +443,114 @@ function toggleHistoryExpanded(item) {
     return
   }
   expandedHistoryIds.value = [...expandedHistoryIds.value, id]
+}
+
+function historyDeletableTargets(item) {
+  return (item?.targets || []).filter(target => target?.id && (target.subtitles || []).length)
+}
+
+function historySelectedIds(item) {
+  const id = item?.id
+  return id ? (selectedHistoryTargetIds.value[id] || []) : []
+}
+
+function historySelectedCount(item) {
+  const selected = new Set(historySelectedIds(item))
+  return historyDeletableTargets(item).filter(target => selected.has(target.id)).length
+}
+
+function allHistoryTargetsSelected(item) {
+  const targets = historyDeletableTargets(item)
+  if (!targets.length) return false
+  const selected = new Set(historySelectedIds(item))
+  return targets.every(target => selected.has(target.id))
+}
+
+function setHistorySelection(item, ids) {
+  const itemId = item?.id
+  if (!itemId) return
+  selectedHistoryTargetIds.value = {
+    ...selectedHistoryTargetIds.value,
+    [itemId]: Array.from(new Set(ids)),
+  }
+}
+
+function toggleHistoryTarget(item, targetId, checked) {
+  if (!item?.id || !targetId) return
+  const selected = new Set(historySelectedIds(item))
+  if (checked) {
+    selected.add(targetId)
+  } else {
+    selected.delete(targetId)
+  }
+  setHistorySelection(item, Array.from(selected))
+}
+
+function toggleHistoryItemTargets(item) {
+  if (allHistoryTargetsSelected(item)) {
+    setHistorySelection(item, [])
+    return
+  }
+  setHistorySelection(item, historyDeletableTargets(item).map(target => target.id))
+}
+
+function historySeasonGroups(item) {
+  const groups = new Map()
+  historyDeletableTargets(item).forEach(target => {
+    const season = Number(target.season || 0)
+    if (!groups.has(season)) {
+      groups.set(season, {
+        season,
+        label: seasonLabel(season),
+        targets: [],
+        subtitleCount: 0,
+      })
+    }
+    const group = groups.get(season)
+    group.targets.push(target)
+    group.subtitleCount += (target.subtitles || []).length
+  })
+  return Array.from(groups.values()).sort((a, b) => a.season - b.season)
+}
+
+async function clearHistoryTargets(item, targetsToClear, label) {
+  const targetIds = (targetsToClear || []).map(target => target.id).filter(Boolean)
+  if (!targetIds.length || clearing.value) return
+  const subtitleCount = (targetsToClear || []).reduce((sum, target) => sum + (target.subtitles || []).length, 0)
+  const confirmed = window.confirm(`确认删除${label}的 ${subtitleCount} 个外挂字幕？`)
+  if (!confirmed) return
+  clearing.value = true
+  error.value = ''
+  message.value = ''
+  try {
+    const response = await props.api.post(`${pluginBase.value}/clear_subtitles`, {
+      target_ids: targetIds,
+    })
+    const data = unwrapResponse(response) || {}
+    message.value = response?.message || `已删除 ${data.count || 0} 个外挂字幕`
+    setHistorySelection(item, [])
+    await loadMatchHistory()
+  } catch (err) {
+    error.value = errorMessage(err, '批量删除外挂字幕失败')
+  } finally {
+    clearing.value = false
+  }
+}
+
+function clearHistorySelectedSubtitles(item) {
+  const selected = new Set(historySelectedIds(item))
+  const targetsToClear = historyDeletableTargets(item).filter(target => selected.has(target.id))
+  clearHistoryTargets(item, targetsToClear, '选中集数')
+}
+
+function clearHistorySeasonSubtitles(item, season) {
+  const targetsToClear = historyDeletableTargets(item).filter(target => Number(target.season || 0) === Number(season || 0))
+  clearHistoryTargets(item, targetsToClear, seasonLabel(season))
+}
+
+function clearHistoryAllSubtitles(item) {
+  const label = item?.media_type === 'tv' ? '全季' : '全部'
+  clearHistoryTargets(item, historyDeletableTargets(item), label)
 }
 
 function formatBytes(value) {
@@ -908,7 +1017,7 @@ async function loadMatchHistory(options = {}) {
     matchHistoryHasMore.value = Boolean(data.has_more)
     matchHistoryItems.value = append ? [...matchHistoryItems.value, ...(data.items || [])] : (data.items || [])
   } catch (err) {
-    error.value = errorMessage(err, '读取总匹配历史失败')
+    error.value = errorMessage(err, '读取匹配历史失败')
   } finally {
     matchHistoryLoading.value = false
   }
@@ -1576,7 +1685,7 @@ defineExpose({
         :class="{ active: rootTab === 'history' }"
         @click="setRootTab('history')"
       >
-        总匹配历史
+        匹配历史
       </button>
     </div>
 
@@ -1719,11 +1828,72 @@ defineExpose({
             <VIcon :icon="historyExpanded(item) ? 'mdi-chevron-up' : 'mdi-chevron-down'" />
           </button>
           <div v-if="historyExpanded(item)" class="global-history-targets">
+            <div class="history-bulk-toolbar">
+              <div class="history-bulk-copy">
+                <strong>已选 {{ historySelectedCount(item) }}/{{ historyDeletableTargets(item).length }} 集</strong>
+                <span>{{ item.subtitle_count }} 个外挂字幕</span>
+              </div>
+              <div class="history-bulk-actions">
+                <VBtn
+                  size="small"
+                  variant="tonal"
+                  prepend-icon="mdi-checkbox-multiple-marked-outline"
+                  :disabled="!historyDeletableTargets(item).length || clearing"
+                  @click.stop="toggleHistoryItemTargets(item)"
+                >
+                  {{ allHistoryTargetsSelected(item) ? '取消勾选' : '勾选全部' }}
+                </VBtn>
+                <VBtn
+                  size="small"
+                  color="error"
+                  variant="tonal"
+                  prepend-icon="mdi-delete-sweep"
+                  :disabled="!historySelectedCount(item) || clearing"
+                  :loading="clearing"
+                  @click.stop="clearHistorySelectedSubtitles(item)"
+                >
+                  删除选中
+                </VBtn>
+                <template v-if="item.media_type === 'tv'">
+                  <VBtn
+                    v-for="season in historySeasonGroups(item)"
+                    :key="`${item.id}-season-${season.season}`"
+                    size="small"
+                    color="error"
+                    variant="text"
+                    prepend-icon="mdi-calendar-remove"
+                    :disabled="clearing"
+                    @click.stop="clearHistorySeasonSubtitles(item, season.season)"
+                  >
+                    删{{ season.label }}
+                  </VBtn>
+                </template>
+                <VBtn
+                  size="small"
+                  color="error"
+                  variant="flat"
+                  prepend-icon="mdi-delete-alert"
+                  :disabled="!historyDeletableTargets(item).length || clearing"
+                  :loading="clearing"
+                  @click.stop="clearHistoryAllSubtitles(item)"
+                >
+                  {{ item.media_type === 'tv' ? '全季删除' : '删除全部' }}
+                </VBtn>
+              </div>
+            </div>
             <div
               v-for="target in item.targets"
               :key="target.id"
-              class="history-row compact-row"
+              class="history-row compact-row selectable"
             >
+              <VCheckbox
+                :model-value="historySelectedIds(item).includes(target.id)"
+                density="compact"
+                hide-details
+                :disabled="!(target.subtitles || []).length || clearing"
+                @click.stop
+                @update:model-value="value => toggleHistoryTarget(item, target.id, value)"
+              />
               <div class="history-main">
                 <div class="episode-title">{{ compactTargetName(target) }}</div>
                 <div class="episode-path">{{ target.relative_path }}</div>
@@ -2882,9 +3052,46 @@ defineExpose({
   padding: 0 12px 12px;
 }
 
+.history-bulk-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 12px;
+  border: 1px solid rgba(91, 109, 100, 0.12);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.58);
+}
+
+.history-bulk-copy {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  color: #53655f;
+  font-size: 12px;
+}
+
+.history-bulk-copy strong {
+  color: #263a33;
+  font-size: 13px;
+}
+
+.history-bulk-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
 .history-row.compact-row {
   border-radius: 16px;
   background: rgba(245, 241, 232, 0.58);
+}
+
+.history-row.selectable {
+  grid-template-columns: auto minmax(0, 1fr) auto;
 }
 
 .compact-subtitles {
@@ -3864,6 +4071,10 @@ defineExpose({
 
   .history-row,
   .subtitle-history-item {
+    grid-template-columns: 1fr;
+  }
+
+  .history-row.selectable {
     grid-template-columns: 1fr;
   }
 

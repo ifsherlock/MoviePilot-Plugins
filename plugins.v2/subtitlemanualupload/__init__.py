@@ -268,7 +268,7 @@ class SubtitleManualUpload(_PluginBase):
                 "endpoint": self.api_match_history,
                 "methods": ["GET"],
                 "auth": "bear",
-                "summary": "读取全局字幕匹配历史",
+                "summary": "读取字幕匹配历史",
             },
             {
                 "path": "/prepare_upload",
