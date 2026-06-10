@@ -2,80 +2,26 @@
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import random
 import re
 import sys
-import types
+import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional
+from urllib.error import HTTPError, URLError
+from urllib.parse import urlencode
+from urllib.request import Request, urlopen
 
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-PLUGIN_DIR = SCRIPT_DIR.parent
-if str(PLUGIN_DIR) not in sys.path:
-    sys.path.insert(0, str(PLUGIN_DIR))
-for candidate in (Path("/app"), Path("/moviepilot"), Path("/MoviePilot")):
-    if candidate.exists() and str(candidate) not in sys.path:
-        sys.path.append(str(candidate))
-
-try:
-    from app.chain.tmdb import TmdbChain  # type: ignore
-except Exception:
-    TmdbChain = None
-
-try:
-    from app.db.models.transferhistory import TransferHistory  # type: ignore
-except Exception:
-    TransferHistory = None
-
-try:
-    from app.schemas.types import MediaType  # type: ignore
-except Exception:
-    class _NoopMediaType:
-        MOVIE = "movie"
-        TV = "tv"
-
-    MediaType = _NoopMediaType
-
-try:
-    import app.core.config  # type: ignore  # noqa: F401
-except Exception:
-    sys.modules.setdefault("app", types.ModuleType("app"))
-    sys.modules.setdefault("app.core", types.ModuleType("app.core"))
-    sys.modules["app.core.config"] = types.SimpleNamespace(settings=types.SimpleNamespace(PROXY=None, PROXY_SERVER=None))
-try:
-    import app.log  # type: ignore  # noqa: F401
-except Exception:
-    sys.modules["app.log"] = types.SimpleNamespace(
-        logger=types.SimpleNamespace(
-            info=lambda *args, **kwargs: None,
-            warning=lambda *args, **kwargs: None,
-            error=lambda *args, **kwargs: None,
-        )
-    )
-
-from online_subtitle import (  # noqa: E402
-    OPENSUBTITLES_SEARCH_LANGUAGES,
-    OnlinePageClient,
-    OpenSubtitlesProvider,
-    _assess_result_match,
-    _alias_values,
-    _extract_years,
-    _language_category_from_text,
-    _query_plan_for_keyword,
-    _region_bucket,
-    _target_year_from_targets,
-    _year_from_upload_date,
-    _years_from_file_info,
-    _years_from_opensubtitles_attrs,
-    build_search_keywords,
-)
-
+SAMPLE_SEED = 20260610
+DEFAULT_LANGUAGES = "zh-cn,zh-tw,ze,en,ja,ko"
 
 PROBLEM_SAMPLES = [
     {
+        "source": "problem",
         "title": "九龙大众浪漫",
         "media_type": "tv",
         "year": "2025",
@@ -86,9 +32,28 @@ PROBLEM_SAMPLES = [
         "original_title": "九龍ジェネリックロマンス",
         "en_title": "Kowloon Generic Romance",
     },
-    {"title": "指环王3：王者无敌", "media_type": "movie", "year": "2003", "en_title": "The Lord of the Rings: The Return of the King"},
-    {"title": "蜘蛛侠：平行宇宙", "media_type": "movie", "year": "2018", "en_title": "Spider-Man: Into the Spider-Verse"},
     {
+        "source": "problem",
+        "title": "指环王3：王者无敌",
+        "media_type": "movie",
+        "year": "2003",
+        "original_language": "en",
+        "origin_country": ["US", "NZ"],
+        "original_title": "The Lord of the Rings: The Return of the King",
+        "en_title": "The Lord of the Rings: The Return of the King",
+    },
+    {
+        "source": "problem",
+        "title": "蜘蛛侠：平行宇宙",
+        "media_type": "movie",
+        "year": "2018",
+        "original_language": "en",
+        "origin_country": ["US"],
+        "original_title": "Spider-Man: Into the Spider-Verse",
+        "en_title": "Spider-Man: Into the Spider-Verse",
+    },
+    {
+        "source": "problem",
         "title": "灰原同学的第二轮青春游戏",
         "media_type": "tv",
         "year": "2025",
@@ -99,410 +64,512 @@ PROBLEM_SAMPLES = [
         "origin_country": ["JP"],
         "original_title": "灰原くんの強くて青春ニューゲーム",
         "en_title": "Haibara-kun's New Game Plus",
-        "negative_titles": ["Youth.Sherlock.S01E07.zh", "青年夏洛克 S01E07"],
     },
 ]
 
 
-def load_cache(path: Path) -> List[Dict[str, Any]]:
-    if not path.exists():
-        return []
-    payload = json.loads(path.read_text(encoding="utf-8"))
-    entries = payload.get("entries") if isinstance(payload, dict) else []
-    return [item for item in entries if isinstance(item, dict)]
-
-
-def _text(value: Any) -> str:
+def text(value: Any) -> str:
     return str(value or "").strip()
 
 
-def _number_from_tag(value: Any) -> int:
-    text = _text(value)
-    match = re.search(r"\d+", text)
-    return int(match.group(0)) if match else 0
+def as_list(value: Any) -> List[Any]:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple) or isinstance(value, set):
+        return list(value)
+    if isinstance(value, dict):
+        return list(value.values())
+    value_text = text(value)
+    return [value_text] if value_text else []
 
 
-def entry_from_transfer_history(history: Any) -> Optional[Dict[str, Any]]:
-    if not getattr(history, "status", False):
-        return None
-    raw_fileitem = getattr(history, "dest_fileitem", None)
-    fileitem = raw_fileitem if isinstance(raw_fileitem, dict) else {}
-    path = _text(fileitem.get("path") or getattr(history, "dest", ""))
-    if not path:
-        return None
-    file_path = Path(path)
-    media_type = _text(getattr(history, "type", "")).lower()
-    if media_type not in {"movie", "tv", "电影", "电视剧"}:
-        return None
-    media_type = "tv" if media_type in {"tv", "电视剧"} else "movie"
-    filename = _text(fileitem.get("name")) or file_path.name
-    basename = _text(fileitem.get("basename")) or file_path.stem
-    title = _text(getattr(history, "title", ""))
-    year = _text(getattr(history, "year", ""))
-    tmdb_id = int(getattr(history, "tmdbid", 0) or 0)
-    douban_id = _text(getattr(history, "doubanid", ""))
-    season = _number_from_tag(getattr(history, "seasons", ""))
-    episode = _number_from_tag(getattr(history, "episodes", ""))
-    return {
-        "id": f"{media_type}:{tmdb_id or douban_id or title}:{path}",
-        "media_key": f"{media_type}:{tmdb_id or douban_id or title}:{year}",
-        "media_type": media_type,
-        "title": title,
-        "year": year,
-        "tmdb_id": tmdb_id,
-        "douban_id": douban_id,
-        "season": season,
-        "episode": episode,
-        "path": path,
-        "basename": basename,
-        "filename": filename,
-        "target_label": filename,
-    }
+def clean_query(value: Any) -> str:
+    return re.sub(r"\s+", " ", text(value).replace(".", " ")).strip()
 
 
-def load_transfer_history(limit: int) -> List[Dict[str, Any]]:
-    if TransferHistory is None:
-        return []
-    histories = TransferHistory.list_by_page(db=None, page=1, count=max(limit, 100), status=True) or []
-    entries: List[Dict[str, Any]] = []
+def unique(values: Iterable[Any]) -> List[str]:
+    result: List[str] = []
     seen = set()
-    for history in histories:
-        entry = entry_from_transfer_history(history)
-        if not entry:
+    for value in values:
+        item = clean_query(value)
+        if not item:
             continue
-        path = entry.get("path")
-        if path in seen:
+        key = item.casefold()
+        if key in seen:
             continue
-        seen.add(path)
-        entries.append(entry)
-        if len(entries) >= limit:
-            break
-    return entries
+        seen.add(key)
+        result.append(item)
+    return result
 
 
-def sample_entries(entries: List[Dict[str, Any]], movie_count: int, tv_count: int) -> List[Dict[str, Any]]:
-    by_media: Dict[str, Dict[str, Any]] = {}
-    for entry in entries:
-        key = str(entry.get("media_key") or entry.get("id") or "")
-        if key and key not in by_media:
-            by_media[key] = entry
-    movies = [item for item in by_media.values() if item.get("media_type") == "movie"]
-    tvs = [item for item in by_media.values() if item.get("media_type") == "tv"]
-    random.seed(20260610)
-    random.shuffle(movies)
-    random.shuffle(tvs)
-    return movies[:movie_count] + tvs[:tv_count]
+def extract_years(value: Any) -> List[int]:
+    current_year = time.localtime().tm_year + 1
+    years = []
+    for match in re.finditer(r"(?<!\d)(19\d{2}|20\d{2})(?!\d)", text(value)):
+        year = int(match.group(1))
+        if 1900 <= year <= current_year:
+            years.append(year)
+    return sorted(set(years))
 
 
-def target_from_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
-    return {
-        "id": entry.get("id"),
-        "media_type": entry.get("media_type"),
-        "title": entry.get("title"),
-        "year": entry.get("year"),
-        "tmdb_id": entry.get("tmdb_id"),
-        "douban_id": entry.get("douban_id"),
-        "season": entry.get("season", 0),
-        "episode": entry.get("episode", 0),
-        "basename": entry.get("basename"),
-        "filename": entry.get("filename"),
-        "path": entry.get("path"),
-        "original_language": entry.get("original_language"),
-        "origin_country": entry.get("origin_country"),
-        "production_countries": entry.get("production_countries"),
-        "original_title": entry.get("original_title"),
-        "original_name": entry.get("original_name"),
-        "en_title": entry.get("en_title"),
-        "tmdb_aliases": entry.get("tmdb_aliases"),
-    }
-
-
-def target_from_problem(sample: Dict[str, Any]) -> Dict[str, Any]:
-    basename = sample.get("basename") or f"{sample.get('title')} {sample.get('year', '')}".strip()
-    return {
-        "media_type": sample.get("media_type"),
-        "title": sample.get("title"),
-        "year": sample.get("year"),
-        "season": sample.get("season", 0),
-        "episode": sample.get("episode", 0),
-        "basename": basename,
-        "filename": f"{basename}.mkv",
-        "original_language": sample.get("original_language"),
-        "origin_country": sample.get("origin_country"),
-        "original_title": sample.get("original_title"),
-        "en_title": sample.get("en_title"),
-        "negative_titles": sample.get("negative_titles") or [],
-    }
-
-
-def _value(detail: Any, *keys: str) -> Any:
-    for key in keys:
-        if isinstance(detail, dict) and key in detail:
-            return detail.get(key)
-        if hasattr(detail, key):
-            return getattr(detail, key)
-    return None
-
-
-def _english_alias(aliases: List[str]) -> str:
-    for item in aliases:
-        if any("a" <= ch.lower() <= "z" for ch in item) and not any("\u3400" <= ch <= "\u9fff" for ch in item):
-            return item
+def episode_suffix(entry: Dict[str, Any]) -> str:
+    if text(entry.get("media_type")).lower() != "tv":
+        return ""
+    season = safe_int(entry.get("season"))
+    episode = safe_int(entry.get("episode"))
+    if season and episode:
+        return f"S{season:02d}E{episode:02d}"
+    if season:
+        return f"S{season:02d}"
     return ""
 
 
-def tmdb_detail_for_target(target: Dict[str, Any]) -> Dict[str, Any]:
-    tmdb_id = int(target.get("tmdb_id") or 0)
-    if not tmdb_id or TmdbChain is None:
-        return {}
-    media_type = str(target.get("media_type") or "").lower()
-    mp_type = MediaType.TV if media_type == "tv" else MediaType.MOVIE
+def safe_int(value: Any) -> int:
     try:
-        detail = TmdbChain().tmdb_info(tmdbid=tmdb_id, mtype=mp_type)
-    except TypeError:
-        detail = TmdbChain().tmdb_info(tmdb_id=tmdb_id, mtype=mp_type)
-    aliases = _alias_values(_value(detail, "translations")) + _alias_values(_value(detail, "alternative_titles"))
+        return int(value)
+    except Exception:
+        return 0
+
+
+def title_values(entry: Dict[str, Any], *fields: str) -> List[str]:
+    values: List[str] = []
+    for field in fields:
+        values.extend(alias_values(entry.get(field)))
+    return unique(values)
+
+
+def alias_values(value: Any) -> List[str]:
+    values: List[str] = []
+    if isinstance(value, str):
+        raw = value.strip()
+        if not raw:
+            return []
+        if raw[:1] in "[{":
+            try:
+                return alias_values(json.loads(raw))
+            except Exception:
+                pass
+        return [raw]
+    if isinstance(value, dict):
+        for key in ["title", "name", "english_name", "data"]:
+            values.extend(alias_values(value.get(key)))
+        for item in value.values():
+            values.extend(alias_values(item))
+    elif isinstance(value, list):
+        for item in value:
+            values.extend(alias_values(item))
+    return unique(values)
+
+
+def has_cjk(value: str) -> bool:
+    return bool(re.search(r"[\u3400-\u9fff]", value or ""))
+
+
+def has_japanese(value: str) -> bool:
+    return bool(re.search(r"[\u3040-\u30ff]", value or ""))
+
+
+def has_korean(value: str) -> bool:
+    return bool(re.search(r"[\uac00-\ud7af]", value or ""))
+
+
+def looks_english(value: str) -> bool:
+    value = text(value)
+    return bool(re.search(r"[A-Za-z]", value)) and not has_cjk(value) and not has_japanese(value) and not has_korean(value)
+
+
+def region_bucket(entry: Dict[str, Any]) -> str:
+    languages = {text(item).lower().replace("_", "-") for item in as_list(entry.get("original_language"))}
+    countries = {
+        text(item).lower()
+        for field in ["origin_country", "production_countries", "country", "area", "region"]
+        for item in as_list(entry.get(field))
+    }
+    category = " ".join(text(entry.get(field)) for field in ["category", "media_category", "library_name"])
+    if languages & {"zh", "cn", "cmn", "yue"} or countries & {"cn", "hk", "tw", "sg"} or re.search(r"华语|国产|港剧|中国|大陆", category):
+        return "chinese"
+    if languages & {"ja", "jp"} or countries & {"jp"} or re.search(r"日本|日剧|日漫|动画", category):
+        return "japanese"
+    if languages & {"ko", "kr"} or countries & {"kr", "kp"} or re.search(r"韩国|韩剧", category):
+        return "korean"
+    if languages & {"en"} or countries & {"us", "gb", "uk", "ca", "au", "nz", "ie"} or re.search(r"欧美|美剧|英剧", category):
+        return "western"
+    return "other"
+
+
+def with_episode(entry: Dict[str, Any], query: str) -> str:
+    suffix = episode_suffix(entry)
+    if suffix and suffix.casefold() not in query.casefold():
+        return f"{query} {suffix}"
+    return query
+
+
+def chinese_titles(entry: Dict[str, Any]) -> List[str]:
+    values = title_values(entry, "title", "name", "tmdb_aliases", "aliases", "translations", "alternative_titles")
+    return [item for item in values if has_cjk(item) and not has_japanese(item) and not has_korean(item)]
+
+
+def english_titles(entry: Dict[str, Any]) -> List[str]:
+    values = title_values(
+        entry,
+        "en_title",
+        "title_en",
+        "name_en",
+        "english_title",
+        "original_title",
+        "original_name",
+        "tmdb_aliases",
+        "aliases",
+        "translations",
+        "alternative_titles",
+    )
+    return [item for item in values if looks_english(item)]
+
+
+def original_titles(entry: Dict[str, Any]) -> List[str]:
+    return title_values(entry, "original_title", "original_name")
+
+
+def japanese_titles(entry: Dict[str, Any]) -> List[str]:
+    values = title_values(entry, "original_title", "original_name", "tmdb_aliases", "aliases", "translations", "alternative_titles")
+    return [item for item in values if has_japanese(item)]
+
+
+def korean_titles(entry: Dict[str, Any]) -> List[str]:
+    values = title_values(entry, "original_title", "original_name", "tmdb_aliases", "aliases", "translations", "alternative_titles")
+    return [item for item in values if has_korean(item)]
+
+
+def baseline_chinese_queries(entry: Dict[str, Any]) -> List[str]:
+    year = text(entry.get("year"))
+    queries = chinese_titles(entry) or title_values(entry, "title", "name")
+    if year and text(entry.get("media_type")).lower() != "tv":
+        queries = [f"{item} {year}" for item in queries] + queries
+    return unique(with_episode(entry, item) for item in queries[:4])
+
+
+def multilingual_queries(entry: Dict[str, Any]) -> List[str]:
+    year = text(entry.get("year"))
+    queries = unique([*chinese_titles(entry), *english_titles(entry), *japanese_titles(entry), *korean_titles(entry), *original_titles(entry)])
+    if year and text(entry.get("media_type")).lower() != "tv":
+        queries = unique([f"{item} {year}" for item in queries[:6]] + queries)
+    return unique(with_episode(entry, item) for item in queries[:8])
+
+
+def region_aware_queries(entry: Dict[str, Any]) -> List[str]:
+    bucket = region_bucket(entry)
+    if bucket == "chinese":
+        ordered = [*chinese_titles(entry), *english_titles(entry)]
+    elif bucket == "western":
+        ordered = [*english_titles(entry), *chinese_titles(entry)]
+    elif bucket == "japanese":
+        ordered = [*japanese_titles(entry), *original_titles(entry), *english_titles(entry), *chinese_titles(entry)]
+    elif bucket == "korean":
+        ordered = [*korean_titles(entry), *original_titles(entry), *english_titles(entry), *chinese_titles(entry)]
+    else:
+        ordered = [*original_titles(entry), *english_titles(entry), *chinese_titles(entry)]
+    year = text(entry.get("year"))
+    ordered = unique(ordered)
+    if year and text(entry.get("media_type")).lower() != "tv":
+        ordered = unique([f"{item} {year}" for item in ordered[:5]] + ordered)
+    return unique(with_episode(entry, item) for item in ordered[:8])
+
+
+STRATEGIES = {
+    "baseline_chinese": baseline_chinese_queries,
+    "multilingual_titles": multilingual_queries,
+    "region_aware": region_aware_queries,
+}
+
+
+def normalize_entry(entry: Dict[str, Any], source: str = "library") -> Dict[str, Any]:
+    media_type = text(entry.get("media_type") or entry.get("type")).lower()
+    if media_type in {"电影", "movie"}:
+        media_type = "movie"
+    elif media_type in {"电视剧", "tv", "series"}:
+        media_type = "tv"
+    title = text(entry.get("title") or entry.get("name"))
+    path = text(entry.get("path") or entry.get("file") or entry.get("target_path"))
+    filename = text(entry.get("filename") or entry.get("basename") or Path(path).name)
+    years = extract_years(" ".join([text(entry.get("year")), filename, title]))
+    normalized = dict(entry)
+    normalized.update(
+        {
+            "source": entry.get("source") or source,
+            "media_type": media_type,
+            "title": title,
+            "year": text(entry.get("year") or (years[0] if years else "")),
+            "season": safe_int(entry.get("season")),
+            "episode": safe_int(entry.get("episode")),
+            "filename": filename,
+            "path": path,
+        }
+    )
+    return normalized
+
+
+def load_entries(path: Path) -> List[Dict[str, Any]]:
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(payload, dict):
+        entries = payload.get("entries") or payload.get("items") or payload.get("data") or []
+    else:
+        entries = payload
+    return [normalize_entry(item) for item in entries if isinstance(item, dict)]
+
+
+def sample_entries(entries: List[Dict[str, Any]], movies: int, tvs: int) -> List[Dict[str, Any]]:
+    by_media: Dict[str, Dict[str, Any]] = {}
+    for entry in entries:
+        key = text(entry.get("media_key")) or ":".join(
+            [
+                text(entry.get("media_type")),
+                text(entry.get("tmdb_id") or entry.get("douban_id") or entry.get("title")),
+                text(entry.get("year")),
+                text(entry.get("season")),
+            ]
+        )
+        if key and key not in by_media:
+            by_media[key] = entry
+    movie_items = [item for item in by_media.values() if item.get("media_type") == "movie"]
+    tv_items = [item for item in by_media.values() if item.get("media_type") == "tv"]
+    random.seed(SAMPLE_SEED)
+    random.shuffle(movie_items)
+    random.shuffle(tv_items)
+    return movie_items[:movies] + tv_items[:tvs]
+
+
+def opensubtitles_get(api_url: str, api_key: str, query: str, languages: str, limit: int, user_agent: str) -> Dict[str, Any]:
+    params = {
+        "query": query,
+        "languages": languages,
+        "order_by": "download_count",
+        "order_direction": "desc",
+    }
+    url = f"{api_url.rstrip('/')}/subtitles?{urlencode(params)}"
+    request = Request(
+        url,
+        headers={
+            "Api-Key": api_key,
+            "User-Agent": user_agent,
+            "Accept": "application/json",
+        },
+        method="GET",
+    )
+    with urlopen(request, timeout=40) as response:
+        payload = json.loads(response.read().decode("utf-8", errors="replace"))
+    if isinstance(payload, dict) and isinstance(payload.get("data"), list):
+        payload["data"] = payload["data"][:limit]
+    return payload if isinstance(payload, dict) else {"data": []}
+
+
+def subtitle_title(attrs: Dict[str, Any], file_info: Dict[str, Any]) -> str:
+    return text(
+        file_info.get("file_name")
+        or attrs.get("release")
+        or attrs.get("movie_name")
+        or attrs.get("feature_details")
+        or attrs.get("slug")
+    )
+
+
+def result_summary(row: Dict[str, Any]) -> Dict[str, Any]:
+    attrs = row.get("attributes") if isinstance(row.get("attributes"), dict) else {}
+    files = attrs.get("files") if isinstance(attrs.get("files"), list) else []
+    file_info = next((item for item in files if isinstance(item, dict)), {})
+    title = subtitle_title(attrs, file_info)
     return {
-        "original_language": _value(detail, "original_language") or "",
-        "origin_country": _value(detail, "origin_country") or [],
-        "production_countries": _value(detail, "production_countries") or [],
-        "original_title": _value(detail, "original_title", "original_name") or "",
-        "en_title": _english_alias(aliases),
-        "tmdb_aliases": aliases[:80],
+        "id": row.get("id"),
+        "language": attrs.get("language"),
+        "language_category": language_category(" ".join([text(attrs.get("language")), title])),
+        "title": title,
+        "movie_name": attrs.get("movie_name"),
+        "release": attrs.get("release"),
+        "feature_details": attrs.get("feature_details"),
+        "file_name": file_info.get("file_name"),
+        "year": attrs.get("year") or attrs.get("movie_year") or attrs.get("feature_details", {}).get("year") if isinstance(attrs.get("feature_details"), dict) else attrs.get("year") or attrs.get("movie_year"),
+        "upload_date": attrs.get("upload_date") or attrs.get("uploaded_at"),
+        "download_count": attrs.get("download_count") or attrs.get("downloads"),
+        "imdb_id": attrs.get("imdb_id") or attrs.get("imdbid"),
+        "tmdb_id": attrs.get("tmdb_id") or attrs.get("tmdbid"),
+        "years_in_text": extract_years(" ".join([title, json.dumps(attrs, ensure_ascii=False, default=str)])),
     }
 
 
-def enrich_with_tmdb(target: Dict[str, Any]) -> Dict[str, Any]:
-    enriched = dict(target)
-    try:
-        detail = tmdb_detail_for_target(target)
-    except Exception as exc:
-        enriched["tmdb_detail_error"] = str(exc)
-        return enriched
-    for key, value in detail.items():
-        if value and not enriched.get(key):
-            enriched[key] = value
-    return enriched
+def language_category(value: str) -> str:
+    lowered = value.lower()
+    if any(token in lowered for token in ["zh", "chi", "zho", "cmn", "chinese", "中文", "中字"]):
+        return "chinese"
+    if any(token in lowered for token in ["ja", "jpn", "japanese", "日文", "日语"]) or has_japanese(value):
+        return "japanese"
+    if any(token in lowered for token in ["ko", "kor", "korean", "韩文", "韩语"]) or has_korean(value):
+        return "korean"
+    if any(token in lowered for token in ["en", "eng", "english", "英文", "英语"]):
+        return "english"
+    return "other"
 
 
-def iter_samples(entries: List[Dict[str, Any]], movie_count: int, tv_count: int) -> Iterable[Dict[str, Any]]:
-    for entry in sample_entries(entries, movie_count, tv_count):
-        target = enrich_with_tmdb(target_from_entry(entry))
-        yield {"source": "library", "media": target, "targets": [target]}
-    for item in PROBLEM_SAMPLES:
-        target = enrich_with_tmdb(target_from_problem(item))
-        yield {"source": "problem", "media": target, "targets": [target]}
+def compact_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
+    return {
+        "source": entry.get("source"),
+        "title": entry.get("title"),
+        "media_type": entry.get("media_type"),
+        "year": entry.get("year"),
+        "season": entry.get("season"),
+        "episode": entry.get("episode"),
+        "tmdb_id": entry.get("tmdb_id"),
+        "douban_id": entry.get("douban_id"),
+        "original_language": entry.get("original_language"),
+        "origin_country": entry.get("origin_country"),
+        "original_title": entry.get("original_title") or entry.get("original_name"),
+        "en_title": entry.get("en_title") or entry.get("english_title"),
+        "region_bucket": region_bucket(entry),
+        "filename": entry.get("filename"),
+    }
 
 
-def provider_from_env(api_url: str) -> OpenSubtitlesProvider | None:
-    api_key = os.getenv("OPENSUBTITLES_API_KEY", "").strip()
+def run_sample(args: argparse.Namespace) -> List[Dict[str, Any]]:
+    entries = load_entries(Path(args.input))
+    samples = sample_entries(entries, args.movies, args.tvs)
+    samples.extend(normalize_entry(item, source="problem") for item in PROBLEM_SAMPLES)
+    api_key = args.api_key or os.getenv("OPENSUBTITLES_API_KEY", "")
     if not api_key:
-        return None
-    fetcher = OnlinePageClient(engine="cloakbrowser", use_proxy=False)
-    return OpenSubtitlesProvider(
-        fetcher,
-        api_key=api_key,
-        api_url=api_url,
-        username=os.getenv("OPENSUBTITLES_USERNAME", "").strip(),
-        password=os.getenv("OPENSUBTITLES_PASSWORD", "").strip(),
-    )
+        raise SystemExit("OpenSubtitles API Key is required. Pass --api-key or set OPENSUBTITLES_API_KEY.")
+    rows: List[Dict[str, Any]] = []
+    for index, entry in enumerate(samples, start=1):
+        base = compact_entry(entry)
+        for strategy_name, strategy in STRATEGIES.items():
+            queries = strategy(entry)[: args.max_queries]
+            strategy_row = {**base, "sample_index": index, "strategy": strategy_name, "queries": queries, "responses": []}
+            for query in queries:
+                response_item = {"query": query, "languages": args.languages, "results": [], "error": ""}
+                try:
+                    payload = opensubtitles_get(args.api_url, api_key, query, args.languages, args.limit, args.user_agent)
+                    data = payload.get("data") if isinstance(payload, dict) else []
+                    response_item["results"] = [
+                        result_summary(item)
+                        for item in data
+                        if isinstance(item, dict)
+                    ]
+                except HTTPError as exc:
+                    response_item["error"] = f"HTTP {exc.code}: {exc.reason}"
+                except URLError as exc:
+                    response_item["error"] = f"URL error: {exc.reason}"
+                except Exception as exc:
+                    response_item["error"] = str(exc)
+                strategy_row["responses"].append(response_item)
+                if args.sleep:
+                    time.sleep(args.sleep)
+            rows.append(strategy_row)
+            print(json.dumps(strategy_row, ensure_ascii=False), flush=True)
+    return rows
 
 
-def _mp_plugin_config() -> Dict[str, Any]:
-    try:
-        from app.plugins import _PluginBase  # type: ignore
-    except Exception:
-        return {}
-    noop_plugin = type(
-        "NoopPlugin",
-        (_PluginBase,),
-        {
-            "init_plugin": lambda self, config=None: None,
-            "get_state": lambda self: False,
-            "get_form": lambda self: None,
-            "get_page": lambda self: None,
-            "get_api": lambda self: [],
-            "stop_service": lambda self: None,
-        },
-    )
-    try:
-        config = noop_plugin().get_config("SubtitleManualUpload") or {}
-    except Exception:
-        return {}
-    return config if isinstance(config, dict) else {}
+def write_jsonl(rows: List[Dict[str, Any]], path: Path) -> None:
+    with path.open("w", encoding="utf-8", newline="\n") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
-def provider_from_mp_config(api_url: str) -> OpenSubtitlesProvider | None:
-    config = _mp_plugin_config()
-    api_key = str(config.get("opensubtitles_api_key") or "").strip()
-    if not api_key:
-        return None
-    fetcher = OnlinePageClient(engine="cloakbrowser", use_proxy=False)
-    return OpenSubtitlesProvider(
-        fetcher,
-        api_key=api_key,
-        api_url=str(config.get("opensubtitles_api_url") or api_url).strip() or api_url,
-        username=str(config.get("opensubtitles_username") or "").strip(),
-        password=str(config.get("opensubtitles_password") or "").strip(),
-    )
-
-
-def raw_opensubtitles_assessments(
-    provider: OpenSubtitlesProvider,
-    keyword: str,
-    targets: List[Dict[str, Any]],
-    limit: int = 20,
-) -> List[Dict[str, Any]]:
-    payload = provider._api_json(
-        "/subtitles",
-        {
-            "query": keyword,
-            "languages": OPENSUBTITLES_SEARCH_LANGUAGES,
-            "order_by": "download_count",
-            "order_direction": "desc",
-        },
-    )
-    rows = payload.get("data") if isinstance(payload, dict) else []
-    if not isinstance(rows, list):
-        return []
-    target_year = _target_year_from_targets(targets)
-    assessments: List[Dict[str, Any]] = []
-    for row in rows[:limit]:
-        if not isinstance(row, dict):
-            continue
-        attrs = row.get("attributes") if isinstance(row.get("attributes"), dict) else {}
-        files = attrs.get("files") if isinstance(attrs.get("files"), list) else []
-        file_info = next((item for item in files if isinstance(item, dict)), {})
-        title = provider._subtitle_title(attrs, file_info)
-        result_years = _years_from_opensubtitles_attrs(attrs, file_info, title)
-        file_years = _years_from_file_info(file_info)
-        upload_year = _year_from_upload_date(attrs.get("upload_date") or attrs.get("uploaded_at"))
-        assessment = _assess_result_match(
-            title=title,
-            keyword=keyword,
-            targets=targets,
-            result_years=result_years,
-            attrs=attrs,
-            file_info=file_info,
-        )
-        hard_reject = ""
-        if target_year and result_years and target_year not in result_years:
-            hard_reject = "年份冲突"
-        elif target_year and file_years and target_year not in file_years:
-            hard_reject = "文件名年份冲突"
-        elif target_year and upload_year and upload_year < target_year:
-            hard_reject = "字幕上传时间早于资源年份"
-        accepted = not hard_reject and assessment.get("identity_status") != "failed"
-        assessments.append(
-            {
-                "title": title,
-                "language_category": _language_category_from_text(
-                    " ".join([str(attrs.get("language") or ""), title, str(file_info.get("file_name") or "")])
-                ),
-                "score": assessment.get("score", 0),
-                "identity_status": assessment.get("identity_status"),
-                "reject_reason": hard_reject or assessment.get("reject_reason", ""),
-                "match_detail": assessment.get("match_detail", ""),
-                "result_years": result_years,
-                "file_years": file_years,
-                "upload_year": upload_year,
-                "accepted": accepted,
-            }
-        )
-    return assessments
+def write_csv(rows: List[Dict[str, Any]], path: Path) -> None:
+    fields = [
+        "sample_index",
+        "source",
+        "media_type",
+        "title",
+        "year",
+        "season",
+        "episode",
+        "region_bucket",
+        "strategy",
+        "query",
+        "languages",
+        "rank",
+        "result_title",
+        "result_language",
+        "result_language_category",
+        "result_years",
+        "upload_date",
+        "download_count",
+        "imdb_id",
+        "tmdb_id",
+        "error",
+    ]
+    with path.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=fields)
+        writer.writeheader()
+        for row in rows:
+            for response in row.get("responses") or []:
+                results = response.get("results") or []
+                if not results:
+                    writer.writerow(
+                        {
+                            "sample_index": row.get("sample_index"),
+                            "source": row.get("source"),
+                            "media_type": row.get("media_type"),
+                            "title": row.get("title"),
+                            "year": row.get("year"),
+                            "season": row.get("season"),
+                            "episode": row.get("episode"),
+                            "region_bucket": row.get("region_bucket"),
+                            "strategy": row.get("strategy"),
+                            "query": response.get("query"),
+                            "languages": response.get("languages"),
+                            "error": response.get("error"),
+                        }
+                    )
+                for rank, item in enumerate(results, start=1):
+                    writer.writerow(
+                        {
+                            "sample_index": row.get("sample_index"),
+                            "source": row.get("source"),
+                            "media_type": row.get("media_type"),
+                            "title": row.get("title"),
+                            "year": row.get("year"),
+                            "season": row.get("season"),
+                            "episode": row.get("episode"),
+                            "region_bucket": row.get("region_bucket"),
+                            "strategy": row.get("strategy"),
+                            "query": response.get("query"),
+                            "languages": response.get("languages"),
+                            "rank": rank,
+                            "result_title": item.get("title"),
+                            "result_language": item.get("language"),
+                            "result_language_category": item.get("language_category"),
+                            "result_years": ",".join(str(year) for year in item.get("years_in_text") or []),
+                            "upload_date": item.get("upload_date"),
+                            "download_count": item.get("download_count"),
+                            "imdb_id": item.get("imdb_id"),
+                            "tmdb_id": item.get("tmdb_id"),
+                            "error": response.get("error"),
+                        }
+                    )
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Read-only OpenSubtitles sampling for SubtitleManualUpload.")
-    parser.add_argument("--cache", default="/config/plugins/SubtitleManualUpload/local_entries_cache.json")
+    parser = argparse.ArgumentParser(
+        description=(
+            "Standalone OpenSubtitles sampling. Reads local media entries, samples 20 movies + 20 TV shows, "
+            "runs baseline Chinese, multilingual, and region-aware query strategies, then writes raw JSONL/CSV."
+        )
+    )
+    parser.add_argument("--input", required=True, help="JSON file exported from local_entries_cache.json or a prepared sample list.")
     parser.add_argument("--movies", type=int, default=20)
     parser.add_argument("--tvs", type=int, default=20)
+    parser.add_argument("--api-key", default="", help="OpenSubtitles API key. Defaults to OPENSUBTITLES_API_KEY.")
     parser.add_argument("--api-url", default="https://api.opensubtitles.com/api/v1")
-    parser.add_argument("--max-keywords", type=int, default=3)
-    parser.add_argument("--raw-limit", type=int, default=20)
-    parser.add_argument("--output", default="", help="Optional JSONL output path for local debugging.")
-    parser.add_argument("--use-mp-config", action="store_true", help="Read OpenSubtitles API settings from MoviePilot plugin config.")
+    parser.add_argument("--languages", default=DEFAULT_LANGUAGES)
+    parser.add_argument("--limit", type=int, default=10, help="Raw result limit per query.")
+    parser.add_argument("--max-queries", type=int, default=3, help="Max queries per strategy/sample.")
+    parser.add_argument("--sleep", type=float, default=0.2, help="Seconds to sleep between API calls.")
+    parser.add_argument("--user-agent", default="SubtitleManualUpload OpenSubtitles sampler/0.1")
+    parser.add_argument("--jsonl", default="opensubtitles-sample.jsonl")
+    parser.add_argument("--csv", default="opensubtitles-sample.csv")
     args = parser.parse_args()
 
-    entries = load_cache(Path(args.cache))
-    if not entries:
-        entries = load_transfer_history((args.movies + args.tvs) * 5)
-    provider = provider_from_mp_config(args.api_url) if args.use_mp_config else provider_from_env(args.api_url)
-    output_file: Optional[Path] = Path(args.output) if args.output else None
-    output_handle = output_file.open("w", encoding="utf-8") if output_file else None
-    for sample in iter_samples(entries, args.movies, args.tvs):
-        media = sample["media"]
-        targets = sample["targets"]
-        keywords = build_search_keywords(media, targets, "episode" if media.get("media_type") == "tv" else "movie")
-        row = {
-            "source": sample["source"],
-            "title": media.get("title"),
-            "media_type": media.get("media_type"),
-            "year": media.get("year"),
-            "tmdb_id": media.get("tmdb_id"),
-            "original_language": media.get("original_language"),
-            "origin_country": media.get("origin_country"),
-            "production_countries": media.get("production_countries"),
-            "original_title": media.get("original_title") or media.get("original_name"),
-            "en_title": media.get("en_title"),
-            "region_bucket": _region_bucket(media, targets),
-            "keywords": keywords[: args.max_keywords],
-            "languages": OPENSUBTITLES_SEARCH_LANGUAGES,
-            "query_plan": _query_plan_for_keyword(keywords[0] if keywords else "", targets),
-            "results": [],
-            "raw_assessments": [],
-            "negative_assessments": [],
-        }
-        if provider and keywords:
-            try:
-                collected_results = []
-                collected_raw = []
-                for query in keywords[: args.max_keywords]:
-                    raw_items = raw_opensubtitles_assessments(
-                        provider,
-                        query,
-                        targets,
-                        limit=max(args.raw_limit, 1),
-                    )
-                    collected_raw.extend([{**item, "query": query} for item in raw_items])
-                    collected_results.extend(
-                        [
-                            {
-                                "query": query,
-                                "provider": "opensubtitles",
-                                "title": item.get("title"),
-                                "language_category": item.get("language_category"),
-                                "score": item.get("score", 0),
-                                "identity_status": item.get("identity_status"),
-                                "reject_reason": item.get("reject_reason", ""),
-                                "match_detail": item.get("match_detail", ""),
-                                "result_years": item.get("result_years") or [],
-                                "filename_years": item.get("file_years") or _extract_years(item.get("title")),
-                            }
-                            for item in raw_items
-                            if item.get("accepted")
-                        ]
-                    )
-                row["raw_assessments"] = collected_raw
-                row["results"] = collected_results
-            except Exception as exc:
-                row["error"] = str(exc)
-        elif keywords:
-            row["local_assessment_example"] = _assess_result_match(title=keywords[0], keyword=keywords[0], targets=targets)
-        if keywords and media.get("negative_titles"):
-            row["negative_assessments"] = [
-                {
-                    "title": title,
-                    **_assess_result_match(title=title, keyword=keywords[0], targets=targets),
-                }
-                for title in media.get("negative_titles") or []
-            ]
-        line = json.dumps(row, ensure_ascii=False)
-        if output_handle:
-            output_handle.write(line + "\n")
-        print(line)
-    if output_handle:
-        output_handle.close()
+    rows = run_sample(args)
+    write_jsonl(rows, Path(args.jsonl))
+    write_csv(rows, Path(args.csv))
+    print(f"wrote rows={len(rows)} jsonl={args.jsonl} csv={args.csv}", file=sys.stderr)
     return 0
 
 
