@@ -31,6 +31,20 @@ except Exception:
     PluginManager = None
 
 try:
+    from app.chain.tmdb import TmdbChain
+except Exception:
+    TmdbChain = None
+
+try:
+    from app.schemas.types import MediaType
+except Exception:
+    class _NoopMediaType:
+        MOVIE = "movie"
+        TV = "tv"
+
+    MediaType = _NoopMediaType
+
+try:
     from app.core.event import eventmanager, Event as MPEvent
     from app.schemas.types import EventType
 except Exception:
@@ -66,7 +80,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/subtitle-match.png"
-    plugin_version = "0.1.46"
+    plugin_version = "0.1.47"
     plugin_author = "jaysherlock"
     author_url = "https://github.com/jaysherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -112,6 +126,7 @@ class SubtitleManualUpload(_PluginBase):
         "media_count": 0,
         "persisted": False,
     }
+    _tmdb_detail_cache: Dict[str, Dict[str, Any]] = {}
 
     _subtitle_exts = {".ass", ".srt", ".ssa", ".sbv", ".sub", ".vtt", ".webvtt"}
     _archive_exts = {".zip", ".rar"}
@@ -247,6 +262,13 @@ class SubtitleManualUpload(_PluginBase):
                 "methods": ["GET"],
                 "auth": "bear",
                 "summary": "读取选中媒体的本地文件目标",
+            },
+            {
+                "path": "/match_history",
+                "endpoint": self.api_match_history,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "读取全局字幕匹配历史",
             },
             {
                 "path": "/prepare_upload",
@@ -593,7 +615,7 @@ class SubtitleManualUpload(_PluginBase):
                                         "props": {
                                             "type": "info",
                                             "variant": "tonal",
-                                            "text": "从 MoviePilot 本地整理记录中搜索已有视频资源；在线自动搜索仅使用射手网(伪) 和 OpenSubtitles API，SubHD/Zimuku 只保留手动跳转。",
+                                            "text": "从 MoviePilot 本地整理记录中搜索已有视频资源；在线字幕 API 搜索可使用射手网(伪) 和 OpenSubtitles，SubHD/Zimuku 只保留手动跳转。",
                                         },
                                     }
                                 ],
@@ -1650,7 +1672,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         )
         return all(part in haystack for part in re.split(r"\s+", clean_keyword) if part)
 
-    async def _search_media_candidates(self, keyword: str, media_type: str, limit: int) -> List[Dict[str, Any]]:
+    async def _search_media_candidates(self, keyword: str, media_type: str, limit: int, offset: int = 0) -> Tuple[List[Dict[str, Any]], int]:
         clean_keyword = self._normalize_text(keyword)
         expected_type = self._media_type_text(media_type)
         entries: List[Dict[str, Any]] = []
@@ -1660,7 +1682,9 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             if not self._entry_matches_keyword(entry, clean_keyword):
                 continue
             entries.append(entry)
-        candidates = self._group_entries_as_media(entries, limit)
+        all_candidates = self._group_entries_as_media(entries, 0)
+        total = len(all_candidates)
+        candidates = all_candidates[offset: offset + limit]
         for media in candidates:
             detail = self._targets_for_media(
                 media_type=media.get("media_type"),
@@ -1675,7 +1699,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             media["seasons"] = detail.get("seasons", media.get("seasons", []))
             media["season_count"] = len(media["seasons"])
             media["poster_url"] = detail_media.get("poster_url") or media.get("poster_url", "")
-        return candidates
+        return candidates, total
 
     def _group_entries_as_media(self, entries: List[Dict[str, Any]], limit: int) -> List[Dict[str, Any]]:
         groups: Dict[str, Dict[str, Any]] = {}
@@ -1716,7 +1740,50 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             group["season_count"] = len(seasons)
             result.append(group)
         result.sort(key=lambda item: (item.get("latest_at", ""), item.get("title", "")), reverse=True)
-        return result[:limit]
+        return result[:limit] if limit else result
+
+    def _match_history_items(self, *, keyword: str = "", media_type: str = "all") -> List[Dict[str, Any]]:
+        clean_keyword = self._normalize_text(keyword)
+        expected_type = self._media_type_text(media_type)
+        groups: Dict[str, Dict[str, Any]] = {}
+        for entry in self._load_local_entries(allow_stale=True):
+            if expected_type and entry.get("media_type") != expected_type:
+                continue
+            if clean_keyword and not self._entry_matches_keyword(entry, clean_keyword):
+                continue
+            target = self._target_from_entry(entry)
+            subtitles = target.get("subtitles") or []
+            if not subtitles:
+                continue
+            key = entry.get("media_key") or entry.get("id")
+            group = groups.setdefault(
+                key,
+                {
+                    "id": key,
+                    "media_type": entry.get("media_type"),
+                    "title": entry.get("title"),
+                    "year": entry.get("year"),
+                    "tmdb_id": entry.get("tmdb_id"),
+                    "douban_id": entry.get("douban_id"),
+                    "poster_url": entry.get("poster_url"),
+                    "subtitle_count": 0,
+                    "target_count": 0,
+                    "latest_at": "",
+                    "targets": [],
+                },
+            )
+            group["target_count"] += 1
+            group["subtitle_count"] += len(subtitles)
+            latest = max((item.get("modified_at") or "" for item in subtitles), default="")
+            if latest and latest > group.get("latest_at", ""):
+                group["latest_at"] = latest
+            group["targets"].append(target)
+
+        items = list(groups.values())
+        for item in items:
+            item["targets"].sort(key=lambda target: (target.get("season", 0), target.get("episode", 0), target.get("basename", "")))
+        items.sort(key=lambda item: (item.get("latest_at", ""), item.get("title", "")), reverse=True)
+        return items
 
     def _merge_seasons(self, entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         seasons: Dict[int, Dict[str, Any]] = {}
@@ -1795,6 +1862,9 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             "local_count": 0,
             "season_count": 0,
         }
+        tmdb_detail = self._tmdb_detail_for_media(media)
+        if tmdb_detail:
+            self._apply_tmdb_detail(media, tmdb_detail)
         seasons = self._merge_seasons(entries) if media.get("media_type") == "tv" else []
 
         season_value = self._normalize_text(season)
@@ -1807,14 +1877,115 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             visible_entries = [entry for entry in entries if self._safe_int(entry.get("season"), 0) == selected_season]
 
         self._remember_targets(visible_entries)
+        targets = [self._target_from_entry(entry) for entry in visible_entries]
+        if tmdb_detail:
+            for target in targets:
+                self._apply_tmdb_detail(target, tmdb_detail)
+
         return {
             "media": media,
             "seasons": seasons,
             "selected_season": selected_season,
-            "targets": [self._target_from_entry(entry) for entry in visible_entries],
+            "targets": targets,
             "target_count": len(visible_entries),
             "all_target_count": len(entries),
         }
+
+    def _tmdb_detail_for_media(self, media: Dict[str, Any]) -> Dict[str, Any]:
+        tmdb_id = self._safe_int(media.get("tmdb_id"), 0)
+        media_type = self._media_type_text(media.get("media_type"))
+        if not tmdb_id or TmdbChain is None:
+            return {}
+        cache_key = f"{media_type}:{tmdb_id}"
+        if cache_key in self._tmdb_detail_cache:
+            return dict(self._tmdb_detail_cache[cache_key])
+        try:
+            mp_type = MediaType.TV if media_type == "tv" else MediaType.MOVIE
+            detail = TmdbChain().tmdb_info(tmdbid=tmdb_id, mtype=mp_type)
+        except TypeError:
+            try:
+                mp_type = MediaType.TV if media_type == "tv" else MediaType.MOVIE
+                detail = TmdbChain().tmdb_info(tmdb_id=tmdb_id, mtype=mp_type)
+            except Exception as exc:
+                logger.warning("[SubtitleManualUpload] 读取 TMDB 详情失败 tmdb=%s type=%s error=%s", tmdb_id, media_type, exc)
+                return {}
+        except Exception as exc:
+            logger.warning("[SubtitleManualUpload] 读取 TMDB 详情失败 tmdb=%s type=%s error=%s", tmdb_id, media_type, exc)
+            return {}
+        payload = self._tmdb_detail_payload(detail)
+        self._tmdb_detail_cache[cache_key] = payload
+        return dict(payload)
+
+    @classmethod
+    def _tmdb_detail_payload(cls, detail: Any) -> Dict[str, Any]:
+        if not detail:
+            return {}
+
+        def value(*keys: str) -> Any:
+            for key in keys:
+                if isinstance(detail, dict) and key in detail:
+                    return detail.get(key)
+                if hasattr(detail, key):
+                    return getattr(detail, key)
+            return None
+
+        aliases = cls._tmdb_aliases(value("translations"), value("alternative_titles"))
+        return {
+            "original_language": value("original_language") or "",
+            "origin_country": value("origin_country") or [],
+            "production_countries": value("production_countries") or [],
+            "original_title": value("original_title", "original_name") or "",
+            "en_title": cls._english_title_from_aliases(aliases),
+            "tmdb_aliases": aliases,
+        }
+
+    @classmethod
+    def _tmdb_aliases(cls, *values: Any) -> List[str]:
+        aliases: List[str] = []
+
+        def walk(value: Any) -> None:
+            if isinstance(value, str):
+                text = cls._normalize_text(value)
+                if text:
+                    aliases.append(text)
+                return
+            if isinstance(value, dict):
+                for key in ("title", "name", "english_name"):
+                    walk(value.get(key))
+                for item in value.values():
+                    if isinstance(item, (dict, list, tuple)):
+                        walk(item)
+                return
+            if isinstance(value, (list, tuple)):
+                for item in value:
+                    walk(item)
+
+        for value in values:
+            walk(value)
+        result: List[str] = []
+        seen = set()
+        for item in aliases:
+            key = item.lower()
+            if key and key not in seen:
+                seen.add(key)
+                result.append(item)
+        return result[:80]
+
+    @classmethod
+    def _english_title_from_aliases(cls, aliases: List[str]) -> str:
+        for item in aliases or []:
+            if re.search(r"[A-Za-z]", item) and not re.search(r"[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]", item):
+                return item
+        return ""
+
+    @classmethod
+    def _apply_tmdb_detail(cls, target: Dict[str, Any], detail: Dict[str, Any]) -> None:
+        for key in ["original_language", "origin_country", "production_countries", "original_title", "tmdb_aliases"]:
+            value = detail.get(key)
+            if value and not target.get(key):
+                target[key] = value
+        if detail.get("en_title") and not target.get("en_title"):
+            target["en_title"] = detail["en_title"]
 
     @classmethod
     def _is_stream_path(cls, path: Any) -> bool:
@@ -2536,7 +2707,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         target = self._target_from_entry(entry)
         if target.get("has_subtitle"):
             return {"status": "skipped", "reason": "目标已有外挂字幕", "target": target.get("label")}
-        providers = list(self._online_provider_ids or [])
+        providers = [item for item in (self._online_provider_ids or []) if item != "opensubtitles"]
         if not providers:
             return {"status": "skipped", "reason": "未配置可用 API 字幕源", "target": target.get("label")}
         keywords = self._auto_search_keywords_for_entry(entry, target)
@@ -2934,19 +3105,53 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
     async def api_search(self, request: Request) -> Dict[str, Any]:
         keyword = self._normalize_text(request.query_params.get("keyword"))
         media_type = self._normalize_text(request.query_params.get("media_type")) or "all"
-        limit = min(max(self._safe_int(request.query_params.get("limit"), 20), 1), 100)
-        medias = await self._search_media_candidates(keyword=keyword, media_type=media_type, limit=limit)
+        page = max(self._safe_int(request.query_params.get("page"), 1), 1)
+        page_size = min(max(self._safe_int(request.query_params.get("page_size") or request.query_params.get("limit"), 20), 1), 80)
+        medias, total = await self._search_media_candidates(
+            keyword=keyword,
+            media_type=media_type,
+            limit=page_size,
+            offset=(page - 1) * page_size,
+        )
         logger.info(
-            "[SubtitleManualUpload] 本地资源搜索完成 keyword=%s media_type=%s result=%s",
+            "[SubtitleManualUpload] 本地资源搜索完成 keyword=%s media_type=%s page=%s size=%s result=%s total=%s",
             keyword or "<recent>",
             media_type,
+            page,
+            page_size,
             len(medias),
+            total,
         )
         return self._ok(
             {
                 "keyword": keyword,
                 "media_type": media_type,
+                "page": page,
+                "page_size": page_size,
+                "total": total,
+                "has_more": page * page_size < total,
                 "medias": medias,
+            }
+        )
+
+    def api_match_history(self, request: Request) -> Dict[str, Any]:
+        keyword = self._normalize_text(request.query_params.get("keyword"))
+        media_type = self._normalize_text(request.query_params.get("media_type")) or "all"
+        page = max(self._safe_int(request.query_params.get("page"), 1), 1)
+        page_size = min(max(self._safe_int(request.query_params.get("page_size"), 20), 5), 80)
+        items = self._match_history_items(keyword=keyword, media_type=media_type)
+        total = len(items)
+        start = (page - 1) * page_size
+        end = start + page_size
+        return self._ok(
+            {
+                "keyword": keyword,
+                "media_type": media_type,
+                "page": page,
+                "page_size": page_size,
+                "total": total,
+                "has_more": end < total,
+                "items": items[start:end],
             }
         )
 

@@ -133,7 +133,7 @@ def test_opensubtitles_search_returns_multilingual_api_results():
     def fake_api_json(path, params, *, method="GET"):
         assert method == "GET"
         assert path == "/subtitles"
-        assert params["languages"] == "zh-cn,zh-tw,ze,en,ja"
+        assert params["languages"] == "zh-cn,zh-tw,ze,en,ja,ko"
         return {
             "data": [
                 {
@@ -156,7 +156,11 @@ def test_opensubtitles_search_returns_multilingual_api_results():
 
     provider._api_json = fake_api_json
 
-    results = provider.search("Example Show S01E02", [{"season": 1, "episode": 2}], "episode")
+    results = provider.search(
+        "Example Show S01E02",
+        [{"media_type": "tv", "title": "Example Show", "season": 1, "episode": 2}],
+        "episode",
+    )
 
     assert len(results) == 2
     assert results[0].provider == "opensubtitles"
@@ -217,6 +221,79 @@ def test_opensubtitles_filters_wrong_title_and_year():
     assert len(results) == 1
     assert results[0].result_id == "2"
     assert results[0].match_year == 2003
+
+
+def test_opensubtitles_requires_series_identity_before_episode_score():
+    module = load_online_module()
+    provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key")
+
+    def fake_api_json(path, params, *, method="GET"):
+        return {
+            "data": [
+                {
+                    "attributes": {
+                        "language": "zh",
+                        "release": "Youth.Sherlock.S01E07.zh",
+                        "files": [{"file_id": 1, "file_name": "Youth.Sherlock.S01E07.zh.srt"}],
+                    }
+                },
+                {
+                    "attributes": {
+                        "language": "ja",
+                        "release": "Haibara-kun.no.Tsuyokute.New.Game.S01E07.zh",
+                        "files": [{"file_id": 2, "file_name": "Haibara-kun.no.Tsuyokute.New.Game.S01E07.srt"}],
+                    }
+                },
+            ]
+        }
+
+    provider._api_json = fake_api_json
+
+    results = provider.search(
+        "灰原同学的第二轮青春游戏 S01E07",
+        [
+            {
+                "media_type": "tv",
+                "title": "灰原同学的第二轮青春游戏",
+                "en_title": "Haibara-kun's New Game Plus",
+                "original_title": "灰原くんの強くて青春ニューゲーム",
+                "season": 1,
+                "episode": 7,
+            }
+        ],
+        "episode",
+    )
+
+    assert len(results) == 1
+    assert results[0].result_id == "2"
+    assert results[0].identity_status == "strong"
+    assert "季集一致" in results[0].match_detail
+
+
+def test_build_search_keywords_uses_region_aware_tmdb_titles():
+    module = load_online_module()
+    media = {
+        "media_type": "tv",
+        "title": "九龙大众浪漫",
+        "original_title": "九龍ジェネリックロマンス",
+        "en_title": "Kowloon Generic Romance",
+        "original_language": "ja",
+        "origin_country": ["JP"],
+        "year": "2025",
+    }
+    targets = [
+        {
+            **media,
+            "season": 1,
+            "episode": 4,
+            "basename": "九龙大众浪漫 - S01E04 - 第 4 集",
+        }
+    ]
+
+    keywords = module.build_search_keywords(media, targets, "episode")
+
+    assert keywords[0] == "九龍ジェネリックロマンス S01E04"
+    assert "Kowloon Generic Romance S01E04" in keywords
 
 
 def test_opensubtitles_download_uses_download_api_link():

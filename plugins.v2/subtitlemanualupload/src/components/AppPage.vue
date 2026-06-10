@@ -78,6 +78,18 @@ const onlineError = ref('')
 const searchKeyword = ref('')
 const mediaType = ref('all')
 const medias = ref([])
+const mediaPage = ref(1)
+const mediaPageSize = 24
+const mediaTotal = ref(0)
+const mediaHasMore = ref(false)
+const rootTab = ref('match')
+const matchHistoryLoading = ref(false)
+const matchHistoryItems = ref([])
+const matchHistoryPage = ref(1)
+const matchHistoryPageSize = 20
+const matchHistoryTotal = ref(0)
+const matchHistoryHasMore = ref(false)
+const expandedHistoryIds = ref([])
 const selectedMedia = ref(null)
 const detailTab = ref('match')
 const seasons = ref([])
@@ -257,13 +269,6 @@ const onlineProviderProgressItems = computed(() => onlineSelectedProviders.value
   provider,
   state: onlineProviderProgress.value[provider] || 'idle',
 })))
-const onlineApiStatusText = computed(() => {
-  const parts = []
-  parts.push(`射手网(伪) ${onlineStatus.value?.assrt_api_configured ? '已配置' : '未配置'}`)
-  parts.push(`OpenSubtitles 搜索 ${onlineStatus.value?.opensubtitles_api_configured ? '已配置' : '未配置'}`)
-  parts.push(`OpenSubtitles 下载认证 ${onlineStatus.value?.opensubtitles_download_configured ? '已配置' : '未配置'}`)
-  return `${parts.join(' · ')}。右侧有 SubHD/Zimuku 手动跳转入口。`
-})
 const onlineAiConfirmText = computed(() => {
   const count = selectedOnlineResults.value.length
   const targetCount = onlineTargets.value.length
@@ -368,6 +373,10 @@ const matchHistoryRows = computed(() => visibleTargets.value.map(target => {
     hasTimelineRunning: applying.value && selectedPreviewTargets.value.some(item => item.id === target.id) && timelineEnabledForApply.value,
   }
 }))
+const matchHistorySummary = computed(() => {
+  if (!matchHistoryTotal.value) return '暂无已匹配字幕记录'
+  return `${matchHistoryTotal.value} 部资源有外挂字幕记录`
+})
 const timelineMissing = computed(() => {
   const missing = []
   if (timelineStatus.value.ffmpeg === false) missing.push('ffmpeg')
@@ -412,6 +421,27 @@ function mediaStat(media) {
     return `${seasonCount || '-'} 季 · ${count} 集本地资源`
   }
   return `${count || 1} 个本地资源`
+}
+
+function historyMediaStat(item) {
+  const subtitleCount = Number(item?.subtitle_count || 0)
+  const targetCount = Number(item?.target_count || 0)
+  if (item?.media_type === 'tv') return `${targetCount} 集 · ${subtitleCount} 个外挂字幕`
+  return `${subtitleCount} 个外挂字幕`
+}
+
+function historyExpanded(item) {
+  return expandedHistoryIds.value.includes(item?.id)
+}
+
+function toggleHistoryExpanded(item) {
+  const id = item?.id
+  if (!id) return
+  if (expandedHistoryIds.value.includes(id)) {
+    expandedHistoryIds.value = expandedHistoryIds.value.filter(value => value !== id)
+    return
+  }
+  expandedHistoryIds.value = [...expandedHistoryIds.value, id]
 }
 
 function formatBytes(value) {
@@ -809,6 +839,8 @@ async function refreshIndex() {
     }
     if (selectedMedia.value) {
       await loadTargets(selectedMedia.value, selectedSeason.value || 'all')
+    } else if (rootTab.value === 'history') {
+      await loadMatchHistory()
     } else {
       await runSearch()
     }
@@ -820,21 +852,29 @@ async function refreshIndex() {
   }
 }
 
-async function runSearch() {
+async function runSearch(options = {}) {
   const keyword = searchKeyword.value.trim()
+  const append = Boolean(options.append)
+  const page = append ? mediaPage.value + 1 : 1
   searching.value = true
   error.value = ''
   message.value = ''
-  selectedMedia.value = null
-  clearTargetState()
+  if (!append) {
+    selectedMedia.value = null
+    clearTargetState()
+  }
   try {
     const params = new URLSearchParams()
     params.set('keyword', keyword)
     params.set('media_type', mediaType.value)
-    params.set('limit', '48')
+    params.set('page', String(page))
+    params.set('page_size', String(mediaPageSize))
     const response = await props.api.get(`${pluginBase.value}/search?${params.toString()}`)
     const data = unwrapResponse(response) || {}
-    medias.value = data.medias || []
+    mediaPage.value = Number(data.page || page)
+    mediaTotal.value = Number(data.total || 0)
+    mediaHasMore.value = Boolean(data.has_more)
+    medias.value = append ? [...medias.value, ...(data.medias || [])] : (data.medias || [])
     if (!medias.value.length) {
       message.value = keyword
         ? '本地资源库里没有匹配的视频目标，请换个关键词试试'
@@ -844,6 +884,57 @@ async function runSearch() {
     error.value = errorMessage(err, '搜索本地资源失败')
   } finally {
     searching.value = false
+  }
+}
+
+function submitRootSearch() {
+  if (rootTab.value === 'history') {
+    loadMatchHistory()
+    return
+  }
+  runSearch()
+}
+
+function loadMoreMedia() {
+  if (searching.value || !mediaHasMore.value) return
+  runSearch({ append: true })
+}
+
+async function loadMatchHistory(options = {}) {
+  const append = Boolean(options.append)
+  const page = append ? matchHistoryPage.value + 1 : 1
+  matchHistoryLoading.value = true
+  error.value = ''
+  try {
+    const params = new URLSearchParams()
+    params.set('keyword', searchKeyword.value.trim())
+    params.set('media_type', mediaType.value)
+    params.set('page', String(page))
+    params.set('page_size', String(matchHistoryPageSize))
+    const response = await props.api.get(`${pluginBase.value}/match_history?${params.toString()}`)
+    const data = unwrapResponse(response) || {}
+    matchHistoryPage.value = Number(data.page || page)
+    matchHistoryTotal.value = Number(data.total || 0)
+    matchHistoryHasMore.value = Boolean(data.has_more)
+    matchHistoryItems.value = append ? [...matchHistoryItems.value, ...(data.items || [])] : (data.items || [])
+  } catch (err) {
+    error.value = errorMessage(err, '读取总匹配历史失败')
+  } finally {
+    matchHistoryLoading.value = false
+  }
+}
+
+function loadMoreMatchHistory() {
+  if (matchHistoryLoading.value || !matchHistoryHasMore.value) return
+  loadMatchHistory({ append: true })
+}
+
+function setRootTab(tab) {
+  rootTab.value = tab
+  selectedMedia.value = null
+  clearTargetState()
+  if (tab === 'history' && !matchHistoryItems.value.length) {
+    loadMatchHistory()
   }
 }
 
@@ -952,7 +1043,11 @@ async function deleteSubtitle(target, subtitle) {
       subtitle_name: subtitle.name,
     })
     message.value = response?.message || `已删除外挂字幕：${subtitle.name}`
-    await loadTargets(selectedMedia.value, selectedSeason.value)
+    if (selectedMedia.value) {
+      await loadTargets(selectedMedia.value, selectedSeason.value)
+    } else {
+      await loadMatchHistory()
+    }
   } catch (err) {
     error.value = errorMessage(err, '删除外挂字幕失败')
   } finally {
@@ -1500,14 +1595,31 @@ defineExpose({
       :text="message"
     />
 
+    <div v-if="!selectedMedia" class="root-tabs">
+      <button
+        type="button"
+        :class="{ active: rootTab === 'match' }"
+        @click="setRootTab('match')"
+      >
+        字幕匹配
+      </button>
+      <button
+        type="button"
+        :class="{ active: rootTab === 'history' }"
+        @click="setRootTab('history')"
+      >
+        总匹配历史
+      </button>
+    </div>
+
     <section v-if="!selectedMedia" class="media-stage">
       <VCard class="glass-card search-card" rounded="xl" elevation="0">
         <VCardText>
           <div class="search-head">
             <div>
-              <div class="section-kicker">资源选择</div>
-              <h2>选择本地已有资源</h2>
-              <p>仅展示 MoviePilot 已整理到本地库的视频资源。{{ indexSummary }}</p>
+              <div class="section-kicker">{{ rootTab === 'history' ? '历史记录' : '资源选择' }}</div>
+              <h2>{{ rootTab === 'history' ? '查看已匹配字幕' : '选择本地已有资源' }}</h2>
+              <p>{{ rootTab === 'history' ? matchHistorySummary : `仅展示 MoviePilot 已整理到本地库的视频资源。${indexSummary}` }}</p>
             </div>
             <VBtn
               variant="tonal"
@@ -1527,7 +1639,7 @@ defineExpose({
               density="comfortable"
               hide-details
               clearable
-              @keyup.enter="runSearch"
+              @keyup.enter="submitRootSearch"
             />
             <VSelect
               v-model="mediaType"
@@ -1541,12 +1653,18 @@ defineExpose({
               density="comfortable"
               hide-details
             />
-            <VBtn color="primary" :loading="searching" @click="runSearch">搜索</VBtn>
+            <VBtn
+              color="primary"
+              :loading="rootTab === 'history' ? matchHistoryLoading : searching"
+              @click="submitRootSearch"
+            >
+              搜索
+            </VBtn>
           </div>
         </VCardText>
       </VCard>
 
-      <div v-if="medias.length" class="media-list">
+      <div v-if="rootTab === 'match' && medias.length" class="media-list">
         <button
           v-for="media in medias"
           :key="media.id"
@@ -1569,8 +1687,106 @@ defineExpose({
           <VIcon icon="mdi-chevron-right" />
         </button>
       </div>
-      <div v-else class="empty-state">
+      <div v-if="rootTab === 'match' && medias.length" class="pager-row">
+        <span>{{ medias.length }}/{{ mediaTotal || medias.length }} 个资源</span>
+        <VBtn
+          v-if="mediaHasMore"
+          variant="tonal"
+          :loading="searching"
+          @click="loadMoreMedia"
+        >
+          加载下一页
+        </VBtn>
+      </div>
+      <div v-else-if="rootTab === 'match'" class="empty-state">
         {{ searching ? '正在读取本地资源...' : '输入关键词搜索；留空搜索会显示最近整理的视频。' }}
+      </div>
+
+      <div v-if="rootTab === 'history' && matchHistoryItems.length" class="global-history-list">
+        <div
+          v-for="item in matchHistoryItems"
+          :key="item.id"
+          class="global-history-card"
+        >
+          <button
+            type="button"
+            class="global-history-head"
+            @click="toggleHistoryExpanded(item)"
+          >
+            <div class="poster-frame compact">
+              <img
+                v-if="item.poster_url"
+                :src="item.poster_url"
+                :alt="mediaLabel(item)"
+              >
+              <span v-else>{{ formatMediaType(item.media_type) }}</span>
+            </div>
+            <div class="media-copy">
+              <div class="media-type">{{ formatMediaType(item.media_type) }}</div>
+              <h3>{{ mediaLabel(item) }}</h3>
+              <p>{{ historyMediaStat(item) }} · {{ item.latest_at || '未知时间' }}</p>
+            </div>
+            <VIcon :icon="historyExpanded(item) ? 'mdi-chevron-up' : 'mdi-chevron-down'" />
+          </button>
+          <div v-if="historyExpanded(item)" class="global-history-targets">
+            <div
+              v-for="target in item.targets"
+              :key="target.id"
+              class="history-row compact-row"
+            >
+              <div class="history-main">
+                <div class="episode-title">{{ compactTargetName(target) }}</div>
+                <div class="episode-path">{{ target.relative_path }}</div>
+                <div class="subtitle-history-list compact-subtitles">
+                  <div
+                    v-for="subtitle in target.subtitles"
+                    :key="subtitle.path"
+                    class="subtitle-history-item"
+                  >
+                    <div>
+                      <strong>{{ subtitle.name }}</strong>
+                      <span>{{ formatBytes(subtitle.size) }} · {{ subtitle.modified_at || '未知时间' }}</span>
+                    </div>
+                    <VBtn
+                      size="small"
+                      variant="text"
+                      color="error"
+                      :loading="clearing"
+                      @click.stop="deleteSubtitle(target, subtitle)"
+                    >
+                      删除
+                    </VBtn>
+                  </div>
+                </div>
+              </div>
+              <div class="history-actions">
+                <VBtn
+                  size="small"
+                  variant="tonal"
+                  prepend-icon="mdi-magnify"
+                  :disabled="isTargetActionDisabled(target)"
+                  @click.stop="openSingleOnlineSearch(target)"
+                >
+                  重新搜索
+                </VBtn>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div v-if="rootTab === 'history' && matchHistoryItems.length" class="pager-row">
+        <span>{{ matchHistoryItems.length }}/{{ matchHistoryTotal || matchHistoryItems.length }} 部资源</span>
+        <VBtn
+          v-if="matchHistoryHasMore"
+          variant="tonal"
+          :loading="matchHistoryLoading"
+          @click="loadMoreMatchHistory"
+        >
+          加载下一页
+        </VBtn>
+      </div>
+      <div v-else-if="rootTab === 'history'" class="empty-state">
+        {{ matchHistoryLoading ? '正在读取匹配历史...' : '还没有找到已匹配字幕记录。' }}
       </div>
     </section>
 
@@ -2030,13 +2246,6 @@ defineExpose({
             :text="onlineError"
           />
           <VAlert
-            class="mb-4"
-            type="info"
-            variant="tonal"
-            density="compact"
-            :text="onlineApiStatusText"
-          />
-          <VAlert
             v-if="onlineMessages.length && !onlineMessagesCollapsed"
             class="online-message-summary"
             :type="onlineMessageType"
@@ -2140,6 +2349,7 @@ defineExpose({
                       </span>
                     </div>
                     <p v-if="item.note">{{ item.note }}</p>
+                    <p v-if="item.match_detail" class="online-match-detail">{{ item.match_detail }}</p>
                   </div>
                   <a
                     v-if="item.page_url"
@@ -2523,6 +2733,28 @@ defineExpose({
   text-transform: uppercase;
 }
 
+.root-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.root-tabs button {
+  padding: 9px 16px;
+  border: 1px solid rgba(91, 109, 100, 0.16);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.74);
+  color: #53655f;
+  font-weight: 900;
+}
+
+.root-tabs button.active {
+  border-color: rgba(150, 99, 40, 0.58);
+  background: #fff4da;
+  color: #30443f;
+  box-shadow: inset 0 -3px 0 #b47a35;
+}
+
 .media-stage,
 .episode-stage {
   display: grid;
@@ -2590,6 +2822,13 @@ defineExpose({
   border-radius: 16px;
 }
 
+.poster-frame.compact {
+  width: 56px;
+  height: 74px;
+  border-radius: 14px;
+  font-size: 12px;
+}
+
 .poster-frame img,
 .mini-poster img {
   width: 100%;
@@ -2611,6 +2850,56 @@ defineExpose({
   margin: 0;
   color: #687873;
   font-size: 13px;
+}
+
+.pager-row {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+  align-items: center;
+  padding: 4px 0 8px;
+  color: #687873;
+  font-size: 13px;
+}
+
+.global-history-list {
+  display: grid;
+  gap: 12px;
+}
+
+.global-history-card {
+  border: 1px solid rgba(91, 109, 100, 0.14);
+  border-radius: 22px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.76);
+}
+
+.global-history-head {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr) auto;
+  gap: 14px;
+  align-items: center;
+  width: 100%;
+  padding: 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+}
+
+.global-history-targets {
+  display: grid;
+  gap: 10px;
+  padding: 0 12px 12px;
+}
+
+.history-row.compact-row {
+  border-radius: 16px;
+  background: rgba(245, 241, 232, 0.58);
+}
+
+.compact-subtitles {
+  margin-top: 8px;
 }
 
 .detail-card {
@@ -3217,6 +3506,10 @@ defineExpose({
 
 .online-result-main p {
   margin: 6px 0 0;
+}
+
+.online-match-detail {
+  color: #8a6b3f !important;
 }
 
 .online-open-link,

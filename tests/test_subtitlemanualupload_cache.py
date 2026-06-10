@@ -341,3 +341,71 @@ def test_delete_single_subtitle_only_allows_target_subtitles(tmp_path):
     assert response["success"] is True
     assert not subtitle.exists()
     assert unrelated.exists()
+
+
+def test_search_media_candidates_returns_total_with_page_slice():
+    module, histories, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    histories.data = [
+        {"id": "a", "path": "/media/a.mkv", "media_key": "movie-a", "media_type": "movie", "title": "A", "date": "2024-01-01"},
+        {"id": "b", "path": "/media/b.mkv", "media_key": "movie-b", "media_type": "movie", "title": "B", "date": "2024-01-02"},
+        {"id": "c", "path": "/media/c.mkv", "media_key": "movie-c", "media_type": "movie", "title": "C", "date": "2024-01-03"},
+    ]
+    plugin._targets_for_media = lambda **kwargs: {
+        "media": {"poster_url": ""},
+        "all_target_count": 1,
+        "seasons": [],
+    }
+
+    candidates, total = asyncio.run(plugin._search_media_candidates(keyword="", media_type="movie", limit=2, offset=1))
+
+    assert total == 3
+    assert [item["title"] for item in candidates] == ["B", "A"]
+
+
+def test_match_history_groups_targets_with_subtitles(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video1 = tmp_path / "Show.S01E01.mkv"
+    video2 = tmp_path / "Show.S01E02.mkv"
+    sub1 = tmp_path / "Show.S01E01.chi.srt"
+    sub2 = tmp_path / "Show.S01E02.eng.srt"
+    for path in [video1, video2, sub1, sub2]:
+        path.write_text("data", encoding="utf-8")
+    plugin._local_entries_cache = {
+        "loaded_at": module.datetime.now(),
+        "entries": [
+            {
+                "id": "e1",
+                "media_key": "tv-show",
+                "media_type": "tv",
+                "title": "Show",
+                "path": str(video1),
+                "basename": "Show.S01E01",
+                "season": 1,
+                "episode": 1,
+                "target_label": "S01E01",
+                "storage": "local",
+            },
+            {
+                "id": "e2",
+                "media_key": "tv-show",
+                "media_type": "tv",
+                "title": "Show",
+                "path": str(video2),
+                "basename": "Show.S01E02",
+                "season": 1,
+                "episode": 2,
+                "target_label": "S01E02",
+                "storage": "local",
+            },
+        ],
+        "media_count": 1,
+        "persisted": False,
+    }
+
+    items = plugin._match_history_items(keyword="", media_type="tv")
+
+    assert len(items) == 1
+    assert items[0]["subtitle_count"] == 2
+    assert [target["episode"] for target in items[0]["targets"]] == [1, 2]

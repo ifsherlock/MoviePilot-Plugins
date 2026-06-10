@@ -36,7 +36,7 @@ DEFAULT_PROVIDER_ROOTS = {
 }
 DEFAULT_ASSRT_API_URL = "https://api.assrt.net"
 DEFAULT_OPENSUBTITLES_API_URL = "https://api.opensubtitles.com/api/v1"
-OPENSUBTITLES_SEARCH_LANGUAGES = "zh-cn,zh-tw,ze,en,ja"
+OPENSUBTITLES_SEARCH_LANGUAGES = "zh-cn,zh-tw,ze,en,ja,ko"
 INTERACTIVE_DOWNLOAD_EVENT_TIMEOUT_MS = 12000
 
 
@@ -63,6 +63,11 @@ class OnlineSubtitleResult:
     result_years: Optional[List[int]] = None
     match_year: int = 0
     relevance_status: str = ""
+    region_bucket: str = ""
+    query_plan: str = ""
+    identity_status: str = ""
+    reject_reason: str = ""
+    match_detail: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -87,6 +92,11 @@ class OnlineSubtitleResult:
             "result_years": self.result_years or [],
             "match_year": self.match_year,
             "relevance_status": self.relevance_status,
+            "region_bucket": self.region_bucket,
+            "query_plan": self.query_plan,
+            "identity_status": self.identity_status,
+            "reject_reason": self.reject_reason,
+            "match_detail": self.match_detail,
         }
 
 
@@ -635,6 +645,7 @@ class OpenSubtitlesProvider(BaseSubtitleProvider):
         if not self.api_key:
             raise ValueError("OpenSubtitles 未配置 API Key，已跳过自动搜索")
         target_year = _target_year_from_targets(targets)
+        query_plan = _query_plan_for_keyword(keyword, targets)
         payload = self._api_json(
             "/subtitles",
             {
@@ -676,8 +687,15 @@ class OpenSubtitlesProvider(BaseSubtitleProvider):
             upload_year = _year_from_upload_date(attrs.get("upload_date") or attrs.get("uploaded_at"))
             if target_year and upload_year and upload_year < target_year:
                 continue
-            relevance_status = _relevance_status(title, keyword, targets)
-            if relevance_status == "weak":
+            assessment = _assess_result_match(
+                title=title,
+                keyword=keyword,
+                targets=targets,
+                result_years=result_years,
+                attrs=attrs,
+                file_info=file_info,
+            )
+            if assessment["identity_status"] == "failed":
                 continue
             results.append(
                 OnlineSubtitleResult(
@@ -692,13 +710,18 @@ class OpenSubtitlesProvider(BaseSubtitleProvider):
                     format=_guess_subtitle_format(" ".join([title, str(file_info.get("file_name") or "")])),
                     season=season or _safe_int(attrs.get("season_number"), 0),
                     episode=episode or _safe_int(attrs.get("episode_number"), 0),
-                    score=_score_result(title, keyword, targets) + 6 + (12 if target_year and target_year in result_years else 0),
+                    score=assessment["score"] + 6 + (12 if target_year and target_year in result_years else 0),
                     source=self.display_name,
                     note=f"通过 OpenSubtitles API 搜索{language_label}字幕",
                     downloadable=True,
                     result_years=result_years,
                     match_year=target_year if target_year and target_year in result_years else 0,
-                    relevance_status=relevance_status,
+                    relevance_status=assessment["relevance_status"],
+                    region_bucket=query_plan["region_bucket"],
+                    query_plan=query_plan["label"],
+                    identity_status=assessment["identity_status"],
+                    reject_reason=assessment["reject_reason"],
+                    match_detail=assessment["match_detail"],
                 )
             )
         return _dedupe_results(results)[:30]
@@ -991,36 +1014,213 @@ class OnlineSubtitleSearchService:
 
 def build_search_keywords(media: Dict[str, Any], targets: List[Dict[str, Any]], scope: str) -> List[str]:
     title = _clean_keyword(media.get("title") or (targets[0].get("title") if targets else ""))
-    english_titles = _english_search_titles(media, targets)
     year = _clean_keyword(media.get("year") or (targets[0].get("year") if targets else ""))
     media_type = media.get("media_type") or (targets[0].get("media_type") if targets else "")
+    search_titles = _search_titles_by_region(media, targets)
+    if title and title not in search_titles:
+        search_titles.append(title)
+    search_titles = _unique_keywords(search_titles)
     keywords: List[str] = []
     if media_type == "tv":
         seasons = sorted({int(target.get("season") or 0) for target in targets if int(target.get("season") or 0)})
         episodes = sorted({int(target.get("episode") or 0) for target in targets if int(target.get("episode") or 0)})
-        if title and seasons:
+        if search_titles and seasons:
             season = seasons[0]
+            primary_title = search_titles[0]
             if scope in {"season", "batch"} or len(episodes) > 1:
-                keywords.extend([f"{title} S{season:02d}", f"{title} 第{season}季"])
+                for item in search_titles[:4]:
+                    keywords.append(f"{item} S{season:02d}")
+                keywords.append(f"{primary_title} 第{season}季")
             elif episodes:
                 episode = episodes[0]
-                keywords.extend(
-                    [
-                        f"{title} S{season:02d}E{episode:02d}",
-                        f"{title} 第{season}季第{episode}集",
-                    ]
-                )
+                for item in search_titles[:4]:
+                    keywords.append(f"{item} S{season:02d}E{episode:02d}")
+                keywords.append(f"{primary_title} 第{season}季第{episode}集")
         for target in targets[:3]:
             basename = _clean_keyword(target.get("basename") or target.get("filename"))
             if basename:
                 keywords.append(basename)
-    elif title:
+    elif search_titles:
         if year:
-            keywords.append(f"{title} {year}")
-            keywords.extend([f"{item} {year}" for item in english_titles])
-        keywords.append(title)
-        keywords.extend(english_titles)
+            keywords.extend([f"{item} {year}" for item in search_titles[:5]])
+        keywords.extend(search_titles[:5])
     return _unique_keywords([item for item in keywords if item])
+
+
+def _query_plan_for_keyword(keyword: str, targets: List[Dict[str, Any]]) -> Dict[str, str]:
+    bucket = _region_bucket({}, targets)
+    return {
+        "region_bucket": bucket,
+        "label": f"{_region_bucket_label(bucket)}标题 · 字幕语言 {OPENSUBTITLES_SEARCH_LANGUAGES}",
+    }
+
+
+def _search_titles_by_region(media: Dict[str, Any], targets: List[Dict[str, Any]]) -> List[str]:
+    bucket = _region_bucket(media, targets)
+    all_titles = _media_title_aliases(media, targets)
+    chinese_titles = [item for item in all_titles if _contains_cjk(item)]
+    english_titles = [item for item in all_titles if _looks_english_title(item)]
+    japanese_titles = [item for item in all_titles if _contains_japanese(item)]
+    korean_titles = [item for item in all_titles if _contains_korean(item)]
+    original_titles = _original_titles(media, targets)
+
+    if bucket == "chinese":
+        ordered = [*chinese_titles, *english_titles]
+    elif bucket == "western":
+        ordered = [*english_titles, *chinese_titles]
+    elif bucket == "japanese":
+        ordered = [*japanese_titles, *original_titles, *english_titles, *chinese_titles]
+    elif bucket == "korean":
+        ordered = [*korean_titles, *original_titles, *english_titles, *chinese_titles]
+    else:
+        ordered = [*original_titles, *english_titles, *chinese_titles, *all_titles]
+    return _unique_keywords(ordered)
+
+
+def _media_title_aliases(media: Dict[str, Any], targets: List[Dict[str, Any]]) -> List[str]:
+    values: List[str] = []
+    for source in [media, *(targets or [])]:
+        if not isinstance(source, dict):
+            continue
+        for field in ["title", "name", "en_title", "original_title", "original_name", "title_en", "name_en", "english_title"]:
+            value = _clean_keyword(source.get(field))
+            if value:
+                values.append(value)
+        for field in ["aliases", "alternative_titles", "translations", "tmdb_aliases"]:
+            values.extend(_alias_values(source.get(field)))
+    return _unique_keywords(values)
+
+
+def _region_bucket(media: Dict[str, Any], targets: List[Dict[str, Any]]) -> str:
+    sources = [media, *(targets or [])]
+    languages = {_normalize_code(item) for source in sources for item in _as_list(source.get("original_language") if isinstance(source, dict) else "")}
+    countries = {
+        _normalize_code(item)
+        for source in sources
+        if isinstance(source, dict)
+        for field in ["origin_country", "production_countries", "country", "area", "region"]
+        for item in _as_list(source.get(field))
+    }
+    category_text = " ".join(
+        str(source.get(field) or "")
+        for source in sources
+        if isinstance(source, dict)
+        for field in ["category", "media_category", "library_name"]
+    )
+    if languages & {"zh", "cn", "cmn", "yue"} or countries & {"cn", "hk", "tw", "sg"} or re.search(r"华语|国产|港|台|中国|大陆", category_text):
+        return "chinese"
+    if languages & {"ja", "jp"} or countries & {"jp"} or re.search(r"日本|日剧|日漫|动画", category_text):
+        return "japanese"
+    if languages & {"ko", "kr"} or countries & {"kr", "kp"} or re.search(r"韩国|韩剧", category_text):
+        return "korean"
+    if languages & {"en"} or countries & {"us", "gb", "uk", "ca", "au", "nz", "ie"} or re.search(r"欧美|美剧|英剧", category_text):
+        return "western"
+    return "other"
+
+
+def _region_bucket_label(bucket: str) -> str:
+    return {
+        "chinese": "华语",
+        "western": "欧美",
+        "japanese": "日本",
+        "korean": "韩国",
+        "other": "原始",
+    }.get(bucket or "", "原始")
+
+
+def _title_aliases(media: Dict[str, Any], targets: List[Dict[str, Any]]) -> List[str]:
+    values: List[str] = []
+    for source in [media, *(targets or [])]:
+        if not isinstance(source, dict):
+            continue
+        for field in [
+            "title",
+            "name",
+            "en_title",
+            "original_title",
+            "original_name",
+            "title_en",
+            "name_en",
+            "english_title",
+            "filename",
+            "basename",
+        ]:
+            value = _clean_keyword(source.get(field))
+            if value:
+                values.append(value)
+        for field in ["aliases", "alternative_titles", "translations", "tmdb_aliases"]:
+            values.extend(_alias_values(source.get(field)))
+    return _unique_keywords(values)
+
+
+def _original_titles(media: Dict[str, Any], targets: List[Dict[str, Any]]) -> List[str]:
+    values: List[str] = []
+    for source in [media, *(targets or [])]:
+        if not isinstance(source, dict):
+            continue
+        for field in ["original_title", "original_name"]:
+            value = _clean_keyword(source.get(field))
+            if value:
+                values.append(value)
+    return _unique_keywords(values)
+
+
+def _alias_values(value: Any) -> List[str]:
+    values: List[str] = []
+    if isinstance(value, str):
+        try:
+            parsed = json.loads(value)
+        except Exception:
+            parsed = None
+        if parsed is not None:
+            return _alias_values(parsed)
+        return [_clean_keyword(value)] if _clean_keyword(value) else []
+    if isinstance(value, dict):
+        for key in ["title", "name", "english_name", "data"]:
+            values.extend(_alias_values(value.get(key)))
+        data_items = value.get("data")
+        if not isinstance(data_items, list):
+            data_items = []
+        for item in value.values():
+            if item not in data_items:
+                values.extend(_alias_values(item))
+        return _unique_keywords(values)
+    if isinstance(value, list):
+        for item in value:
+            values.extend(_alias_values(item))
+    return _unique_keywords(values)
+
+
+def _as_list(value: Any) -> List[Any]:
+    if isinstance(value, list):
+        return value
+    if isinstance(value, tuple) or isinstance(value, set):
+        return list(value)
+    if isinstance(value, dict):
+        return list(value.values())
+    text = str(value or "").strip()
+    return [text] if text else []
+
+
+def _normalize_code(value: Any) -> str:
+    return re.sub(r"[^a-z]", "", str(value or "").lower())
+
+
+def _contains_cjk(value: str) -> bool:
+    return bool(re.search(r"[\u3400-\u9fff]", value or ""))
+
+
+def _contains_japanese(value: str) -> bool:
+    return bool(re.search(r"[\u3040-\u30ff]", value or ""))
+
+
+def _contains_korean(value: str) -> bool:
+    return bool(re.search(r"[\uac00-\ud7af]", value or ""))
+
+
+def _looks_english_title(value: str) -> bool:
+    text = value or ""
+    return bool(re.search(r"[a-zA-Z]", text)) and not _contains_cjk(text) and not _contains_japanese(text) and not _contains_korean(text)
 
 
 def normalize_online_engine(value: Any) -> str:
@@ -1121,6 +1321,8 @@ def _language_category_from_text(value: str) -> str:
         return "english"
     if any(key in text for key in ["日文", "日语", "japanese", "jpn"]):
         return "japanese"
+    if any(key in text for key in ["韩文", "韩语", "korean", "kor"]):
+        return "other"
     if re.search(r"(^|[\s._\-\[\]()])en(?=$|[\s._\-\[\]()])", text):
         return "english"
     if re.search(r"(^|[\s._\-\[\]()])ja(?=$|[\s._\-\[\]()])", text):
@@ -1162,32 +1364,7 @@ def _guess_subtitle_format(value: str) -> str:
 
 
 def _score_result(title: str, keyword: str, targets: List[Dict[str, Any]]) -> int:
-    haystack = (title or "").lower()
-    score = 0
-    for part in _keyword_match_parts(keyword):
-        if _is_cjk_text(part):
-            if len(part) >= 3 and part in haystack:
-                score += 12
-        elif part in haystack:
-            score += 5
-    for target in targets:
-        for field in ["title", "original_title", "en_title", "basename", "filename"]:
-            value = _clean_keyword(target.get(field))
-            if value and _title_matches(value, title):
-                score += 18
-                break
-    hint = _episode_from_text(title)
-    if hint:
-        season, episode = hint
-        for target in targets:
-            target_season = int(target.get("season") or 0)
-            target_episode = int(target.get("episode") or 0)
-            if episode == target_episode and (not season or not target_season or season == target_season):
-                score += 30
-                break
-    if _guess_language_label(title):
-        score += 10
-    return score
+    return int(_assess_result_match(title=title, keyword=keyword, targets=targets)["score"])
 
 
 def _filter_relevant_results(
@@ -1199,27 +1376,7 @@ def _filter_relevant_results(
 
 
 def _has_relevance_signal(title: str, keyword: str, targets: List[Dict[str, Any]]) -> bool:
-    haystack = (title or "").lower()
-    for part in _keyword_match_parts(keyword):
-        if _is_cjk_text(part):
-            if len(part) >= 3 and part in haystack:
-                return True
-        elif part in haystack:
-            return True
-    hint = _episode_from_text(title)
-    if hint:
-        season, episode = hint
-        for target in targets:
-            target_season = int(target.get("season") or 0)
-            target_episode = int(target.get("episode") or 0)
-            if episode == target_episode and (not season or not target_season or season == target_season):
-                return True
-    for target in targets:
-        for field in ["title", "basename", "filename"]:
-            value = str(target.get(field) or "").lower()
-            if _title_matches(value, title):
-                return True
-    return False
+    return _assess_result_match(title=title, keyword=keyword, targets=targets)["identity_status"] != "failed"
 
 
 def _provider_priority(item: OnlineSubtitleResult) -> int:
@@ -1275,11 +1432,162 @@ def _year_from_upload_date(value: Any) -> int:
 
 
 def _relevance_status(title: str, keyword: str, targets: List[Dict[str, Any]]) -> str:
-    return "matched" if _has_relevance_signal(title, keyword, targets) else "weak"
+    return _assess_result_match(title=title, keyword=keyword, targets=targets)["relevance_status"]
+
+
+def _assess_result_match(
+    *,
+    title: str,
+    keyword: str,
+    targets: List[Dict[str, Any]],
+    result_years: Optional[List[int]] = None,
+    attrs: Optional[Dict[str, Any]] = None,
+    file_info: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    attrs = attrs or {}
+    file_info = file_info or {}
+    haystack = " ".join(
+        str(item or "")
+        for item in [
+            title,
+            attrs.get("movie_name"),
+            attrs.get("feature_details"),
+            attrs.get("release"),
+            file_info.get("file_name"),
+        ]
+    )
+    score = 0
+    reasons: List[str] = []
+    reject_reason = ""
+    title_matched = False
+    metadata_matched = False
+
+    target_aliases = _title_aliases({}, targets)
+    keyword_parts = _keyword_match_parts(keyword)
+    series_aliases = _series_title_aliases(targets)
+    for alias in target_aliases:
+        if _strong_title_matches(alias, haystack):
+            title_matched = True
+            score += 34
+            reasons.append("标题别名命中")
+            break
+    if not title_matched:
+        for part in keyword_parts:
+            if _is_episode_only_keyword_part(part, keyword, targets):
+                continue
+            if _strong_title_matches(part, haystack):
+                title_matched = True
+                score += 18
+                reasons.append("搜索词命中")
+                break
+    series_matched = any(_strong_title_matches(alias, haystack) for alias in series_aliases)
+
+    for target in targets or []:
+        target_tmdb = str(target.get("tmdb_id") or "").strip()
+        target_imdb = str(target.get("imdb_id") or "").strip().lower()
+        text_values = json.dumps(attrs, ensure_ascii=False, default=str).lower()
+        if target_imdb and target_imdb in text_values:
+            metadata_matched = True
+            score += 40
+            reasons.append("IMDb 证据命中")
+            break
+        if target_tmdb and re.search(rf"(?<!\d){re.escape(target_tmdb)}(?!\d)", text_values):
+            metadata_matched = True
+            score += 40
+            reasons.append("TMDB 证据命中")
+            break
+
+    target_year = _target_year_from_targets(targets)
+    result_years = result_years if result_years is not None else _extract_years(haystack)
+    if target_year and result_years:
+        if target_year in result_years:
+            score += 18
+            reasons.append("年份一致")
+        else:
+            reject_reason = "年份冲突"
+
+    episode_ok = False
+    episode_required = any(int(target.get("episode") or 0) for target in targets or [])
+    hint = _episode_from_text(haystack)
+    if hint:
+        season, episode = hint
+        for target in targets or []:
+            target_season = int(target.get("season") or 0)
+            target_episode = int(target.get("episode") or 0)
+            if episode == target_episode and (not season or not target_season or season == target_season):
+                episode_ok = True
+                score += 22
+                reasons.append("季集一致")
+                break
+    elif _season_matches_text(haystack, targets):
+        episode_ok = True
+        score += 10
+        reasons.append("季一致")
+    elif not episode_required:
+        episode_ok = True
+
+    media_type = next((str(target.get("media_type") or "") for target in targets or [] if target.get("media_type")), "")
+    if media_type == "tv" and not series_matched and not metadata_matched:
+        title_matched = False
+        reject_reason = reject_reason or "剧名身份不匹配"
+    if media_type == "tv" and episode_required and not episode_ok:
+        reject_reason = reject_reason or "季集不匹配"
+
+    if _guess_language_label(title):
+        score += 6
+
+    identity_ok = title_matched or metadata_matched
+    if not identity_ok:
+        reject_reason = reject_reason or "无标题或媒体身份信号"
+    if reject_reason:
+        identity_status = "failed"
+    elif metadata_matched or (title_matched and (not target_year or not result_years or target_year in result_years) and episode_ok):
+        identity_status = "strong"
+    else:
+        identity_status = "weak"
+    return {
+        "score": score,
+        "identity_status": identity_status,
+        "relevance_status": "matched" if identity_status == "strong" else ("weak" if identity_status == "weak" else "failed"),
+        "reject_reason": reject_reason,
+        "match_detail": " / ".join(_unique_keywords(reasons)) or reject_reason,
+    }
 
 
 def _is_cjk_text(value: str) -> bool:
     return bool(re.search(r"[\u3400-\u9fff]", value or ""))
+
+
+def _series_title_aliases(targets: List[Dict[str, Any]]) -> List[str]:
+    values: List[str] = []
+    for target in targets or []:
+        for field in ["title", "en_title", "original_title", "original_name", "title_en", "name_en", "english_title"]:
+            value = _clean_keyword(target.get(field))
+            if value:
+                values.append(value)
+        for field in ["aliases", "alternative_titles", "translations", "tmdb_aliases"]:
+            values.extend(_alias_values(target.get(field)))
+    return _unique_keywords(values)
+
+
+def _is_episode_only_keyword_part(part: str, keyword: str, targets: List[Dict[str, Any]]) -> bool:
+    if re.fullmatch(r"(?i)s\d{1,2}e\d{1,3}|e\d{1,3}", part or ""):
+        return True
+    series_aliases = _series_title_aliases(targets)
+    if any(_strong_title_matches(alias, part) for alias in series_aliases):
+        return False
+    return _is_cjk_text(part) and len(part) >= 3 and part in _normalize_title_for_match(keyword) and len(targets or []) == 1
+
+
+def _season_matches_text(value: str, targets: List[Dict[str, Any]]) -> bool:
+    seasons = {int(target.get("season") or 0) for target in targets or [] if int(target.get("season") or 0)}
+    if not seasons:
+        return False
+    text = value or ""
+    for season in seasons:
+        if re.search(rf"(?i)\bS{season:02d}\b|\bS{season}\b|第\s*{season}\s*季", text):
+            return True
+    return False
 
 
 def _keyword_match_parts(value: str) -> List[str]:
@@ -1313,6 +1621,26 @@ def _title_matches(needle: str, haystack: str) -> bool:
         return False
     haystack_lower = clean_haystack.lower()
     return all(part in haystack_lower for part in parts)
+
+
+def _strong_title_matches(needle: str, haystack: str) -> bool:
+    clean_needle = _normalize_title_for_match(needle)
+    clean_haystack = _normalize_title_for_match(haystack)
+    if not clean_needle or not clean_haystack:
+        return False
+    if _is_cjk_text(clean_needle):
+        if len(clean_needle) < 3:
+            return False
+        return clean_needle in clean_haystack
+    parts = [
+        part
+        for part in re.split(r"\s+", clean_needle.lower())
+        if len(part) >= 3 and not re.fullmatch(r"(?:19\d{2}|20\d{2}|s\d{1,2}e\d{1,3}|s\d{1,2})", part)
+    ]
+    if not parts:
+        return False
+    matched = sum(1 for part in parts if re.search(rf"(?<![a-z0-9]){re.escape(part)}(?![a-z0-9])", clean_haystack.lower()))
+    return matched == len(parts) if len(parts) <= 2 else matched >= max(2, len(parts) - 1)
 
 
 def _normalize_title_for_match(value: Any) -> str:
