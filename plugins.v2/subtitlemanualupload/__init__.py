@@ -81,7 +81,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/subtitle-match.png"
-    plugin_version = "0.1.52"
+    plugin_version = "0.1.53"
     plugin_author = "jaysherlock"
     author_url = "https://github.com/jaysherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -1930,15 +1930,55 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     return getattr(detail, key)
             return None
 
-        aliases = cls._tmdb_aliases(value("translations"), value("alternative_titles"))
+        translations = value("translations")
+        alternative_titles = value("alternative_titles")
+        aliases = cls._tmdb_aliases(translations, alternative_titles)
         return {
             "original_language": value("original_language") or "",
             "origin_country": value("origin_country") or [],
             "production_countries": value("production_countries") or [],
             "original_title": value("original_title", "original_name") or "",
-            "en_title": cls._english_title_from_aliases(aliases),
+            "en_title": cls._english_title_from_tmdb_values(translations, alternative_titles)
+            or cls._english_title_from_aliases(aliases),
             "tmdb_aliases": aliases,
         }
+
+    @classmethod
+    def _english_title_from_tmdb_values(cls, *values: Any) -> str:
+        candidates: List[str] = []
+
+        def add_title(value: Any) -> None:
+            for item in extract_title_aliases(value):
+                if item and re.search(r"[A-Za-z]", item) and not re.search(r"[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]", item):
+                    candidates.append(item)
+
+        def walk(value: Any) -> None:
+            if isinstance(value, (list, tuple)):
+                for item in value:
+                    walk(item)
+                return
+            if not isinstance(value, dict):
+                return
+            lang = cls._normalize_text(value.get("iso_639_1")).lower()
+            country = cls._normalize_text(value.get("iso_3166_1")).lower()
+            if lang == "en" or country in {"us", "gb", "uk"}:
+                data = value.get("data")
+                if isinstance(data, dict):
+                    add_title({key: data.get(key) for key in ("title", "name")})
+                add_title({key: value.get(key) for key in ("title", "name")})
+            for key in ["data", "titles", "results", "translations", "alternative_titles", "aliases"]:
+                walk(value.get(key))
+
+        for value in values:
+            walk(value)
+        seen = set()
+        for item in candidates:
+            key = item.lower()
+            if key in seen:
+                continue
+            seen.add(key)
+            return item
+        return ""
 
     @classmethod
     def _tmdb_aliases(cls, *values: Any) -> List[str]:

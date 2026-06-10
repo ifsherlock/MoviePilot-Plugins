@@ -427,3 +427,32 @@ def test_tmdb_aliases_reuse_online_title_cleaner():
     assert "Turkish" not in aliases
     assert "suomi" not in aliases
     assert "Finnish" not in aliases
+
+
+def test_tmdb_detail_payload_prefers_real_english_translation_title():
+    module, _, _ = load_plugin_module()
+
+    payload = module.SubtitleManualUpload._tmdb_detail_payload(
+        {
+            "original_language": "en",
+            "origin_country": ["US"],
+            "original_title": "The Lord of the Rings: The Return of the King",
+            "translations": [
+                {
+                    "iso_639_1": "de",
+                    "name": "Deutsch",
+                    "english_name": "German",
+                    "data": {"title": "Der Herr der Ringe - Die Rueckkehr des Koenigs"},
+                },
+                {
+                    "iso_639_1": "en",
+                    "name": "English",
+                    "english_name": "English",
+                    "data": {"title": "The Lord of the Rings: The Return of the King"},
+                },
+            ],
+        }
+    )
+
+    assert payload["en_title"] == "The Lord of the Rings: The Return of the King"
+    assert "Der Herr der Ringe - Die Rueckkehr des Koenigs" in payload["tmdb_aliases"]

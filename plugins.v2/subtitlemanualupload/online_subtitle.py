@@ -1156,8 +1156,12 @@ def _query_plan_for_keyword(keyword: str, targets: List[Dict[str, Any]]) -> Dict
 def _search_titles_by_region(media: Dict[str, Any], targets: List[Dict[str, Any]]) -> List[str]:
     bucket = _region_bucket(media, targets)
     all_titles = _media_title_aliases(media, targets)
+    explicit_english_titles = _explicit_title_values(
+        media,
+        targets,
+        ["en_title", "title_en", "name_en", "english_title"],
+    )
     chinese_titles = [item for item in all_titles if _contains_cjk(item)]
-    english_titles = [item for item in all_titles if _looks_english_title(item)]
     japanese_titles = [item for item in all_titles if _contains_japanese(item)]
     korean_titles = [item for item in all_titles if _contains_korean(item)]
     original_titles = _original_titles(media, targets)
@@ -1168,7 +1172,7 @@ def _search_titles_by_region(media: Dict[str, Any], targets: List[Dict[str, Any]
         "korean": korean_titles,
     }.get(bucket, [])
     ordered = [
-        *english_titles,
+        *explicit_english_titles,
         *original_titles,
         *native_titles,
         *chinese_titles,
@@ -1177,6 +1181,18 @@ def _search_titles_by_region(media: Dict[str, Any], targets: List[Dict[str, Any]
         *all_titles,
     ]
     return _unique_keywords(ordered)
+
+
+def _explicit_title_values(media: Dict[str, Any], targets: List[Dict[str, Any]], fields: List[str]) -> List[str]:
+    values: List[str] = []
+    for source in [media, *(targets or [])]:
+        if not isinstance(source, dict):
+            continue
+        for field in fields:
+            value = _clean_title_alias(source.get(field))
+            if value:
+                values.append(value)
+    return _unique_keywords(values)
 
 
 def _media_title_aliases(media: Dict[str, Any], targets: List[Dict[str, Any]]) -> List[str]:

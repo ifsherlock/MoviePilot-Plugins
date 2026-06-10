@@ -539,6 +539,31 @@ def test_build_search_keywords_filters_native_language_name_aliases():
     assert "Hayalet Sürücü 2007" in keywords
 
 
+def test_build_search_keywords_prioritizes_explicit_english_title_over_latin_translations():
+    module = load_online_module()
+    media = {
+        "media_type": "movie",
+        "title": "指环王3：王者无敌",
+        "year": "2003",
+        "en_title": "The Lord of the Rings: The Return of the King",
+        "original_title": "The Lord of the Rings: The Return of the King",
+        "original_language": "en",
+        "origin_country": ["US"],
+        "tmdb_aliases": [
+            "Der Herr der Ringe - Die Rueckkehr des Koenigs",
+            "Pán prstenu: Návrat krále",
+            "The Lord of the Rings: The Return of the King",
+        ],
+    }
+
+    keywords = module.build_search_keywords(media, [media], "movie")
+
+    assert keywords[0] == "The Lord of the Rings: The Return of the King 2003"
+    assert keywords.index("The Lord of the Rings: The Return of the King 2003") < keywords.index(
+        "Der Herr der Ringe - Die Rueckkehr des Koenigs 2003"
+    )
+
+
 def test_opensubtitles_rejects_generic_english_query_match():
     module = load_online_module()
     provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key")
