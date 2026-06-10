@@ -409,3 +409,21 @@ def test_match_history_groups_targets_with_subtitles(tmp_path):
     assert len(items) == 1
     assert items[0]["subtitle_count"] == 2
     assert [target["episode"] for target in items[0]["targets"]] == [1, 2]
+
+
+def test_tmdb_aliases_reuse_online_title_cleaner():
+    module, _, _ = load_plugin_module()
+
+    aliases = module.SubtitleManualUpload._tmdb_aliases(
+        [
+            {"iso_639_1": "tr", "name": "Turkish", "english_name": "Turkish", "data": {"title": "Hayalet Sürücü"}},
+            {"iso_639_1": "fi", "name": "suomi", "english_name": "Finnish", "data": {"title": ""}},
+            {"iso_639_1": "en", "name": "English", "english_name": "English", "data": {"title": "Ghost Rider"}},
+        ]
+    )
+
+    assert "Hayalet Sürücü" in aliases
+    assert "Ghost Rider" in aliases
+    assert "Turkish" not in aliases
+    assert "suomi" not in aliases
+    assert "Finnish" not in aliases

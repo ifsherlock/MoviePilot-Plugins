@@ -69,6 +69,7 @@ from .online_subtitle import (
     DEFAULT_PROVIDER_ROOTS,
     OnlineSubtitleSearchService,
     build_search_keywords,
+    extract_title_aliases,
     normalize_online_engine,
     normalize_provider_roots,
 )
@@ -80,7 +81,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/subtitle-match.png"
-    plugin_version = "0.1.51"
+    plugin_version = "0.1.52"
     plugin_author = "jaysherlock"
     author_url = "https://github.com/jaysherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -1944,21 +1945,11 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         aliases: List[str] = []
 
         def walk(value: Any) -> None:
-            if isinstance(value, str):
-                text = cls._normalize_text(value)
-                if text:
-                    aliases.append(text)
-                return
-            if isinstance(value, dict):
-                for key in ("title", "name", "english_name"):
-                    walk(value.get(key))
-                for item in value.values():
-                    if isinstance(item, (dict, list, tuple)):
-                        walk(item)
-                return
             if isinstance(value, (list, tuple)):
                 for item in value:
                     walk(item)
+                return
+            aliases.extend(extract_title_aliases(value))
 
         for value in values:
             walk(value)

@@ -55,6 +55,7 @@ GENERIC_TITLE_ALIAS_WORDS = {
     "russian",
     "spanish",
     "thai",
+    "turkish",
     "vietnamese",
     "cantonese",
     "deutsch",
@@ -65,6 +66,8 @@ GENERIC_TITLE_ALIAS_WORDS = {
     "nederlands",
     "portugues",
     "português",
+    "finnish",
+    "suomi",
     "turkce",
     "türkçe",
     "中文",
@@ -1321,6 +1324,10 @@ def _alias_values(value: Any) -> List[str]:
         for item in value:
             values.extend(_alias_values(item))
     return _unique_keywords(values)
+
+
+def extract_title_aliases(value: Any) -> List[str]:
+    return _alias_values(value)
 
 
 def _looks_translation_metadata(value: Dict[str, Any]) -> bool:
