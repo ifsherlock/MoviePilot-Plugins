@@ -513,17 +513,30 @@ def test_build_search_keywords_filters_native_language_name_aliases():
         "original_language": "en",
         "origin_country": ["US"],
         "translations": [
-            {"name": "French", "english_name": "French", "data": {"title": "Français"}},
-            {"name": "German", "english_name": "German", "data": {"title": "Deutsch"}},
-            {"name": "Dutch", "english_name": "Dutch", "data": {"title": "Nederlands"}},
-            {"name": "Turkish", "english_name": "Turkish", "data": {"title": "Türkçe"}},
+            {"iso_639_1": "fr", "name": "French", "english_name": "French", "data": {"title": "Français"}},
+            {"iso_639_1": "de", "name": "German", "english_name": "German", "data": {"title": "Deutsch"}},
+            {"iso_639_1": "nl", "name": "Dutch", "english_name": "Dutch", "data": {"title": "Nederlands"}},
+            {"iso_639_1": "tr", "name": "Turkish", "english_name": "Turkish", "data": {"title": "Hayalet Sürücü"}},
+            {"iso_639_1": "fi", "name": "suomi", "english_name": "Finnish", "data": {"title": ""}},
         ],
     }
 
     keywords = module.build_search_keywords(media, [media], "movie")
 
     assert keywords[0] == "Ghost Rider 2007"
-    assert all(item not in keywords for item in ["Français 2007", "Deutsch 2007", "Nederlands 2007", "Türkçe 2007"])
+    assert all(
+        item not in keywords
+        for item in [
+            "Français 2007",
+            "Deutsch 2007",
+            "Nederlands 2007",
+            "Türkçe 2007",
+            "Turkish 2007",
+            "Finnish 2007",
+            "suomi 2007",
+        ]
+    )
+    assert "Hayalet Sürücü 2007" in keywords
 
 
 def test_opensubtitles_rejects_generic_english_query_match():

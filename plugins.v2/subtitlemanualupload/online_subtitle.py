@@ -1307,6 +1307,11 @@ def _alias_values(value: Any) -> List[str]:
         alias = _clean_title_alias(value)
         return [alias] if alias else []
     if isinstance(value, dict):
+        if _looks_translation_metadata(value):
+            values.extend(_alias_values(value.get("data")))
+            for key in ["titles", "results", "translations", "alternative_titles", "aliases"]:
+                values.extend(_alias_values(value.get(key)))
+            return _unique_keywords(values)
         for key in ["title", "name", "english_name"]:
             values.extend(_alias_values(value.get(key)))
         for key in ["data", "titles", "results", "translations", "alternative_titles", "aliases"]:
@@ -1316,6 +1321,13 @@ def _alias_values(value: Any) -> List[str]:
         for item in value:
             values.extend(_alias_values(item))
     return _unique_keywords(values)
+
+
+def _looks_translation_metadata(value: Dict[str, Any]) -> bool:
+    if "data" not in value:
+        return False
+    language_keys = {"iso_639_1", "iso_3166_1", "english_name"}
+    return bool(language_keys & set(value.keys()))
 
 
 def _as_list(value: Any) -> List[Any]:
