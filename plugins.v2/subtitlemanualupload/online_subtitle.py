@@ -505,6 +505,15 @@ class AssrtProvider(BaseSubtitleProvider):
             if not sid:
                 continue
             title = self._api_subtitle_title(item)
+            if _looks_like_mojibake(
+                " ".join(
+                    str(item.get(key) or "")
+                    for key in ("native_name", "title", "videoname", "filename", "desc")
+                )
+                or title
+            ):
+                logger.info("[SubtitleManualUpload] 丢弃 ASSRT 乱码字幕结果 id=%s", sid)
+                continue
             language_text = " ".join([title, str(item.get("lang") or ""), str(item.get("desc") or "")])
             language_label = _guess_language_label(language_text)
             season, episode = _episode_from_text(title) or (0, 0)
@@ -1431,6 +1440,20 @@ def _episode_from_text(value: str) -> Optional[Tuple[int, int]]:
         if episode:
             return season, episode
     return None
+
+
+def _looks_like_mojibake(value: str) -> bool:
+    text = str(value or "")
+    if not text:
+        return False
+    if text.count("�") >= 2:
+        return True
+    cjk_mojibake_leads = sum(text.count(ch) for ch in ("æ", "ç", "è", "å"))
+    if cjk_mojibake_leads >= 2:
+        return True
+    latin1_markers = ("Ã", "Â", "â€", "â€™", "â€œ", "â€")
+    marker_count = sum(text.count(marker) for marker in latin1_markers)
+    return marker_count >= 2
 
 
 def _guess_language_label(value: str) -> str:

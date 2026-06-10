@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import queue
 import sys
 import tempfile
@@ -189,3 +190,95 @@ def test_chs_ai_subtitle_is_detected_as_existing_chinese_subtitle():
     assert exists is True
     assert lang == "zh"
     assert filename == "Movie.chs.ai.srt"
+
+
+def test_settings_form_uses_compatible_native_schema():
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+
+    form, defaults = plugin.get_form()
+    encoded = json.dumps(form, ensure_ascii=False)
+
+    assert defaults["openai_model"] == "inclusionAI/Ling-flash-2.0"
+    assert "use_chatgpt_trigger" not in encoded
+    assert "VExpansionPanels" not in encoded
+    assert "v-show" not in encoded
+
+    def walk(node):
+        if isinstance(node, list):
+            for item in node:
+                yield from walk(item)
+            return
+        if not isinstance(node, dict):
+            return
+        yield node
+        yield from walk(node.get("content"))
+
+    for node in walk(form):
+        if node.get("component") == "VRow":
+            for child in node.get("content") or []:
+                assert child.get("component") == "VCol"
+
+
+def test_translation_high_failure_rate_blocks_subtitle_output():
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._skip_chinese = False
+    plugin._enable_batch = True
+    plugin._subtitle_output_mode = "bilingual"
+    subtitles = [types.SimpleNamespace(content=f"line {idx}") for idx in range(10)]
+
+    def fake_translate_parallel(valid_subs):
+        plugin._stats.update(
+            {
+                "translated": 6,
+                "failed": 4,
+                "batch_success": 0,
+                "batch_fail": 1,
+                "line_fallback": 6,
+            }
+        )
+        return valid_subs
+
+    plugin._AutoSubv3__load_srt = lambda _path: subtitles
+    plugin._AutoSubv3__translate_parallel = fake_translate_parallel
+    plugin._AutoSubv3__save_srt = lambda *_args: (_ for _ in ()).throw(
+        AssertionError("should not save subtitle when failure rate is too high")
+    )
+
+    try:
+        plugin._AutoSubv3__translate_zh_subtitle("en", "source.srt", "dest.srt")
+    except module.TranslationQualityException as exc:
+        assert "40%" in str(exc)
+    else:
+        raise AssertionError("high translation failure rate should block subtitle output")
+
+
+def test_translation_failure_rate_at_threshold_allows_subtitle_output():
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._skip_chinese = False
+    plugin._enable_batch = True
+    plugin._subtitle_output_mode = "bilingual"
+    subtitles = [types.SimpleNamespace(content=f"line {idx}") for idx in range(10)]
+    saved = []
+
+    def fake_translate_parallel(valid_subs):
+        plugin._stats.update(
+            {
+                "translated": 7,
+                "failed": 3,
+                "batch_success": 1,
+                "batch_fail": 1,
+                "line_fallback": 7,
+            }
+        )
+        return valid_subs
+
+    plugin._AutoSubv3__load_srt = lambda _path: subtitles
+    plugin._AutoSubv3__translate_parallel = fake_translate_parallel
+    plugin._AutoSubv3__save_srt = lambda path, items: saved.append((path, items))
+
+    plugin._AutoSubv3__translate_zh_subtitle("en", "source.srt", "dest.srt")
+
+    assert saved == [("dest.srt", subtitles)]

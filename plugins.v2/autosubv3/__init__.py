@@ -37,6 +37,11 @@ class UserInterruptException(Exception):
     pass
 
 
+class TranslationQualityException(Exception):
+    """翻译质量未达标，拒绝输出字幕文件"""
+    pass
+
+
 class TaskSource(Enum):
     MANUAL = "manual"
     EVENT = "event"
@@ -92,7 +97,7 @@ class AutoSubv3(_PluginBase):
     # 主题色
     plugin_color = "#2C4F7E"
     # 插件版本
-    plugin_version = "3.5.45"
+    plugin_version = "3.5.46"
     # 插件作者
     plugin_author = "jaysherlock"
     # 作者主页
@@ -103,6 +108,8 @@ class AutoSubv3(_PluginBase):
     plugin_order = 14
     # 可使用的用户级别
     auth_level = 2
+    # 翻译失败率超过该阈值时不输出字幕文件，避免生成大量 [翻译失败]
+    _max_translation_failure_rate = 0.30
 
     # 私有属性
     _tasks: Dict[str, TaskItem] = None
@@ -1466,7 +1473,8 @@ class AutoSubv3(_PluginBase):
 
             for item, trans in zip(batch, translated):
                 item.content = f"{trans}\n{item.content}"
-            self._stats['batch_success'] += len(batch)
+            self._stats['batch_success'] += 1
+            self._stats['translated'] += len(batch)
             return batch
         except UserInterruptException:
             raise
@@ -1487,13 +1495,32 @@ class AutoSubv3(_PluginBase):
             else:
                 item.content = f"{trans}\n{item.content}"
             self._stats['line_fallback'] += 1
+            self._stats['translated'] += 1
             return item
         else:
             if self._subtitle_output_mode == 'chinese_only':
                 item.content = f"[翻译失败]"
             else:
                 item.content = f"[翻译失败]\n{item.content}"
+            self._stats['failed'] += 1
             return item
+
+    def __enforce_translation_quality(self) -> Tuple[int, int, float]:
+        total = int(self._stats.get('total') or 0)
+        if total <= 0:
+            return 0, 0, 0.0
+        translated = int(self._stats.get('translated') or self._stats.get('line_fallback') or 0)
+        translated = max(0, min(translated, total))
+        failed = total - translated
+        failure_rate = failed / total
+        if failure_rate > self._max_translation_failure_rate:
+            message = (
+                f"翻译失败率过高：失败 {failed}/{total} 条（{failure_rate:.0%}），"
+                f"超过阈值 {self._max_translation_failure_rate:.0%}，已停止输出字幕文件"
+            )
+            logger.error(f"[翻译] {message}")
+            raise TranslationQualityException(message)
+        return translated, failed, failure_rate
 
     def __translate_zh_subtitle(self, source_lang: str, source_subtitle: str, dest_subtitle: str,
                                   output_mode: str = None):
@@ -1504,7 +1531,7 @@ class AutoSubv3(_PluginBase):
         :param dest_subtitle: 目标字幕文件路径
         :param output_mode: 输出模式，'bilingual'=双语（翻译+原文），'chinese_only'=纯中文
         """
-        self._stats = {'total': 0, 'batch_success': 0, 'batch_fail': 0, 'line_fallback': 0}
+        self._stats = {'total': 0, 'batch_success': 0, 'batch_fail': 0, 'line_fallback': 0, 'translated': 0, 'failed': 0}
         # 如果检测到的字幕语言是中文，强制使用纯中文字幕模式（双语模式没必要）
         # 但如果"中文视频不翻译"开关已开，主流程会在进入这里之前直接跳过翻译
         if not self._skip_chinese and self.__is_chinese_lang(source_lang):
@@ -1527,6 +1554,7 @@ class AutoSubv3(_PluginBase):
             logger.info(f"[翻译] 逐条模式 - 共 {len(valid_subs)} 条（效果更好，速度较慢）")
             processed = [self.__process_single(valid_subs, item) for item in valid_subs]
         self._raise_if_task_cancelled()
+        translated_count, failed_count, failure_rate = self.__enforce_translation_quality()
         self.__save_srt(dest_subtitle, processed)
 
         # 计算翻译耗时和速度
@@ -1544,6 +1572,7 @@ class AutoSubv3(_PluginBase):
             log_msg += f"，批量成功 {batch_success_count} 批"
             if batch_fail_count > 0:
                 log_msg += f"，批量失败 {batch_fail_count} 批（降级成功 {line_fallback_count} 条）"
+        log_msg += f"，翻译成功 {translated_count} 条，失败 {failed_count} 条，失败率 {failure_rate:.0%}"
 
         logger.info(log_msg)
 
@@ -1653,6 +1682,8 @@ class AutoSubv3(_PluginBase):
         self._stats['batch_success'] = stats["batch_ok"]
         self._stats['batch_fail'] = stats["batch_fail"]
         self._stats['line_fallback'] = stats["line_ok"]
+        self._stats['translated'] = stats["line_ok"]
+        self._stats['failed'] = max(0, total - stats["line_ok"])
         return processed
 
     @staticmethod
@@ -1795,38 +1826,277 @@ class AutoSubv3(_PluginBase):
         """
         拼装插件配置页面，需要返回两块数据：1、页面配置；2、数据结构
         """
-        return [
+        form = [
             {
-                'component': 'VForm',
-                'content': [
-                    {                        'component': 'VRow',                        'content': [                            {                                'component': 'VCol',                                'props': {'cols': 12, 'md': 4},                                'content': [{'component': 'VSwitch', 'props': {'model': 'enabled', 'label': '启用插件', 'color': 'primary'}}]                            },                            {                                'component': 'VCol',                                'props': {'cols': 12, 'md': 4},                                'content': [{'component': 'VSwitch', 'props': {'model': 'send_notify', 'label': '发送通知'}}]                            },                            {                                'component': 'VCol',                                'props': {'cols': 12, 'md': 4},                                'content': [{'component': 'VSwitch', 'props': {'model': 'clear_history', 'label': '清理历史记录'}}]                            }                        ]                    },                    {                        'component': 'VRow',                        'content': [                            {                                'component': 'VCol',                                'props': {'cols': 12},                                'content': [{                                    'component': 'VTextarea',                                    'props': {                                        'model': 'path_whitelist',                                        'label': '监控路径（每行一个）',                                        'rows': 3,                                        'placeholder': '/mnt/media/movies\n/downloads',                                        'hint': '目录变化时自动触发字幕生成'                                    }                                }]                            }                        ]                    },                    {                        'component': 'VRow',
-                        'content': [
+                "component": "VForm",
+                "content": [
+                    {
+                        "component": "VRow",
+                        "content": [
                             {
-                                'component': 'VCol',
-                                'props': {'cols': 12, 'md': 3},
-                                'content': [{'component': 'VSwitch', 'props': {'model': 'process_new_only', 'label': '仅处理新增视频', 'hint': '关闭则处理路径下所有视频'}}]
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [{"component": "VSwitch", "props": {"model": "enabled", "label": "启用插件", "color": "primary"}}],
                             },
                             {
-                                'component': 'VCol',
-                                'props': {'cols': 12, 'md': 3},
-                                'content': [{'component': 'VSwitch', 'props': {'model': 'run_now', 'label': '手动执行一次', 'color': 'secondary'}}]
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [{"component": "VSwitch", "props": {"model": "send_notify", "label": "发送通知"}}],
                             },
                             {
-                                'component': 'VCol',
-                                'props': {'cols': 12, 'md': 3},
-                                'content': [{'component': 'VSwitch', 'props': {'model': 'translate_zh', 'label': '外语翻译成中文', 'hint': '使用openai大模型翻译'}}]
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [{"component": "VSwitch", "props": {"model": "clear_history", "label": "清理历史记录"}}],
                             },
-                            {
-                                'component': 'VCol',
-                                'props': {'cols': 12, 'md': 3},
-                                'content': [{'component': 'VSwitch', 'props': {'model': 'skip_chinese', 'label': '中文视频不翻译', 'hint': 'Whisper检测到中文时跳过翻译并记录，下次自动跳过'}}]
-                            }
-                        ]
+                        ],
                     },
-                    {'component': 'VRow',                        'props': {'v-show': 'run_now'},                        'content': [                            {                                'component': 'VCol',                                'props': {'cols': 12},                                'content': [{                                    'component': 'VTextarea',                                    'props': {                                        'model': 'path_list',                                        'label': '媒体路径（手动执行时使用）',                                        'rows': 3,                                        'placeholder': '绝对路径，每行一个，支持文件和文件夹'                                    }                                }]                            }                        ]                    },                    {                        'component': 'VExpansionPanels',                        'props': {'variant': 'accordion', 'multiple': True},                        'content': [                            {                                'component': 'VExpansionPanel',                                'content': [                                    {                                        'component': 'VExpansionPanelTitle',                                        'text': 'Whisper音轨转字幕设置'                                    },                                    {                                        'component': 'VExpansionPanelText',                                        'content': [                                            {                                                'component': 'VRow',                                                'content': [                                                    {                                                        'component': 'VCol',                                                        'props': {'cols': 12, 'md': 6},                                                        'content': [{'component': 'VSwitch', 'props': {'model': 'enable_asr', 'label': '允许ASR生成字幕'}}]                                                    },                                                    {                                                        'component': 'VCol',                                                        'props': {'cols': 12, 'md': 6},                                                        'content': [{'component': 'VSwitch', 'props': {'model': 'auto_detect_language', 'label': '自动检测语言', 'hint': '由whisper自动识别，而非视频元数据'}}]                                                    }                                                ]                                            },                                            {                                                'component': 'VRow',                                                'content': [                                                    {                                                        'component': 'VCol',                                                        'props': {'cols': 12, 'md': 6},                                                        'content': [{                                                            'component': 'VSelect',                                                            'props': {                                                                'model': 'faster_whisper_model',                                                                'label': 'Whisper模型',
-                                                                'hint': 'Whisper模型(自选,效果越好,时间越久)',                                                                'items': [                                                                    'tiny', 'base', 'small', 'medium', 'large-v3',                                                                    {'title': 'large-v3-turbo', 'value': 'deepdml/faster-whisper-large-v3-turbo-ct2'},                                                                ]                                                            }                                                        }]                                                    },                                                    {                                                        'component': 'VCol',                                                        'props': {'cols': 12, 'md': 6},                                                        'content': [{                                                            'component': 'VSelect',                                                            'props': {                                                                'model': 'subtitle_output_mode',                                                                'label': '字幕输出模式',                                                                'items': [                                                                    {'title': '双语字幕（翻译+原文）', 'value': 'bilingual'},                                                                    {'title': '纯中文字幕', 'value': 'chinese_only'}                                                                ]                                                            }                                                        }]                                                    }                                                ]                                            },                                            {                                                'component': 'VRow',                                                'content': [                                                    {                                                        'component': 'VCol',                                                        'props': {'cols': 12, 'md': 4},                                                        'content': [{'component': 'VTextField', 'props': {'model': 'max_segment_duration', 'label': '每段字幕最大时长（秒）', 'placeholder': '8'}}]                                                    },                                                    {                                                        'component': 'VCol',                                                        'props': {'cols': 12, 'md': 4},                                                        'content': [{'component': 'VTextField', 'props': {'model': 'max_segment_chars', 'label': '每段字幕最大字符数', 'placeholder': '50', 'default': '50'}}]                                                    },                                                    {                                                        'component': 'VCol',                                                        'props': {'cols': 12, 'md': 4},                                                        'content': [{'component': 'VTextField', 'props': {'model': 'file_size', 'label': '文件最小大小（MB）', 'placeholder': '默认10'}}]                                                    }                                                ]                                            },                                            {                                                'component': 'VRow',                                                'content': [                                                    {                                                        'component': 'VCol',                                                        'props': {'cols': 12, 'md': 6},                                                        'content': [{                                                            'component': 'VSelect',                                                            'props': {                                                                'model': 'translate_preference',                                                                'label': '字幕源语言偏好',                                                                'items': [                                                                    {'title': '仅英文', 'value': 'english_only'},                                                                    {'title': '英文优先', 'value': 'english_first'},                                                                    {'title': '原音优先', 'value': 'origin_first'}                                                                ]                                                            }                                                        }]                                                    },                                                    {                                                        'component': 'VCol',                                                        'props': {'cols': 12, 'md': 6},                                                        'content': [{'component': 'VSwitch', 'props': {'model': 'proxy', 'label': '使用代理下载模型', 'hint': '需配置MP PROXY环境变量'}}]                                                    }                                                ]                                            }                                        ]                                    }                                ]                            },                            {                                'component': 'VExpansionPanel',                                'props': {'v-show': 'translate_zh'},                                'content': [                                    {                                        'component': 'VExpansionPanelTitle',                                        'text': '翻译参数设置'                                    },                                    {                                        'component': 'VExpansionPanelText',                                        'content': [                                            {                                                'component': 'VRow',                                                'content': [                                                    {                                                        'component': 'VCol',                                                        'props': {'cols': 12, 'md': 4},                                                        'content': [{'component': 'VTextField', 'props': {'model': 'context_window', 'label': '上下文窗口大小', 'placeholder': '5'}}]                                                    },                                                    {                                                        'component': 'VCol',                                                        'props': {'cols': 12, 'md': 4},                                                        'content': [{'component': 'VTextField', 'props': {'model': 'max_retries', 'label': 'LLM请求重试次数', 'placeholder': '3'}}]                                                    },                                                    {                                                        'component': 'VCol',                                                        'props': {'cols': 12, 'md': 4},                                                        'content': [{'component': 'VSwitch', 'props': {'model': 'enable_batch', 'label': '启用批量翻译', 'hint': '开启：速度更快，走批量提示词；关闭：逐条翻译，效果更好但更慢'}}]                                                    }                                                ]                                            },                                            {                                                'component': 'VRow',                                                'content': [                                                    {                                                        'component': 'VCol',                                                        'props': {'cols': 12, 'md': 6, 'v-show': 'enable_batch'},                                                        'content': [{'component': 'VTextField', 'props': {'model': 'batch_size', 'label': '每批翻译行数', 'placeholder': '20 (建议不超过30)'}}]                                                    },                                                    {                                                        'component': 'VCol',                                                        'props': {'cols': 12, 'md': 6, 'v-show': 'enable_batch'},                                                        'content': [{'component': 'VTextField', 'props': {'model': 'parallel_workers', 'label': '并发线程数', 'placeholder': '5', 'default': '5'}}]                                                    }                                                ]                                            }                                        ]                                    }                                ]                            },                            {                                'component': 'VExpansionPanel',                                'props': {'v-show': 'translate_zh'},                                'content': [                                    {                                        'component': 'VExpansionPanelTitle',                                        'text': '翻译模型api设置'                                    },                                    {                                        'component': 'VExpansionPanelText',                                        'content': [                                            {                                                'component': 'VRow',                                                'content': [                                                    {                                                        'component': 'VCol',                                                        'props': {'v-show': False, 'cols': 12, 'md': 4},                                                        'content': [{'component': 'VSwitch', 'props': {'model': 'use_chatgpt', 'label': '复用ChatGPT插件配置'}}]                                                    },                                                    {                                                        'component': 'VTextField',                                                        'props': {                                                            'model': 'use_chatgpt_trigger',                                                            'class': 'd-none',                                                            'text': 'trigger',                                                            'change': 'use_chatgpt_trigger = use_chatgpt ? 1 : 0'                                                        }                                                    },                                                    {                                                        'component': 'VCol',                                                        'props': {'cols': 12, 'md': 4},                                                        'content': [{'component': 'VSwitch', 'props': {'model': 'openai_proxy', 'label': '使用代理服务器'}}]                                                    },                                                    {                                                        'component': 'VCol',                                                        'props': {'cols': 12, 'md': 4},                                                        'content': [{'component': 'VSwitch', 'props': {'model': 'compatible', 'label': '兼容模式'}}]                                                    }                                                ]                                            },                                            {                                                'component': 'VRow',                                                'content': [                                                    {                                                        'component': 'VCol',                                                        'props': {'cols': 12, 'md': 4},                                                        'content': [{'component': 'VTextField', 'props': {'model': 'openai_url', 'label': 'API URL', 'placeholder': 'https://api.siliconflow.cn'}}]                                                    },                                                    {                                                        'component': 'VCol',                                                        'props': {'cols': 12, 'md': 4},                                                        'content': [{'component': 'VTextField', 'props': {'model': 'openai_key', 'label': 'API密钥', 'placeholder': 'sk-xxx'}}]                                                    },                                                    {                                                        'component': 'VCol',                                                        'props': {'cols': 12, 'md': 4},                                                        'content': [{'component': 'VTextField', 'props': {'model': 'openai_model', 'label': '自定义模型', 'placeholder': 'inclusionAI/Ling-mini-2.0'}}]                                                    }                                                ]                                            }                                        ]                                    }                                ]                            }                        ]                    },                    {                        'component': 'VRow',                        'content': [                            {                                'component': 'VCol',                                'props': {'cols': 12},                                'content': [{                                    'component': 'VAlert',                                    'props': {'type': 'success', 'variant': 'tonal'},                                    'content': [                                        {                                            'component': 'a',                                            'props': {'href': 'https://github.com/ifsherlock/MoviePilot-Plugins/blob/main/plugins.v2/autosubv3/README.md', 'target': '_blank'},                                            'content': [{'component': 'u', 'text': '插件说明'}]                                        },                                        {                                            'component': 'span',                                            'text': ' | 详细说明：'                                        },                                        {                                            'component': 'a',                                            'props': {'href': 'https://github.com/ifsherlock/MoviePilot-Plugins/blob/main/plugins.v2/autosubv3/README.md', 'target': '_blank'},                                            'content': [{'component': 'u', 'text': 'README'}]                                        }                                    ]                                }]                            }                        ]                    }                ]
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12},
+                                "content": [
+                                    {
+                                        "component": "VTextarea",
+                                        "props": {
+                                            "model": "path_whitelist",
+                                            "label": "监控路径（每行一个）",
+                                            "rows": 3,
+                                            "placeholder": "/mnt/media/movies\n/downloads",
+                                            "hint": "目录变化时自动触发字幕生成",
+                                        },
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 3},
+                                "content": [{"component": "VSwitch", "props": {"model": "process_new_only", "label": "仅处理新增视频", "hint": "关闭则处理路径下所有视频"}}],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 3},
+                                "content": [{"component": "VSwitch", "props": {"model": "run_now", "label": "手动执行一次", "color": "secondary"}}],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 3},
+                                "content": [{"component": "VSwitch", "props": {"model": "translate_zh", "label": "外语翻译成中文", "hint": "使用 OpenAI 兼容大模型翻译"}}],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 3},
+                                "content": [{"component": "VSwitch", "props": {"model": "skip_chinese", "label": "中文视频不翻译", "hint": "Whisper 检测到中文时跳过翻译"}}],
+                            },
+                        ],
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12},
+                                "content": [
+                                    {
+                                        "component": "VTextarea",
+                                        "props": {
+                                            "model": "path_list",
+                                            "label": "媒体路径（手动执行时使用）",
+                                            "rows": 3,
+                                            "placeholder": "绝对路径，每行一个，支持文件和文件夹",
+                                        },
+                                    }
+                                ],
+                            }
+                        ],
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VSelect",
+                                        "props": {
+                                            "model": "faster_whisper_model",
+                                            "label": "Whisper 模型",
+                                            "hint": "模型越大效果越好，耗时越久",
+                                            "items": [
+                                                "tiny",
+                                                "base",
+                                                "small",
+                                                "medium",
+                                                "large-v3",
+                                                {"title": "large-v3-turbo", "value": "deepdml/faster-whisper-large-v3-turbo-ct2"},
+                                            ],
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VSelect",
+                                        "props": {
+                                            "model": "subtitle_output_mode",
+                                            "label": "字幕输出模式",
+                                            "items": [
+                                                {"title": "双语字幕（翻译+原文）", "value": "bilingual"},
+                                                {"title": "纯中文字幕", "value": "chinese_only"},
+                                            ],
+                                        },
+                                    }
+                                ],
+                            },
+                        ],
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [{"component": "VTextField", "props": {"model": "max_segment_duration", "label": "每段字幕最大时长（秒）", "placeholder": "8"}}],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [{"component": "VTextField", "props": {"model": "max_segment_chars", "label": "每段字幕最大字符数", "placeholder": "50"}}],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [{"component": "VTextField", "props": {"model": "file_size", "label": "文件最小大小（MB）", "placeholder": "默认10"}}],
+                            },
+                        ],
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [{"component": "VSwitch", "props": {"model": "enable_asr", "label": "允许 ASR 生成字幕"}}],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [{"component": "VSwitch", "props": {"model": "auto_detect_language", "label": "自动检测语言", "hint": "由 Whisper 自动识别，而非视频元数据"}}],
+                            },
+                        ],
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VSelect",
+                                        "props": {
+                                            "model": "translate_preference",
+                                            "label": "字幕源语言偏好",
+                                            "items": [
+                                                {"title": "仅英文", "value": "english_only"},
+                                                {"title": "英文优先", "value": "english_first"},
+                                                {"title": "原音优先", "value": "origin_first"},
+                                            ],
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [{"component": "VSwitch", "props": {"model": "proxy", "label": "使用代理下载模型", "hint": "需配置 MP PROXY 环境变量"}}],
+                            },
+                        ],
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [{"component": "VTextField", "props": {"model": "context_window", "label": "上下文窗口大小", "placeholder": "5"}}],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [{"component": "VTextField", "props": {"model": "max_retries", "label": "LLM 请求重试次数", "placeholder": "3"}}],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [{"component": "VSwitch", "props": {"model": "enable_batch", "label": "启用批量翻译", "hint": "开启后速度更快"}}],
+                            },
+                        ],
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [{"component": "VTextField", "props": {"model": "batch_size", "label": "每批翻译行数", "placeholder": "20 (建议不超过30)"}}],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [{"component": "VTextField", "props": {"model": "parallel_workers", "label": "并发线程数", "placeholder": "5"}}],
+                            },
+                        ],
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [{"component": "VSwitch", "props": {"model": "openai_proxy", "label": "使用代理服务器"}}],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [{"component": "VSwitch", "props": {"model": "compatible", "label": "兼容模式"}}],
+                            },
+                        ],
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [{"component": "VTextField", "props": {"model": "openai_url", "label": "API URL", "placeholder": "https://api.siliconflow.cn"}}],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [{"component": "VTextField", "props": {"model": "openai_key", "label": "API 密钥", "placeholder": "sk-xxx"}}],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [{"component": "VTextField", "props": {"model": "openai_model", "label": "自定义模型", "placeholder": "inclusionAI/Ling-mini-2.0"}}],
+                            },
+                        ],
+                    },
+                ],
             }
-        ], {
+        ]
+        defaults = {
             "enabled": False,
             "clear_history": False,
             "send_notify": False,
@@ -1845,7 +2115,7 @@ class AutoSubv3(_PluginBase):
             "max_segment_chars": 50,
             "faster_whisper_model": "base",
             "proxy": True,
-                        "openai_proxy": False,
+            "openai_proxy": False,
             "compatible": False,
             "openai_url": "https://api.siliconflow.cn",
             "openai_key": None,
@@ -1858,7 +2128,7 @@ class AutoSubv3(_PluginBase):
             "batch_size": 20,
             "parallel_workers": 10,
         }
-
+        return form, defaults
     def get_api(self) -> List[Dict[str, Any]]:
         return [
             {

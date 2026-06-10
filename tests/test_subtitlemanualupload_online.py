@@ -126,6 +126,39 @@ def test_assrt_provider_uses_official_api_when_key_exists():
     assert results[0].note == "通过 ASSRT 官方 API 搜索"
 
 
+def test_assrt_provider_discards_mojibake_results():
+    module = load_online_module()
+    provider = module.AssrtProvider(FakeFetcher(), api_key="test-key")
+
+    def fake_api_json(path, params):
+        return {
+            "status": 0,
+            "sub": {
+                "subs": [
+                    {
+                        "id": 652400,
+                        "native_name": "é­”æˆ’III/æŒ‡çŽ¯çŽ‹III :çŽ‹è€…å½’æ?¥",
+                        "subtype": "Subrip(srt)",
+                        "lang": "chi",
+                    },
+                    {
+                        "id": 652401,
+                        "native_name": "指环王III：王者归来 中文字幕",
+                        "subtype": "Subrip(srt)",
+                        "lang": "chi",
+                    },
+                ]
+            },
+        }
+
+    provider._api_json = fake_api_json
+
+    results = provider.search("指环王3", [{"title": "指环王3", "year": 2003}], "movie")
+
+    assert [item.result_id for item in results] == ["652401"]
+    assert results[0].title == "指环王III：王者归来 中文字幕"
+
+
 def test_opensubtitles_search_returns_multilingual_api_results():
     module = load_online_module()
     provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key")
