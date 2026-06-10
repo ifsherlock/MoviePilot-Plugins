@@ -38,6 +38,71 @@ DEFAULT_ASSRT_API_URL = "https://api.assrt.net"
 DEFAULT_OPENSUBTITLES_API_URL = "https://api.opensubtitles.com/api/v1"
 OPENSUBTITLES_SEARCH_LANGUAGES = "zh-cn,zh-tw,ze,en,ja,ko"
 INTERACTIVE_DOWNLOAD_EVENT_TIMEOUT_MS = 12000
+GENERIC_TITLE_ALIAS_WORDS = {
+    "arabic",
+    "chinese",
+    "danish",
+    "dutch",
+    "english",
+    "french",
+    "german",
+    "italian",
+    "italiano",
+    "japanese",
+    "korean",
+    "mandarin",
+    "portuguese",
+    "russian",
+    "spanish",
+    "thai",
+    "vietnamese",
+    "cantonese",
+    "中文",
+    "国语",
+    "國語",
+    "普通话",
+    "普通話",
+    "粤语",
+    "粵語",
+    "英文",
+    "英语",
+    "英語",
+    "日文",
+    "日语",
+    "日語",
+    "日本語",
+    "韩文",
+    "韓文",
+    "韩语",
+    "韓語",
+}
+GENERIC_TITLE_ALIAS_CODES = {
+    "ar",
+    "cn",
+    "cmn",
+    "da",
+    "de",
+    "en",
+    "eng",
+    "es",
+    "fr",
+    "it",
+    "ita",
+    "ja",
+    "jpn",
+    "ko",
+    "kor",
+    "pt",
+    "ru",
+    "th",
+    "vi",
+    "yue",
+    "zh",
+    "zh-cn",
+    "zh-hans",
+    "zh-hant",
+    "zh-tw",
+}
 
 
 @dataclass
@@ -1101,7 +1166,7 @@ def _media_title_aliases(media: Dict[str, Any], targets: List[Dict[str, Any]]) -
         if not isinstance(source, dict):
             continue
         for field in ["title", "name", "en_title", "original_title", "original_name", "title_en", "name_en", "english_title"]:
-            value = _clean_keyword(source.get(field))
+            value = _clean_title_alias(source.get(field))
             if value:
                 values.append(value)
         for field in ["aliases", "alternative_titles", "translations", "tmdb_aliases"]:
@@ -1194,7 +1259,7 @@ def _title_aliases(media: Dict[str, Any], targets: List[Dict[str, Any]]) -> List
             "filename",
             "basename",
         ]:
-            value = _clean_keyword(source.get(field))
+            value = _clean_title_alias(source.get(field))
             if value:
                 values.append(value)
         for field in ["aliases", "alternative_titles", "translations", "tmdb_aliases"]:
@@ -1208,7 +1273,7 @@ def _original_titles(media: Dict[str, Any], targets: List[Dict[str, Any]]) -> Li
         if not isinstance(source, dict):
             continue
         for field in ["original_title", "original_name"]:
-            value = _clean_keyword(source.get(field))
+            value = _clean_title_alias(source.get(field))
             if value:
                 values.append(value)
     return _unique_keywords(values)
@@ -1223,16 +1288,13 @@ def _alias_values(value: Any) -> List[str]:
             parsed = None
         if parsed is not None:
             return _alias_values(parsed)
-        return [_clean_keyword(value)] if _clean_keyword(value) else []
+        alias = _clean_title_alias(value)
+        return [alias] if alias else []
     if isinstance(value, dict):
-        for key in ["title", "name", "english_name", "data"]:
+        for key in ["title", "name", "english_name"]:
             values.extend(_alias_values(value.get(key)))
-        data_items = value.get("data")
-        if not isinstance(data_items, list):
-            data_items = []
-        for item in value.values():
-            if item not in data_items:
-                values.extend(_alias_values(item))
+        for key in ["data", "titles", "results", "translations", "alternative_titles", "aliases"]:
+            values.extend(_alias_values(value.get(key)))
         return _unique_keywords(values)
     if isinstance(value, list):
         for item in value:
@@ -1650,7 +1712,7 @@ def _series_title_aliases(targets: List[Dict[str, Any]]) -> List[str]:
     values: List[str] = []
     for target in targets or []:
         for field in ["title", "en_title", "original_title", "original_name", "title_en", "name_en", "english_title"]:
-            value = _clean_keyword(target.get(field))
+            value = _clean_title_alias(target.get(field))
             if value:
                 values.append(value)
         for field in ["aliases", "alternative_titles", "translations", "tmdb_aliases"]:
@@ -1684,6 +1746,8 @@ def _keyword_match_parts(value: str) -> List[str]:
     for raw in re.split(r"[\s._\-:：,，]+", (value or "").lower()):
         part = raw.strip()
         if not part:
+            continue
+        if _is_generic_language_alias(part):
             continue
         if re.fullmatch(r"(19\d{2}|20\d{2})", part):
             continue
@@ -1775,6 +1839,50 @@ def _clean_keyword(value: Any) -> str:
     return re.sub(r"\s+", " ", str(value or "").replace(".", " ")).strip()
 
 
+def _clean_title_alias(value: Any) -> str:
+    alias = _clean_keyword(value)
+    if not alias or _is_generic_language_alias(alias):
+        return ""
+    if _looks_english_title(alias):
+        words = [
+            item
+            for item in re.split(r"\s+", _normalize_title_for_match(alias))
+            if item and not re.fullmatch(r"(?:19\d{2}|20\d{2}|s\d{1,2}e\d{1,3}|s\d{1,2})", item)
+        ]
+        if len(words) == 1 and len(words[0]) < 2:
+            return ""
+    return alias
+
+
+def _is_generic_language_alias(value: Any) -> bool:
+    alias = _clean_keyword(value).lower()
+    if not alias:
+        return True
+    normalized = _normalize_title_for_match(alias)
+    if not normalized:
+        return True
+    if alias in GENERIC_TITLE_ALIAS_WORDS or alias in GENERIC_TITLE_ALIAS_CODES:
+        return True
+    tokens = [item for item in re.split(r"\s+", normalized) if item]
+    if not tokens:
+        return True
+    generic_tokens = GENERIC_TITLE_ALIAS_WORDS | GENERIC_TITLE_ALIAS_CODES | {
+        "audio",
+        "dub",
+        "dubbed",
+        "forced",
+        "hi",
+        "sdh",
+        "sub",
+        "subs",
+        "subtitle",
+        "subtitles",
+    }
+    if all(item in generic_tokens for item in tokens):
+        return True
+    return len(tokens) == 1 and tokens[0].isalpha() and len(tokens[0]) < 2
+
+
 def _unique_keywords(values: Iterable[str]) -> List[str]:
     result: List[str] = []
     seen = set()
@@ -1794,7 +1902,7 @@ def _english_search_titles(media: Dict[str, Any], targets: List[Dict[str, Any]])
         if not isinstance(source, dict):
             continue
         for field in ["en_title", "original_title", "original_name", "title_en", "name_en"]:
-            value = _clean_keyword(source.get(field))
+            value = _clean_title_alias(source.get(field))
             if value and not _is_cjk_text(value):
                 values.append(value)
     return _unique_keywords(values)

@@ -386,6 +386,92 @@ def test_build_search_keywords_uses_region_aware_tmdb_titles():
     assert "Kowloon Generic Romance S01E04" in keywords
 
 
+def test_build_search_keywords_filters_language_name_aliases():
+    module = load_online_module()
+    movie_media = {
+        "media_type": "movie",
+        "title": "勇敢的心",
+        "year": "1995",
+        "en_title": "English",
+        "original_title": "Braveheart",
+        "original_language": "en",
+        "origin_country": ["US"],
+        "translations": [
+            {
+                "name": "English",
+                "english_name": "English",
+                "data": {"title": "Braveheart"},
+            }
+        ],
+    }
+
+    movie_keywords = module.build_search_keywords(movie_media, [movie_media], "movie")
+
+    assert "English 1995" not in movie_keywords
+    assert movie_keywords[0] == "Braveheart 1995"
+
+    tv_media = {
+        "media_type": "tv",
+        "title": "企鹅人",
+        "en_title": "English",
+        "original_title": "The Penguin",
+        "original_language": "en",
+        "origin_country": ["US"],
+        "year": "2024",
+    }
+    tv_target = {**tv_media, "season": 1, "episode": 8, "basename": "企鹅人 - S01E08 - 第 8 集"}
+
+    tv_keywords = module.build_search_keywords(tv_media, [tv_target], "episode")
+
+    assert "English S01E08" not in tv_keywords
+    assert tv_keywords[0] == "The Penguin S01E08"
+
+
+def test_opensubtitles_rejects_generic_english_query_match():
+    module = load_online_module()
+    provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key")
+
+    def fake_api_json(path, params, *, method="GET"):
+        return {
+            "data": [
+                {
+                    "attributes": {
+                        "language": "en",
+                        "release": "I Dont Speak English.1995.English",
+                        "feature_details": {
+                            "feature_type": "Movie",
+                            "year": 1995,
+                            "title": "I Dont Speak English",
+                            "tmdb_id": 12345,
+                        },
+                        "upload_date": "1996-01-01T00:00:00Z",
+                        "files": [{"file_id": 1, "file_name": "I Dont Speak English.1995.English.srt"}],
+                    }
+                }
+            ]
+        }
+
+    provider._api_json = fake_api_json
+
+    results = provider.search(
+        "English 1995",
+        [
+            {
+                "media_type": "movie",
+                "title": "勇敢的心",
+                "en_title": "English",
+                "original_title": "Braveheart",
+                "filename": "勇敢的心 (1995) - 480p.strm",
+                "year": "1995",
+                "tmdb_id": 197,
+            }
+        ],
+        "movie",
+    )
+
+    assert results == []
+
+
 def test_query_plan_records_region_and_query_source():
     module = load_online_module()
 

@@ -18,6 +18,71 @@ from urllib.request import Request, urlopen
 
 SAMPLE_SEED = 20260610
 DEFAULT_LANGUAGES = "zh-cn,zh-tw,ze,en,ja,ko"
+GENERIC_TITLE_ALIAS_WORDS = {
+    "arabic",
+    "chinese",
+    "danish",
+    "dutch",
+    "english",
+    "french",
+    "german",
+    "italian",
+    "italiano",
+    "japanese",
+    "korean",
+    "mandarin",
+    "portuguese",
+    "russian",
+    "spanish",
+    "thai",
+    "vietnamese",
+    "cantonese",
+    "中文",
+    "国语",
+    "國語",
+    "普通话",
+    "普通話",
+    "粤语",
+    "粵語",
+    "英文",
+    "英语",
+    "英語",
+    "日文",
+    "日语",
+    "日語",
+    "日本語",
+    "韩文",
+    "韓文",
+    "韩语",
+    "韓語",
+}
+GENERIC_TITLE_ALIAS_CODES = {
+    "ar",
+    "cn",
+    "cmn",
+    "da",
+    "de",
+    "en",
+    "eng",
+    "es",
+    "fr",
+    "it",
+    "ita",
+    "ja",
+    "jpn",
+    "ko",
+    "kor",
+    "pt",
+    "ru",
+    "th",
+    "vi",
+    "yue",
+    "zh",
+    "zh-cn",
+    "zh-hans",
+    "zh-hant",
+    "zh-tw",
+}
 
 PROBLEM_SAMPLES = [
     {
@@ -87,6 +152,55 @@ def clean_query(value: Any) -> str:
     return re.sub(r"\s+", " ", text(value).replace(".", " ")).strip()
 
 
+def normalize_title_for_match(value: Any) -> str:
+    normalized = str(value or "").lower()
+    normalized = re.sub(r"[\[\]【】()（）{}<>《》:：,，.!！?？'\"“”‘’._\-]+", " ", normalized)
+    normalized = re.sub(r"\b(?:1080p|2160p|720p|bluray|web-dl|webrip|hdr|x264|x265|h264|h265)\b", " ", normalized)
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def is_generic_language_alias(value: Any) -> bool:
+    alias = clean_query(value).lower()
+    if not alias:
+        return True
+    normalized = normalize_title_for_match(alias)
+    if not normalized:
+        return True
+    if alias in GENERIC_TITLE_ALIAS_WORDS or alias in GENERIC_TITLE_ALIAS_CODES:
+        return True
+    tokens = [item for item in re.split(r"\s+", normalized) if item]
+    generic_tokens = GENERIC_TITLE_ALIAS_WORDS | GENERIC_TITLE_ALIAS_CODES | {
+        "audio",
+        "dub",
+        "dubbed",
+        "forced",
+        "hi",
+        "sdh",
+        "sub",
+        "subs",
+        "subtitle",
+        "subtitles",
+    }
+    if tokens and all(item in generic_tokens for item in tokens):
+        return True
+    return len(tokens) == 1 and tokens[0].isalpha() and len(tokens[0]) < 2
+
+
+def clean_title_alias(value: Any) -> str:
+    alias = clean_query(value)
+    if not alias or is_generic_language_alias(alias):
+        return ""
+    if looks_english(alias):
+        words = [
+            item
+            for item in re.split(r"\s+", normalize_title_for_match(alias))
+            if item and not re.fullmatch(r"(?:19\d{2}|20\d{2}|s\d{1,2}e\d{1,3}|s\d{1,2})", item)
+        ]
+        if len(words) == 1 and len(words[0]) < 2:
+            return ""
+    return alias
+
+
 def unique(values: Iterable[Any]) -> List[str]:
     result: List[str] = []
     seen = set()
@@ -149,12 +263,13 @@ def alias_values(value: Any) -> List[str]:
                 return alias_values(json.loads(raw))
             except Exception:
                 pass
-        return [raw]
+        alias = clean_title_alias(raw)
+        return [alias] if alias else []
     if isinstance(value, dict):
-        for key in ["title", "name", "english_name", "data"]:
+        for key in ["title", "name", "english_name"]:
             values.extend(alias_values(value.get(key)))
-        for item in value.values():
-            values.extend(alias_values(item))
+        for key in ["data", "titles", "results", "translations", "alternative_titles", "aliases"]:
+            values.extend(alias_values(value.get(key)))
     elif isinstance(value, list):
         for item in value:
             values.extend(alias_values(item))
@@ -441,7 +556,8 @@ def run_sample(args: argparse.Namespace) -> List[Dict[str, Any]]:
             queries = strategy(entry)[: args.max_queries]
             strategy_row = {**base, "sample_index": index, "strategy": strategy_name, "queries": queries, "responses": []}
             for query in queries:
-                response_item = {"query": query, "languages": args.languages, "results": [], "error": ""}
+                response_item = {"query": query, "languages": args.languages, "elapsed_ms": 0, "results": [], "error": ""}
+                started_at = time.perf_counter()
                 try:
                     payload = opensubtitles_get(args.api_url, api_key, query, args.languages, args.limit, args.user_agent)
                     data = payload.get("data") if isinstance(payload, dict) else []
@@ -456,6 +572,8 @@ def run_sample(args: argparse.Namespace) -> List[Dict[str, Any]]:
                     response_item["error"] = f"URL error: {exc.reason}"
                 except Exception as exc:
                     response_item["error"] = str(exc)
+                finally:
+                    response_item["elapsed_ms"] = int((time.perf_counter() - started_at) * 1000)
                 strategy_row["responses"].append(response_item)
                 if args.sleep:
                     time.sleep(args.sleep)
@@ -483,6 +601,7 @@ def write_csv(rows: List[Dict[str, Any]], path: Path) -> None:
         "strategy",
         "query",
         "languages",
+        "elapsed_ms",
         "rank",
         "result_title",
         "result_language",
@@ -514,6 +633,7 @@ def write_csv(rows: List[Dict[str, Any]], path: Path) -> None:
                             "strategy": row.get("strategy"),
                             "query": response.get("query"),
                             "languages": response.get("languages"),
+                            "elapsed_ms": response.get("elapsed_ms"),
                             "error": response.get("error"),
                         }
                     )
@@ -531,6 +651,7 @@ def write_csv(rows: List[Dict[str, Any]], path: Path) -> None:
                             "strategy": row.get("strategy"),
                             "query": response.get("query"),
                             "languages": response.get("languages"),
+                            "elapsed_ms": response.get("elapsed_ms"),
                             "rank": rank,
                             "result_title": item.get("title"),
                             "result_language": item.get("language"),
