@@ -90,7 +90,8 @@ function save() {
     <VToolbar density="comfortable" color="transparent">
       <div class="text-h6 ms-3">AI字幕生成配置</div>
       <VSpacer />
-      <VBtn icon="mdi-content-save" variant="text" color="primary" :loading="saving" @click="save" />
+      <VBtn variant="text" prepend-icon="mdi-format-list-bulleted" @click="emit('switch')">查看任务</VBtn>
+      <VBtn color="primary" variant="tonal" prepend-icon="mdi-content-save" :loading="saving" @click="save">保存</VBtn>
       <VBtn icon="mdi-close" variant="text" @click="emit('close')" />
     </VToolbar>
     <VDivider />
@@ -246,13 +247,6 @@ function save() {
       </section>
     </div>
 
-    <VDivider />
-    <VCardActions>
-      <VBtn variant="text" @click="emit('switch')">查看任务</VBtn>
-      <VSpacer />
-      <VBtn variant="text" @click="emit('close')">关闭</VBtn>
-      <VBtn color="primary" variant="tonal" :loading="saving" @click="save">保存</VBtn>
-    </VCardActions>
   </div>
 </template>
 

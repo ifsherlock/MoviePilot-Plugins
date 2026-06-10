@@ -1,7 +1,7 @@
 {
   "name": "moviepilot-autosubv3-plugin",
   "private": true,
-  "version": "3.5.48",
+  "version": "3.5.49",
   "type": "module",
   "scripts": {
     "build": "vite build"
