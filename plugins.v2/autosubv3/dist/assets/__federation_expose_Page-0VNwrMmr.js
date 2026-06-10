@@ -1,12 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-
-const _export_sfc = (sfc, props) => {
-  const target = sfc.__vccOpts || sfc;
-  for (const [key, val] of props) {
-    target[key] = val;
-  }
-  return target;
-};
+import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 
 const {createElementVNode:_createElementVNode,toDisplayString:_toDisplayString,resolveComponent:_resolveComponent,createVNode:_createVNode,createTextVNode:_createTextVNode,withCtx:_withCtx,openBlock:_openBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,renderList:_renderList,Fragment:_Fragment,createElementBlock:_createElementBlock,normalizeClass:_normalizeClass} = await importShared('vue');
 
@@ -64,6 +57,7 @@ const emit = __emit;
 const pluginBase = computed(() => `plugin/${props.pluginId || 'AutoSubv3'}`);
 const loading = ref(false);
 const operating = ref(false);
+const operation = ref('');
 const sortOrder = ref('desc');
 const statusFilter = ref('all');
 const selectedTaskIds = ref([]);
@@ -96,6 +90,7 @@ const selectedTasks = computed(() => {
 });
 const cancellableSelected = computed(() => selectedTasks.value.filter(canCancelTask));
 const restartableSelected = computed(() => selectedTasks.value.filter(canRestartTask));
+const deletableSelected = computed(() => selectedTasks.value.filter(canDeleteTask));
 const statusChips = computed(() => [
   { value: 'all', label: '总数', count: tasks.value.length },
   { value: 'pending', label: '等待', count: status.value.counts?.pending || 0, color: 'info' },
@@ -133,6 +128,7 @@ async function cancelTasks(inputTasks) {
   const picked = (inputTasks || []).filter(canCancelTask);
   if (!picked.length || operating.value) return
   operating.value = true;
+  operation.value = 'cancel';
   error.value = '';
   message.value = '';
   try {
@@ -144,6 +140,7 @@ async function cancelTasks(inputTasks) {
   } catch (err) {
     error.value = errorMessage(err, '取消 AI 字幕任务失败');
   } finally {
+    operation.value = '';
     operating.value = false;
   }
 }
@@ -152,6 +149,7 @@ async function restartTasks(inputTasks) {
   const picked = (inputTasks || []).filter(canRestartTask);
   if (!picked.length || operating.value) return
   operating.value = true;
+  operation.value = 'restart';
   error.value = '';
   message.value = '';
   try {
@@ -172,6 +170,30 @@ async function restartTasks(inputTasks) {
   } catch (err) {
     error.value = errorMessage(err, '重启 AI 字幕任务失败');
   } finally {
+    operation.value = '';
+    operating.value = false;
+  }
+}
+
+async function deleteTasks(inputTasks) {
+  const picked = (inputTasks || []).filter(canDeleteTask);
+  if (!picked.length || operating.value) return
+  const confirmed = window.confirm(`确定删除 ${picked.length} 个 AI 字幕任务记录吗？`);
+  if (!confirmed) return
+  operating.value = true;
+  operation.value = 'delete';
+  error.value = '';
+  message.value = '';
+  try {
+    const response = await props.api.post(`${pluginBase.value}/delete`, {
+      task_ids: picked.map(task => task.task_id),
+    });
+    message.value = response?.message || `已删除 ${picked.length} 个任务记录`;
+    await loadTasks();
+  } catch (err) {
+    error.value = errorMessage(err, '删除 AI 字幕任务失败');
+  } finally {
+    operation.value = '';
     operating.value = false;
   }
 }
@@ -203,6 +225,10 @@ function canCancelTask(task) {
 
 function canRestartTask(task) {
   return Boolean(task?.video_file && ['cancelled', 'failed', 'ignored', 'no_audio'].includes(task?.status))
+}
+
+function canDeleteTask(task) {
+  return Boolean(task?.task_id && !['in_progress'].includes(task?.status))
 }
 
 function statusColor(task) {
@@ -250,7 +276,7 @@ return (_ctx, _cache) => {
     }, {
       default: _withCtx(() => [
         _createElementVNode("div", null, [
-          _cache[4] || (_cache[4] = _createElementVNode("div", { class: "text-h6 ms-3" }, "AI字幕生成(联动版)", -1)),
+          _cache[5] || (_cache[5] = _createElementVNode("div", { class: "text-h6 ms-3" }, "AI字幕生成(联动版)", -1)),
           _createElementVNode("div", _hoisted_2, _toDisplayString(status.value.message || '查看任务数据'), 1)
         ]),
         _createVNode(_component_VSpacer),
@@ -280,10 +306,10 @@ return (_ctx, _cache) => {
           variant: "tonal",
           "prepend-icon": "mdi-cancel",
           disabled: !cancellableSelected.value.length || operating.value,
-          loading: operating.value && Boolean(cancellableSelected.value.length),
+          loading: operation.value === 'cancel',
           onClick: _cache[1] || (_cache[1] = $event => (cancelTasks(cancellableSelected.value)))
         }, {
-          default: _withCtx(() => [...(_cache[5] || (_cache[5] = [
+          default: _withCtx(() => [...(_cache[6] || (_cache[6] = [
             _createTextVNode(" 批量取消 ", -1)
           ]))]),
           _: 1
@@ -293,11 +319,24 @@ return (_ctx, _cache) => {
           variant: "tonal",
           "prepend-icon": "mdi-restart",
           disabled: !restartableSelected.value.length || operating.value,
-          loading: operating.value && Boolean(restartableSelected.value.length),
+          loading: operation.value === 'restart',
           onClick: _cache[2] || (_cache[2] = $event => (restartTasks(restartableSelected.value)))
         }, {
-          default: _withCtx(() => [...(_cache[6] || (_cache[6] = [
+          default: _withCtx(() => [...(_cache[7] || (_cache[7] = [
             _createTextVNode(" 批量重启 ", -1)
+          ]))]),
+          _: 1
+        }, 8, ["disabled", "loading"]),
+        _createVNode(_component_VBtn, {
+          color: "error",
+          variant: "tonal",
+          "prepend-icon": "mdi-delete-outline",
+          disabled: !deletableSelected.value.length || operating.value,
+          loading: operation.value === 'delete',
+          onClick: _cache[3] || (_cache[3] = $event => (deleteTasks(deletableSelected.value)))
+        }, {
+          default: _withCtx(() => [...(_cache[8] || (_cache[8] = [
+            _createTextVNode(" 批量删除 ", -1)
           ]))]),
           _: 1
         }, 8, ["disabled", "loading"]),
@@ -310,7 +349,7 @@ return (_ctx, _cache) => {
         _createVNode(_component_VBtn, {
           icon: "mdi-close",
           variant: "text",
-          onClick: _cache[3] || (_cache[3] = $event => (emit('close')))
+          onClick: _cache[4] || (_cache[4] = $event => (emit('close')))
         })
       ]),
       _: 1
@@ -413,7 +452,7 @@ return (_ctx, _cache) => {
                         disabled: !canCancelTask(task) || operating.value,
                         onClick: $event => (cancelTasks([task]))
                       }, {
-                        default: _withCtx(() => [...(_cache[7] || (_cache[7] = [
+                        default: _withCtx(() => [...(_cache[9] || (_cache[9] = [
                           _createTextVNode(" 取消 ", -1)
                         ]))]),
                         _: 1
@@ -425,8 +464,20 @@ return (_ctx, _cache) => {
                         disabled: !canRestartTask(task) || operating.value,
                         onClick: $event => (restartTasks([task]))
                       }, {
-                        default: _withCtx(() => [...(_cache[8] || (_cache[8] = [
+                        default: _withCtx(() => [...(_cache[10] || (_cache[10] = [
                           _createTextVNode(" 重启 ", -1)
+                        ]))]),
+                        _: 1
+                      }, 8, ["disabled", "onClick"]),
+                      _createVNode(_component_VBtn, {
+                        size: "small",
+                        color: "error",
+                        variant: "tonal",
+                        disabled: !canDeleteTask(task) || operating.value,
+                        onClick: $event => (deleteTasks([task]))
+                      }, {
+                        default: _withCtx(() => [...(_cache[11] || (_cache[11] = [
+                          _createTextVNode(" 删除 ", -1)
                         ]))]),
                         _: 1
                       }, 8, ["disabled", "onClick"])
@@ -440,6 +491,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-79366bba"]]);
+const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-4cb7dbbb"]]);
 
 export { Page as default };

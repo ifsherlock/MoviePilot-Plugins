@@ -102,7 +102,7 @@
         "name": "AI字幕生成(联动版)",
         "description": "自动生成字幕并翻译成中文，支持 faster-whisper 识别、字幕提取和大模型并发翻译，可联动字幕匹配功能。",
         "labels": "字幕,AI,翻译",
-        "version": "3.5.47",
+        "version": "3.5.48",
         "icon": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/autosubtitles.jpeg",
         "author": "ifsherlock",
         "author_url": "https://github.com/ifsherlock",
@@ -110,6 +110,7 @@
         "system_version": ">=2.13.5",
         "v2": true,
         "history": {
+            "v3.5.48": "补齐 Vue 设置页 Config 组件，修复设置弹窗闪退；任务列表新增单个和批量删除任务记录",
             "v3.5.47": "统一作者信息到 ifsherlock，修正插件市场头像来源；收敛设置表单字段结构，修复设置弹窗渲染异常",
             "v3.5.42": "字幕匹配联动来源强制放行已有字幕检查，避免用户主动发起的 AI 翻译任务被插件规则忽略",
             "v3.5.41": "改名为 AI字幕生成(联动版)，新增联动提交与任务状态 API，可在字幕匹配页面单集/整季调用并查看状态",

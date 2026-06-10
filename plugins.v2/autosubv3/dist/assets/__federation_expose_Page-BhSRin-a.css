@@ -1,37 +1,37 @@
 
-.autosub-page[data-v-79366bba] {
+.autosub-page[data-v-4cb7dbbb] {
   min-height: 100%;
   background: rgb(var(--v-theme-background));
 }
-.autosub-toolbar[data-v-79366bba] {
+.autosub-toolbar[data-v-4cb7dbbb] {
   position: sticky;
   top: 0;
   z-index: 10;
   background: rgb(var(--v-theme-surface));
 }
-.toolbar-subtitle[data-v-79366bba] {
+.toolbar-subtitle[data-v-4cb7dbbb] {
   color: rgba(var(--v-theme-on-surface), 0.62);
   font-size: 12px;
   line-height: 1.3;
 }
-.autosub-content[data-v-79366bba] {
+.autosub-content[data-v-4cb7dbbb] {
   padding: 18px;
 }
-.summary-strip[data-v-79366bba] {
+.summary-strip[data-v-4cb7dbbb] {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 14px;
 }
-.filter-chip[data-v-79366bba] {
+.filter-chip[data-v-4cb7dbbb] {
   cursor: pointer;
   user-select: none;
 }
-.task-list[data-v-79366bba] {
+.task-list[data-v-4cb7dbbb] {
   display: grid;
   gap: 10px;
 }
-.task-row[data-v-79366bba] {
+.task-row[data-v-4cb7dbbb] {
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr) auto;
   gap: 12px;
@@ -41,24 +41,24 @@
   background: rgb(var(--v-theme-surface));
   padding: 12px;
 }
-.task-row.selected[data-v-79366bba] {
+.task-row.selected[data-v-4cb7dbbb] {
   border-color: rgba(var(--v-theme-primary), 0.45);
 }
-.task-title[data-v-79366bba] {
+.task-title[data-v-4cb7dbbb] {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
   margin-bottom: 6px;
 }
-.task-path[data-v-79366bba] {
+.task-path[data-v-4cb7dbbb] {
   color: rgba(var(--v-theme-on-surface), 0.74);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
   line-height: 1.55;
   overflow-wrap: anywhere;
 }
-.task-meta[data-v-79366bba] {
+.task-meta[data-v-4cb7dbbb] {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
@@ -66,11 +66,11 @@
   color: rgba(var(--v-theme-on-surface), 0.58);
   font-size: 12px;
 }
-.task-actions[data-v-79366bba] {
+.task-actions[data-v-4cb7dbbb] {
   display: flex;
   gap: 8px;
 }
-.empty-state[data-v-79366bba] {
+.empty-state[data-v-4cb7dbbb] {
   border: 1px dashed rgba(var(--v-border-color), 0.28);
   border-radius: 8px;
   color: rgba(var(--v-theme-on-surface), 0.62);
@@ -78,10 +78,10 @@
   text-align: center;
 }
 @media (max-width: 760px) {
-.task-row[data-v-79366bba] {
+.task-row[data-v-4cb7dbbb] {
     grid-template-columns: 36px minmax(0, 1fr);
 }
-.task-actions[data-v-79366bba] {
+.task-actions[data-v-4cb7dbbb] {
     grid-column: 2;
 }
 }

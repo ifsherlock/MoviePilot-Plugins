@@ -97,7 +97,7 @@ class AutoSubv3(_PluginBase):
     # 主题色
     plugin_color = "#2C4F7E"
     # 插件版本
-    plugin_version = "3.5.47"
+    plugin_version = "3.5.48"
     # 插件作者
     plugin_author = "ifsherlock"
     # 作者主页
@@ -538,6 +538,84 @@ class AutoSubv3(_PluginBase):
         return self._ok(
             result,
             message=f"已取消 {len(result.get('cancelled') or [])} 个 AI 字幕任务，跳过 {len(result.get('skipped') or [])} 个",
+        )
+
+    def delete_tasks(self, task_ids: Optional[List[str]] = None, paths: Optional[List[str]] = None) -> Dict[str, Any]:
+        filter_task_ids = {self._normalize_text(item) for item in (task_ids or []) if self._normalize_text(item)}
+        filter_paths = {self._normalize_text(item) for item in (paths or []) if self._normalize_text(item)}
+        if not filter_task_ids and not filter_paths:
+            return {
+                "deleted": [],
+                "skipped": [{"reason": "未提供要删除的任务"}],
+                "status": self._status_payload(),
+            }
+
+        deleted: List[Dict[str, str]] = []
+        skipped: List[Dict[str, str]] = []
+        matched_task_ids = set()
+        matched_paths = set()
+        queue_delete_ids = set()
+
+        for task_id, task in list((self._tasks or {}).items()):
+            match_task = bool(filter_task_ids and task_id in filter_task_ids)
+            match_path = bool(filter_paths and task.video_file in filter_paths)
+            if not (match_task or match_path):
+                continue
+            matched_task_ids.add(task_id)
+            matched_paths.add(task.video_file)
+            if task.status == TaskStatus.IN_PROGRESS:
+                skipped.append({
+                    "task_id": task_id,
+                    "path": task.video_file,
+                    "reason": "任务正在处理，请先取消后再删除",
+                })
+                continue
+            if task.status == TaskStatus.PENDING:
+                task.cancel_requested = True
+                queue_delete_ids.add(task_id)
+            self._tasks.pop(task_id, None)
+            deleted.append({"task_id": task_id, "path": task.video_file, "status": task.status.value})
+
+        if queue_delete_ids and self._task_queue:
+            try:
+                with self._task_queue.mutex:
+                    kept_tasks = [task for task in self._task_queue.queue if task.task_id not in queue_delete_ids]
+                    removed_count = len(self._task_queue.queue) - len(kept_tasks)
+                    self._task_queue.queue = type(self._task_queue.queue)(kept_tasks)
+                    self._task_queue.unfinished_tasks = max(0, self._task_queue.unfinished_tasks - removed_count)
+                    if self._task_queue.unfinished_tasks == 0:
+                        self._task_queue.all_tasks_done.notify_all()
+            except Exception as exc:
+                logger.warning("[AutoSubv3] 从队列移除删除任务失败: %s", exc)
+
+        for item in filter_task_ids:
+            if item not in matched_task_ids:
+                skipped.append({"task_id": item, "reason": "未找到任务"})
+        for item in filter_paths:
+            if item not in matched_paths:
+                skipped.append({"path": item, "reason": "未找到任务"})
+
+        if deleted:
+            self.save_tasks()
+        logger.info("[AutoSubv3] 删除任务 requested=%s deleted=%s skipped=%s", len(filter_task_ids) + len(filter_paths), len(deleted), len(skipped))
+        return {
+            "deleted": deleted,
+            "skipped": skipped,
+            "status": self._status_payload(),
+        }
+
+    async def api_delete(self, request: Request) -> Dict[str, Any]:
+        body = await request.json()
+        paths = body.get("paths") or []
+        task_ids = body.get("task_ids") or []
+        if isinstance(paths, str):
+            paths = [paths]
+        if isinstance(task_ids, str):
+            task_ids = [task_ids]
+        result = self.delete_tasks(task_ids=task_ids if isinstance(task_ids, list) else [], paths=paths if isinstance(paths, list) else [])
+        return self._ok(
+            result,
+            message=f"已删除 {len(result.get('deleted') or [])} 个 AI 字幕任务，跳过 {len(result.get('skipped') or [])} 个",
         )
 
     def tasks_payload(self, paths: Optional[List[str]] = None, limit: int = 300) -> Dict[str, Any]:
@@ -2158,6 +2236,13 @@ class AutoSubv3(_PluginBase):
                 "methods": ["POST"],
                 "auth": "bear",
                 "summary": "取消 AI 字幕生成任务",
+            },
+            {
+                "path": "/delete",
+                "endpoint": self.api_delete,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "删除 AI 字幕任务记录",
             },
         ]
 

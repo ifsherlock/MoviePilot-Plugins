@@ -16,6 +16,7 @@ const emit = defineEmits(['close'])
 const pluginBase = computed(() => `plugin/${props.pluginId || 'AutoSubv3'}`)
 const loading = ref(false)
 const operating = ref(false)
+const operation = ref('')
 const sortOrder = ref('desc')
 const statusFilter = ref('all')
 const selectedTaskIds = ref([])
@@ -48,6 +49,7 @@ const selectedTasks = computed(() => {
 })
 const cancellableSelected = computed(() => selectedTasks.value.filter(canCancelTask))
 const restartableSelected = computed(() => selectedTasks.value.filter(canRestartTask))
+const deletableSelected = computed(() => selectedTasks.value.filter(canDeleteTask))
 const statusChips = computed(() => [
   { value: 'all', label: '总数', count: tasks.value.length },
   { value: 'pending', label: '等待', count: status.value.counts?.pending || 0, color: 'info' },
@@ -85,6 +87,7 @@ async function cancelTasks(inputTasks) {
   const picked = (inputTasks || []).filter(canCancelTask)
   if (!picked.length || operating.value) return
   operating.value = true
+  operation.value = 'cancel'
   error.value = ''
   message.value = ''
   try {
@@ -96,6 +99,7 @@ async function cancelTasks(inputTasks) {
   } catch (err) {
     error.value = errorMessage(err, '取消 AI 字幕任务失败')
   } finally {
+    operation.value = ''
     operating.value = false
   }
 }
@@ -104,6 +108,7 @@ async function restartTasks(inputTasks) {
   const picked = (inputTasks || []).filter(canRestartTask)
   if (!picked.length || operating.value) return
   operating.value = true
+  operation.value = 'restart'
   error.value = ''
   message.value = ''
   try {
@@ -124,6 +129,30 @@ async function restartTasks(inputTasks) {
   } catch (err) {
     error.value = errorMessage(err, '重启 AI 字幕任务失败')
   } finally {
+    operation.value = ''
+    operating.value = false
+  }
+}
+
+async function deleteTasks(inputTasks) {
+  const picked = (inputTasks || []).filter(canDeleteTask)
+  if (!picked.length || operating.value) return
+  const confirmed = window.confirm(`确定删除 ${picked.length} 个 AI 字幕任务记录吗？`)
+  if (!confirmed) return
+  operating.value = true
+  operation.value = 'delete'
+  error.value = ''
+  message.value = ''
+  try {
+    const response = await props.api.post(`${pluginBase.value}/delete`, {
+      task_ids: picked.map(task => task.task_id),
+    })
+    message.value = response?.message || `已删除 ${picked.length} 个任务记录`
+    await loadTasks()
+  } catch (err) {
+    error.value = errorMessage(err, '删除 AI 字幕任务失败')
+  } finally {
+    operation.value = ''
     operating.value = false
   }
 }
@@ -155,6 +184,10 @@ function canCancelTask(task) {
 
 function canRestartTask(task) {
   return Boolean(task?.video_file && ['cancelled', 'failed', 'ignored', 'no_audio'].includes(task?.status))
+}
+
+function canDeleteTask(task) {
+  return Boolean(task?.task_id && !['in_progress'].includes(task?.status))
 }
 
 function statusColor(task) {
@@ -214,7 +247,7 @@ onMounted(loadTasks)
         variant="tonal"
         prepend-icon="mdi-cancel"
         :disabled="!cancellableSelected.length || operating"
-        :loading="operating && Boolean(cancellableSelected.length)"
+        :loading="operation === 'cancel'"
         @click="cancelTasks(cancellableSelected)"
       >
         批量取消
@@ -224,10 +257,20 @@ onMounted(loadTasks)
         variant="tonal"
         prepend-icon="mdi-restart"
         :disabled="!restartableSelected.length || operating"
-        :loading="operating && Boolean(restartableSelected.length)"
+        :loading="operation === 'restart'"
         @click="restartTasks(restartableSelected)"
       >
         批量重启
+      </VBtn>
+      <VBtn
+        color="error"
+        variant="tonal"
+        prepend-icon="mdi-delete-outline"
+        :disabled="!deletableSelected.length || operating"
+        :loading="operation === 'delete'"
+        @click="deleteTasks(deletableSelected)"
+      >
+        批量删除
       </VBtn>
       <VBtn icon="mdi-refresh" variant="text" :loading="loading" @click="loadTasks" />
       <VBtn icon="mdi-close" variant="text" @click="emit('close')" />
@@ -306,6 +349,15 @@ onMounted(loadTasks)
               @click="restartTasks([task])"
             >
               重启
+            </VBtn>
+            <VBtn
+              size="small"
+              color="error"
+              variant="tonal"
+              :disabled="!canDeleteTask(task) || operating"
+              @click="deleteTasks([task])"
+            >
+              删除
             </VBtn>
           </div>
         </div>

@@ -162,6 +162,39 @@ def test_cancelled_current_task_interrupts_next_translate_call():
             raise AssertionError("cancelled current task should interrupt translation")
 
 
+def test_delete_pending_task_removes_queue_and_record():
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    with tempfile.NamedTemporaryFile(suffix=".mkv") as video:
+        assert plugin.add_task(video.name, module.TaskSource.SUBTITLE_MANUAL_UPLOAD, force_generate=True) is True
+        task = next(iter(plugin._tasks.values()))
+
+        result = plugin.delete_tasks(task_ids=[task.task_id])
+        payload = plugin.tasks_payload(paths=[video.name])
+
+    assert len(result["deleted"]) == 1
+    assert plugin._task_queue.qsize() == 0
+    assert payload["tasks"] == []
+
+
+def test_delete_in_progress_task_is_skipped():
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    with tempfile.NamedTemporaryFile(suffix=".mkv") as video:
+        assert plugin.add_task(video.name, module.TaskSource.SUBTITLE_MANUAL_UPLOAD, force_generate=True) is True
+        task = next(iter(plugin._tasks.values()))
+        plugin._task_queue.get_nowait()
+        task.status = module.TaskStatus.IN_PROGRESS
+        plugin._current_processing_task = task
+
+        result = plugin.delete_tasks(task_ids=[task.task_id])
+        payload = plugin.tasks_payload(paths=[video.name])
+
+    assert result["deleted"] == []
+    assert result["skipped"][0]["reason"] == "任务正在处理，请先取消后再删除"
+    assert len(payload["tasks"]) == 1
+
+
 def test_translated_subtitle_uses_chs_ai_suffix():
     module = load_plugin_module()
 
@@ -224,6 +257,16 @@ def test_settings_form_uses_compatible_native_schema():
             assert items
             assert all(isinstance(item, dict) for item in items)
             assert all("title" in item and "value" in item for item in items)
+
+
+def test_delete_api_is_registered():
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+
+    apis = {item["path"]: item for item in plugin.get_api()}
+
+    assert "/delete" in apis
+    assert apis["/delete"]["methods"] == ["POST"]
 
 
 def test_translation_high_failure_rate_blocks_subtitle_output():
