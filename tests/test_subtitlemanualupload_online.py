@@ -307,6 +307,56 @@ def test_opensubtitles_rejects_youth_sherlock_for_haibara_sample():
     assert results == []
 
 
+def test_opensubtitles_allows_tv_year_conflict_with_series_identity_and_episode():
+    module = load_online_module()
+    provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key")
+
+    def fake_api_json(path, params, *, method="GET"):
+        return {
+            "data": [
+                {
+                    "attributes": {
+                        "language": "zh",
+                        "release": "Haibara-kun.no.Tsuyokute.New.Game.S01E07.zh",
+                        "feature_details": {
+                            "feature_type": "Tvshow",
+                            "year": 2024,
+                            "title": "Haibara-kun no Tsuyokute New Game",
+                        },
+                        "upload_date": "2024-12-20T00:00:00Z",
+                        "files": [
+                            {
+                                "file_id": 7,
+                                "file_name": "Haibara-kun.no.Tsuyokute.New.Game.S01E07.2024.zh.srt",
+                            }
+                        ],
+                    }
+                }
+            ]
+        }
+
+    provider._api_json = fake_api_json
+
+    results = provider.search(
+        "Haibara-kun no Tsuyokute New Game S01E07",
+        [
+            {
+                "media_type": "tv",
+                "title": "Haibara-kun no Tsuyokute New Game",
+                "en_title": "Haibara-kun no Tsuyokute New Game",
+                "season": 1,
+                "episode": 7,
+                "year": "2025",
+            }
+        ],
+        "episode",
+    )
+
+    assert len(results) == 1
+    assert results[0].result_id == "7"
+    assert results[0].identity_status == "strong"
+
+
 def test_opensubtitles_filters_filename_year_and_upload_year_conflicts():
     module = load_online_module()
     provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key")
@@ -382,8 +432,8 @@ def test_build_search_keywords_uses_region_aware_tmdb_titles():
 
     keywords = module.build_search_keywords(media, targets, "episode")
 
-    assert keywords[0] == "九龍ジェネリックロマンス S01E04"
-    assert "Kowloon Generic Romance S01E04" in keywords
+    assert keywords[0] == "Kowloon Generic Romance S01E04"
+    assert "九龍ジェネリックロマンス S01E04" in keywords
 
 
 def test_build_search_keywords_filters_language_name_aliases():
@@ -425,6 +475,31 @@ def test_build_search_keywords_filters_language_name_aliases():
 
     assert "English S01E08" not in tv_keywords
     assert tv_keywords[0] == "The Penguin S01E08"
+
+
+def test_build_search_keywords_filters_plot_summary_aliases():
+    module = load_online_module()
+    media = {
+        "media_type": "movie",
+        "title": "熔炉",
+        "year": "2011",
+        "original_title": "도가니",
+        "original_language": "ko",
+        "origin_country": ["KR"],
+        "translations": [
+            {
+                "name": "Chinese",
+                "data": {
+                    "title": "本片取材于2005年光州一所聋哑障碍人学校的真实事件，改编自韩国作家孔枝泳的同名小说。来自首尔的哑语美术老师来到雾津。",
+                },
+            }
+        ],
+    }
+
+    keywords = module.build_search_keywords(media, [media], "movie")
+
+    assert all("真实事件" not in item for item in keywords)
+    assert keywords[0] == "도가니 2011"
 
 
 def test_opensubtitles_rejects_generic_english_query_match():

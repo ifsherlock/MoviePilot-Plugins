@@ -710,6 +710,8 @@ class OpenSubtitlesProvider(BaseSubtitleProvider):
         if not self.api_key:
             raise ValueError("OpenSubtitles 未配置 API Key，已跳过自动搜索")
         target_year = _target_year_from_targets(targets)
+        target_media_type = next((str(target.get("media_type") or "") for target in targets or [] if target.get("media_type")), "")
+        strict_year_filter = target_media_type != "tv"
         query_plan = _query_plan_for_keyword(keyword, targets)
         payload = self._api_json(
             "/subtitles",
@@ -748,12 +750,12 @@ class OpenSubtitlesProvider(BaseSubtitleProvider):
             file_id = str(file_info.get("file_id") or "").strip()
             result_years = _years_from_opensubtitles_attrs(attrs, file_info, title)
             file_years = _years_from_file_info(file_info)
-            if target_year and result_years and target_year not in result_years:
+            if strict_year_filter and target_year and result_years and target_year not in result_years:
                 continue
-            if target_year and file_years and target_year not in file_years:
+            if strict_year_filter and target_year and file_years and target_year not in file_years:
                 continue
             upload_year = _year_from_upload_date(attrs.get("upload_date") or attrs.get("uploaded_at"))
-            if target_year and upload_year and upload_year < target_year:
+            if strict_year_filter and target_year and upload_year and upload_year < target_year:
                 continue
             assessment = _assess_result_match(
                 title=title,
@@ -1147,16 +1149,20 @@ def _search_titles_by_region(media: Dict[str, Any], targets: List[Dict[str, Any]
     korean_titles = [item for item in all_titles if _contains_korean(item)]
     original_titles = _original_titles(media, targets)
 
-    if bucket == "chinese":
-        ordered = [*chinese_titles, *english_titles]
-    elif bucket == "western":
-        ordered = [*english_titles, *chinese_titles]
-    elif bucket == "japanese":
-        ordered = [*japanese_titles, *original_titles, *english_titles, *chinese_titles]
-    elif bucket == "korean":
-        ordered = [*korean_titles, *original_titles, *english_titles, *chinese_titles]
-    else:
-        ordered = [*original_titles, *english_titles, *chinese_titles, *all_titles]
+    native_titles = {
+        "chinese": chinese_titles,
+        "japanese": japanese_titles,
+        "korean": korean_titles,
+    }.get(bucket, [])
+    ordered = [
+        *english_titles,
+        *original_titles,
+        *native_titles,
+        *chinese_titles,
+        *japanese_titles,
+        *korean_titles,
+        *all_titles,
+    ]
     return _unique_keywords(ordered)
 
 
@@ -1462,6 +1468,7 @@ def _language_priority(item: OnlineSubtitleResult) -> int:
         "chinese": 40,
         "english": 30,
         "japanese": 20,
+        "korean": 20,
         "other": 10,
     }.get(category, 0)
 
@@ -1592,6 +1599,7 @@ def _assess_result_match(
     score = 0
     reasons: List[str] = []
     reject_reason = ""
+    year_reject_reason = ""
     title_matched = False
     metadata_matched = False
     file_title_matched = False
@@ -1644,11 +1652,13 @@ def _assess_result_match(
             score += 18
             reasons.append("年份一致")
         else:
-            reject_reason = "年份冲突"
+            year_reject_reason = "年份冲突"
+            reject_reason = year_reject_reason
     upload_year = _year_from_upload_date(attrs.get("upload_date") or attrs.get("uploaded_at"))
     if target_year and upload_year:
         if upload_year < target_year:
-            reject_reason = reject_reason or "字幕上传时间早于资源年份"
+            year_reject_reason = year_reject_reason or "字幕上传时间早于资源年份"
+            reject_reason = reject_reason or year_reject_reason
         else:
             reasons.append("上传年份可用")
 
@@ -1673,6 +1683,13 @@ def _assess_result_match(
         episode_ok = True
 
     media_type = next((str(target.get("media_type") or "") for target in targets or [] if target.get("media_type")), "")
+    tv_identity_with_episode = (
+        media_type == "tv"
+        and episode_ok
+        and (series_matched or title_matched or metadata_matched or file_title_matched)
+    )
+    if tv_identity_with_episode and reject_reason and reject_reason == year_reject_reason:
+        reject_reason = ""
     if media_type == "tv" and not series_matched and not metadata_matched:
         title_matched = False
         reject_reason = reject_reason or "剧名身份不匹配"
@@ -1685,11 +1702,17 @@ def _assess_result_match(
     identity_ok = title_matched or metadata_matched or file_title_matched
     if not identity_ok:
         reject_reason = reject_reason or "无标题或媒体身份信号"
+    year_ok_for_strong = (
+        not target_year
+        or not result_years
+        or target_year in result_years
+        or tv_identity_with_episode
+    )
     if reject_reason:
         identity_status = "failed"
     elif metadata_matched or (
         (title_matched or file_title_matched)
-        and (not target_year or not result_years or target_year in result_years)
+        and year_ok_for_strong
         and episode_ok
     ):
         identity_status = "strong"
@@ -1842,6 +1865,10 @@ def _clean_keyword(value: Any) -> str:
 def _clean_title_alias(value: Any) -> str:
     alias = _clean_keyword(value)
     if not alias or _is_generic_language_alias(alias):
+        return ""
+    if len(alias) > 80:
+        return ""
+    if re.search(r"https?://|www\.|。|！|？|；|……", alias, flags=re.IGNORECASE):
         return ""
     if _looks_english_title(alias):
         words = [

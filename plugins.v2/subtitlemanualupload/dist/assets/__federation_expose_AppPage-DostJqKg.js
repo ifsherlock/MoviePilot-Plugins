@@ -434,7 +434,7 @@ const selectedPreviewItems = computed(() => (preview.value?.items || []).filter(
 const hasOnlineResults = computed(() => onlineResults.value.length > 0);
 const filteredOnlineResults = computed(() => {
   return onlineResults.value.filter(item => {
-    const languageMatched = onlineLanguageFilter.value === 'all' || onlineResultLanguageCategory(item) === onlineLanguageFilter.value;
+    const languageMatched = onlineLanguageFilter.value === 'all' || onlineResultLanguageFilterCategory(item) === onlineLanguageFilter.value;
     const providerMatched = onlineProviderFilter.value === 'all' || item.provider === onlineProviderFilter.value;
     return languageMatched && providerMatched
   })
@@ -447,7 +447,7 @@ const onlineLanguageFilterItems = computed(() => {
     { title: '其他', value: 'other' },
   ];
   const counts = onlineResults.value.reduce((acc, item) => {
-    const category = onlineResultLanguageCategory(item);
+    const category = onlineResultLanguageFilterCategory(item);
     acc[category] = (acc[category] || 0) + 1;
     return acc
   }, {});
@@ -864,7 +864,7 @@ function isOnlineResultDownloadable(item) {
 
 function onlineResultLanguageCategory(item) {
   const category = String(item?.language_category || '').toLowerCase();
-  if (['chinese', 'english', 'japanese', 'other'].includes(category)) return category
+  if (['chinese', 'english', 'japanese', 'korean', 'other'].includes(category)) return category
   const text = `${item?.language || ''} ${item?.title || ''} ${item?.note || ''}`.toLowerCase();
   if (
     text.includes('中文')
@@ -885,7 +885,31 @@ function onlineResultLanguageCategory(item) {
     || text.includes('japanese')
     || /(^|[\s._()\[\]-])(ja|jpn)(?=$|[\s._()\[\]-])/.test(text)
   ) return 'japanese'
+  if (
+    text.includes('korean')
+    || /(^|[\s._()\[\]-])(ko|kor)(?=$|[\s._()\[\]-])/.test(text)
+  ) return 'korean'
   return 'other'
+}
+
+function onlineResultLanguageFilterCategory(item) {
+  const category = onlineResultLanguageCategory(item);
+  return category === 'korean' ? 'other' : category
+}
+
+function onlineResultLanguagePriority(item) {
+  const category = onlineResultLanguageCategory(item);
+  if (category === 'chinese') return 40
+  if (category === 'english') return 30
+  if (category === 'japanese' || category === 'korean') return 20
+  return 10
+}
+
+function onlineResultIdentityPriority(item) {
+  const status = String(item?.identity_status || '').toLowerCase();
+  if (status === 'strong') return 30
+  if (status === 'weak') return 10
+  return 0
 }
 
 function isForeignOnlineResult(item) {
@@ -1569,6 +1593,10 @@ function mergeOnlineResults(items) {
   onlineResults.value = Array.from(merged.values()).sort((a, b) => {
     const provider = providerPriority(b.provider) - providerPriority(a.provider);
     if (provider) return provider
+    const language = onlineResultLanguagePriority(b) - onlineResultLanguagePriority(a);
+    if (language) return language
+    const identity = onlineResultIdentityPriority(b) - onlineResultIdentityPriority(a);
+    if (identity) return identity
     const score = Number(b.score || 0) - Number(a.score || 0);
     if (score) return score
     return providerName(a.provider).localeCompare(providerName(b.provider), 'zh-Hans-CN')
@@ -3512,6 +3540,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-b437b22f"]]);
+const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-7773a5c6"]]);
 
 export { AppPage as default };
