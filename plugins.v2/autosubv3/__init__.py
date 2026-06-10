@@ -97,11 +97,11 @@ class AutoSubv3(_PluginBase):
     # 主题色
     plugin_color = "#2C4F7E"
     # 插件版本
-    plugin_version = "3.5.46"
+    plugin_version = "3.5.47"
     # 插件作者
-    plugin_author = "jaysherlock"
+    plugin_author = "ifsherlock"
     # 作者主页
-    author_url = "https://github.com/jaysherlock"
+    author_url = "https://github.com/ifsherlock"
     # 插件配置项ID前缀
     plugin_config_prefix = "autosubv3"
     # 加载顺序
@@ -1930,11 +1930,11 @@ class AutoSubv3(_PluginBase):
                                             "label": "Whisper 模型",
                                             "hint": "模型越大效果越好，耗时越久",
                                             "items": [
-                                                "tiny",
-                                                "base",
-                                                "small",
-                                                "medium",
-                                                "large-v3",
+                                                {"title": "tiny", "value": "tiny"},
+                                                {"title": "base", "value": "base"},
+                                                {"title": "small", "value": "small"},
+                                                {"title": "medium", "value": "medium"},
+                                                {"title": "large-v3", "value": "large-v3"},
                                                 {"title": "large-v3-turbo", "value": "deepdml/faster-whisper-large-v3-turbo-ct2"},
                                             ],
                                         },
@@ -2084,7 +2084,7 @@ class AutoSubv3(_PluginBase):
                             {
                                 "component": "VCol",
                                 "props": {"cols": 12, "md": 4},
-                                "content": [{"component": "VTextField", "props": {"model": "openai_key", "label": "API 密钥", "placeholder": "sk-xxx"}}],
+                                "content": [{"component": "VTextField", "props": {"model": "openai_key", "label": "API 密钥", "type": "password", "placeholder": "sk-xxx"}}],
                             },
                             {
                                 "component": "VCol",
@@ -2118,7 +2118,7 @@ class AutoSubv3(_PluginBase):
             "openai_proxy": False,
             "compatible": False,
             "openai_url": "https://api.siliconflow.cn",
-            "openai_key": None,
+            "openai_key": "",
             "openai_model": "inclusionAI/Ling-flash-2.0",
             "context_window": 5,
             "max_retries": 3,

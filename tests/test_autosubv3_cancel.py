@@ -203,6 +203,7 @@ def test_settings_form_uses_compatible_native_schema():
     assert "use_chatgpt_trigger" not in encoded
     assert "VExpansionPanels" not in encoded
     assert "v-show" not in encoded
+    assert all(value is not None for value in defaults.values())
 
     def walk(node):
         if isinstance(node, list):
@@ -218,6 +219,11 @@ def test_settings_form_uses_compatible_native_schema():
         if node.get("component") == "VRow":
             for child in node.get("content") or []:
                 assert child.get("component") == "VCol"
+        if node.get("component") == "VSelect":
+            items = node.get("props", {}).get("items") or []
+            assert items
+            assert all(isinstance(item, dict) for item in items)
+            assert all("title" in item and "value" in item for item in items)
 
 
 def test_translation_high_failure_rate_blocks_subtitle_output():

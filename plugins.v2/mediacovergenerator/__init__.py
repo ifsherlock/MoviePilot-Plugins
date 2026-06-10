@@ -53,13 +53,13 @@ class MediaCoverGenerator(_PluginBase):
     # 插件描述
     plugin_desc = "生成媒体库动态/静态封面，支持 Emby/Jellyfin"
     # 插件图标
-    plugin_icon = "https://raw.githubusercontent.com/justzerock/MoviePilot-Plugins/main/icons/emby.png"
+    plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/emby.png"
     # 插件版本
-    plugin_version = "0.9.9"
+    plugin_version = "0.9.10"
     # 插件作者
-    plugin_author = "justzerock、ifsherlock"
+    plugin_author = "ifsherlock"
     # 作者主页
-    author_url = "https://github.com/justzerock/MoviePilot-Plugins"
+    author_url = "https://github.com/ifsherlock"
     # 插件配置项ID前缀
     plugin_config_prefix = "mediacovergenerator_"
     # 加载顺序
@@ -2714,7 +2714,7 @@ class MediaCoverGenerator(_PluginBase):
     @staticmethod
     def __style_preview_src(index: int) -> str:
         safe_index = max(1, min(4, int(index)))
-        return f"https://raw.githubusercontent.com/justzerock/MoviePilot-Plugins/main/images/style_{safe_index}.jpeg"
+        return f"https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/images/style_{safe_index}.jpeg"
 
     def __get_recent_generated_covers(self, limit: int = 20) -> List[Dict[str, Any]]:
         items: List[Dict[str, Any]] = []
@@ -4458,22 +4458,22 @@ class MediaCoverGenerator(_PluginBase):
             self._zh_font_preset = "chaohei"
 
         default_font_url = {
-            "chaohei": "https://raw.githubusercontent.com/justzerock/MoviePilot-Plugins/main/fonts/chaohei.ttf",
-            "yasong": "https://raw.githubusercontent.com/justzerock/MoviePilot-Plugins/main/fonts/yasong.ttf",
-            "EmblemaOne": "https://raw.githubusercontent.com/justzerock/MoviePilot-Plugins/main/fonts/EmblemaOne.woff2",
-            "Melete": "https://raw.githubusercontent.com/justzerock/MoviePilot-Plugins/main/fonts/Melete.otf",
-            "Phosphate": "https://raw.githubusercontent.com/justzerock/MoviePilot-Plugins/main/fonts/phosphate.ttf",
-            "JosefinSans": "https://raw.githubusercontent.com/justzerock/MoviePilot-Plugins/main/fonts/josefinsans.woff2",
-            "LilitaOne": "https://raw.githubusercontent.com/justzerock/MoviePilot-Plugins/main/fonts/lilitaone.woff2",
-            "Monoton": "https://raw.githubusercontent.com/justzerock/MoviePilot-Plugins/main/fonts/Monoton.woff2",
-            "Plaster": "https://raw.githubusercontent.com/justzerock/MoviePilot-Plugins/main/fonts/Plaster.woff2",
+            "chaohei": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/fonts/chaohei.ttf",
+            "yasong": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/fonts/yasong.ttf",
+            "EmblemaOne": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/fonts/EmblemaOne.woff2",
+            "Melete": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/fonts/Melete.otf",
+            "Phosphate": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/fonts/phosphate.ttf",
+            "JosefinSans": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/fonts/josefinsans.woff2",
+            "LilitaOne": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/fonts/lilitaone.woff2",
+            "Monoton": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/fonts/Monoton.woff2",
+            "Plaster": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/fonts/Plaster.woff2",
         }
-        default_zh_url = default_font_url.get(self._zh_font_preset, "https://raw.githubusercontent.com/justzerock/MoviePilot-Plugins/main/fonts/chaohei.ttf")
+        default_zh_url = default_font_url.get(self._zh_font_preset, "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/fonts/chaohei.ttf")
 
         if not self._en_font_preset:
             self._en_font_preset = "EmblemaOne"
 
-        default_en_url = default_font_url.get(self._en_font_preset, "https://raw.githubusercontent.com/justzerock/MoviePilot-Plugins/main/fonts/EmblemaOne.woff2")
+        default_en_url = default_font_url.get(self._en_font_preset, "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/fonts/EmblemaOne.woff2")
         
         log_prefix = "默认"
         zh_custom_type = detect_string_type(self._zh_font_custom)
