@@ -159,3 +159,33 @@ def test_cancelled_current_task_interrupts_next_translate_call():
             pass
         else:
             raise AssertionError("cancelled current task should interrupt translation")
+
+
+def test_translated_subtitle_uses_chs_ai_suffix():
+    module = load_plugin_module()
+
+    assert (
+        module.AutoSubv3._AutoSubv3__translated_subtitle_path("/media/Movie")
+        == "/media/Movie.chs.ai.srt"
+    )
+
+
+def test_chs_ai_subtitle_is_detected_as_existing_chinese_subtitle():
+    module = load_plugin_module()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        video_path = Path(tmpdir) / "Movie.mkv"
+        subtitle_path = Path(tmpdir) / "Movie.chs.ai.srt"
+        video_path.write_bytes(b"video")
+        subtitle_path.write_text("1\n00:00:01,000 --> 00:00:02,000\nhello\n", encoding="utf-8")
+
+        exists, lang, filename = module.AutoSubv3._AutoSubv3__external_subtitle_exists(
+            str(video_path),
+            prefer_langs=["zh", "chs"],
+            only_srt=True,
+            strict=True,
+        )
+
+    assert exists is True
+    assert lang == "zh"
+    assert filename == "Movie.chs.ai.srt"

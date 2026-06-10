@@ -809,6 +809,10 @@ class AutoSubv3(_PluginBase):
         if self._event.is_set() or self._is_current_task_cancelled():
             raise UserInterruptException("用户中断当前任务")
 
+    @staticmethod
+    def __translated_subtitle_path(file_path: str) -> str:
+        return f"{file_path}.chs.ai.srt"
+
     def __process_autosub(
         self,
         video_file,
@@ -879,10 +883,11 @@ class AutoSubv3(_PluginBase):
             if self._translate_zh:
                 # 翻译字幕（即使源语言是中文，也过LLM处理病句、繁转简、去空格）
                 logger.info(f"开始翻译字幕为中文 ...")
-                self.__translate_zh_subtitle(lang, gen_sub_path, f"{file_path}.zh.机翻.srt",
+                translated_subtitle = self.__translated_subtitle_path(file_path)
+                self.__translate_zh_subtitle(lang, gen_sub_path, translated_subtitle,
                                               output_mode=self._subtitle_output_mode)
                 self._raise_if_task_cancelled()
-                logger.info(f"翻译字幕完成：{file_name}.zh.机翻.srt")
+                logger.info(f"翻译字幕完成：{os.path.basename(translated_subtitle)}")
                 translated_to_zh = True
 
             end_time = time.time()
@@ -1666,7 +1671,21 @@ class AutoSubv3(_PluginBase):
         if prefer_langs and type(prefer_langs) == str:
             prefer_langs = [prefer_langs]
 
-        metadata_flags = ["default", "forced", "foreign", "sdh", "cc", "hi", "机翻"]
+        metadata_flags = ["default", "forced", "foreign", "sdh", "cc", "hi", "机翻", "ai"]
+        language_aliases = {
+            "chs": "zh",
+            "zhs": "zh",
+            "zh-cn": "zh",
+            "zh-hans": "zh",
+            "chi": "zh",
+            "zho": "zh",
+            "cn": "zh",
+            "eng": "en",
+            "jp": "ja",
+            "jpn": "ja",
+            "kr": "ko",
+            "kor": "ko",
+        }
         if only_srt:
             subtitle_extensions = [".srt"]
         else:
@@ -1690,6 +1709,10 @@ class AutoSubv3(_PluginBase):
                 if part in metadata_flags:
                     cur_metadata.append(part)
                 elif cur_subtitle_lang is None:
+                    normalized = language_aliases.get(part.lower())
+                    if normalized:
+                        cur_subtitle_lang = normalized
+                        continue
                     try:
                         iso639.to_iso639_1(part)
                     except iso639.NonExistentLanguageError:

@@ -8,7 +8,7 @@ const _export_sfc = (sfc, props) => {
   return target;
 };
 
-const {createElementVNode:_createElementVNode,toDisplayString:_toDisplayString,resolveComponent:_resolveComponent,createVNode:_createVNode,createTextVNode:_createTextVNode,withCtx:_withCtx,openBlock:_openBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,createElementBlock:_createElementBlock,renderList:_renderList,Fragment:_Fragment,normalizeClass:_normalizeClass} = await importShared('vue');
+const {createElementVNode:_createElementVNode,toDisplayString:_toDisplayString,resolveComponent:_resolveComponent,createVNode:_createVNode,createTextVNode:_createTextVNode,withCtx:_withCtx,openBlock:_openBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,renderList:_renderList,Fragment:_Fragment,createElementBlock:_createElementBlock,normalizeClass:_normalizeClass} = await importShared('vue');
 
 
 const _hoisted_1 = { class: "autosub-page" };
@@ -25,15 +25,19 @@ const _hoisted_6 = {
 };
 const _hoisted_7 = {
   key: 4,
+  class: "empty-state"
+};
+const _hoisted_8 = {
+  key: 5,
   class: "task-list"
 };
-const _hoisted_8 = { class: "task-main" };
-const _hoisted_9 = { class: "task-title" };
-const _hoisted_10 = { class: "task-path" };
-const _hoisted_11 = { key: 0 };
-const _hoisted_12 = { class: "task-meta" };
-const _hoisted_13 = { key: 0 };
-const _hoisted_14 = { class: "task-actions" };
+const _hoisted_9 = { class: "task-main" };
+const _hoisted_10 = { class: "task-title" };
+const _hoisted_11 = { class: "task-path" };
+const _hoisted_12 = { key: 0 };
+const _hoisted_13 = { class: "task-meta" };
+const _hoisted_14 = { key: 0 };
+const _hoisted_15 = { class: "task-actions" };
 
 const {computed,onMounted,ref} = await importShared('vue');
 
@@ -61,16 +65,13 @@ const pluginBase = computed(() => `plugin/${props.pluginId || 'AutoSubv3'}`);
 const loading = ref(false);
 const operating = ref(false);
 const sortOrder = ref('desc');
+const statusFilter = ref('all');
 const selectedTaskIds = ref([]);
 const error = ref('');
 const message = ref('');
 const status = ref({});
 const tasks = ref([]);
 
-const selectedTasks = computed(() => {
-  const picked = new Set(selectedTaskIds.value);
-  return sortedTasks.value.filter(task => picked.has(task.task_id))
-});
 const sortedTasks = computed(() => {
   const items = [...tasks.value];
   items.sort((a, b) => {
@@ -80,8 +81,29 @@ const sortedTasks = computed(() => {
   });
   return items
 });
+const visibleTasks = computed(() => {
+  if (statusFilter.value === 'all') return sortedTasks.value
+  return sortedTasks.value.filter(task => task.status === statusFilter.value)
+});
+const visibleTaskIds = computed(() => new Set(visibleTasks.value.map(task => task.task_id)));
+const allVisibleSelected = computed(() => (
+  Boolean(visibleTasks.value.length)
+  && visibleTasks.value.every(task => selectedTaskIds.value.includes(task.task_id))
+));
+const selectedTasks = computed(() => {
+  const picked = new Set(selectedTaskIds.value);
+  return visibleTasks.value.filter(task => picked.has(task.task_id))
+});
 const cancellableSelected = computed(() => selectedTasks.value.filter(canCancelTask));
 const restartableSelected = computed(() => selectedTasks.value.filter(canRestartTask));
+const statusChips = computed(() => [
+  { value: 'all', label: '总数', count: tasks.value.length },
+  { value: 'pending', label: '等待', count: status.value.counts?.pending || 0, color: 'info' },
+  { value: 'in_progress', label: '处理中', count: status.value.counts?.in_progress || 0, color: 'warning' },
+  { value: 'completed', label: '完成', count: status.value.counts?.completed || 0, color: 'success' },
+  { value: 'failed', label: '失败', count: status.value.counts?.failed || 0, color: 'error' },
+  { value: 'cancelled', label: '已取消', count: status.value.counts?.cancelled || 0 },
+]);
 
 function unwrapResponse(response) {
   return response?.data?.data || response?.data || response || {}
@@ -165,9 +187,14 @@ function toggleTask(task, checked) {
 }
 
 function toggleAll() {
-  selectedTaskIds.value = selectedTaskIds.value.length === sortedTasks.value.length
-    ? []
-    : sortedTasks.value.map(task => task.task_id);
+  if (allVisibleSelected.value) {
+    selectedTaskIds.value = selectedTaskIds.value.filter(id => !visibleTaskIds.value.has(id));
+    return
+  }
+  selectedTaskIds.value = Array.from(new Set([
+    ...selectedTaskIds.value,
+    ...visibleTasks.value.map(task => task.task_id),
+  ]));
 }
 
 function canCancelTask(task) {
@@ -188,6 +215,12 @@ function statusColor(task) {
     ignored: 'default',
     no_audio: 'default',
   }[task?.status] || 'default'
+}
+
+function setStatusFilter(value) {
+  statusFilter.value = value;
+  const visibleIds = new Set(visibleTasks.value.map(task => task.task_id));
+  selectedTaskIds.value = selectedTaskIds.value.filter(id => visibleIds.has(id));
 }
 
 function pathParts(path) {
@@ -234,11 +267,11 @@ return (_ctx, _cache) => {
         _createVNode(_component_VBtn, {
           variant: "tonal",
           "prepend-icon": "mdi-checkbox-multiple-marked-outline",
-          disabled: !sortedTasks.value.length,
+          disabled: !visibleTasks.value.length,
           onClick: toggleAll
         }, {
           default: _withCtx(() => [
-            _createTextVNode(_toDisplayString(selectedTaskIds.value.length === sortedTasks.value.length ? '取消全选' : '全选'), 1)
+            _createTextVNode(_toDisplayString(allVisibleSelected.value ? '取消全选' : '全选'), 1)
           ]),
           _: 1
         }, 8, ["disabled"]),
@@ -303,151 +336,110 @@ return (_ctx, _cache) => {
           }, null, 8, ["text"]))
         : _createCommentVNode("", true),
       _createElementVNode("div", _hoisted_4, [
-        _createVNode(_component_VChip, {
-          size: "small",
-          variant: "tonal"
-        }, {
-          default: _withCtx(() => [
-            _createTextVNode("总数 " + _toDisplayString(tasks.value.length), 1)
-          ]),
-          _: 1
-        }),
-        _createVNode(_component_VChip, {
-          size: "small",
-          variant: "tonal",
-          color: "info"
-        }, {
-          default: _withCtx(() => [
-            _createTextVNode("等待 " + _toDisplayString(status.value.counts?.pending || 0), 1)
-          ]),
-          _: 1
-        }),
-        _createVNode(_component_VChip, {
-          size: "small",
-          variant: "tonal",
-          color: "warning"
-        }, {
-          default: _withCtx(() => [
-            _createTextVNode("处理中 " + _toDisplayString(status.value.counts?.in_progress || 0), 1)
-          ]),
-          _: 1
-        }),
-        _createVNode(_component_VChip, {
-          size: "small",
-          variant: "tonal",
-          color: "success"
-        }, {
-          default: _withCtx(() => [
-            _createTextVNode("完成 " + _toDisplayString(status.value.counts?.completed || 0), 1)
-          ]),
-          _: 1
-        }),
-        _createVNode(_component_VChip, {
-          size: "small",
-          variant: "tonal",
-          color: "error"
-        }, {
-          default: _withCtx(() => [
-            _createTextVNode("失败 " + _toDisplayString(status.value.counts?.failed || 0), 1)
-          ]),
-          _: 1
-        }),
-        _createVNode(_component_VChip, {
-          size: "small",
-          variant: "tonal"
-        }, {
-          default: _withCtx(() => [
-            _createTextVNode("已取消 " + _toDisplayString(status.value.counts?.cancelled || 0), 1)
-          ]),
-          _: 1
-        })
+        (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(statusChips.value, (chip) => {
+          return (_openBlock(), _createBlock(_component_VChip, {
+            key: chip.value,
+            size: "small",
+            class: "filter-chip",
+            variant: statusFilter.value === chip.value ? 'flat' : 'tonal',
+            color: chip.color || (statusFilter.value === chip.value ? 'primary' : undefined),
+            onClick: $event => (setStatusFilter(chip.value))
+          }, {
+            default: _withCtx(() => [
+              _createTextVNode(_toDisplayString(chip.label) + " " + _toDisplayString(chip.count), 1)
+            ]),
+            _: 2
+          }, 1032, ["variant", "color", "onClick"]))
+        }), 128))
       ]),
       (loading.value && !tasks.value.length)
         ? (_openBlock(), _createElementBlock("div", _hoisted_5, "正在读取任务..."))
         : (!tasks.value.length)
           ? (_openBlock(), _createElementBlock("div", _hoisted_6, "暂无 AI 字幕任务"))
-          : (_openBlock(), _createElementBlock("div", _hoisted_7, [
-              (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(sortedTasks.value, (task) => {
-                return (_openBlock(), _createElementBlock("div", {
-                  key: task.task_id,
-                  class: _normalizeClass(["task-row", { selected: selectedTaskIds.value.includes(task.task_id) }])
-                }, [
-                  _createVNode(_component_VCheckbox, {
-                    "model-value": selectedTaskIds.value.includes(task.task_id),
-                    density: "compact",
-                    "hide-details": "",
-                    "onUpdate:modelValue": value => toggleTask(task, value)
-                  }, null, 8, ["model-value", "onUpdate:modelValue"]),
-                  _createElementVNode("div", _hoisted_8, [
+          : (!visibleTasks.value.length)
+            ? (_openBlock(), _createElementBlock("div", _hoisted_7, "当前筛选暂无任务"))
+            : (_openBlock(), _createElementBlock("div", _hoisted_8, [
+                (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(visibleTasks.value, (task) => {
+                  return (_openBlock(), _createElementBlock("div", {
+                    key: task.task_id,
+                    class: _normalizeClass(["task-row", { selected: selectedTaskIds.value.includes(task.task_id) }])
+                  }, [
+                    _createVNode(_component_VCheckbox, {
+                      "model-value": selectedTaskIds.value.includes(task.task_id),
+                      density: "compact",
+                      "hide-details": "",
+                      "onUpdate:modelValue": value => toggleTask(task, value)
+                    }, null, 8, ["model-value", "onUpdate:modelValue"]),
                     _createElementVNode("div", _hoisted_9, [
-                      _createElementVNode("strong", null, _toDisplayString(task.video_name || '未知视频'), 1),
-                      _createVNode(_component_VChip, {
-                        size: "x-small",
+                      _createElementVNode("div", _hoisted_10, [
+                        _createElementVNode("strong", null, _toDisplayString(task.video_name || '未知视频'), 1),
+                        _createVNode(_component_VChip, {
+                          size: "x-small",
+                          variant: "tonal",
+                          color: statusColor(task)
+                        }, {
+                          default: _withCtx(() => [
+                            _createTextVNode(_toDisplayString(task.status_label || task.status), 1)
+                          ]),
+                          _: 2
+                        }, 1032, ["color"])
+                      ]),
+                      _createElementVNode("div", _hoisted_11, [
+                        (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(pathParts(task.video_file), (part, index) => {
+                          return (_openBlock(), _createElementBlock(_Fragment, {
+                            key: `${task.task_id}-${index}`
+                          }, [
+                            _createElementVNode("span", null, _toDisplayString(part), 1),
+                            (index === 0 && pathParts(task.video_file).length > 1)
+                              ? (_openBlock(), _createElementBlock("br", _hoisted_12))
+                              : _createCommentVNode("", true)
+                          ], 64))
+                        }), 128))
+                      ]),
+                      _createElementVNode("div", _hoisted_13, [
+                        _createElementVNode("span", null, _toDisplayString(task.source_label || task.source), 1),
+                        _createElementVNode("span", null, _toDisplayString(task.add_time || '-'), 1),
+                        _createElementVNode("span", null, _toDisplayString(task.complete_time || '-'), 1),
+                        (task.message)
+                          ? (_openBlock(), _createElementBlock("span", _hoisted_14, _toDisplayString(task.message), 1))
+                          : _createCommentVNode("", true)
+                      ])
+                    ]),
+                    _createElementVNode("div", _hoisted_15, [
+                      _createVNode(_component_VBtn, {
+                        size: "small",
+                        color: "warning",
                         variant: "tonal",
-                        color: statusColor(task)
+                        disabled: !canCancelTask(task) || operating.value,
+                        onClick: $event => (cancelTasks([task]))
                       }, {
-                        default: _withCtx(() => [
-                          _createTextVNode(_toDisplayString(task.status_label || task.status), 1)
-                        ]),
-                        _: 2
-                      }, 1032, ["color"])
-                    ]),
-                    _createElementVNode("div", _hoisted_10, [
-                      (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(pathParts(task.video_file), (part, index) => {
-                        return (_openBlock(), _createElementBlock(_Fragment, {
-                          key: `${task.task_id}-${index}`
-                        }, [
-                          _createElementVNode("span", null, _toDisplayString(part), 1),
-                          (index === 0 && pathParts(task.video_file).length > 1)
-                            ? (_openBlock(), _createElementBlock("br", _hoisted_11))
-                            : _createCommentVNode("", true)
-                        ], 64))
-                      }), 128))
-                    ]),
-                    _createElementVNode("div", _hoisted_12, [
-                      _createElementVNode("span", null, _toDisplayString(task.source_label || task.source), 1),
-                      _createElementVNode("span", null, _toDisplayString(task.add_time || '-'), 1),
-                      _createElementVNode("span", null, _toDisplayString(task.complete_time || '-'), 1),
-                      (task.message)
-                        ? (_openBlock(), _createElementBlock("span", _hoisted_13, _toDisplayString(task.message), 1))
-                        : _createCommentVNode("", true)
+                        default: _withCtx(() => [...(_cache[7] || (_cache[7] = [
+                          _createTextVNode(" 取消 ", -1)
+                        ]))]),
+                        _: 1
+                      }, 8, ["disabled", "onClick"]),
+                      _createVNode(_component_VBtn, {
+                        size: "small",
+                        color: "primary",
+                        variant: "tonal",
+                        disabled: !canRestartTask(task) || operating.value,
+                        onClick: $event => (restartTasks([task]))
+                      }, {
+                        default: _withCtx(() => [...(_cache[8] || (_cache[8] = [
+                          _createTextVNode(" 重启 ", -1)
+                        ]))]),
+                        _: 1
+                      }, 8, ["disabled", "onClick"])
                     ])
-                  ]),
-                  _createElementVNode("div", _hoisted_14, [
-                    _createVNode(_component_VBtn, {
-                      size: "small",
-                      color: "warning",
-                      variant: "tonal",
-                      disabled: !canCancelTask(task) || operating.value,
-                      onClick: $event => (cancelTasks([task]))
-                    }, {
-                      default: _withCtx(() => [...(_cache[7] || (_cache[7] = [
-                        _createTextVNode(" 取消 ", -1)
-                      ]))]),
-                      _: 1
-                    }, 8, ["disabled", "onClick"]),
-                    _createVNode(_component_VBtn, {
-                      size: "small",
-                      color: "primary",
-                      variant: "tonal",
-                      disabled: !canRestartTask(task) || operating.value,
-                      onClick: $event => (restartTasks([task]))
-                    }, {
-                      default: _withCtx(() => [...(_cache[8] || (_cache[8] = [
-                        _createTextVNode(" 重启 ", -1)
-                      ]))]),
-                      _: 1
-                    }, 8, ["disabled", "onClick"])
-                  ])
-                ], 2))
-              }), 128))
-            ]))
+                  ], 2))
+                }), 128))
+              ]))
     ])
   ]))
 }
 }
 
 };
-const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-00e373b8"]]);
+const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-79366bba"]]);
 
 export { Page as default };

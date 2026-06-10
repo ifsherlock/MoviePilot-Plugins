@@ -17,16 +17,13 @@ const pluginBase = computed(() => `plugin/${props.pluginId || 'AutoSubv3'}`)
 const loading = ref(false)
 const operating = ref(false)
 const sortOrder = ref('desc')
+const statusFilter = ref('all')
 const selectedTaskIds = ref([])
 const error = ref('')
 const message = ref('')
 const status = ref({})
 const tasks = ref([])
 
-const selectedTasks = computed(() => {
-  const picked = new Set(selectedTaskIds.value)
-  return sortedTasks.value.filter(task => picked.has(task.task_id))
-})
 const sortedTasks = computed(() => {
   const items = [...tasks.value]
   items.sort((a, b) => {
@@ -36,8 +33,29 @@ const sortedTasks = computed(() => {
   })
   return items
 })
+const visibleTasks = computed(() => {
+  if (statusFilter.value === 'all') return sortedTasks.value
+  return sortedTasks.value.filter(task => task.status === statusFilter.value)
+})
+const visibleTaskIds = computed(() => new Set(visibleTasks.value.map(task => task.task_id)))
+const allVisibleSelected = computed(() => (
+  Boolean(visibleTasks.value.length)
+  && visibleTasks.value.every(task => selectedTaskIds.value.includes(task.task_id))
+))
+const selectedTasks = computed(() => {
+  const picked = new Set(selectedTaskIds.value)
+  return visibleTasks.value.filter(task => picked.has(task.task_id))
+})
 const cancellableSelected = computed(() => selectedTasks.value.filter(canCancelTask))
 const restartableSelected = computed(() => selectedTasks.value.filter(canRestartTask))
+const statusChips = computed(() => [
+  { value: 'all', label: '总数', count: tasks.value.length },
+  { value: 'pending', label: '等待', count: status.value.counts?.pending || 0, color: 'info' },
+  { value: 'in_progress', label: '处理中', count: status.value.counts?.in_progress || 0, color: 'warning' },
+  { value: 'completed', label: '完成', count: status.value.counts?.completed || 0, color: 'success' },
+  { value: 'failed', label: '失败', count: status.value.counts?.failed || 0, color: 'error' },
+  { value: 'cancelled', label: '已取消', count: status.value.counts?.cancelled || 0 },
+])
 
 function unwrapResponse(response) {
   return response?.data?.data || response?.data || response || {}
@@ -121,9 +139,14 @@ function toggleTask(task, checked) {
 }
 
 function toggleAll() {
-  selectedTaskIds.value = selectedTaskIds.value.length === sortedTasks.value.length
-    ? []
-    : sortedTasks.value.map(task => task.task_id)
+  if (allVisibleSelected.value) {
+    selectedTaskIds.value = selectedTaskIds.value.filter(id => !visibleTaskIds.value.has(id))
+    return
+  }
+  selectedTaskIds.value = Array.from(new Set([
+    ...selectedTaskIds.value,
+    ...visibleTasks.value.map(task => task.task_id),
+  ]))
 }
 
 function canCancelTask(task) {
@@ -144,6 +167,12 @@ function statusColor(task) {
     ignored: 'default',
     no_audio: 'default',
   }[task?.status] || 'default'
+}
+
+function setStatusFilter(value) {
+  statusFilter.value = value
+  const visibleIds = new Set(visibleTasks.value.map(task => task.task_id))
+  selectedTaskIds.value = selectedTaskIds.value.filter(id => visibleIds.has(id))
 }
 
 function pathParts(path) {
@@ -175,10 +204,10 @@ onMounted(loadTasks)
       <VBtn
         variant="tonal"
         prepend-icon="mdi-checkbox-multiple-marked-outline"
-        :disabled="!sortedTasks.length"
+        :disabled="!visibleTasks.length"
         @click="toggleAll"
       >
-        {{ selectedTaskIds.length === sortedTasks.length ? '取消全选' : '全选' }}
+        {{ allVisibleSelected ? '取消全选' : '全选' }}
       </VBtn>
       <VBtn
         color="warning"
@@ -210,19 +239,25 @@ onMounted(loadTasks)
       <VAlert v-if="message" class="mb-4" type="success" variant="tonal" :text="message" />
 
       <div class="summary-strip">
-        <VChip size="small" variant="tonal">总数 {{ tasks.length }}</VChip>
-        <VChip size="small" variant="tonal" color="info">等待 {{ status.counts?.pending || 0 }}</VChip>
-        <VChip size="small" variant="tonal" color="warning">处理中 {{ status.counts?.in_progress || 0 }}</VChip>
-        <VChip size="small" variant="tonal" color="success">完成 {{ status.counts?.completed || 0 }}</VChip>
-        <VChip size="small" variant="tonal" color="error">失败 {{ status.counts?.failed || 0 }}</VChip>
-        <VChip size="small" variant="tonal">已取消 {{ status.counts?.cancelled || 0 }}</VChip>
+        <VChip
+          v-for="chip in statusChips"
+          :key="chip.value"
+          size="small"
+          class="filter-chip"
+          :variant="statusFilter === chip.value ? 'flat' : 'tonal'"
+          :color="chip.color || (statusFilter === chip.value ? 'primary' : undefined)"
+          @click="setStatusFilter(chip.value)"
+        >
+          {{ chip.label }} {{ chip.count }}
+        </VChip>
       </div>
 
       <div v-if="loading && !tasks.length" class="empty-state">正在读取任务...</div>
       <div v-else-if="!tasks.length" class="empty-state">暂无 AI 字幕任务</div>
+      <div v-else-if="!visibleTasks.length" class="empty-state">当前筛选暂无任务</div>
       <div v-else class="task-list">
         <div
-          v-for="task in sortedTasks"
+          v-for="task in visibleTasks"
           :key="task.task_id"
           class="task-row"
           :class="{ selected: selectedTaskIds.includes(task.task_id) }"
@@ -307,6 +342,11 @@ onMounted(loadTasks)
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 14px;
+}
+
+.filter-chip {
+  cursor: pointer;
+  user-select: none;
 }
 
 .task-list {
