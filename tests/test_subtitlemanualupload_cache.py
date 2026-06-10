@@ -93,6 +93,11 @@ def make_plugin(module):
     plugin._entry_map_max_size = 2
     plugin._media_index_cache_max_keys = 20
     plugin._ai_link_enabled = False
+    plugin._auto_skip_chinese_media_on_transfer = True
+    plugin._auto_transfer_subtitle_strategy = "search_first"
+    plugin._auto_search_min_score = 20
+    plugin._online_provider_ids = ["assrt"]
+    plugin._tmdb_detail_cache = {}
     plugin._build_entry_from_history = lambda history: dict(history)
     cache_file = plugin._local_cache_file()
     if cache_file.exists():
@@ -484,3 +489,177 @@ def test_tmdb_detail_payload_prefers_real_english_translation_title():
 
     assert payload["en_title"] == "The Lord of the Rings: The Return of the King"
     assert "Der Herr der Ringe - Die Rueckkehr des Koenigs" in payload["tmdb_aliases"]
+
+
+def make_auto_entry(tmp_path, filename="Movie.mkv", **overrides):
+    video = tmp_path / filename
+    video.write_text("video", encoding="utf-8")
+    entry = {
+        "id": filename,
+        "media_key": "movie-key",
+        "media_type": "movie",
+        "title": "Movie",
+        "year": "2024",
+        "tmdb_id": 123,
+        "douban_id": "",
+        "path": str(video),
+        "basename": video.stem,
+        "filename": video.name,
+        "storage": "local",
+        "library_name": "MoviePilot 入库事件",
+        "target_label": video.name,
+    }
+    entry.update(overrides)
+    return entry
+
+
+def test_auto_transfer_skips_chinese_media_by_tmdb_language(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    entry = make_auto_entry(tmp_path, title="流浪地球")
+    plugin._tmdb_detail_for_media = lambda media: {"original_language": "zh", "origin_country": ["CN"]}
+    plugin._auto_search_write_subtitle = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("Chinese media should skip search")
+    )
+    plugin._auto_submit_ai_for_entry = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("Chinese media should skip AI")
+    )
+
+    result = plugin._auto_process_transfer_entry(entry)
+
+    assert result["status"] == "skipped"
+    assert "中文资源自动跳过" in result["reason"]
+
+
+def test_auto_transfer_chinese_title_is_not_skip_evidence_without_tmdb_match(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    entry = make_auto_entry(tmp_path, title="灰原同学的第二轮青春游戏", media_type="tv", season=1, episode=7)
+    plugin._tmdb_detail_for_media = lambda media: {"original_language": "ja", "origin_country": ["JP"]}
+    plugin._auto_search_write_subtitle = lambda item, target: {
+        "status": "written",
+        "target": target.get("label"),
+        "result": "Haigakura S01E07",
+    }
+    plugin._auto_submit_ai_for_entry = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("Written result should not trigger fallback AI")
+    )
+
+    result = plugin._auto_process_transfer_entry(entry)
+
+    assert result["status"] == "written"
+    assert result["result"] == "Haigakura S01E07"
+
+
+def test_auto_transfer_search_first_falls_back_to_ai_when_search_is_uncertain(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    entry = make_auto_entry(tmp_path)
+    plugin._auto_skip_chinese_media_on_transfer = False
+    plugin._auto_search_write_subtitle = lambda item, target: {
+        "status": "skipped",
+        "target": target.get("label"),
+        "reason": "高置信可下载结果数量为 0",
+        "search_results": 0,
+    }
+    plugin._auto_submit_ai_for_entry = lambda item, target, reason: {
+        "status": "ai_submitted",
+        "target": target.get("label"),
+        "reason": reason,
+    }
+
+    result = plugin._auto_process_transfer_entry(entry)
+
+    assert result["status"] == "ai_submitted"
+    assert result["search"]["search_results"] == 0
+
+
+def test_auto_transfer_search_only_never_submits_ai(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    entry = make_auto_entry(tmp_path)
+    plugin._auto_skip_chinese_media_on_transfer = False
+    plugin._auto_transfer_subtitle_strategy = "search_only"
+    plugin._auto_search_write_subtitle = lambda item, target: {
+        "status": "skipped",
+        "target": target.get("label"),
+        "reason": "高置信可下载结果数量为 0",
+    }
+    plugin._auto_submit_ai_for_entry = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("search_only should not submit AI")
+    )
+
+    result = plugin._auto_process_transfer_entry(entry)
+
+    assert result["status"] == "skipped"
+    assert result["strategy"] == "search_only"
+
+
+def test_auto_transfer_ai_only_never_searches(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    entry = make_auto_entry(tmp_path)
+    plugin._auto_skip_chinese_media_on_transfer = False
+    plugin._auto_transfer_subtitle_strategy = "ai_only"
+    plugin._auto_search_write_subtitle = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("ai_only should not search")
+    )
+    plugin._auto_submit_ai_for_entry = lambda item, target, reason: {
+        "status": "ai_submitted",
+        "target": target.get("label"),
+        "reason": reason,
+    }
+
+    result = plugin._auto_process_transfer_entry(entry)
+
+    assert result["status"] == "ai_submitted"
+    assert result["strategy"] == "ai_only"
+
+
+def test_auto_transfer_ai_first_falls_back_to_search_only_when_ai_fails(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    entry = make_auto_entry(tmp_path)
+    plugin._auto_skip_chinese_media_on_transfer = False
+    plugin._auto_transfer_subtitle_strategy = "ai_first"
+    plugin._auto_submit_ai_for_entry = lambda item, target, reason: {
+        "status": "failed",
+        "target": target.get("label"),
+        "reason": "AI 插件不可用",
+    }
+    plugin._auto_search_write_subtitle = lambda item, target: {
+        "status": "written",
+        "target": target.get("label"),
+        "result": "ASSRT subtitle",
+    }
+
+    result = plugin._auto_process_transfer_entry(entry)
+
+    assert result["status"] == "written"
+    assert result["ai"]["status"] == "failed"
+
+
+def test_auto_transfer_existing_subtitle_skips_all_strategies(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    entry = make_auto_entry(tmp_path, filename="Movie.mkv")
+    (tmp_path / "Movie.chi.srt").write_text("subtitle", encoding="utf-8")
+    plugin._auto_search_write_subtitle = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("existing subtitle should skip search")
+    )
+    plugin._auto_submit_ai_for_entry = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("existing subtitle should skip AI")
+    )
+
+    result = plugin._auto_process_transfer_entry(entry)
+
+    assert result["status"] == "skipped"
+    assert result["reason"] == "目标已有外挂字幕"
+
+
+def test_auto_search_providers_excludes_opensubtitles():
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._online_provider_ids = ["assrt", "opensubtitles"]
+
+    assert plugin._auto_search_providers() == ["assrt"]

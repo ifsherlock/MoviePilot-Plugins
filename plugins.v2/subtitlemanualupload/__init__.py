@@ -81,7 +81,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/subtitle-match.png"
-    plugin_version = "0.1.56"
+    plugin_version = "0.1.57"
     plugin_author = "ifsherlock"
     author_url = "https://github.com/ifsherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -109,6 +109,8 @@ class SubtitleManualUpload(_PluginBase):
     _ai_link_enabled = True
     _traditional_to_simplified = False
     _auto_search_on_transfer = False
+    _auto_skip_chinese_media_on_transfer = True
+    _auto_transfer_subtitle_strategy = "search_first"
     _auto_search_min_score = 20
     _cache_ttl_seconds = 1800
     _cache_max_entries = 5000
@@ -137,6 +139,21 @@ class SubtitleManualUpload(_PluginBase):
     _rar_tools = ("unrar", "bsdtar", "7z", "7za", "7zz")
     _rar_python_package = "rarfile"
     _rar_dependency_modes = {"none", "container_install", "mapped_binary"}
+    _auto_transfer_subtitle_strategies = {"search_first", "search_only", "ai_only", "ai_first"}
+    _chinese_media_language_codes = {"zh", "cn", "zho", "cmn", "yue"}
+    _chinese_media_country_codes = {"cn", "hk", "tw", "sg"}
+    _chinese_media_region_names = {
+        "china",
+        "hong kong",
+        "taiwan",
+        "singapore",
+        "中国",
+        "大陆",
+        "香港",
+        "台湾",
+        "新加坡",
+    }
+    _chinese_media_category_pattern = re.compile(r"华语|国产|大陆|内地|香港|台湾|港剧|台剧|港片|台片|港台|中国")
     _stream_exts = {".strm"}
     _default_session_hours = 24
     _language_suffix_aliases = {
@@ -200,6 +217,12 @@ class SubtitleManualUpload(_PluginBase):
         self._ai_link_enabled = bool(config.get("ai_link_enabled", True))
         self._traditional_to_simplified = bool(config.get("traditional_to_simplified", False))
         self._auto_search_on_transfer = bool(config.get("auto_search_on_transfer", False))
+        self._auto_skip_chinese_media_on_transfer = bool(
+            config.get("auto_skip_chinese_media_on_transfer", True)
+        )
+        self._auto_transfer_subtitle_strategy = self._normalize_auto_transfer_subtitle_strategy(
+            config.get("auto_transfer_subtitle_strategy")
+        )
         if not config.get("assrt_provider_migrated") and not self._assrt_api_key:
             self._online_provider_ids = [item for item in self._online_provider_ids if item != "assrt"]
         if self._assrt_api_key and "assrt" not in self._online_provider_ids:
@@ -217,6 +240,8 @@ class SubtitleManualUpload(_PluginBase):
         type(self)._rar_tool_path = self._rar_tool_path
         type(self)._traditional_to_simplified = self._traditional_to_simplified
         type(self)._auto_search_on_transfer = self._auto_search_on_transfer
+        type(self)._auto_skip_chinese_media_on_transfer = self._auto_skip_chinese_media_on_transfer
+        type(self)._auto_transfer_subtitle_strategy = self._auto_transfer_subtitle_strategy
         self._entry_map = OrderedDict()
         self._media_index_cache = OrderedDict()
         self._cache_refreshing = False
@@ -416,6 +441,43 @@ class SubtitleManualUpload(_PluginBase):
                                         "props": {
                                             "model": "auto_search_on_transfer",
                                             "label": "入库后自动搜索匹配字幕",
+                                        },
+                                    }
+                                ],
+                            },
+                        ],
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VSwitch",
+                                        "props": {
+                                            "model": "auto_skip_chinese_media_on_transfer",
+                                            "label": "入库自动处理跳过中文资源",
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VSelect",
+                                        "props": {
+                                            "model": "auto_transfer_subtitle_strategy",
+                                            "label": "入库后字幕处理策略",
+                                            "items": [
+                                                {"title": "搜索优先，AI 兜底", "value": "search_first"},
+                                                {"title": "只搜索匹配字幕", "value": "search_only"},
+                                                {"title": "只提交 AI 生成", "value": "ai_only"},
+                                                {"title": "AI 优先，失败再搜索", "value": "ai_first"},
+                                            ],
                                         },
                                     }
                                 ],
@@ -672,6 +734,8 @@ class SubtitleManualUpload(_PluginBase):
             "rar_tool_path": "/usr/local/bin/7z",
             "traditional_to_simplified": False,
             "auto_search_on_transfer": False,
+            "auto_skip_chinese_media_on_transfer": True,
+            "auto_transfer_subtitle_strategy": "search_first",
             "online_providers": list(self._default_online_provider_ids),
             "online_engine": DEFAULT_ENGINE,
             "online_use_proxy": False,
@@ -736,6 +800,8 @@ class SubtitleManualUpload(_PluginBase):
                 "rar_tool_path": self._rar_tool_path,
                 "traditional_to_simplified": self._traditional_to_simplified,
                 "auto_search_on_transfer": self._auto_search_on_transfer,
+                "auto_skip_chinese_media_on_transfer": self._auto_skip_chinese_media_on_transfer,
+                "auto_transfer_subtitle_strategy": self._auto_transfer_subtitle_strategy,
                 "online_providers": self._online_provider_ids,
                 "online_engine": self._online_engine,
                 "online_use_proxy": self._online_use_proxy,
@@ -839,6 +905,13 @@ class SubtitleManualUpload(_PluginBase):
         if mode in cls._rar_dependency_modes:
             return mode
         return "none"
+
+    @classmethod
+    def _normalize_auto_transfer_subtitle_strategy(cls, value: Any) -> str:
+        strategy = cls._normalize_text(value).lower()
+        if strategy in cls._auto_transfer_subtitle_strategies:
+            return strategy
+        return "search_first"
 
     @classmethod
     def _normalize_provider_ids(cls, value: Any, *, fallback: bool = True) -> List[str]:
@@ -2051,6 +2124,122 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             target["en_title"] = detail["en_title"]
 
     @classmethod
+    def _flatten_media_values(cls, value: Any, keys: Tuple[str, ...] = ()) -> List[str]:
+        values: List[str] = []
+
+        def walk(item: Any) -> None:
+            if item is None:
+                return
+            if isinstance(item, dict):
+                for key in keys or ("iso_3166_1", "iso_639_1", "code", "value", "name", "english_name"):
+                    if key in item:
+                        walk(item.get(key))
+                return
+            if isinstance(item, (list, tuple, set)):
+                for child in item:
+                    walk(child)
+                return
+            text = cls._normalize_text(item)
+            if not text:
+                return
+            for part in re.split(r"[,/|]+", text):
+                clean = cls._normalize_text(part).lower().replace("_", "-")
+                if clean:
+                    values.append(clean)
+
+        walk(value)
+        return values
+
+    @classmethod
+    def _is_chinese_language_code(cls, value: Any) -> bool:
+        code = cls._normalize_text(value).lower().replace("_", "-")
+        base = re.split(r"[-\s]+", code, maxsplit=1)[0] if code else ""
+        return code in cls._chinese_media_language_codes or base in cls._chinese_media_language_codes
+
+    @classmethod
+    def _is_chinese_country_value(cls, value: Any) -> bool:
+        text = cls._normalize_text(value).lower().replace("_", "-")
+        base = re.split(r"[-\s]+", text, maxsplit=1)[0] if text else ""
+        return (
+            text in cls._chinese_media_country_codes
+            or base in cls._chinese_media_country_codes
+            or text in cls._chinese_media_region_names
+        )
+
+    @classmethod
+    def _chinese_category_evidence(cls, entry: Dict[str, Any]) -> str:
+        values = []
+        for key in [
+            "library_name",
+            "media_category",
+            "media_category_name",
+            "category",
+            "category_name",
+            "type_name",
+        ]:
+            raw = entry.get(key)
+            if isinstance(raw, (list, tuple, set)):
+                values.extend(cls._normalize_text(item) for item in raw)
+            else:
+                values.append(cls._normalize_text(raw))
+        text = " ".join(item for item in values if item)
+        if text and cls._chinese_media_category_pattern.search(text):
+            return "MP 分类/库名包含华语标识"
+        return ""
+
+    def _auto_media_for_entry(self, entry: Dict[str, Any]) -> Dict[str, Any]:
+        media = {
+            "media_type": entry.get("media_type"),
+            "title": entry.get("title"),
+            "year": entry.get("year"),
+            "tmdb_id": entry.get("tmdb_id"),
+            "douban_id": entry.get("douban_id"),
+            "original_language": entry.get("original_language"),
+            "origin_country": entry.get("origin_country"),
+            "production_countries": entry.get("production_countries"),
+            "original_title": entry.get("original_title") or entry.get("original_name"),
+            "en_title": entry.get("en_title"),
+            "tmdb_aliases": entry.get("tmdb_aliases"),
+        }
+        tmdb_detail = self._tmdb_detail_for_media(media)
+        if tmdb_detail:
+            self._apply_tmdb_detail(media, tmdb_detail)
+            self._apply_tmdb_detail(entry, tmdb_detail)
+        return media
+
+    def _is_chinese_transfer_media(self, entry: Dict[str, Any]) -> Tuple[bool, str]:
+        category_reason = self._chinese_category_evidence(entry)
+        if category_reason:
+            return True, category_reason
+
+        media = self._auto_media_for_entry(entry)
+        languages = self._flatten_media_values(
+            media.get("original_language"),
+            ("iso_639_1", "code", "value", "name", "english_name"),
+        )
+        for language in languages:
+            if self._is_chinese_language_code(language):
+                return True, f"TMDB original_language={language}"
+
+        country_values = [
+            *self._flatten_media_values(
+                media.get("origin_country"),
+                ("iso_3166_1", "code", "value", "name", "english_name"),
+            ),
+            *self._flatten_media_values(
+                media.get("production_countries"),
+                ("iso_3166_1", "code", "value", "name", "english_name"),
+            ),
+        ]
+        for country in country_values:
+            if self._is_chinese_country_value(country):
+                return True, f"TMDB country={country}"
+
+        if media.get("tmdb_id"):
+            return False, "TMDB 未提供中文语种/地区证据"
+        return False, "中文识别证据不足"
+
+    @classmethod
     def _is_stream_path(cls, path: Any) -> bool:
         return Path(cls._normalize_text(path)).suffix.lower() in cls._stream_exts
 
@@ -2768,24 +2957,16 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         return keywords[:8]
 
     def _auto_search_keywords_for_entry(self, entry: Dict[str, Any], target: Dict[str, Any]) -> List[str]:
-        media = {
-            "media_type": entry.get("media_type"),
-            "title": entry.get("title"),
-            "year": entry.get("year"),
-            "tmdb_id": entry.get("tmdb_id"),
-            "douban_id": entry.get("douban_id"),
-        }
-        tmdb_detail = self._tmdb_detail_for_media(media)
-        if tmdb_detail:
-            self._apply_tmdb_detail(media, tmdb_detail)
-            self._apply_tmdb_detail(target, tmdb_detail)
+        media = self._auto_media_for_entry(entry)
+        self._apply_tmdb_detail(target, media)
         return build_search_keywords(media, [target], "auto")[:8]
 
-    def _auto_search_and_write_entry(self, entry: Dict[str, Any]) -> Dict[str, Any]:
-        target = self._target_from_entry(entry)
-        if target.get("has_subtitle"):
-            return {"status": "skipped", "reason": "目标已有外挂字幕", "target": target.get("label")}
-        providers = [item for item in (self._online_provider_ids or []) if item != "opensubtitles"]
+    def _auto_search_providers(self) -> List[str]:
+        return [item for item in (self._online_provider_ids or []) if item != "opensubtitles"]
+
+    def _auto_search_write_subtitle(self, entry: Dict[str, Any], target: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+        target = target or self._target_from_entry(entry)
+        providers = self._auto_search_providers()
         if not providers:
             return {"status": "skipped", "reason": "未配置可用 API 字幕源", "target": target.get("label")}
         keywords = self._auto_search_keywords_for_entry(entry, target)
@@ -2811,6 +2992,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                 "reason": f"高置信可下载结果数量为 {len(candidates)}",
                 "target": target.get("label"),
                 "results": len(search_result.get("results") or []),
+                "search_results": len(search_result.get("results") or []),
             }
 
         selected = candidates[0]
@@ -2864,28 +3046,129 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                 operations=operations,
                 fix_timeline=False,
             )
+            ai_result = None
             if selected.get("language_category") == "english":
-                try:
-                    self._submit_autosub_for_entries([entry])
-                except Exception as exc:
-                    logger.warning("[SubtitleManualUpload] 自动入库英文字幕提交 AI 翻译失败: %s", exc)
+                ai_result = self._auto_submit_ai_for_entry(entry, target, "自动入库写入英文字幕后提交翻译")
+                if ai_result.get("status") == "failed":
+                    logger.warning("[SubtitleManualUpload] 自动入库英文字幕提交 AI 翻译失败: %s", ai_result.get("reason"))
             return {
                 "status": "written",
                 "target": target.get("label"),
                 "result": selected.get("title"),
                 "written": written,
                 "simplified_count": simplified_count,
+                "search_results": len(search_result.get("results") or []),
+                "ai": ai_result,
             }
         finally:
             shutil.rmtree(session_dir, ignore_errors=True)
 
+    def _auto_search_and_write_entry(self, entry: Dict[str, Any]) -> Dict[str, Any]:
+        target = self._target_from_entry(entry)
+        if target.get("has_subtitle"):
+            return {"status": "skipped", "reason": "目标已有外挂字幕", "target": target.get("label")}
+        return self._auto_search_write_subtitle(entry, target)
+
+    def _auto_submit_ai_for_entry(
+        self,
+        entry: Dict[str, Any],
+        target: Optional[Dict[str, Any]] = None,
+        reason: str = "",
+    ) -> Dict[str, Any]:
+        target = target or self._target_from_entry(entry)
+        try:
+            result = self._submit_autosub_for_entries([entry])
+        except HTTPException as exc:
+            return {
+                "status": "failed",
+                "reason": self._normalize_text(getattr(exc, "detail", "")) or str(exc),
+                "target": target.get("label"),
+                "ai_reason": reason,
+            }
+        except Exception as exc:
+            logger.warning("[SubtitleManualUpload] 入库自动字幕提交 AI 失败 target=%s error=%s", target.get("label"), exc)
+            return {
+                "status": "failed",
+                "reason": f"AI 字幕任务提交失败: {exc}",
+                "target": target.get("label"),
+                "ai_reason": reason,
+            }
+
+        added = result.get("added") or []
+        skipped = result.get("skipped") or []
+        failed = result.get("failed") or []
+        if added:
+            status = "ai_submitted"
+            message = f"已提交 AI 字幕任务 {len(added)} 个"
+        elif failed:
+            status = "failed"
+            message = (
+                self._normalize_text((failed[0] or {}).get("reason"))
+                if isinstance(failed[0], dict)
+                else "AI 字幕任务提交失败"
+            )
+        elif skipped:
+            status = "skipped"
+            first = skipped[0] if isinstance(skipped[0], dict) else {}
+            message = self._normalize_text(first.get("reason")) or "AI 字幕任务已跳过"
+        else:
+            status = "skipped"
+            message = "AI 插件未返回新增任务"
+        return {
+            "status": status,
+            "reason": message,
+            "target": target.get("label"),
+            "ai_reason": reason,
+            "ai": {
+                "added": len(added),
+                "skipped": len(skipped),
+                "failed": len(failed),
+            },
+        }
+
+    def _auto_process_transfer_entry(self, entry: Dict[str, Any]) -> Dict[str, Any]:
+        target = self._target_from_entry(entry)
+        strategy = self._normalize_auto_transfer_subtitle_strategy(self._auto_transfer_subtitle_strategy)
+        base = {"strategy": strategy, "target": target.get("label")}
+
+        if target.get("has_subtitle"):
+            return {**base, "status": "skipped", "reason": "目标已有外挂字幕"}
+
+        if self._auto_skip_chinese_media_on_transfer:
+            is_chinese, evidence = self._is_chinese_transfer_media(entry)
+            if is_chinese:
+                return {**base, "status": "skipped", "reason": f"中文资源自动跳过：{evidence}"}
+            logger.info(
+                "[SubtitleManualUpload] 入库自动字幕中文识别未跳过 target=%s evidence=%s",
+                target.get("label"),
+                evidence,
+            )
+
+        if strategy == "ai_only":
+            return {**base, **self._auto_submit_ai_for_entry(entry, target, "策略 ai_only")}
+
+        if strategy == "ai_first":
+            ai_result = self._auto_submit_ai_for_entry(entry, target, "策略 ai_first")
+            if ai_result.get("status") != "failed":
+                return {**base, **ai_result}
+            search_result = self._auto_search_write_subtitle(entry, target)
+            return {**base, **search_result, "ai": ai_result}
+
+        search_result = self._auto_search_write_subtitle(entry, target)
+        if strategy == "search_only" or search_result.get("status") == "written":
+            return {**base, **search_result}
+
+        ai_result = self._auto_submit_ai_for_entry(entry, target, "搜索无单一高置信结果后兜底")
+        return {**base, **ai_result, "search": search_result}
+
     def _process_transfer_auto_subtitles(self, entries: List[Dict[str, Any]]) -> None:
         for entry in entries:
             try:
-                result = self._auto_search_and_write_entry(entry)
+                result = self._auto_process_transfer_entry(entry)
                 logger.info(
-                    "[SubtitleManualUpload] 入库自动字幕处理完成 target=%s status=%s reason=%s",
+                    "[SubtitleManualUpload] 入库自动字幕处理完成 target=%s strategy=%s status=%s reason=%s",
                     result.get("target"),
+                    result.get("strategy"),
                     result.get("status"),
                     result.get("reason", ""),
                 )
@@ -3010,6 +3293,8 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             {
                 "enabled": self.get_state(),
                 "auto_search_on_transfer": bool(self._auto_search_on_transfer),
+                "auto_skip_chinese_media_on_transfer": bool(self._auto_skip_chinese_media_on_transfer),
+                "auto_transfer_subtitle_strategy": self._auto_transfer_subtitle_strategy,
                 "traditional_to_simplified": bool(self._traditional_to_simplified),
                 "source": "MoviePilot 本地整理记录",
                 "index": self._cache_status(),

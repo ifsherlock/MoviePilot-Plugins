@@ -17,6 +17,8 @@ const localConfig = ref({
   online_use_proxy: false,
   traditional_to_simplified: false,
   auto_search_on_transfer: false,
+  auto_skip_chinese_media_on_transfer: true,
+  auto_transfer_subtitle_strategy: 'search_first',
   subhd_url: 'https://subhd.tv',
   zimuku_url: 'https://zimuku.org',
   assrt_url: 'https://2.assrt.net',
@@ -43,6 +45,13 @@ const rarDependencyModes = [
   { title: '使用宿主机映射文件', value: 'mapped_binary' },
 ]
 
+const autoStrategyItems = [
+  { title: '搜索优先，AI 兜底', value: 'search_first' },
+  { title: '只搜索匹配字幕', value: 'search_only' },
+  { title: '只提交 AI 生成', value: 'ai_only' },
+  { title: 'AI 优先，失败再搜索', value: 'ai_first' },
+]
+
 function normalizeProviders(value) {
   const allowed = ['assrt', 'opensubtitles']
   const providers = Array.isArray(value) ? value.filter(item => allowed.includes(item)) : []
@@ -60,6 +69,9 @@ function normalizeConfig(input) {
   const opensubtitlesUsername = String(input?.opensubtitles_username || '').trim()
   const opensubtitlesPassword = String(input?.opensubtitles_password || '').trim()
   const providers = normalizeProviders(input?.online_providers)
+  const autoStrategy = autoStrategyItems.some(item => item.value === input?.auto_transfer_subtitle_strategy)
+    ? input.auto_transfer_subtitle_strategy
+    : 'search_first'
   if (assrtApiKey && !providers.includes('assrt')) {
     providers.push('assrt')
   }
@@ -74,6 +86,8 @@ function normalizeConfig(input) {
     online_proxy_migrated: true,
     traditional_to_simplified: Boolean(input?.traditional_to_simplified),
     auto_search_on_transfer: Boolean(input?.auto_search_on_transfer),
+    auto_skip_chinese_media_on_transfer: input?.auto_skip_chinese_media_on_transfer !== false,
+    auto_transfer_subtitle_strategy: autoStrategy,
     subhd_url: normalizeRootUrl(input?.subhd_url, 'https://subhd.tv'),
     zimuku_url: normalizeRootUrl(input?.zimuku_url, 'https://zimuku.org'),
     assrt_url: normalizeRootUrl(input?.assrt_url, 'https://2.assrt.net'),
@@ -160,6 +174,20 @@ onMounted(() => {
               v-model="localConfig.auto_search_on_transfer"
               label="入库后自动搜索匹配字幕"
               color="info"
+              hide-details
+            />
+            <VSwitch
+              v-model="localConfig.auto_skip_chinese_media_on_transfer"
+              label="入库自动处理跳过中文资源"
+              color="success"
+              hide-details
+            />
+            <VSelect
+              v-model="localConfig.auto_transfer_subtitle_strategy"
+              :items="autoStrategyItems"
+              label="入库后字幕处理策略"
+              variant="outlined"
+              density="comfortable"
               hide-details
             />
           </div>
