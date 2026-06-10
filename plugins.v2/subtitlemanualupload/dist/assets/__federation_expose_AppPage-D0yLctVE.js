@@ -17,17 +17,17 @@ function targetLabel(target) {
   return target?.label || target?.target_label || ''
 }
 
-const {createElementVNode:_createElementVNode,openBlock:_openBlock,createElementBlock:_createElementBlock,createCommentVNode:_createCommentVNode,resolveComponent:_resolveComponent,createBlock:_createBlock,normalizeClass:_normalizeClass,toDisplayString:_toDisplayString,createTextVNode:_createTextVNode,withCtx:_withCtx,createVNode:_createVNode,withKeys:_withKeys,renderList:_renderList,Fragment:_Fragment,unref:_unref,withModifiers:_withModifiers,mergeProps:_mergeProps} = await importShared('vue');
+const {normalizeClass:_normalizeClass,createElementVNode:_createElementVNode,openBlock:_openBlock,createElementBlock:_createElementBlock,createCommentVNode:_createCommentVNode,resolveComponent:_resolveComponent,createBlock:_createBlock,toDisplayString:_toDisplayString,createTextVNode:_createTextVNode,withCtx:_withCtx,createVNode:_createVNode,withKeys:_withKeys,renderList:_renderList,Fragment:_Fragment,unref:_unref,withModifiers:_withModifiers,mergeProps:_mergeProps} = await importShared('vue');
 
 
 const _hoisted_1 = { class: "subtitle-upload-page" };
 const _hoisted_2 = {
   key: 0,
-  class: "hero-card"
+  class: "root-tabs"
 };
 const _hoisted_3 = {
-  key: 3,
-  class: "root-tabs"
+  key: 1,
+  class: "hero-card"
 };
 const _hoisted_4 = {
   key: 4,
@@ -778,16 +778,6 @@ function onlineResultLanguageCategory(item) {
 
 function isForeignOnlineResult(item) {
   return onlineResultLanguageCategory(item) !== 'chinese'
-}
-
-function providerStatus(providerId) {
-  const providers = [
-    ...(onlineStatus.value.providers || []),
-    ...(onlineStatus.value.manual_providers || []),
-  ];
-  const item = providers.find(provider => provider.id === providerId);
-  const host = item?.host ? `${item.host} · ` : '';
-  return `${host}${item?.message || ''}`
 }
 
 function providerProgressText(state) {
@@ -1816,33 +1806,8 @@ return (_ctx, _cache) => {
   const _component_VTooltip = _resolveComponent("VTooltip");
 
   return (_openBlock(), _createElementBlock("div", _hoisted_1, [
-    (!__props.hideTitle)
-      ? (_openBlock(), _createElementBlock("div", _hoisted_2, [...(_cache[27] || (_cache[27] = [
-          _createElementVNode("div", null, [
-            _createElementVNode("h1", null, "字幕匹配"),
-            _createElementVNode("p", null, "从 MoviePilot 本地库选择资源，上传字幕后确认匹配与改名结果。")
-          ], -1)
-        ]))]))
-      : _createCommentVNode("", true),
-    (error.value)
-      ? (_openBlock(), _createBlock(_component_VAlert, {
-          key: 1,
-          class: "mb-4",
-          type: "error",
-          variant: "tonal",
-          text: error.value
-        }, null, 8, ["text"]))
-      : (message.value)
-        ? (_openBlock(), _createBlock(_component_VAlert, {
-            key: 2,
-            class: "mb-4",
-            type: "success",
-            variant: "tonal",
-            text: message.value
-          }, null, 8, ["text"]))
-        : _createCommentVNode("", true),
     (!selectedMedia.value)
-      ? (_openBlock(), _createElementBlock("div", _hoisted_3, [
+      ? (_openBlock(), _createElementBlock("div", _hoisted_2, [
           _createElementVNode("button", {
             type: "button",
             class: _normalizeClass({ active: rootTab.value === 'match' }),
@@ -1855,6 +1820,31 @@ return (_ctx, _cache) => {
           }, " 总匹配历史 ", 2)
         ]))
       : _createCommentVNode("", true),
+    (!__props.hideTitle)
+      ? (_openBlock(), _createElementBlock("div", _hoisted_3, [...(_cache[27] || (_cache[27] = [
+          _createElementVNode("div", null, [
+            _createElementVNode("h1", null, "字幕匹配"),
+            _createElementVNode("p", null, "从 MoviePilot 本地库选择资源，上传字幕后确认匹配与改名结果。")
+          ], -1)
+        ]))]))
+      : _createCommentVNode("", true),
+    (error.value)
+      ? (_openBlock(), _createBlock(_component_VAlert, {
+          key: 2,
+          class: "mb-4",
+          type: "error",
+          variant: "tonal",
+          text: error.value
+        }, null, 8, ["text"]))
+      : (message.value)
+        ? (_openBlock(), _createBlock(_component_VAlert, {
+            key: 3,
+            class: "mb-4",
+            type: "success",
+            variant: "tonal",
+            text: message.value
+          }, null, 8, ["text"]))
+        : _createCommentVNode("", true),
     (!selectedMedia.value)
       ? (_openBlock(), _createElementBlock("section", _hoisted_4, [
           _createVNode(_component_VCard, {
@@ -2876,8 +2866,7 @@ return (_ctx, _cache) => {
                         class: "manual-provider"
                       }, [
                         _createElementVNode("div", _hoisted_86, [
-                          _createElementVNode("strong", null, _toDisplayString(provider.name), 1),
-                          _createElementVNode("span", null, _toDisplayString(providerStatus(provider.provider)), 1)
+                          _createElementVNode("strong", null, _toDisplayString(provider.name), 1)
                         ]),
                         _createElementVNode("div", _hoisted_87, [
                           (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(provider.links, (link) => {
@@ -3337,6 +3326,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-c71eff73"]]);
+const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-d6ed2bcf"]]);
 
 export { AppPage as default };

@@ -80,7 +80,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/subtitle-match.png"
-    plugin_version = "0.1.47"
+    plugin_version = "0.1.48"
     plugin_author = "jaysherlock"
     author_url = "https://github.com/jaysherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -2001,11 +2001,20 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             "path": path,
             "media_type": entry.get("media_type"),
             "title": entry.get("title"),
+            "tmdb_id": entry.get("tmdb_id"),
+            "douban_id": entry.get("douban_id"),
             "season": entry.get("season", 0),
             "episode": entry.get("episode", 0),
             "year": entry.get("year", ""),
             "library_name": entry.get("library_name"),
             "relative_path": entry.get("relative_path"),
+            "original_language": entry.get("original_language"),
+            "origin_country": entry.get("origin_country"),
+            "production_countries": entry.get("production_countries"),
+            "original_title": entry.get("original_title"),
+            "original_name": entry.get("original_name"),
+            "en_title": entry.get("en_title"),
+            "tmdb_aliases": entry.get("tmdb_aliases"),
             "storage": entry.get("storage", "local"),
             "writable": entry.get("writable", True),
             "is_stream": self._is_stream_path(path),
@@ -2700,7 +2709,13 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             "media_type": entry.get("media_type"),
             "title": entry.get("title"),
             "year": entry.get("year"),
+            "tmdb_id": entry.get("tmdb_id"),
+            "douban_id": entry.get("douban_id"),
         }
+        tmdb_detail = self._tmdb_detail_for_media(media)
+        if tmdb_detail:
+            self._apply_tmdb_detail(media, tmdb_detail)
+            self._apply_tmdb_detail(target, tmdb_detail)
         return build_search_keywords(media, [target], "auto")[:8]
 
     def _auto_search_and_write_entry(self, entry: Dict[str, Any]) -> Dict[str, Any]:

@@ -1,2 +1,4 @@
 package-lock.json
 node_modules/
+opensubtitles-sample*.jsonl
+opensubtitles-sample*.csv

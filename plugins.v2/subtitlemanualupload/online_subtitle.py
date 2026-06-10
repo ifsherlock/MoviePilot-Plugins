@@ -682,7 +682,10 @@ class OpenSubtitlesProvider(BaseSubtitleProvider):
             season, episode = _episode_from_text(title) or (0, 0)
             file_id = str(file_info.get("file_id") or "").strip()
             result_years = _years_from_opensubtitles_attrs(attrs, file_info, title)
+            file_years = _years_from_file_info(file_info)
             if target_year and result_years and target_year not in result_years:
+                continue
+            if target_year and file_years and target_year not in file_years:
                 continue
             upload_year = _year_from_upload_date(attrs.get("upload_date") or attrs.get("uploaded_at"))
             if target_year and upload_year and upload_year < target_year:
@@ -984,7 +987,16 @@ class OnlineSubtitleSearchService:
         finally:
             self.fetcher.close()
         results = _dedupe_results(results)
-        results.sort(key=lambda item: (_language_priority(item), _provider_priority(item), item.score, item.title), reverse=True)
+        results.sort(
+            key=lambda item: (
+                _provider_priority(item),
+                _identity_priority(item),
+                _language_priority(item),
+                item.score,
+                item.title,
+            ),
+            reverse=True,
+        )
         return {
             "results": [item.to_dict() for item in results[:80]],
             "messages": provider_messages,
@@ -1049,9 +1061,15 @@ def build_search_keywords(media: Dict[str, Any], targets: List[Dict[str, Any]], 
 
 def _query_plan_for_keyword(keyword: str, targets: List[Dict[str, Any]]) -> Dict[str, str]:
     bucket = _region_bucket({}, targets)
+    source = _query_source_for_keyword(keyword, targets)
     return {
         "region_bucket": bucket,
-        "label": f"{_region_bucket_label(bucket)}标题 · 字幕语言 {OPENSUBTITLES_SEARCH_LANGUAGES}",
+        "query_source": source,
+        "subtitle_languages": OPENSUBTITLES_SEARCH_LANGUAGES,
+        "label": (
+            f"{_region_bucket_label(bucket)}区域 · {source} · "
+            f"字幕语言 {OPENSUBTITLES_SEARCH_LANGUAGES}"
+        ),
     }
 
 
@@ -1126,6 +1144,37 @@ def _region_bucket_label(bucket: str) -> str:
         "korean": "韩国",
         "other": "原始",
     }.get(bucket or "", "原始")
+
+
+def _query_source_for_keyword(keyword: str, targets: List[Dict[str, Any]]) -> str:
+    if not _clean_keyword(keyword):
+        return "空查询词"
+    aliases = _media_title_aliases({}, targets)
+    original_titles = _original_titles({}, targets)
+    english_titles = [item for item in aliases if _looks_english_title(item)]
+    chinese_titles = [
+        item
+        for item in aliases
+        if _contains_cjk(item) and not _contains_japanese(item) and not _contains_korean(item)
+    ]
+    for title in original_titles:
+        if _strong_title_matches(title, keyword):
+            return "原名查询"
+    for title in english_titles:
+        if _strong_title_matches(title, keyword):
+            return "英文标题查询"
+    for title in chinese_titles:
+        if _strong_title_matches(title, keyword):
+            return "中文标题查询"
+    if _contains_japanese(keyword):
+        return "日文查询"
+    if _contains_korean(keyword):
+        return "韩文查询"
+    if _looks_english_title(keyword):
+        return "英文弱兜底"
+    if _contains_cjk(keyword):
+        return "中文弱兜底"
+    return "文件名查询"
 
 
 def _title_aliases(media: Dict[str, Any], targets: List[Dict[str, Any]]) -> List[str]:
@@ -1387,6 +1436,16 @@ def _provider_priority(item: OnlineSubtitleResult) -> int:
     return 0
 
 
+def _identity_priority(item: OnlineSubtitleResult) -> int:
+    if item.provider == "assrt" and not item.identity_status:
+        return 30
+    return {
+        "strong": 30,
+        "weak": 10,
+        "failed": 0,
+    }.get(item.identity_status or "", 0)
+
+
 def _target_year_from_targets(targets: List[Dict[str, Any]]) -> int:
     for target in targets or []:
         for field in ["basename", "filename", "path", "title", "year"]:
@@ -1412,6 +1471,18 @@ def _years_from_opensubtitles_attrs(attrs: Dict[str, Any], file_info: Dict[str, 
                 if year:
                     years.append(year)
             value = " ".join(str(item or "") for item in value.values())
+        years.extend(_extract_years(str(value or "")))
+    return sorted(set(years))
+
+
+def _years_from_file_info(file_info: Dict[str, Any]) -> List[int]:
+    values = [
+        file_info.get("file_name"),
+        file_info.get("moviehash_match"),
+        file_info.get("release"),
+    ]
+    years: List[int] = []
+    for value in values:
         years.extend(_extract_years(str(value or "")))
     return sorted(set(years))
 
@@ -1461,6 +1532,7 @@ def _assess_result_match(
     reject_reason = ""
     title_matched = False
     metadata_matched = False
+    file_title_matched = False
 
     target_aliases = _title_aliases({}, targets)
     keyword_parts = _keyword_match_parts(keyword)
@@ -1481,6 +1553,12 @@ def _assess_result_match(
                 reasons.append("搜索词命中")
                 break
     series_matched = any(_strong_title_matches(alias, haystack) for alias in series_aliases)
+    file_name = str(file_info.get("file_name") or "")
+    if file_name:
+        file_title_matched = any(_strong_title_matches(alias, file_name) for alias in target_aliases)
+        if file_title_matched and not title_matched:
+            score += 28
+            reasons.append("文件名标题命中")
 
     for target in targets or []:
         target_tmdb = str(target.get("tmdb_id") or "").strip()
@@ -1505,6 +1583,12 @@ def _assess_result_match(
             reasons.append("年份一致")
         else:
             reject_reason = "年份冲突"
+    upload_year = _year_from_upload_date(attrs.get("upload_date") or attrs.get("uploaded_at"))
+    if target_year and upload_year:
+        if upload_year < target_year:
+            reject_reason = reject_reason or "字幕上传时间早于资源年份"
+        else:
+            reasons.append("上传年份可用")
 
     episode_ok = False
     episode_required = any(int(target.get("episode") or 0) for target in targets or [])
@@ -1536,12 +1620,16 @@ def _assess_result_match(
     if _guess_language_label(title):
         score += 6
 
-    identity_ok = title_matched or metadata_matched
+    identity_ok = title_matched or metadata_matched or file_title_matched
     if not identity_ok:
         reject_reason = reject_reason or "无标题或媒体身份信号"
     if reject_reason:
         identity_status = "failed"
-    elif metadata_matched or (title_matched and (not target_year or not result_years or target_year in result_years) and episode_ok):
+    elif metadata_matched or (
+        (title_matched or file_title_matched)
+        and (not target_year or not result_years or target_year in result_years)
+        and episode_ok
+    ):
         identity_status = "strong"
     else:
         identity_status = "weak"

@@ -559,16 +559,6 @@ function isForeignOnlineResult(item) {
   return onlineResultLanguageCategory(item) !== 'chinese'
 }
 
-function providerStatus(providerId) {
-  const providers = [
-    ...(onlineStatus.value.providers || []),
-    ...(onlineStatus.value.manual_providers || []),
-  ]
-  const item = providers.find(provider => provider.id === providerId)
-  const host = item?.host ? `${item.host} · ` : ''
-  return `${host}${item?.message || ''}`
-}
-
 function providerProgressText(state) {
   if (state === 'searching') return '搜索中'
   if (state === 'done') return '已完成'
@@ -1573,6 +1563,23 @@ defineExpose({
 
 <template>
   <div class="subtitle-upload-page">
+    <div v-if="!selectedMedia" class="root-tabs">
+      <button
+        type="button"
+        :class="{ active: rootTab === 'match' }"
+        @click="setRootTab('match')"
+      >
+        字幕匹配
+      </button>
+      <button
+        type="button"
+        :class="{ active: rootTab === 'history' }"
+        @click="setRootTab('history')"
+      >
+        总匹配历史
+      </button>
+    </div>
+
     <div v-if="!hideTitle" class="hero-card">
       <div>
         <h1>字幕匹配</h1>
@@ -1594,23 +1601,6 @@ defineExpose({
       variant="tonal"
       :text="message"
     />
-
-    <div v-if="!selectedMedia" class="root-tabs">
-      <button
-        type="button"
-        :class="{ active: rootTab === 'match' }"
-        @click="setRootTab('match')"
-      >
-        字幕匹配
-      </button>
-      <button
-        type="button"
-        :class="{ active: rootTab === 'history' }"
-        @click="setRootTab('history')"
-      >
-        总匹配历史
-      </button>
-    </div>
 
     <section v-if="!selectedMedia" class="media-stage">
       <VCard class="glass-card search-card" rounded="xl" elevation="0">
@@ -2378,7 +2368,6 @@ defineExpose({
               >
                 <div class="manual-provider-head">
                   <strong>{{ provider.name }}</strong>
-                  <span>{{ providerStatus(provider.provider) }}</span>
                 </div>
                 <div class="manual-keywords">
                   <a

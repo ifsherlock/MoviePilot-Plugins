@@ -270,6 +270,96 @@ def test_opensubtitles_requires_series_identity_before_episode_score():
     assert "季集一致" in results[0].match_detail
 
 
+def test_opensubtitles_rejects_youth_sherlock_for_haibara_sample():
+    module = load_online_module()
+    provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key")
+
+    def fake_api_json(path, params, *, method="GET"):
+        return {
+            "data": [
+                {
+                    "attributes": {
+                        "language": "zh",
+                        "release": "Youth.Sherlock.S01E07.zh",
+                        "files": [{"file_id": 1, "file_name": "Youth.Sherlock.S01E07.zh.srt"}],
+                    }
+                }
+            ]
+        }
+
+    provider._api_json = fake_api_json
+
+    results = provider.search(
+        "灰原同学的第二轮青春游戏 S01E07",
+        [
+            {
+                "media_type": "tv",
+                "title": "灰原同学的第二轮青春游戏",
+                "en_title": "Haibara-kun's New Game Plus",
+                "original_title": "灰原くんの強くて青春ニューゲーム",
+                "season": 1,
+                "episode": 7,
+            }
+        ],
+        "episode",
+    )
+
+    assert results == []
+
+
+def test_opensubtitles_filters_filename_year_and_upload_year_conflicts():
+    module = load_online_module()
+    provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key")
+
+    def fake_api_json(path, params, *, method="GET"):
+        return {
+            "data": [
+                {
+                    "attributes": {
+                        "language": "en",
+                        "release": "Spider-Man.Into.the.Spider-Verse.2018.1080p",
+                        "upload_date": "2018-12-20T00:00:00Z",
+                        "files": [{"file_id": 1, "file_name": "Spider-Man.Into.the.Spider-Verse.2017.srt"}],
+                    }
+                },
+                {
+                    "attributes": {
+                        "language": "en",
+                        "release": "Spider-Man.Into.the.Spider-Verse.2018.1080p",
+                        "upload_date": "2017-12-20T00:00:00Z",
+                        "files": [{"file_id": 2, "file_name": "Spider-Man.Into.the.Spider-Verse.2018.srt"}],
+                    }
+                },
+                {
+                    "attributes": {
+                        "language": "en",
+                        "release": "Spider-Man.Into.the.Spider-Verse.2018.1080p",
+                        "upload_date": "2018-12-20T00:00:00Z",
+                        "files": [{"file_id": 3, "file_name": "Spider-Man.Into.the.Spider-Verse.2018.srt"}],
+                    }
+                },
+            ]
+        }
+
+    provider._api_json = fake_api_json
+
+    results = provider.search(
+        "Spider-Man Into the Spider-Verse 2018",
+        [
+            {
+                "media_type": "movie",
+                "title": "蜘蛛侠：平行宇宙",
+                "en_title": "Spider-Man: Into the Spider-Verse",
+                "filename": "蜘蛛侠：平行宇宙 (2018) - 1080p.mkv",
+                "year": "2018",
+            }
+        ],
+        "movie",
+    )
+
+    assert [item.result_id for item in results] == ["3"]
+
+
 def test_build_search_keywords_uses_region_aware_tmdb_titles():
     module = load_online_module()
     media = {
@@ -294,6 +384,29 @@ def test_build_search_keywords_uses_region_aware_tmdb_titles():
 
     assert keywords[0] == "九龍ジェネリックロマンス S01E04"
     assert "Kowloon Generic Romance S01E04" in keywords
+
+
+def test_query_plan_records_region_and_query_source():
+    module = load_online_module()
+
+    plan = module._query_plan_for_keyword(
+        "九龍ジェネリックロマンス S01E04",
+        [
+            {
+                "media_type": "tv",
+                "title": "九龙大众浪漫",
+                "original_title": "九龍ジェネリックロマンス",
+                "en_title": "Kowloon Generic Romance",
+                "original_language": "ja",
+                "origin_country": ["JP"],
+                "season": 1,
+                "episode": 4,
+            }
+        ],
+    )
+
+    assert plan["region_bucket"] == "japanese"
+    assert plan["query_source"] == "原名查询"
 
 
 def test_opensubtitles_download_uses_download_api_link():
@@ -394,6 +507,46 @@ def test_online_search_respects_empty_provider_selection():
 
     assert result["results"] == []
     assert result["messages"][0]["provider"] == "providers"
+
+
+def test_online_service_orders_assrt_before_opensubtitles():
+    module = load_online_module()
+
+    class StaticProvider(module.BaseSubtitleProvider):
+        def __init__(self, provider_id, score, language_category, identity_status=""):
+            self.provider_id = provider_id
+            self.display_name = provider_id
+            super().__init__(FakeFetcher())
+            self.score = score
+            self.language_category = language_category
+            self.identity_status = identity_status
+
+        def manual_url(self, keyword):
+            return f"https://example.invalid/{self.provider_id}/{keyword}"
+
+        def search(self, keyword, targets, scope):
+            return [
+                module.OnlineSubtitleResult(
+                    provider=self.provider_id,
+                    result_id=self.provider_id,
+                    title=self.provider_id,
+                    page_url=self.manual_url(keyword),
+                    score=self.score,
+                    language_category=self.language_category,
+                    identity_status=self.identity_status,
+                )
+            ]
+
+    service = module.OnlineSubtitleSearchService()
+    service.providers = {
+        "assrt": StaticProvider("assrt", 8, "english"),
+        "opensubtitles": StaticProvider("opensubtitles", 53, "chinese", "weak"),
+    }
+    service.fetcher = types.SimpleNamespace(close=lambda: None)
+
+    result = service.search(keywords=["Example"], providers=["opensubtitles", "assrt"], targets=[], scope="movie")
+
+    assert [item["provider"] for item in result["results"]] == ["assrt", "opensubtitles"]
 
 
 def test_provider_network_errors_are_compacted():
