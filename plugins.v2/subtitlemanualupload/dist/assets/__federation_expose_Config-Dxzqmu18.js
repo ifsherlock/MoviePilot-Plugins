@@ -54,6 +54,8 @@ const localConfig = ref({
 });
 
 const onlineProviderItems = [
+  { title: 'SubHD 中文字幕', value: 'subhd' },
+  { title: 'Zimuku 中文字幕', value: 'zimuku' },
   { title: '射手网(伪，需 API Key)', value: 'assrt' },
   { title: 'OpenSubtitles 多语言字幕', value: 'opensubtitles' },
 ];
@@ -72,7 +74,7 @@ const autoStrategyItems = [
 ];
 
 function normalizeProviders(value) {
-  const allowed = ['assrt', 'opensubtitles'];
+  const allowed = ['subhd', 'zimuku', 'assrt', 'opensubtitles'];
   const providers = Array.isArray(value) ? value.filter(item => allowed.includes(item)) : [];
   return providers.length ? Array.from(new Set(providers)) : ['assrt', 'opensubtitles']
 }
@@ -253,7 +255,7 @@ return (_ctx, _cache) => {
               _cache[24] || (_cache[24] = _createElementVNode("div", { class: "config-section" }, [
                 _createElementVNode("div", null, [
                   _createElementVNode("div", { class: "config-section-title" }, "在线字幕搜索"),
-                  _createElementVNode("p", null, "自动搜索仅使用 API；SubHD/Zimuku 保留为右侧手动搜索跳转。")
+                  _createElementVNode("p", null, "自动搜索支持 SubHD、Zimuku、射手网(伪) 和 OpenSubtitles；站点波动时仍可使用右侧手动搜索跳转。")
                 ])
               ], -1)),
               _createElementVNode("div", _hoisted_4, [
@@ -283,7 +285,7 @@ return (_ctx, _cache) => {
                 _createVNode(_component_VTextField, {
                   modelValue: localConfig.value.subhd_url,
                   "onUpdate:modelValue": _cache[10] || (_cache[10] = $event => ((localConfig.value.subhd_url) = $event)),
-                  label: "SubHD 手动搜索地址",
+                  label: "SubHD 站点地址",
                   placeholder: "https://subhd.tv",
                   variant: "outlined",
                   density: "comfortable",
@@ -292,7 +294,7 @@ return (_ctx, _cache) => {
                 _createVNode(_component_VTextField, {
                   modelValue: localConfig.value.zimuku_url,
                   "onUpdate:modelValue": _cache[11] || (_cache[11] = $event => ((localConfig.value.zimuku_url) = $event)),
-                  label: "Zimuku 手动搜索地址",
+                  label: "Zimuku 站点地址",
                   placeholder: "https://zimuku.org",
                   variant: "outlined",
                   density: "comfortable",
@@ -428,6 +430,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-28183fa3"]]);
+const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-5abcb791"]]);
 
 export { Config as default };

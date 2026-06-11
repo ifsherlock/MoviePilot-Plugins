@@ -93,6 +93,7 @@ class SubtitleManualUpload(_PluginBase):
     _rar_dependency_mode = "none"
     _rar_tool_path = "/usr/local/bin/7z"
     _default_online_provider_ids = ["assrt", "opensubtitles"]
+    _available_online_provider_ids = ["subhd", "zimuku", "assrt", "opensubtitles"]
     _manual_online_provider_ids = ["subhd", "zimuku", "assrt", "opensubtitles"]
     _online_provider_ids = ["assrt", "opensubtitles"]
     _online_engine = DEFAULT_ENGINE
@@ -100,6 +101,9 @@ class SubtitleManualUpload(_PluginBase):
     _online_site_urls = dict(DEFAULT_PROVIDER_ROOTS)
     _online_rate_records: Dict[str, List[float]] = {}
     _online_rate_limit_per_minute = 5
+    _transfer_auto_dedupe_seconds = 300
+    _transfer_auto_recent: Dict[str, float] = {}
+    _transfer_auto_lock = threading.Lock()
     _assrt_api_key = ""
     _assrt_api_url = "https://api.assrt.net"
     _opensubtitles_api_key = ""
@@ -116,6 +120,8 @@ class SubtitleManualUpload(_PluginBase):
     _cache_max_entries = 5000
     _entry_map_max_size = 2000
     _media_index_cache_max_keys = 20
+    _match_history_cache_ttl_seconds = 86400
+    _timeline_task_ttl_seconds = 86400
     _rar_dependency_status: Dict[str, Any] = {
         "mode": "none",
         "state": "idle",
@@ -131,6 +137,14 @@ class SubtitleManualUpload(_PluginBase):
         "media_count": 0,
         "persisted": False,
     }
+    _match_history_cache: Dict[str, Any] = {
+        "loaded_at": None,
+        "signature": "",
+        "items": [],
+        "entry_count": 0,
+        "persisted": False,
+    }
+    _timeline_tasks: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
     _tmdb_detail_cache: Dict[str, Dict[str, Any]] = {}
 
     _subtitle_exts = {".ass", ".srt", ".ssa", ".sbv", ".sub", ".vtt", ".webvtt"}
@@ -232,7 +246,7 @@ class SubtitleManualUpload(_PluginBase):
         self._online_provider_ids = [
             item
             for item in self._online_provider_ids
-            if item in self._default_online_provider_ids
+            if item in self._available_online_provider_ids
             and (item != "assrt" or self._assrt_api_key)
             and (item != "opensubtitles" or self._opensubtitles_api_key)
         ]
@@ -244,9 +258,14 @@ class SubtitleManualUpload(_PluginBase):
         type(self)._auto_transfer_subtitle_strategy = self._auto_transfer_subtitle_strategy
         self._entry_map = OrderedDict()
         self._media_index_cache = OrderedDict()
+        self._match_history_cache = {"loaded_at": None, "signature": "", "items": [], "entry_count": 0, "persisted": False}
+        self._timeline_tasks = OrderedDict()
+        self._transfer_auto_recent = {}
+        self._transfer_auto_lock = threading.Lock()
         self._cache_refreshing = False
         self._local_entries_cache = {"loaded_at": None, "entries": [], "media_count": 0, "persisted": False}
         self._restore_persisted_local_cache()
+        self._restore_persisted_match_history_cache()
         self._save_config()
         self._prepare_rar_dependency()
         self._cleanup_old_sessions()
@@ -298,6 +317,13 @@ class SubtitleManualUpload(_PluginBase):
                 "methods": ["GET"],
                 "auth": "bear",
                 "summary": "读取字幕匹配历史",
+            },
+            {
+                "path": "/timeline_tasks",
+                "endpoint": self.api_timeline_tasks,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "查询智能调轴任务状态",
             },
             {
                 "path": "/prepare_upload",
@@ -375,6 +401,13 @@ class SubtitleManualUpload(_PluginBase):
                 "methods": ["POST"],
                 "auth": "bear",
                 "summary": "搜索单个在线字幕源",
+            },
+            {
+                "path": "/online_ai_submit",
+                "endpoint": self.api_online_ai_submit,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "提交在线外语字幕到 AI 翻译状态队列",
             },
             {
                 "path": "/online_download_preview",
@@ -499,6 +532,8 @@ class SubtitleManualUpload(_PluginBase):
                                             "multiple": True,
                                             "chips": True,
                                             "items": [
+                                                {"title": "SubHD 中文字幕", "value": "subhd"},
+                                                {"title": "Zimuku 中文字幕", "value": "zimuku"},
                                                 {"title": "射手网(伪，需 API Key)", "value": "assrt"},
                                                 {"title": "OpenSubtitles 多语言字幕", "value": "opensubtitles"},
                                             ],
@@ -532,7 +567,7 @@ class SubtitleManualUpload(_PluginBase):
                                         "component": "VTextField",
                                         "props": {
                                             "model": "subhd_url",
-                                            "label": "SubHD 手动跳转地址",
+                                            "label": "SubHD 站点地址",
                                             "placeholder": DEFAULT_PROVIDER_ROOTS["subhd"],
                                         },
                                     }
@@ -546,7 +581,7 @@ class SubtitleManualUpload(_PluginBase):
                                         "component": "VTextField",
                                         "props": {
                                             "model": "zimuku_url",
-                                            "label": "Zimuku 手动跳转地址",
+                                            "label": "Zimuku 站点地址",
                                             "placeholder": DEFAULT_PROVIDER_ROOTS["zimuku"],
                                         },
                                     }
@@ -681,7 +716,7 @@ class SubtitleManualUpload(_PluginBase):
                                         "props": {
                                             "type": "info",
                                             "variant": "tonal",
-                                            "text": "从 MoviePilot 本地整理记录中搜索已有视频资源；在线字幕 API 搜索可使用射手网(伪) 和 OpenSubtitles，SubHD/Zimuku 只保留手动跳转。",
+                                            "text": "从 MoviePilot 本地整理记录中搜索已有视频资源；在线字幕搜索支持 SubHD、Zimuku、射手网(伪) 和 OpenSubtitles。",
                                         },
                                     }
                                 ],
@@ -784,6 +819,11 @@ class SubtitleManualUpload(_PluginBase):
             logger.info("[SubtitleManualUpload] 入库事件未解析到本地视频目标，跳过自动字幕搜索")
             return
         self._merge_local_entries_cache(entries)
+        entries, skipped = self._claim_transfer_auto_entries(entries)
+        if skipped:
+            logger.info("[SubtitleManualUpload] 入库自动字幕处理去重跳过重复目标 count=%s", skipped)
+        if not entries:
+            return
         threading.Thread(
             target=self._process_transfer_auto_subtitles,
             args=(entries,),
@@ -915,7 +955,7 @@ class SubtitleManualUpload(_PluginBase):
 
     @classmethod
     def _normalize_provider_ids(cls, value: Any, *, fallback: bool = True) -> List[str]:
-        allowed = set(cls._default_online_provider_ids)
+        allowed = set(cls._available_online_provider_ids)
         if isinstance(value, list):
             raw_items = value
         elif isinstance(value, str):
@@ -958,6 +998,34 @@ class SubtitleManualUpload(_PluginBase):
         for provider_id, records in active_records.items():
             records.append(now)
             self._online_rate_records[provider_id] = records
+
+    def _transfer_auto_key(self, entry: Dict[str, Any]) -> str:
+        path = self._normalize_text(entry.get("path") or entry.get("relative_path"))
+        if path:
+            return self._hash_text(path.lower().replace("\\", "/"))
+        return self._normalize_text(entry.get("id") or entry.get("target_label") or entry.get("filename"))
+
+    def _claim_transfer_auto_entries(self, entries: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], int]:
+        now = time.time()
+        claimed: List[Dict[str, Any]] = []
+        skipped = 0
+        with self._transfer_auto_lock:
+            self._transfer_auto_recent = {
+                key: ts
+                for key, ts in (self._transfer_auto_recent or {}).items()
+                if now - ts < self._transfer_auto_dedupe_seconds
+            }
+            for entry in entries:
+                key = self._transfer_auto_key(entry)
+                if not key:
+                    claimed.append(entry)
+                    continue
+                if key in self._transfer_auto_recent:
+                    skipped += 1
+                    continue
+                self._transfer_auto_recent[key] = now
+                claimed.append(entry)
+        return claimed, skipped
 
     @staticmethod
     def _is_executable_file(path: Path) -> bool:
@@ -1071,8 +1139,75 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         return re.sub(r"[^a-z0-9-]", "", suffix) or "und"
 
     @classmethod
+    def _language_suffix_from_filename(cls, file_name: str) -> Dict[str, str]:
+        name = Path(cls._normalize_text(file_name)).name
+        ext = Path(name).suffix.lower()
+        if ext not in cls._subtitle_exts:
+            return {"suffix": "und", "label": "未知"}
+
+        stem = name[: -len(ext)]
+        tokens = [
+            re.sub(r"[^a-z0-9&+/,_-]", "", token.lower()).strip("_-")
+            for token in re.split(r"[\s.\[\](){}]+", stem)
+        ]
+        aliases = {
+            **cls._language_suffix_aliases,
+            "chi": "chi",
+            "eng": "eng",
+            "jpn": "jpn",
+            "kor": "kor",
+            "english": "eng",
+            "chinese": "chi",
+            "japanese": "jpn",
+            "korean": "kor",
+        }
+        ignored_tail_tokens = {"forced", "sdh", "hi", "cc", "default", "full", "signs", "songs", "commentary"}
+        found: List[str] = []
+        for token in reversed([item for item in tokens if item]):
+            normalized = cls._normalize_language_suffix(token) if any(sep in token for sep in ("&", "+", "/", ",")) else aliases.get(token, "")
+            if normalized and normalized != "und":
+                found.append(normalized)
+                continue
+            if token in ignored_tail_tokens and not found:
+                continue
+            if found:
+                break
+            return {"suffix": "und", "label": "未知"}
+
+        if not found:
+            return {"suffix": "und", "label": "未知"}
+
+        suffix = cls._normalize_language_suffix("&".join(reversed(found)))
+        labels = {
+            "chi": "中文",
+            "cht": "繁中",
+            "eng": "英文",
+            "jpn": "日文",
+            "kor": "韩文",
+            "fre": "法文",
+            "spa": "西文",
+            "ger": "德文",
+            "por": "葡文",
+            "ita": "意文",
+            "rus": "俄文",
+        }
+        if suffix == "chi&eng":
+            label = "中英双语"
+        elif suffix == "chi&jp":
+            label = "中日双语"
+        elif suffix == "chi&kr":
+            label = "中韩双语"
+        else:
+            label = labels.get(suffix, "未知")
+        return {"suffix": suffix, "label": label}
+
+    @classmethod
     def _detect_language_profile(cls, file_name: str, raw_bytes: bytes) -> Dict[str, str]:
         lowered = file_name.lower()
+        filename_suffix = cls._language_suffix_from_filename(file_name)
+        if filename_suffix["suffix"] != "und":
+            return filename_suffix
+
         preview = cls._decode_preview_bytes(raw_bytes[:16000])
         has_cjk = len(re.findall(r"[\u4e00-\u9fff]", preview)) >= 20
         has_kana = len(re.findall(r"[\u3040-\u30ff]", preview)) >= 20
@@ -1208,6 +1343,8 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         if not poster:
             return ""
         if poster.startswith(("http://", "https://")):
+            if prefix:
+                return re.sub(r"(/t/p/)[^/]+/", rf"\g<1>{prefix}/", poster, count=1)
             return poster
         if not poster.startswith("/"):
             poster = f"/{poster}"
@@ -1301,6 +1438,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             "tmdb_id": tmdb_id,
             "douban_id": douban_id,
             "poster_url": self._poster_url(getattr(history, "image", "")),
+            "poster_thumb_url": self._poster_url(getattr(history, "image", ""), "w185"),
             "season": season,
             "episode": episode,
             "path": path,
@@ -1395,6 +1533,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     "tmdb_id": tmdb_id,
                     "douban_id": douban_id,
                     "poster_url": self._poster_url(self._event_value(mediainfo, "poster_path", "image", default="")),
+                    "poster_thumb_url": self._poster_url(self._event_value(mediainfo, "poster_path", "image", default=""), "w185"),
                     "season": item_season,
                     "episode": item_episode,
                     "path": path,
@@ -1431,10 +1570,14 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         }
         self._remember_targets(entries)
         self._reset_media_index_cache()
+        self._invalidate_match_history_cache()
         self._persist_local_cache()
 
     def _local_cache_file(self) -> Path:
         return self.get_data_path() / "local_entries_cache.json"
+
+    def _match_history_cache_file(self) -> Path:
+        return self.get_data_path() / "match_history_cache.json"
 
     @classmethod
     def _cache_loaded_at(cls, value: Any) -> Optional[datetime]:
@@ -1491,6 +1634,218 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             media_count,
         )
         return True
+
+    @classmethod
+    def _json_clone(cls, value: Any) -> Any:
+        return json.loads(json.dumps(value, ensure_ascii=False))
+
+    def _match_history_signature(self, entries: List[Dict[str, Any]]) -> str:
+        loaded_at = self._cache_loaded_at((self._local_entries_cache or {}).get("loaded_at"))
+        parts = [
+            loaded_at.isoformat(timespec="seconds") if loaded_at else "",
+            str(len(entries)),
+        ]
+        for entry in entries:
+            parts.append(
+                "|".join(
+                    [
+                        self._normalize_text(entry.get("id")),
+                        self._normalize_text(entry.get("path")),
+                        self._normalize_text(entry.get("date")),
+                    ]
+                )
+            )
+        return self._hash_text("\n".join(parts))
+
+    def _persist_match_history_cache(self) -> None:
+        cache = self._match_history_cache or {}
+        loaded_at = self._cache_loaded_at(cache.get("loaded_at"))
+        payload = {
+            "loaded_at": loaded_at.isoformat(timespec="seconds") if loaded_at else "",
+            "signature": self._normalize_text(cache.get("signature")),
+            "entry_count": int(cache.get("entry_count") or 0),
+            "items": cache.get("items") or [],
+        }
+        try:
+            cache_file = self._match_history_cache_file()
+            cache_file.parent.mkdir(parents=True, exist_ok=True)
+            cache_file.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        except Exception as exc:
+            logger.warning("[SubtitleManualUpload] 写入匹配历史缓存失败: %s", exc)
+
+    def _restore_persisted_match_history_cache(self) -> bool:
+        try:
+            cache_file = self._match_history_cache_file()
+            if not cache_file.exists():
+                return False
+            payload = json.loads(cache_file.read_text(encoding="utf-8"))
+        except Exception as exc:
+            logger.warning("[SubtitleManualUpload] 读取匹配历史缓存失败: %s", exc)
+            return False
+        if not isinstance(payload, dict):
+            return False
+        loaded_at = self._cache_loaded_at(payload.get("loaded_at"))
+        items = payload.get("items")
+        if not loaded_at or not isinstance(items, list):
+            return False
+        self._match_history_cache = {
+            "loaded_at": loaded_at,
+            "signature": self._normalize_text(payload.get("signature")),
+            "items": [item for item in items if isinstance(item, dict)],
+            "entry_count": int(payload.get("entry_count") or 0),
+            "persisted": True,
+        }
+        for item in self._match_history_cache["items"]:
+            self._remember_targets([target for target in item.get("targets") or [] if isinstance(target, dict)])
+        logger.info(
+            "[SubtitleManualUpload] 已恢复匹配历史缓存 items=%s",
+            len(self._match_history_cache["items"]),
+        )
+        return True
+
+    def _invalidate_match_history_cache(self) -> None:
+        self._match_history_cache = {
+            "loaded_at": None,
+            "signature": "",
+            "items": [],
+            "entry_count": 0,
+            "persisted": False,
+        }
+        try:
+            self._match_history_cache_file().unlink(missing_ok=True)
+        except Exception as exc:
+            logger.warning("[SubtitleManualUpload] 删除匹配历史缓存失败: %s", exc)
+
+    def _filter_match_history_items(
+        self,
+        items: List[Dict[str, Any]],
+        *,
+        keyword: str = "",
+        media_type: str = "all",
+    ) -> List[Dict[str, Any]]:
+        clean_keyword = self._normalize_text(keyword)
+        expected_type = self._media_type_text(media_type)
+        filtered: List[Dict[str, Any]] = []
+        for item in items:
+            if expected_type and item.get("media_type") != expected_type:
+                continue
+            if clean_keyword:
+                target_entries = item.get("targets") or []
+                synthetic_entry = {
+                    "title": item.get("title"),
+                    "filename": "",
+                    "basename": "",
+                    "relative_path": "",
+                }
+                if not self._entry_matches_keyword(synthetic_entry, clean_keyword) and not any(
+                    self._entry_matches_keyword(target, clean_keyword)
+                    for target in target_entries
+                    if isinstance(target, dict)
+                ):
+                    continue
+            filtered.append(item)
+        cloned = self._json_clone(filtered)
+        for item in cloned:
+            for target in item.get("targets") or []:
+                if isinstance(target, dict):
+                    target["timeline_task"] = self._timeline_task_for_target_id(target.get("id"))
+        return cloned
+
+    @staticmethod
+    def _timeline_task_summary(tasks: List[Dict[str, Any]]) -> Dict[str, int]:
+        counts = {
+            "pending": 0,
+            "in_progress": 0,
+            "completed": 0,
+            "skipped": 0,
+            "failed": 0,
+            "active": 0,
+            "total": len(tasks),
+        }
+        for task in tasks:
+            status = task.get("status")
+            if status in counts:
+                counts[status] += 1
+            if task.get("active") or status in {"pending", "in_progress"}:
+                counts["active"] += 1
+        return counts
+
+    def _cleanup_timeline_tasks(self) -> None:
+        tasks = self._timeline_tasks or OrderedDict()
+        cutoff = datetime.now() - timedelta(seconds=self._timeline_task_ttl_seconds)
+        for key in list(tasks.keys()):
+            updated_at = self._cache_loaded_at((tasks.get(key) or {}).get("updated_at"))
+            if updated_at and updated_at < cutoff:
+                tasks.pop(key, None)
+        self._timeline_tasks = tasks
+
+    def _timeline_task_for_target_id(self, target_id: Any) -> Optional[Dict[str, Any]]:
+        self._cleanup_timeline_tasks()
+        clean_id = self._normalize_text(target_id)
+        if not clean_id:
+            return None
+        task = (self._timeline_tasks or {}).get(clean_id)
+        return self._json_clone(task) if task else None
+
+    def _set_timeline_task(
+        self,
+        operation: Dict[str, Any],
+        *,
+        status: str,
+        message: str = "",
+        timeline_result: Optional[TimelineFixResult] = None,
+    ) -> None:
+        target_entry = operation.get("target_entry") or {}
+        target_id = self._normalize_text(target_entry.get("id"))
+        if not target_id:
+            return
+        now = datetime.now().isoformat(timespec="seconds")
+        timeline = timeline_result.to_dict() if timeline_result else None
+        active = status in {"pending", "in_progress"}
+        task = {
+            "target_id": target_id,
+            "target_label": target_entry.get("target_label") or target_entry.get("filename") or Path(self._normalize_text(target_entry.get("path"))).name,
+            "source_name": (operation.get("upload_info") or {}).get("source_name", ""),
+            "output_name": operation.get("destination_name", ""),
+            "status": status,
+            "active": active,
+            "message": message or status,
+            "status_label": {
+                "pending": "等待调轴",
+                "in_progress": "智能调轴中",
+                "completed": "调轴完成",
+                "skipped": "已跳过",
+                "failed": "调轴失败",
+            }.get(status, status),
+            "timeline": timeline,
+            "updated_at": now,
+        }
+        existing = (self._timeline_tasks or OrderedDict()).get(target_id) or {}
+        if existing.get("created_at"):
+            task["created_at"] = existing.get("created_at")
+        else:
+            task["created_at"] = now
+        self._timeline_tasks[target_id] = task
+        self._timeline_tasks.move_to_end(target_id)
+        while len(self._timeline_tasks) > self._entry_map_max_size:
+            self._timeline_tasks.popitem(last=False)
+
+    def _timeline_tasks_for_entries(self, target_entries: List[Dict[str, Any]]) -> Dict[str, Any]:
+        tasks: List[Dict[str, Any]] = []
+        task_by_target: Dict[str, Any] = {}
+        for entry in target_entries:
+            target_id = self._normalize_text(entry.get("id"))
+            task = self._timeline_task_for_target_id(target_id)
+            if task:
+                task_by_target[target_id] = task
+                tasks.append(task)
+            else:
+                task_by_target[target_id] = None
+        return {
+            "summary": self._timeline_task_summary(tasks),
+            "tasks": tasks,
+            "task_by_target": task_by_target,
+        }
 
     def _start_background_cache_refresh(self) -> None:
         if self._cache_refreshing:
@@ -1559,6 +1914,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         }
         self._remember_targets(entries)
         self._reset_media_index_cache()
+        self._invalidate_match_history_cache()
         self._persist_local_cache()
         logger.info(
             "[SubtitleManualUpload] 本地资源缓存已刷新 entries=%s medias=%s",
@@ -1570,6 +1926,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
     def _refresh_local_cache(self) -> List[Dict[str, Any]]:
         self._entry_map = OrderedDict()
         self._reset_media_index_cache()
+        self._invalidate_match_history_cache()
         self._local_entries_cache = {"loaded_at": None, "entries": [], "media_count": 0, "persisted": False}
         return self._load_local_entries(force=True)
 
@@ -1823,6 +2180,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     "tmdb_id": entry.get("tmdb_id"),
                     "douban_id": entry.get("douban_id"),
                     "poster_url": entry.get("poster_url"),
+                    "poster_thumb_url": entry.get("poster_thumb_url") or self._poster_url(entry.get("poster_url"), "w185"),
                     "backdrop_url": "",
                     "overview": "",
                     "vote_average": 0,
@@ -1836,6 +2194,8 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             group["local_count"] += 1
             if entry.get("poster_url") and not group.get("poster_url"):
                 group["poster_url"] = entry["poster_url"]
+            if entry.get("poster_thumb_url") and not group.get("poster_thumb_url"):
+                group["poster_thumb_url"] = entry["poster_thumb_url"]
             if entry.get("date") and entry["date"] > group.get("latest_at", ""):
                 group["latest_at"] = entry["date"]
 
@@ -1849,14 +2209,23 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         return result[:limit] if limit else result
 
     def _match_history_items(self, *, keyword: str = "", media_type: str = "all") -> List[Dict[str, Any]]:
-        clean_keyword = self._normalize_text(keyword)
-        expected_type = self._media_type_text(media_type)
+        entries = self._load_local_entries(allow_stale=True)
+        signature = self._match_history_signature(entries)
+        cache = self._match_history_cache or {}
+        loaded_at = self._cache_loaded_at(cache.get("loaded_at"))
+        if (
+            loaded_at
+            and self._normalize_text(cache.get("signature")) == signature
+            and (datetime.now() - loaded_at).total_seconds() < self._match_history_cache_ttl_seconds
+        ):
+            return self._filter_match_history_items(
+                cache.get("items") or [],
+                keyword=keyword,
+                media_type=media_type,
+            )
+
         groups: Dict[str, Dict[str, Any]] = {}
-        for entry in self._load_local_entries(allow_stale=True):
-            if expected_type and entry.get("media_type") != expected_type:
-                continue
-            if clean_keyword and not self._entry_matches_keyword(entry, clean_keyword):
-                continue
+        for entry in entries:
             target = self._target_from_entry(entry)
             subtitles = target.get("subtitles") or []
             if not subtitles:
@@ -1872,6 +2241,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     "tmdb_id": entry.get("tmdb_id"),
                     "douban_id": entry.get("douban_id"),
                     "poster_url": entry.get("poster_url"),
+                    "poster_thumb_url": entry.get("poster_thumb_url") or self._poster_url(entry.get("poster_url"), "w185"),
                     "subtitle_count": 0,
                     "target_count": 0,
                     "latest_at": "",
@@ -1889,7 +2259,15 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         for item in items:
             item["targets"].sort(key=lambda target: (target.get("season", 0), target.get("episode", 0), target.get("basename", "")))
         items.sort(key=lambda item: (item.get("latest_at", ""), item.get("title", "")), reverse=True)
-        return items
+        self._match_history_cache = {
+            "loaded_at": datetime.now(),
+            "signature": signature,
+            "items": self._json_clone(items),
+            "entry_count": len(entries),
+            "persisted": False,
+        }
+        self._persist_match_history_cache()
+        return self._filter_match_history_items(items, keyword=keyword, media_type=media_type)
 
     def _merge_seasons(self, entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         seasons: Dict[int, Dict[str, Any]] = {}
@@ -1965,6 +2343,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             "tmdb_id": clean_tmdb_id,
             "douban_id": self._normalize_text(douban_id),
             "poster_url": "",
+            "poster_thumb_url": "",
             "local_count": 0,
             "season_count": 0,
         }
@@ -2806,6 +3185,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             operation["timeline_result"] = None
             operation["simplified_result"] = {"enabled": False, "converted": False}
             if fix_timeline:
+                self._set_timeline_task(operation, status="pending", message="等待智能调轴")
                 fixed_dir.mkdir(parents=True, exist_ok=True)
                 fixed_source_path = fixed_dir / f"{operation['upload_info'].get('upload_id')}{operation['source_path'].suffix}"
                 if operation["video_path"].suffix.lower() in self._stream_exts:
@@ -2820,6 +3200,12 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                         scale_factor=1.0,
                         score=0.0,
                     )
+                    self._set_timeline_task(
+                        operation,
+                        status="skipped",
+                        message="STRM 资源跳过智能调轴",
+                        timeline_result=operation["timeline_result"],
+                    )
                     logger.info(
                         "[SubtitleManualUpload] STRM 目标跳过智能调轴 %s -> %s",
                         operation["upload_info"].get("source_name"),
@@ -2828,12 +3214,14 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     self._maybe_convert_operation_to_simplified(operation, simplified_dir)
                     continue
                 try:
+                    self._set_timeline_task(operation, status="in_progress", message="智能调轴处理中")
                     timeline_result = fix_subtitle_timeline(
                         video_path=operation["video_path"],
                         subtitle_path=operation["source_path"],
                         output_path=fixed_source_path,
                     )
                 except Exception as exc:
+                    self._set_timeline_task(operation, status="failed", message=f"智能调轴失败: {exc}")
                     logger.error(
                         "[SubtitleManualUpload] 智能调轴失败 %s -> %s: %s",
                         operation["upload_info"].get("source_name"),
@@ -2846,6 +3234,12 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     ) from exc
                 operation["write_source_path"] = fixed_source_path
                 operation["timeline_result"] = timeline_result
+                self._set_timeline_task(
+                    operation,
+                    status="completed",
+                    message="智能调轴完成" if timeline_result.applied else "智能调轴未调整",
+                    timeline_result=timeline_result,
+                )
             self._maybe_convert_operation_to_simplified(operation, simplified_dir)
 
         written_results = []
@@ -2891,6 +3285,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                 if item.get("simplified", {}).get("enabled") and item.get("simplified", {}).get("converted")
             ]
         )
+        self._invalidate_match_history_cache()
         return written_results, fixed_count, simplified_count
 
     def _write_session(self, session_id: str, payload: Dict[str, Any]) -> None:
@@ -2962,7 +3357,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         return build_search_keywords(media, [target], "auto")[:8]
 
     def _auto_search_providers(self) -> List[str]:
-        return [item for item in (self._online_provider_ids or []) if item != "opensubtitles"]
+        return [item for item in (self._online_provider_ids or []) if item in {"assrt", "opensubtitles"}]
 
     def _auto_search_write_subtitle(self, entry: Dict[str, Any], target: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
         target = target or self._target_from_entry(entry)
@@ -2986,10 +3381,10 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             for item in search_result.get("results") or []
             if item.get("downloadable") is not False and self._safe_int(item.get("score"), 0) >= self._auto_search_min_score
         ]
-        if len(candidates) != 1:
+        if not candidates:
             return {
                 "status": "skipped",
-                "reason": f"高置信可下载结果数量为 {len(candidates)}",
+                "reason": "没有高置信可下载结果",
                 "target": target.get("label"),
                 "results": len(search_result.get("results") or []),
                 "search_results": len(search_result.get("results") or []),
@@ -3057,8 +3452,26 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                 "result": selected.get("title"),
                 "written": written,
                 "simplified_count": simplified_count,
+                "candidate_count": len(candidates),
                 "search_results": len(search_result.get("results") or []),
                 "ai": ai_result,
+            }
+        except Exception as exc:
+            message = f"自动下载最佳在线字幕失败: {self._normalize_text(exc)}"
+            logger.warning(
+                "[SubtitleManualUpload] %s target=%s provider=%s result=%s",
+                message,
+                target.get("label"),
+                selected.get("provider"),
+                selected.get("title"),
+            )
+            return {
+                "status": "skipped",
+                "reason": message,
+                "target": target.get("label"),
+                "result": selected.get("title"),
+                "candidate_count": len(candidates),
+                "search_results": len(search_result.get("results") or []),
             }
         finally:
             shutil.rmtree(session_dir, ignore_errors=True)
@@ -3348,7 +3761,280 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             message=f"已提交 {len(result.get('added') or [])} 个 AI 字幕生成任务，跳过 {len(result.get('skipped') or [])} 个，失败 {len(result.get('failed') or [])} 个",
         )
 
-    def _submit_autosub_for_entries(self, target_entries: List[Dict[str, Any]]) -> Dict[str, Any]:
+    async def api_online_ai_submit(self, request: Request) -> Dict[str, Any]:
+        body = await request.json()
+        target_ids = self._target_ids_from_body(body)
+        if not target_ids:
+            raise HTTPException(status_code=400, detail="请先选择要生成 AI 字幕的本地视频")
+        target_entries = list(self._resolve_targets(target_ids).values())
+        if not target_entries:
+            raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
+        selected_results = self._results_from_body(body)
+        if not selected_results:
+            raise HTTPException(status_code=400, detail="请至少选择一个在线字幕结果")
+        return await run_in_threadpool(self._submit_online_ai_translate, target_entries, selected_results)
+
+    def _download_online_results_to_uploads(
+        self,
+        selected_results: List[Dict[str, Any]],
+        session_dir: Path,
+    ) -> Tuple[List[Dict[str, Any]], List[str], List[Dict[str, str]]]:
+        prepared_uploads: List[Dict[str, Any]] = []
+        unsupported_files: List[str] = []
+        invalid_files: List[Dict[str, str]] = []
+        downloads = self._online_service().download(selected_results)
+        for downloaded in downloads:
+            result = downloaded.get("result") or {}
+            source_name = self._normalize_online_download_name(
+                downloaded.get("source_name", ""),
+                downloaded.get("content") or b"",
+                result,
+            )
+            try:
+                extracted = self._extract_subtitle_files(
+                    source_name,
+                    downloaded.get("content") or b"",
+                    session_dir,
+                )
+            except ValueError as exc:
+                invalid_files.append({"name": source_name, "reason": str(exc)})
+                continue
+            if not extracted:
+                unsupported_files.append(source_name)
+                continue
+            for item in extracted:
+                item["online_source"] = downloaded.get("provider")
+                item["online_title"] = result.get("title", "")
+                if not item.get("archive_name") and source_name != item.get("source_name"):
+                    item["archive_name"] = source_name
+            prepared_uploads.extend(extracted)
+        return prepared_uploads, unsupported_files, invalid_files
+
+    @classmethod
+    def _autosub_lang_from_suffix(cls, suffix: Any) -> str:
+        normalized = cls._normalize_language_suffix(suffix)
+        first = next((part for part in normalized.split("&") if part and part not in {"chi", "cht"}), "")
+        return {
+            "eng": "en",
+            "en": "en",
+            "jpn": "ja",
+            "jp": "ja",
+            "kor": "ko",
+            "kr": "ko",
+            "fre": "fr",
+            "fra": "fr",
+            "spa": "es",
+            "ger": "de",
+            "deu": "de",
+            "por": "pt",
+            "ita": "it",
+            "rus": "ru",
+        }.get(first, first or "en")
+
+    def _online_ai_candidate_items(
+        self,
+        *,
+        prepared_uploads: List[Dict[str, Any]],
+        targets: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        items: List[Dict[str, Any]] = []
+        for prepared in prepared_uploads:
+            if self._normalize_text(prepared.get("ext")).lower() != ".srt":
+                continue
+            file_path = Path(prepared["stored_path"])
+            raw_bytes = file_path.read_bytes()
+            language_profile = self._detect_language_profile(prepared["source_name"], raw_bytes)
+            suffix = language_profile["suffix"]
+            if self._is_chinese_language_suffix(suffix):
+                continue
+            items.append(
+                {
+                    "upload_id": prepared["upload_id"],
+                    "source_name": prepared["source_name"],
+                    "archive_name": prepared.get("archive_name", ""),
+                    "ext": prepared["ext"],
+                    "target_id": self._suggest_target(prepared, targets),
+                    "detected_label": language_profile["label"],
+                    "language_suffix": suffix if suffix != "und" else "eng",
+                    "online_source": prepared.get("online_source", ""),
+                }
+            )
+        self._auto_fill_missing_targets(items, targets)
+        return items
+
+    def _prepare_online_ai_subtitle_overrides(
+        self,
+        *,
+        session_dir: Path,
+        target_entries: List[Dict[str, Any]],
+        prepared_uploads: List[Dict[str, Any]],
+    ) -> Tuple[Dict[str, Dict[str, str]], List[Dict[str, Any]]]:
+        targets = [self._target_from_entry(item) for item in target_entries]
+        candidate_items = self._online_ai_candidate_items(prepared_uploads=prepared_uploads, targets=targets)
+        if not candidate_items:
+            raise HTTPException(status_code=400, detail="没有解析到可用于 AI 翻译的外语 SRT 字幕")
+
+        target_entry_map = {self._normalize_text(entry.get("id")): entry for entry in target_entries}
+        upload_map = {item["upload_id"]: item for item in prepared_uploads}
+        chosen_items: List[Dict[str, Any]] = []
+        used_targets = set()
+        for item in candidate_items:
+            target_id = self._normalize_text(item.get("target_id"))
+            if not target_id or target_id in used_targets or target_id not in target_entry_map:
+                continue
+            chosen_items.append(item)
+            used_targets.add(target_id)
+
+        missing_targets = [
+            entry
+            for entry in target_entries
+            if self._normalize_text(entry.get("id")) not in used_targets
+        ]
+        if missing_targets:
+            first = missing_targets[0]
+            label = first.get("target_label") or first.get("filename") or Path(self._normalize_text(first.get("path"))).name
+            raise HTTPException(status_code=400, detail=f"没有为 {label} 匹配到可用于 AI 翻译的外语 SRT 字幕")
+
+        operations = self._build_write_operations(chosen_items, upload_map, target_entry_map)
+        fixed_dir = session_dir / "ai_timeline_fixed"
+        fixed_dir.mkdir(parents=True, exist_ok=True)
+        overrides: Dict[str, Dict[str, str]] = {}
+        fixed_results: List[Dict[str, Any]] = []
+        for operation in operations:
+            self._set_timeline_task(operation, status="pending", message="等待在线字幕智能调轴")
+            fixed_path = fixed_dir / f"{operation['upload_info'].get('upload_id')}.srt"
+            try:
+                self._set_timeline_task(operation, status="in_progress", message="在线字幕智能调轴处理中")
+                timeline_result = fix_subtitle_timeline(
+                    video_path=operation["video_path"],
+                    subtitle_path=operation["source_path"],
+                    output_path=fixed_path,
+                )
+            except Exception as exc:
+                self._set_timeline_task(operation, status="failed", message=f"在线字幕智能调轴失败: {exc}")
+                logger.error(
+                    "[SubtitleManualUpload] 在线字幕提交 AI 前调轴失败 %s -> %s: %s",
+                    operation["upload_info"].get("source_name"),
+                    operation["target_entry"].get("target_label"),
+                    exc,
+                )
+                raise HTTPException(
+                    status_code=500,
+                    detail=f"在线字幕智能调轴失败: {operation['upload_info'].get('source_name')} - {exc}",
+                ) from exc
+            self._set_timeline_task(
+                operation,
+                status="completed",
+                message="在线字幕智能调轴完成" if timeline_result.applied else "在线字幕无需调轴",
+                timeline_result=timeline_result,
+            )
+            video_path = str(operation["video_path"])
+            lang = self._autosub_lang_from_suffix(operation.get("language_suffix"))
+            overrides[video_path] = {
+                "subtitle_path": str(fixed_path),
+                "lang": lang,
+            }
+            fixed_results.append(
+                {
+                    "target_id": operation["target_entry"].get("id"),
+                    "target_label": self._target_from_entry(operation["target_entry"]).get("label"),
+                    "source_name": operation["upload_info"].get("source_name"),
+                    "subtitle_path": str(fixed_path),
+                    "language_suffix": operation.get("language_suffix"),
+                    "autosub_lang": lang,
+                    "timeline": timeline_result.to_dict(),
+                }
+            )
+        return overrides, fixed_results
+
+    def _submit_online_ai_translate(
+        self,
+        target_entries: List[Dict[str, Any]],
+        selected_results: List[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        if any((item.get("language_category") or "").lower() == "chinese" for item in selected_results):
+            raise HTTPException(status_code=400, detail="请只选择外语字幕结果后再提交 AI 翻译")
+        if any(self._is_stream_path(entry.get("path")) for entry in target_entries):
+            raise HTTPException(status_code=400, detail="STRM 资源暂不支持在线字幕智能调轴后提交 AI 翻译")
+        timeline_status = check_timeline_fixer_dependencies()
+        if not timeline_status.get("available"):
+            missing = [
+                key
+                for key, value in {
+                    "ffmpeg": timeline_status.get("ffmpeg"),
+                    "ffprobe": timeline_status.get("ffprobe"),
+                    **(timeline_status.get("modules") or {}),
+                }.items()
+                if not value
+            ]
+            raise HTTPException(
+                status_code=409,
+                detail=f"智能调轴不可用，无法提交在线字幕 AI 翻译：缺少 {', '.join(missing) or '依赖'}",
+            )
+        self._check_online_rate_limit([item.get("provider") for item in selected_results if isinstance(item, dict)])
+
+        session_id = self._hash_text(f"online-ai|{datetime.now().isoformat()}|{','.join(sorted(self._normalize_text(item.get('id')) for item in target_entries))}")[:16]
+        session_dir = self._get_session_root() / session_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            prepared_uploads, unsupported_files, invalid_files = self._download_online_results_to_uploads(
+                selected_results,
+                session_dir,
+            )
+            if not prepared_uploads:
+                if invalid_files:
+                    raise HTTPException(status_code=400, detail=f"没有解析到可用字幕文件，{invalid_files[0]['reason']}")
+                raise HTTPException(status_code=400, detail="没有解析到可用的在线字幕文件")
+            subtitle_overrides, fixed_subtitles = self._prepare_online_ai_subtitle_overrides(
+                session_dir=session_dir,
+                target_entries=target_entries,
+                prepared_uploads=prepared_uploads,
+            )
+            ai_result = self._submit_autosub_for_entries(target_entries, subtitle_overrides=subtitle_overrides)
+        except HTTPException:
+            raise
+        except CaptchaRequiredError as exc:
+            logger.warning("[SubtitleManualUpload] 在线字幕提交 AI 下载失败 provider=%s message=%s", exc.provider, exc)
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except ValueError as exc:
+            logger.warning("[SubtitleManualUpload] 在线字幕提交 AI 下载失败：%s", exc)
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        except Exception as exc:
+            logger.error("[SubtitleManualUpload] 在线字幕提交 AI 异常: %s", exc)
+            raise HTTPException(status_code=500, detail=f"在线字幕提交 AI 失败: {exc}") from exc
+        logger.info(
+            "[SubtitleManualUpload] 在线字幕调轴后提交 AI 翻译 targets=%s selected=%s prepared=%s fixed=%s added=%s skipped=%s failed=%s",
+            len(target_entries),
+            len(selected_results),
+            len(prepared_uploads),
+            len(fixed_subtitles),
+            len(ai_result.get("added") or []),
+            len(ai_result.get("skipped") or []),
+            len(ai_result.get("failed") or []),
+        )
+        return self._ok(
+            {
+                "ai_translate": ai_result,
+                "targets": ai_result.get("targets") or [self._target_from_entry(entry) for entry in target_entries],
+                "tasks": ai_result.get("tasks"),
+                "timeline_tasks": self._timeline_tasks_for_entries(target_entries),
+                "fixed_subtitles": fixed_subtitles,
+                "unsupported_files": unsupported_files,
+                "invalid_files": invalid_files,
+                "timeline_fixer": timeline_status,
+            },
+            message=(
+                f"已提交 {len(ai_result.get('added') or [])} 个 AI 字幕翻译任务，"
+                f"在线字幕已先智能调轴 {len(fixed_subtitles)} 个，"
+                f"跳过 {len(ai_result.get('skipped') or [])} 个，失败 {len(ai_result.get('failed') or [])} 个。"
+            ),
+        )
+
+    def _submit_autosub_for_entries(
+        self,
+        target_entries: List[Dict[str, Any]],
+        subtitle_overrides: Optional[Dict[str, Dict[str, str]]] = None,
+    ) -> Dict[str, Any]:
         stream_entries = [entry for entry in target_entries if self._is_stream_path(entry.get("path"))]
         submit_entries = [entry for entry in target_entries if not self._is_stream_path(entry.get("path"))]
         paths = [self._normalize_text(entry.get("path")) for entry in submit_entries if self._normalize_text(entry.get("path"))]
@@ -3378,9 +4064,20 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             raise HTTPException(status_code=409, detail="AI 字幕插件版本过旧，请更新到联动版")
 
         try:
-            result = plugin.submit_tasks(paths, source="subtitle_manual_upload")
+            if subtitle_overrides:
+                result = plugin.submit_tasks(
+                    paths,
+                    source="subtitle_manual_upload",
+                    subtitle_overrides=subtitle_overrides,
+                )
+            else:
+                result = plugin.submit_tasks(paths, source="subtitle_manual_upload")
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except TypeError as exc:
+            if subtitle_overrides:
+                raise HTTPException(status_code=409, detail="AI 字幕插件版本过旧，请更新到支持在线字幕输入的联动版") from exc
+            raise
         except Exception as exc:
             logger.error("[SubtitleManualUpload] AI 字幕任务提交失败: %s", exc)
             raise HTTPException(status_code=500, detail=f"AI 字幕任务提交失败: {exc}") from exc
@@ -3464,6 +4161,22 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         if not target_entries:
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
         return self._ok(self._autosub_tasks_for_entries(target_entries))
+
+    async def api_timeline_tasks(self, request: Request) -> Dict[str, Any]:
+        body = await request.json()
+        target_ids = self._target_ids_from_body(body)
+        if not target_ids:
+            return self._ok(
+                {
+                    "summary": self._timeline_task_summary([]),
+                    "tasks": [],
+                    "task_by_target": {},
+                }
+            )
+        target_entries = list(self._resolve_targets(target_ids).values())
+        if not target_entries:
+            raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
+        return self._ok(self._timeline_tasks_for_entries(target_entries))
 
     async def api_search(self, request: Request) -> Dict[str, Any]:
         keyword = self._normalize_text(request.query_params.get("keyword"))
@@ -3686,10 +4399,10 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         selected_results = self._results_from_body(body)
         if not selected_results:
             raise HTTPException(status_code=400, detail="请至少选择一个在线字幕结果")
-        self._check_online_rate_limit([item.get("provider") for item in selected_results if isinstance(item, dict)])
         submit_ai_translate = bool(body.get("submit_ai_translate"))
-        if submit_ai_translate and any((item.get("language_category") or "").lower() == "chinese" for item in selected_results):
-            raise HTTPException(status_code=400, detail="请只选择外语字幕结果后再提交 AI 翻译")
+        if submit_ai_translate:
+            return await run_in_threadpool(self._submit_online_ai_translate, target_entries, selected_results)
+        self._check_online_rate_limit([item.get("provider") for item in selected_results if isinstance(item, dict)])
 
         session_id = self._hash_text(f"online|{datetime.now().isoformat()}|{','.join(sorted(map(str, target_ids)))}")[:16]
         session_dir = self._get_session_root() / session_id
@@ -3763,9 +4476,6 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             invalid_files=invalid_files,
             source="online",
         )
-        if submit_ai_translate:
-            response["data"]["ai_translate"] = self._submit_autosub_for_entries(target_entries)
-            response["message"] = f"{response.get('message') or ''} 已提交 AI 字幕翻译任务。".strip()
         return response
 
     async def api_prepare_upload(self, request: Request) -> Dict[str, Any]:
@@ -3995,6 +4705,8 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         message = f"已删除 {len(deleted)} 个外挂字幕"
         if failed:
             message += f"，{len(failed)} 个目标处理失败"
+        if deleted:
+            self._invalidate_match_history_cache()
 
         return self._ok(
             {
@@ -4053,6 +4765,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             target_id[:8],
             target_path.name,
         )
+        self._invalidate_match_history_cache()
         return self._ok(
             {
                 "deleted": {

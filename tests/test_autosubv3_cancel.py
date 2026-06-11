@@ -204,6 +204,48 @@ def test_translated_subtitle_uses_chs_ai_suffix():
     )
 
 
+def test_submit_tasks_accepts_source_subtitle_override(tmp_path):
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    subtitle = tmp_path / "online.fixed.srt"
+    video.write_bytes(b"video")
+    subtitle.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+
+    result = plugin.submit_tasks(
+        [str(video)],
+        source=module.TaskSource.SUBTITLE_MANUAL_UPLOAD.value,
+        subtitle_overrides={str(video): {"subtitle_path": str(subtitle), "lang": "en"}},
+    )
+    task = next(iter(plugin._tasks.values()))
+    payload = plugin.tasks_payload(paths=[str(video)])
+
+    assert result["added"][0]["source_subtitle_name"] == "online.fixed.srt"
+    assert task.source_subtitle_path == str(subtitle)
+    assert task.source_subtitle_lang == "en"
+    assert payload["tasks"][0]["source_subtitle_name"] == "online.fixed.srt"
+
+
+def test_generate_subtitle_uses_source_subtitle_override(tmp_path):
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    subtitle = tmp_path / "online.fixed.srt"
+    video.write_bytes(b"video")
+    subtitle.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+
+    ret, lang, path = plugin._AutoSubv3__generate_subtitle(
+        str(video),
+        str(tmp_path / "Movie"),
+        source_subtitle_path=str(subtitle),
+        source_subtitle_lang="en",
+    )
+
+    assert ret is True
+    assert lang == "en"
+    assert path == subtitle
+
+
 def test_chs_ai_subtitle_is_detected_as_existing_chinese_subtitle():
     module = load_plugin_module()
 

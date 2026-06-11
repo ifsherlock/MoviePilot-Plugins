@@ -83,6 +83,7 @@ const mediaPageSize = 24
 const mediaTotal = ref(0)
 const mediaHasMore = ref(false)
 const mediaPrefetchPages = ref({})
+const failedPosterImages = ref({})
 let mediaSearchToken = 0
 const rootTab = ref('match')
 const matchHistoryLoading = ref(false)
@@ -130,19 +131,29 @@ const onlineProviderProgress = ref({})
 const selectedOnlineResultIds = ref([])
 const aiTaskDialog = ref(false)
 const aiTaskDialogTarget = ref(null)
+const aiTaskScopeTargets = ref([])
+const aiStatusStripRef = ref(null)
 const aiTaskData = ref({
   status: null,
   summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, ignored: 0, no_audio: 0, failed: 0, cancelled: 0 },
   tasks: [],
   task_by_target: {},
 })
+const timelineTaskData = ref({
+  summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, skipped: 0, failed: 0 },
+  tasks: [],
+  task_by_target: {},
+})
 let aiTaskTimer = null
+let timelineTaskTimer = null
 let onlineSearchSeq = 0
 let onlineDownloadSeq = 0
 const ONLINE_PROVIDER_TIMEOUT_MS = 25000
 const ONLINE_DOWNLOAD_TIMEOUT_MS = 35000
 
 const onlineProviderItems = [
+  { title: 'SubHD', value: 'subhd' },
+  { title: 'Zimuku', value: 'zimuku' },
   { title: '射手网(伪)', value: 'assrt' },
   { title: 'OpenSubtitles', value: 'opensubtitles' },
 ]
@@ -275,7 +286,7 @@ const onlineProviderProgressItems = computed(() => onlineSelectedProviders.value
 const onlineAiConfirmText = computed(() => {
   const count = selectedOnlineResults.value.length
   const targetCount = onlineTargets.value.length
-  return `将下载 ${count} 个外语字幕结果，并提交给 AI字幕生成(联动版) 翻译；当前范围包含 ${targetCount} 个目标。`
+  return `将把当前范围的 ${targetCount} 个目标提交给 AI字幕生成(联动版)；已选择 ${count} 个外语结果，提交后会关闭在线搜索并打开 AI 状态。`
 })
 const onlineBatchLabel = computed(() => {
   if (selectedMedia.value?.media_type !== 'tv') return '搜索在线字幕'
@@ -364,6 +375,7 @@ const allVisibleSelected = computed(() => {
 const matchHistoryRows = computed(() => visibleTargets.value.map(target => {
   const subtitles = target.subtitles || []
   const task = aiTaskForTarget(target)
+  const timelineTask = timelineTaskForTarget(target)
   const written = (lastWritten.value || []).filter(item => (
     item.target_label === target.label
     || subtitles.some(subtitle => subtitle.path === item.output_path || subtitle.name === item.output_name)
@@ -372,6 +384,7 @@ const matchHistoryRows = computed(() => visibleTargets.value.map(target => {
     target,
     subtitles,
     task,
+    timelineTask,
     written,
     hasTimelineRunning: applying.value && selectedPreviewTargets.value.some(item => item.id === target.id) && timelineEnabledForApply.value,
   }
@@ -424,6 +437,33 @@ function mediaStat(media) {
     return `${seasonCount || '-'} 季 · ${count} 集本地资源`
   }
   return `${count || 1} 个本地资源`
+}
+
+function posterImageKey(item, url) {
+  return `${item?.id || item?.media_id || item?.title || ''}\u0000${url || ''}`
+}
+
+function posterImageSrc(item) {
+  const url = item?.poster_thumb_url || item?.poster_url || ''
+  if (!url || failedPosterImages.value[posterImageKey(item, url)]) return ''
+  return url
+}
+
+function markPosterFailed(item) {
+  const url = item?.poster_thumb_url || item?.poster_url || ''
+  if (!url) return
+  failedPosterImages.value = {
+    ...failedPosterImages.value,
+    [posterImageKey(item, url)]: true,
+  }
+}
+
+function posterLoading(index) {
+  return index < 6 ? 'eager' : 'lazy'
+}
+
+function posterFetchPriority(index) {
+  return index < 6 ? 'high' : 'low'
 }
 
 function historyMediaStat(item) {
@@ -620,7 +660,9 @@ function providerName(providerId) {
 }
 
 function providerPriority(providerId) {
+  if (providerId === 'subhd') return 35
   if (providerId === 'assrt') return 30
+  if (providerId === 'zimuku') return 25
   if (providerId === 'opensubtitles') return 20
   return 0
 }
@@ -713,11 +755,12 @@ function providerProgressColor(state) {
 }
 
 function ensureConfiguredApiProvidersSelected() {
-  const configured = []
+  const configured = [...(onlineStatus.value?.enabled_providers || [])]
+    .filter(provider => onlineProviderItems.some(item => item.value === provider))
   if (onlineStatus.value?.assrt_api_configured) configured.push('assrt')
   if (onlineStatus.value?.opensubtitles_api_configured) configured.push('opensubtitles')
   if (!configured.length) return
-  onlineSelectedProviders.value = configured
+  onlineSelectedProviders.value = Array.from(new Set(configured))
 }
 
 function stopAiPolling() {
@@ -727,16 +770,38 @@ function stopAiPolling() {
   }
 }
 
+function stopTimelinePolling() {
+  if (timelineTaskTimer) {
+    clearTimeout(timelineTaskTimer)
+    timelineTaskTimer = null
+  }
+}
+
 function scheduleAiPolling() {
   stopAiPolling()
-  if (!aiHasActiveTasks.value || !visibleTargets.value.length) return
+  if (!aiHasActiveTasks.value || !currentAiTaskTargets().length) return
   aiTaskTimer = setTimeout(() => {
     loadAiTasks({ silent: true })
   }, 5000)
 }
 
+function scheduleTimelinePolling() {
+  stopTimelinePolling()
+  if (!Number(timelineTaskData.value?.summary?.active || 0) || !visibleTargets.value.length) return
+  timelineTaskTimer = setTimeout(() => {
+    loadTimelineTasks({ silent: true })
+  }, 4000)
+}
+
+function currentAiTaskTargets() {
+  return aiTaskScopeTargets.value.length ? aiTaskScopeTargets.value : visibleTargets.value
+}
+
 async function loadAiTasks(options = {}) {
-  if (!visibleTargets.value.length) {
+  const scopeTargets = Array.isArray(options.targets) && options.targets.length
+    ? options.targets
+    : currentAiTaskTargets()
+  if (!scopeTargets.length) {
     aiTaskData.value = {
       ...aiTaskData.value,
       summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, ignored: 0, no_audio: 0, failed: 0, cancelled: 0 },
@@ -749,7 +814,7 @@ async function loadAiTasks(options = {}) {
   if (!options.silent) aiTasksLoading.value = true
   try {
     const response = await props.api.post(`${pluginBase.value}/ai_tasks`, {
-      target_ids: visibleTargets.value.map(item => item.id),
+      target_ids: scopeTargets.map(item => item.id),
     })
     aiTaskData.value = unwrapResponse(response) || aiTaskData.value
     if (aiTaskData.value.status) {
@@ -765,8 +830,40 @@ async function loadAiTasks(options = {}) {
   }
 }
 
+async function loadTimelineTasks(options = {}) {
+  const scopeTargets = Array.isArray(options.targets) && options.targets.length
+    ? options.targets
+    : visibleTargets.value
+  if (!scopeTargets.length) {
+    timelineTaskData.value = {
+      summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, skipped: 0, failed: 0 },
+      tasks: [],
+      task_by_target: {},
+    }
+    stopTimelinePolling()
+    return
+  }
+  try {
+    const response = await props.api.post(`${pluginBase.value}/timeline_tasks`, {
+      target_ids: scopeTargets.map(item => item.id),
+    })
+    timelineTaskData.value = unwrapResponse(response) || timelineTaskData.value
+  } catch (err) {
+    if (!options.silent) {
+      error.value = errorMessage(err, '读取智能调轴任务失败')
+    }
+  } finally {
+    scheduleTimelinePolling()
+  }
+}
+
 function aiTaskForTarget(target) {
   return (aiTaskData.value.task_by_target || {})[target?.id] || null
+}
+
+function timelineTaskForTarget(target) {
+  if (!target) return null
+  return (timelineTaskData.value.task_by_target || {})[target.id] || target.timeline_task || null
 }
 
 function isAiTaskActive(task) {
@@ -817,10 +914,30 @@ function aiStatusText(task) {
   return task.message || task.status_label || task.status
 }
 
+function timelineTaskText(task) {
+  if (!task) return '暂无调轴记录'
+  if (task.status === 'completed' && task.timeline) {
+    return timelineResultText({ timeline: task.timeline })
+  }
+  return task.message || task.status_label || task.status || '暂无调轴记录'
+}
+
 function openAiTaskDialog(target = null) {
   aiTaskDialogTarget.value = target
   aiTaskDialog.value = true
-  loadAiTasks({ silent: true })
+  const scopeTargets = target
+    ? [target]
+    : (aiTaskScopeTargets.value.length ? aiTaskScopeTargets.value : visibleTargets.value)
+  aiTaskScopeTargets.value = scopeTargets
+  loadAiTasks({ silent: true, targets: scopeTargets })
+}
+
+async function focusAiStatusStrip() {
+  await nextTick()
+  const el = aiStatusStripRef.value
+  if (!el) return
+  el.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
+  el.focus?.({ preventScroll: true })
 }
 
 async function submitAiForTargets(scopeTargets) {
@@ -848,8 +965,9 @@ async function submitAiForTargets(scopeTargets) {
     if (data.tasks) {
       aiTaskData.value = data.tasks
     }
+    aiTaskScopeTargets.value = usableTargets
     message.value = response?.message || '已提交 AI 字幕生成任务'
-    await loadAiTasks({ silent: true })
+    await loadAiTasks({ silent: true, targets: usableTargets })
   } catch (err) {
     error.value = errorMessage(err, '提交 AI 字幕任务失败')
   } finally {
@@ -874,8 +992,9 @@ async function cancelAiForTargets(scopeTargets) {
     if (data.tasks) {
       aiTaskData.value = data.tasks
     }
+    aiTaskScopeTargets.value = activeTargets
     message.value = response?.message || '已取消 AI 字幕任务'
-    await loadAiTasks({ silent: true })
+    await loadAiTasks({ silent: true, targets: activeTargets })
   } catch (err) {
     error.value = errorMessage(err, '取消 AI 字幕任务失败')
   } finally {
@@ -914,13 +1033,20 @@ function clearTargetState() {
   preview.value = null
   lastWritten.value = []
   aiTaskDialogTarget.value = null
+  aiTaskScopeTargets.value = []
   aiTaskData.value = {
     ...aiTaskData.value,
     summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, ignored: 0, no_audio: 0, failed: 0, cancelled: 0 },
     tasks: [],
     task_by_target: {},
   }
+  timelineTaskData.value = {
+    summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, skipped: 0, failed: 0 },
+    tasks: [],
+    task_by_target: {},
+  }
   stopAiPolling()
+  stopTimelinePolling()
 }
 
 async function loadStatus() {
@@ -1151,8 +1277,10 @@ async function loadTargets(media = selectedMedia.value, season = selectedSeason.
     seasons.value = data.seasons || []
     selectedSeason.value = data.selected_season ?? 'all'
     targets.value = data.targets || []
+    aiTaskScopeTargets.value = targets.value
     selectedTargetIds.value = []
     await loadAiTasks({ silent: true })
+    await loadTimelineTasks({ silent: true })
 
     if (!targets.value.length) {
       message.value = `${mediaLabel(selectedMedia.value)} 没有找到本地可写入的视频文件`
@@ -1210,6 +1338,7 @@ function toggleLock(targetId) {
 }
 
 function timelineResultForTarget(row) {
+  if (row.timelineTask) return timelineTaskText(row.timelineTask)
   if (row.hasTimelineRunning) return '智能调轴处理中'
   const latest = [...(row.written || [])].reverse().find(item => item.timeline)
   if (latest) return timelineResultText(latest)
@@ -1410,6 +1539,24 @@ function stopOnlineSearch() {
   appendOnlineMessages([{ level: 'info', message: '已停止等待未返回的字幕源，已显示的结果会保留。' }])
 }
 
+function closeOnlineDialog() {
+  if (onlineSearching.value) {
+    stopOnlineSearch()
+  }
+  if (onlineDownloading.value) {
+    stopOnlineDownload()
+  }
+  onlineDialog.value = false
+}
+
+function updateOnlineDialog(value) {
+  if (value) {
+    onlineDialog.value = true
+    return
+  }
+  closeOnlineDialog()
+}
+
 function withTimeout(promise, timeoutMs, message) {
   let timer = null
   const timeout = new Promise((resolve, reject) => {
@@ -1478,12 +1625,12 @@ function requestOnlineAiTranslate() {
 
 function confirmOnlineAiTranslate() {
   onlineAiConfirmDialog.value = false
-  downloadOnlinePreview(true)
+  submitOnlineAiTranslate()
 }
 
-async function downloadOnlinePreview(submitAiTranslate = false) {
+async function submitOnlineAiTranslate() {
   if (!selectedOnlineResults.value.length || onlineDownloading.value) return
-  if (submitAiTranslate && !canSubmitOnlineAiTranslate.value) {
+  if (!canSubmitOnlineAiTranslate.value) {
     onlineError.value = aiAvailable.value
       ? '请只选择外语字幕结果后再提交 AI 翻译。'
       : 'AI 字幕生成联动当前不可用，无法提交翻译任务。'
@@ -1491,24 +1638,66 @@ async function downloadOnlinePreview(submitAiTranslate = false) {
   }
   const downloadSeq = ++onlineDownloadSeq
   onlineDownloading.value = true
-  if (submitAiTranslate) {
-    onlineAiDownloading.value = true
-  } else {
-    onlinePreviewDownloading.value = true
+  onlineAiDownloading.value = true
+  onlineError.value = ''
+  const submittedTargets = [...onlineTargets.value]
+  try {
+    const response = await withTimeout(
+      props.api.post(`${pluginBase.value}/online_ai_submit`, {
+        ...onlinePayload(),
+        results: selectedOnlineResults.value,
+      }),
+      ONLINE_DOWNLOAD_TIMEOUT_MS,
+      'AI 字幕任务提交仍在等待响应，已停止等待；可稍后打开 AI 状态刷新查看。',
+    )
+    if (downloadSeq !== onlineDownloadSeq) return
+    const data = unwrapResponse(response) || {}
+    const aiResult = data.ai_translate || data
+    if (data.tasks) {
+      aiTaskData.value = data.tasks
+    } else if (aiResult.tasks) {
+      aiTaskData.value = aiResult.tasks
+    }
+    if (data.timeline_tasks) {
+      timelineTaskData.value = data.timeline_tasks
+    }
+    preview.value = null
+    uploadDialog.value = false
+    onlineDialog.value = false
+    message.value = response?.message || '已提交 AI 字幕翻译任务，请查看 AI 字幕生成状态'
+    aiTaskScopeTargets.value = submittedTargets
+    await loadAiTasks({ silent: true, targets: submittedTargets })
+    await loadTimelineTasks({ silent: true, targets: submittedTargets })
+    await focusAiStatusStrip()
+  } catch (err) {
+    if (downloadSeq !== onlineDownloadSeq) return
+    onlineError.value = errorMessage(err, '提交 AI 字幕翻译失败')
+  } finally {
+    if (downloadSeq === onlineDownloadSeq) {
+      onlineDownloading.value = false
+      onlineAiDownloading.value = false
+    }
   }
+}
+
+async function downloadOnlinePreview() {
+  if (!selectedOnlineResults.value.length || onlineDownloading.value) return
+  const downloadSeq = ++onlineDownloadSeq
+  onlineDownloading.value = true
+  onlinePreviewDownloading.value = true
   onlineError.value = ''
   try {
     const response = await withTimeout(
       props.api.post(`${pluginBase.value}/online_download_preview`, {
         ...onlinePayload(),
         results: selectedOnlineResults.value,
-        submit_ai_translate: submitAiTranslate,
       }),
       ONLINE_DOWNLOAD_TIMEOUT_MS,
       '在线字幕下载仍在源站验证中，已停止等待；可换一个结果重试，或打开手动链接下载后上传。',
     )
     if (downloadSeq !== onlineDownloadSeq) return
-    preview.value = unwrapResponse(response)
+    const data = unwrapResponse(response) || {}
+    preview.value = data
     batchLanguageSuffix.value = ''
     if (preview.value?.items) {
       const preferSingleCandidate = preview.value.source === 'online' && preview.value.items.length > 1
@@ -1520,7 +1709,7 @@ async function downloadOnlinePreview(submitAiTranslate = false) {
     }
     onlineDialog.value = false
     uploadDialog.value = true
-    message.value = response?.message || (submitAiTranslate ? '已下载英文字幕并提交 AI 翻译' : '已下载在线字幕并生成匹配预览')
+    message.value = response?.message || '已下载在线字幕并生成匹配预览'
   } catch (err) {
     if (downloadSeq !== onlineDownloadSeq) return
     onlineError.value = errorMessage(err, '在线字幕下载预览失败')
@@ -1740,6 +1929,7 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   stopAiPolling()
+  stopTimelinePolling()
 })
 
 defineExpose({
@@ -1856,16 +2046,21 @@ defineExpose({
 
       <div v-if="rootTab === 'match' && medias.length" class="media-list">
         <button
-          v-for="media in medias"
+          v-for="(media, index) in medias"
           :key="media.id"
           class="media-card"
           @click="selectMedia(media)"
         >
           <div class="poster-frame">
             <img
-              v-if="media.poster_url"
-              :src="media.poster_url"
+              v-if="posterImageSrc(media)"
+              :src="posterImageSrc(media)"
               :alt="mediaLabel(media)"
+              :loading="posterLoading(index)"
+              :fetchpriority="posterFetchPriority(index)"
+              decoding="async"
+              draggable="false"
+              @error="markPosterFailed(media)"
             >
             <span v-else>{{ formatMediaType(media.media_type) }}</span>
           </div>
@@ -1894,7 +2089,7 @@ defineExpose({
 
       <div v-if="rootTab === 'history' && matchHistoryItems.length" class="global-history-list">
         <div
-          v-for="item in matchHistoryItems"
+          v-for="(item, index) in matchHistoryItems"
           :key="item.id"
           class="global-history-card"
         >
@@ -1905,9 +2100,14 @@ defineExpose({
           >
             <div class="poster-frame compact">
               <img
-                v-if="item.poster_url"
-                :src="item.poster_url"
+                v-if="posterImageSrc(item)"
+                :src="posterImageSrc(item)"
                 :alt="mediaLabel(item)"
+                :loading="posterLoading(index)"
+                :fetchpriority="posterFetchPriority(index)"
+                decoding="async"
+                draggable="false"
+                @error="markPosterFailed(item)"
               >
               <span v-else>{{ formatMediaType(item.media_type) }}</span>
             </div>
@@ -1988,6 +2188,9 @@ defineExpose({
               <div class="history-main">
                 <div class="episode-title">{{ compactTargetName(target) }}</div>
                 <div class="episode-path">{{ target.relative_path }}</div>
+                <div v-if="target.timeline_task" class="history-status compact-status">
+                  <span>调轴：{{ timelineTaskText(target.timeline_task) }}</span>
+                </div>
                 <div class="subtitle-history-list compact-subtitles">
                   <div
                     v-for="subtitle in target.subtitles"
@@ -2051,9 +2254,14 @@ defineExpose({
               </button>
               <div class="mini-poster">
                 <img
-                  v-if="selectedMedia.poster_url"
-                  :src="selectedMedia.poster_url"
+                  v-if="posterImageSrc(selectedMedia)"
+                  :src="posterImageSrc(selectedMedia)"
                   :alt="mediaLabel(selectedMedia)"
+                  loading="eager"
+                  fetchpriority="high"
+                  decoding="async"
+                  draggable="false"
+                  @error="markPosterFailed(selectedMedia)"
                 >
                 <span v-else>{{ formatMediaType(selectedMedia.media_type) }}</span>
               </div>
@@ -2083,6 +2291,7 @@ defineExpose({
 
           <button
             v-if="aiEnabled"
+            ref="aiStatusStripRef"
             class="ai-status-strip"
             :class="{ unavailable: !aiAvailable, active: aiHasActiveTasks }"
             type="button"
@@ -2396,7 +2605,7 @@ defineExpose({
               </div>
               <div class="ai-task-main">
                 <strong>{{ task.target_label || task.video_name }}</strong>
-                <span>{{ task.video_name }}</span>
+                <span>{{ task.source_subtitle_name ? `字幕源：${task.source_subtitle_name}` : task.video_name }}</span>
                 <p>{{ aiStatusText(task) }}</p>
               </div>
               <div class="ai-task-time">
@@ -2412,19 +2621,19 @@ defineExpose({
       </VCard>
     </VDialog>
 
-    <VDialog v-model="onlineDialog" max-width="1080">
+    <VDialog :model-value="onlineDialog" max-width="1080" @update:model-value="updateOnlineDialog">
       <VCard class="online-dialog" rounded="xl">
         <VCardTitle class="dialog-title">
           <div>
             <span>{{ onlineTitle || '在线字幕搜索' }}</span>
-            <p>{{ onlineTargets.length }} 个目标 · 下载后进入匹配预览，不会直接写入</p>
+            <p>{{ onlineTargets.length }} 个目标 · 下载会进入匹配预览，提交 AI 翻译会直接进入 AI 状态</p>
           </div>
           <div class="online-title-actions">
             <VBtn
               color="success"
               :disabled="!selectedOnlineResults.length || onlineAiDownloading"
               :loading="onlinePreviewDownloading"
-              @click="downloadOnlinePreview(false)"
+              @click="downloadOnlinePreview"
             >
               下载并生成预览
             </VBtn>
@@ -2435,7 +2644,7 @@ defineExpose({
               :loading="onlineAiDownloading"
               @click="requestOnlineAiTranslate"
             >
-              下载并提交 AI 翻译
+              提交 AI 翻译
             </VBtn>
             <VBtn
               v-if="onlineDownloading"
@@ -2445,7 +2654,7 @@ defineExpose({
             >
               停止等待
             </VBtn>
-            <VBtn icon="mdi-close" variant="text" @click="onlineDialog = false" />
+            <VBtn icon="mdi-close" variant="text" @click="closeOnlineDialog" />
           </div>
         </VCardTitle>
         <VDivider />
@@ -2661,7 +2870,7 @@ defineExpose({
           <VAlert
             type="warning"
             variant="tonal"
-            text="确认后会下载所选外语字幕并提交 AI 翻译任务；误触后可在 AI 状态里取消。"
+            text="确认后会在后台下载所选外语字幕，智能调轴后提交到 AI 字幕生成队列；不会打开匹配预览，误触后可在 AI 状态里取消。"
           />
         </VCardText>
         <VCardActions class="justify-end">
@@ -3048,6 +3257,8 @@ defineExpose({
   background: rgba(255, 255, 255, 0.76);
   color: inherit;
   text-align: left;
+  content-visibility: auto;
+  contain-intrinsic-size: 112px;
   transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
 }
 
@@ -3081,8 +3292,10 @@ defineExpose({
 
 .poster-frame img,
 .mini-poster img {
+  display: block;
   width: 100%;
   height: 100%;
+  background: #30463f;
   object-fit: cover;
 }
 

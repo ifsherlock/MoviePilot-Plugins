@@ -53,6 +53,30 @@ class FakeDirectDownloader:
         return "example.srt", b"1\n00:00:01,000 --> 00:00:02,000\nHi", url
 
 
+class FakeWebFetcher:
+    use_proxy = False
+
+    def __init__(self, pages=None):
+        self.pages = pages or {}
+        self.requested = []
+
+    def get_text(self, url, *, referer=""):
+        self.requested.append(url)
+        for marker, body in self.pages.items():
+            if marker in url:
+                return 200, body, url
+        return 404, "", url
+
+    def get_bytes(self, url, *, referer=""):
+        return "subtitle.zip", b"PK\x03\x04" + b"x" * 2048, url
+
+    def post_json(self, url, payload, *, referer=""):
+        return {"success": True, "url": "/download/subtitle.zip"}
+
+    def close(self):
+        return None
+
+
 def test_build_search_keywords_prefers_season_package():
     module = load_online_module()
     media = {"media_type": "tv", "title": "Example Show", "year": "2025"}
@@ -96,9 +120,210 @@ def test_manual_providers_keep_subhd_zimuku_links_only():
 
     assert [item["provider"] for item in links] == ["subhd", "zimuku"]
     assert links[0]["links"][0]["url"] == "https://subhd.tv/search/Ghost%20Rider%202007"
-    assert links[1]["links"][0]["url"] == "https://zimuku.org/search?q=Ghost%20Rider%202007"
-    assert status["subhd"]["manual_only"] is True
-    assert status["zimuku"]["manual_only"] is True
+    assert links[1]["links"][0]["url"] == "https://zimuku.org/search?q=Ghost%20Rider%202007&chost=zimuku.org"
+    assert status["subhd"]["manual_only"] is False
+    assert status["zimuku"]["manual_only"] is False
+
+
+def test_opensubtitles_search_all_prefers_tmdb_then_title_then_imdb():
+    module = load_online_module()
+    provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key")
+    calls = []
+
+    def fake_api_json(path, params, *, method="GET"):
+        calls.append(dict(params))
+        assert path == "/subtitles"
+        assert params["languages"] == "zh-cn,zh-tw,ze,en,ja,ko"
+        if "query" in params:
+            return {
+                "data": [
+                    {
+                        "attributes": {
+                            "language": "en",
+                            "release": "Example.Show.S01E02.1080p.WEB-DL",
+                            "files": [{"file_id": 987, "file_name": "Example.Show.S01E02.srt"}],
+                        }
+                    }
+                ]
+            }
+        return {"data": []}
+
+    provider._api_json = fake_api_json
+
+    results = provider.search_all(
+        ["Example Show S01E02"],
+        [
+            {
+                "media_type": "tv",
+                "title": "Example Show",
+                "tmdb_id": 12345,
+                "imdb_id": "tt7654321",
+                "season": 1,
+                "episode": 2,
+            }
+        ],
+        "episode",
+    )
+
+    assert ["tmdb_id" if "tmdb_id" in item else "query" if "query" in item else "imdb_id" for item in calls] == ["tmdb_id", "query"]
+    assert calls[0]["tmdb_id"] == "12345"
+    assert calls[1]["query"] == "Example Show S01E02"
+    assert len(results) == 1
+    assert "英文标题查询" in results[0].query_plan
+
+
+def test_opensubtitles_search_all_uses_imdb_last():
+    module = load_online_module()
+    provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key")
+    calls = []
+
+    def fake_api_json(path, params, *, method="GET"):
+        calls.append(dict(params))
+        if "imdb_id" in params:
+            return {
+                "data": [
+                    {
+                        "attributes": {
+                            "language": "zh",
+                            "release": "Example.Movie.2024.zh",
+                            "feature_details": {"year": 2024, "title": "Example Movie", "imdb_id": 7654321},
+                            "files": [{"file_id": 55, "file_name": "Example.Movie.2024.zh.srt"}],
+                        }
+                    }
+                ]
+            }
+        return {"data": []}
+
+    provider._api_json = fake_api_json
+
+    results = provider.search_all(
+        ["Example Movie 2024"],
+        [{"media_type": "movie", "title": "Example Movie", "year": "2024", "imdb_id": "tt7654321"}],
+        "movie",
+    )
+
+    assert ["tmdb_id" if "tmdb_id" in item else "query" if "query" in item else "imdb_id" for item in calls] == ["query", "imdb_id"]
+    assert calls[-1]["imdb_id"] == "7654321"
+    assert [item.result_id for item in results] == ["55"]
+
+
+def test_subhd_prefers_douban_id_and_parses_subtitle_rows():
+    module = load_online_module()
+    html = """
+    <div class="row">
+      <a class="link-dark" href="/a/bqsyNZ">Example Show S01E02 简体中文 ASS</a>
+      <span class="fw-bold">简体</span><span class="text-secondary">ASS</span>
+    </div>
+    """
+    fetcher = FakeWebFetcher({"/d/1292052": html})
+    provider = module.SubHDProvider(fetcher)
+
+    results = provider.search_all(
+        ["Example Show S01E02"],
+        [{"media_type": "tv", "title": "Example Show", "douban_id": "1292052", "season": 1, "episode": 2}],
+        "episode",
+    )
+
+    assert fetcher.requested[0] == "https://subhd.tv/d/1292052"
+    assert len(results) == 1
+    assert results[0].provider == "subhd"
+    assert results[0].result_id == "bqsyNZ"
+    assert results[0].language_category == "chinese"
+    assert results[0].download_url.startswith("subhd-page:")
+
+
+def test_zimuku_searches_candidates_and_filters_episode():
+    module = load_online_module()
+    search_html = """
+    <div class="item"><div class="title"><p class="tt">
+      <a href="/subs/456.html">Example Show</a>
+    </p></div></div>
+    """
+    subs_html = """
+    <table><tbody>
+      <tr><td><a href="/detail/1.html">Example Show S01E01 简体中文</a></td></tr>
+      <tr><td><img title="简体中文字幕"><a href="/detail/2.html">Example Show S01E02 ASS</a></td></tr>
+    </tbody></table>
+    """
+    fetcher = FakeWebFetcher({"/search": search_html, "/subs/456.html": subs_html})
+    provider = module.ZimukuProvider(fetcher)
+
+    results = provider.search(
+        "Example Show S01E02",
+        [{"media_type": "tv", "title": "Example Show", "season": 1, "episode": 2}],
+        "episode",
+    )
+
+    assert [item.result_id for item in results] == ["2"]
+    assert "chost=zimuku.org" in fetcher.requested[0]
+    assert results[0].provider == "zimuku"
+    assert results[0].language_category == "chinese"
+    assert results[0].download_url.startswith("zimuku-page:")
+
+
+def test_zimuku_search_falls_back_when_query_path_404():
+    module = load_online_module()
+    search_html = """
+    <div class="item"><div class="title"><p class="tt">
+      <a href="/subs/456.html">Example Show</a>
+    </p></div></div>
+    """
+    subs_html = """
+    <table><tbody>
+      <tr><td><a href="/detail/2.html">Example Show S01E02 简体中文 ASS</a></td></tr>
+    </tbody></table>
+    """
+
+    class FallbackFetcher(FakeWebFetcher):
+        def get_text(self, url, *, referer=""):
+            self.requested.append(url)
+            if "/search?q=" in url:
+                return 404, "", url
+            if "/search/" in url:
+                return 200, search_html, url
+            if "/subs/456.html" in url:
+                return 200, subs_html, url
+            return 404, "", url
+
+    fetcher = FallbackFetcher()
+    provider = module.ZimukuProvider(fetcher)
+
+    results = provider.search(
+        "Example Show S01E02",
+        [{"media_type": "tv", "title": "Example Show", "season": 1, "episode": 2}],
+        "episode",
+    )
+
+    assert [item.result_id for item in results] == ["2"]
+    assert any("/search?q=" in url for url in fetcher.requested)
+    assert any("/search/" in url and "/search?q=" not in url for url in fetcher.requested)
+
+
+def test_subhd_download_accepts_nested_api_download_url():
+    module = load_online_module()
+    page_html = '<a class="down" href="/down/123">下载</a>'
+
+    class NestedSubHDFetcher(FakeWebFetcher):
+        def post_json(self, url, payload, *, referer=""):
+            assert payload["sid"] == "123"
+            return {"success": True, "data": {"download": {"file_url": "/download/subtitle.zip"}}}
+
+    fetcher = NestedSubHDFetcher({"/a/abc": page_html, "/down/123": "download page"})
+    provider = module.SubHDProvider(fetcher)
+
+    filename, content = provider.download(
+        {
+            "provider": "subhd",
+            "result_id": "abc",
+            "page_url": "https://subhd.tv/a/abc",
+            "download_url": "subhd-page:https://subhd.tv/a/abc",
+            "title": "Example",
+        }
+    )
+
+    assert filename == "subtitle.zip"
+    assert content.startswith(b"PK\x03\x04")
+    assert any("/down/123" in url for url in fetcher.requested)
 
 
 def test_assrt_provider_requires_api_key_for_auto_search():
@@ -688,8 +913,8 @@ def test_query_plan_records_region_and_query_source():
 
 def test_opensubtitles_download_uses_download_api_link():
     module = load_online_module()
-    module.OnlineDirectDownloader = FakeDirectDownloader
     provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key", username="demo", password="secret")
+    provider.download.__globals__["OnlineDirectDownloader"] = FakeDirectDownloader
     provider._session_token = "jwt-token"
 
     def fake_api_json(path, params, *, method="GET", token="", allow_without_token=False):
@@ -709,13 +934,13 @@ def test_opensubtitles_download_uses_download_api_link():
 
 def test_opensubtitles_download_can_login_for_token():
     module = load_online_module()
-    module.OnlineDirectDownloader = FakeDirectDownloader
     provider = module.OpenSubtitlesProvider(
         FakeFetcher(),
         api_key="test-key",
         username="demo",
         password="secret",
     )
+    provider.download.__globals__["OnlineDirectDownloader"] = FakeDirectDownloader
     calls = []
 
     def fake_api_json(path, params, *, method="GET", token="", allow_without_token=False):

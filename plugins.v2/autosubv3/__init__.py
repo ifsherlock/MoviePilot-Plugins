@@ -66,6 +66,8 @@ class TaskItem:
     source: TaskSource
     add_time: datetime
     force_generate: bool = False
+    source_subtitle_path: str = ""
+    source_subtitle_lang: str = ""
     status: TaskStatus = TaskStatus.PENDING
     complete_time: datetime = None
     error_message: str = ""
@@ -244,6 +246,8 @@ class AutoSubv3(_PluginBase):
                     source=TaskSource(task_dict["source"]),
                     add_time=datetime.fromisoformat(task_dict["add_time"]),
                     force_generate=bool(task_dict.get("force_generate", False)),
+                    source_subtitle_path=task_dict.get("source_subtitle_path", ""),
+                    source_subtitle_lang=task_dict.get("source_subtitle_lang", ""),
                     status=TaskStatus(task_dict["status"]),
                     complete_time=datetime.fromisoformat(task_dict["complete_time"])
                     if task_dict.get("complete_time") else None,
@@ -263,6 +267,8 @@ class AutoSubv3(_PluginBase):
             "source": task.source.value,
             "add_time": task.add_time.isoformat() if task.add_time else None,
             "force_generate": bool(task.force_generate),
+            "source_subtitle_path": task.source_subtitle_path or "",
+            "source_subtitle_lang": task.source_subtitle_lang or "",
             "status": task.status.value,
             "complete_time": task.complete_time.isoformat() if task.complete_time else None,
             "error_message": task.error_message or "",
@@ -354,6 +360,9 @@ class AutoSubv3(_PluginBase):
             "source": source.value,
             "source_label": self._source_label(source),
             "force_generate": bool(task.force_generate),
+            "source_subtitle_path": task.source_subtitle_path or "",
+            "source_subtitle_name": os.path.basename(task.source_subtitle_path or ""),
+            "source_subtitle_lang": task.source_subtitle_lang or "",
             "status": status.value,
             "status_label": self._status_label(status),
             "message": message,
@@ -392,7 +401,12 @@ class AutoSubv3(_PluginBase):
     def api_status(self) -> Dict[str, Any]:
         return self._ok(self._status_payload())
 
-    def submit_tasks(self, paths: List[str], source: str = TaskSource.MANUAL.value) -> Dict[str, Any]:
+    def submit_tasks(
+        self,
+        paths: List[str],
+        source: str = TaskSource.MANUAL.value,
+        subtitle_overrides: Optional[Dict[str, Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
         if not self._running or not self._task_queue:
             raise RuntimeError(self._status_payload()["message"])
         try:
@@ -404,6 +418,7 @@ class AutoSubv3(_PluginBase):
         skipped: List[Dict[str, str]] = []
         failed: List[Dict[str, str]] = []
         seen_paths = set()
+        overrides = subtitle_overrides if isinstance(subtitle_overrides, dict) else {}
         for raw_path in paths or []:
             video_file = self._normalize_text(raw_path)
             if not video_file:
@@ -421,9 +436,31 @@ class AutoSubv3(_PluginBase):
             if self.__is_duplicate_task(video_file):
                 skipped.append({"path": video_file, "reason": "任务已在队列中或正在处理"})
                 continue
+            override = overrides.get(video_file) or overrides.get(os.path.abspath(video_file)) or {}
+            if not isinstance(override, dict):
+                override = {}
+            source_subtitle_path = self._normalize_text(override.get("subtitle_path") or override.get("source_subtitle_path"))
+            source_subtitle_lang = self._normalize_text(override.get("lang") or override.get("source_subtitle_lang") or "en")
+            if source_subtitle_path:
+                if not os.path.isabs(source_subtitle_path) or not os.path.isfile(source_subtitle_path):
+                    failed.append({"path": video_file, "reason": "指定字幕文件不存在或不是绝对路径"})
+                    continue
+                if os.path.splitext(source_subtitle_path)[-1].lower() != ".srt":
+                    failed.append({"path": video_file, "reason": "指定 AI 翻译字幕必须是 SRT 格式"})
+                    continue
             force_generate = task_source == TaskSource.SUBTITLE_MANUAL_UPLOAD
-            if self.add_task(video_file, task_source, force_generate=force_generate):
-                added.append({"path": video_file})
+            if self.add_task(
+                video_file,
+                task_source,
+                force_generate=force_generate,
+                source_subtitle_path=source_subtitle_path,
+                source_subtitle_lang=source_subtitle_lang,
+            ):
+                item = {"path": video_file}
+                if source_subtitle_path:
+                    item["source_subtitle_name"] = os.path.basename(source_subtitle_path)
+                    item["source_subtitle_lang"] = source_subtitle_lang
+                added.append(item)
             else:
                 skipped.append({"path": video_file, "reason": "任务已存在"})
 
@@ -451,7 +488,12 @@ class AutoSubv3(_PluginBase):
             paths = [paths]
         if not isinstance(paths, list):
             paths = []
-        result = self.submit_tasks(paths, source=self._normalize_text(body.get("source")) or TaskSource.MANUAL.value)
+        subtitle_overrides = body.get("subtitle_overrides") if isinstance(body.get("subtitle_overrides"), dict) else None
+        result = self.submit_tasks(
+            paths,
+            source=self._normalize_text(body.get("source")) or TaskSource.MANUAL.value,
+            subtitle_overrides=subtitle_overrides,
+        )
         return self._ok(
             result,
             message=f"已提交 {len(result['added'])} 个 AI 字幕生成任务，跳过 {len(result['skipped'])} 个，失败 {len(result['failed'])} 个",
@@ -708,7 +750,14 @@ class AutoSubv3(_PluginBase):
     def is_video_skip_chinese(self, video_file: str) -> bool:
         return video_file in self.load_skip_chinese_videos()
 
-    def add_task(self, video_file: str, source: TaskSource, force_generate: bool = False):
+    def add_task(
+        self,
+        video_file: str,
+        source: TaskSource,
+        force_generate: bool = False,
+        source_subtitle_path: str = "",
+        source_subtitle_lang: str = "",
+    ):
         """
         添加新任务到队列和任务列表中，若任务已存在则跳过。
         :param video_file: 视频文件路径
@@ -719,6 +768,8 @@ class AutoSubv3(_PluginBase):
             video_file=video_file,
             source=source,
             force_generate=force_generate,
+            source_subtitle_path=source_subtitle_path,
+            source_subtitle_lang=source_subtitle_lang,
             add_time=datetime.now()
         )
 
@@ -729,7 +780,12 @@ class AutoSubv3(_PluginBase):
         self._task_queue.put(task)
         self._tasks[task.task_id] = task
         self.save_tasks()
-        logger.info(f"加入任务队列: {video_file} force_generate={force_generate}")
+        logger.info(
+            "加入任务队列: %s force_generate=%s source_subtitle=%s",
+            video_file,
+            force_generate,
+            os.path.basename(source_subtitle_path or "") or "-",
+        )
         return True
 
     def clear_tasks(self):
@@ -780,6 +836,8 @@ class AutoSubv3(_PluginBase):
                     task.video_file,
                     source=task.source,
                     force_generate=task.force_generate,
+                    source_subtitle_path=task.source_subtitle_path,
+                    source_subtitle_lang=task.source_subtitle_lang,
                 )
                 if task.cancel_requested or task.status == TaskStatus.CANCELLED:
                     task.status = TaskStatus.CANCELLED
@@ -914,6 +972,8 @@ class AutoSubv3(_PluginBase):
         *,
         source: TaskSource = TaskSource.MANUAL,
         force_generate: bool = False,
+        source_subtitle_path: str = "",
+        source_subtitle_lang: str = "",
     ) -> TaskStatus:
         if not video_file:
             logger.error(f"[Step 0] video_file 为空")
@@ -954,7 +1014,13 @@ class AutoSubv3(_PluginBase):
                 logger.info(f"[Step 4] 联动强制生成：跳过已有外挂/内嵌字幕检查 source={source.value if isinstance(source, TaskSource) else source}")
             logger.info(f"[Step 5] 生成字幕")
             # 生成字幕
-            ret, lang, gen_sub_path = self.__generate_subtitle(video_file, file_path, self._enable_asr)
+            ret, lang, gen_sub_path = self.__generate_subtitle(
+                video_file,
+                file_path,
+                self._enable_asr,
+                source_subtitle_path=source_subtitle_path,
+                source_subtitle_lang=source_subtitle_lang,
+            )
             self._raise_if_task_cancelled()
             if not ret:
                 # 检查是否是无声音跳过（刚记录的）
@@ -1145,13 +1211,31 @@ class AutoSubv3(_PluginBase):
             logger.error(f"[Whisper音频提取文本] {video_name} - 处理异常：{e}")
             return False, None
 
-    def __generate_subtitle(self, video_file, subtitle_file, enable_asr=True):
+    def __generate_subtitle(
+        self,
+        video_file,
+        subtitle_file,
+        enable_asr=True,
+        *,
+        source_subtitle_path: str = "",
+        source_subtitle_lang: str = "",
+    ):
         """
         生成字幕
         :param video_file: 视频文件
         :param subtitle_file: 字幕文件, 不包含后缀
         :return: 生成成功返回True，字幕语言,字幕路径，否则返回False, None, None
         """
+        source_path = self._normalize_text(source_subtitle_path)
+        if source_path:
+            subtitle_path = Path(source_path)
+            if not subtitle_path.exists() or subtitle_path.suffix.lower() != ".srt":
+                logger.error(f"[GenSub] 指定字幕不可用或不是 SRT：{source_path}")
+                return False, None, None
+            lang = self._normalize_text(source_subtitle_lang) or "en"
+            logger.info(f"[GenSub] 使用联动指定字幕：{subtitle_path.name} lang={lang}")
+            return True, lang, subtitle_path
+
         # 获取文件元数据
         logger.info(f"[GenSub] 获取视频元数据：{video_file}")
         video_meta = Ffmpeg().get_video_metadata(video_file)

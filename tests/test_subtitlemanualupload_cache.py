@@ -92,16 +92,25 @@ def make_plugin(module):
     plugin._cache_max_entries = 10
     plugin._entry_map_max_size = 2
     plugin._media_index_cache_max_keys = 20
+    plugin._match_history_cache_ttl_seconds = 86400
+    plugin._timeline_task_ttl_seconds = 86400
+    plugin._match_history_cache = {"loaded_at": None, "signature": "", "items": [], "entry_count": 0, "persisted": False}
+    plugin._timeline_tasks = module.OrderedDict()
     plugin._ai_link_enabled = False
     plugin._auto_skip_chinese_media_on_transfer = True
     plugin._auto_transfer_subtitle_strategy = "search_first"
     plugin._auto_search_min_score = 20
     plugin._online_provider_ids = ["assrt"]
+    plugin._online_rate_records = {}
+    plugin._online_rate_limit_per_minute = 5
+    plugin._transfer_auto_dedupe_seconds = 300
+    plugin._transfer_auto_recent = {}
+    plugin._transfer_auto_lock = module.threading.Lock()
     plugin._tmdb_detail_cache = {}
     plugin._build_entry_from_history = lambda history: dict(history)
-    cache_file = plugin._local_cache_file()
-    if cache_file.exists():
-        cache_file.unlink()
+    for cache_file in [plugin._local_cache_file(), plugin._match_history_cache_file()]:
+        if cache_file.exists():
+            cache_file.unlink()
     return plugin
 
 
@@ -268,6 +277,15 @@ def test_detect_language_profile_marks_bilingual_subtitles():
     assert cls._detect_language_profile("movie.srt", f"{chinese}{korean}".encode())["suffix"] == "chi&kr"
 
 
+def test_detect_language_profile_prefers_suffix_token_before_subtitle_extension():
+    module, _, _ = load_plugin_module()
+    cls = module.SubtitleManualUpload
+
+    name = "Jack.Reacher.Never.Go.Back.2016.1080p.KORSUB.HDRip.x264.AAC2.0-STUTTERSHIT.eng.srt"
+    assert cls._detect_language_profile(name, b"")["suffix"] == "eng"
+    assert cls._detect_language_profile("Example.Movie.2024.zh.en.ass", b"")["suffix"] == "chi&eng"
+
+
 def test_strm_target_skips_timeline_fixing(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
@@ -300,6 +318,10 @@ def test_strm_target_skips_timeline_fixing(tmp_path):
     assert results[0]["timeline"]["enabled"] is True
     assert results[0]["timeline"]["applied"] is False
     assert results[0]["timeline"]["base"] == "strm"
+    task = plugin._timeline_task_for_target_id("t1")
+    assert task["status"] == "skipped"
+    assert task["timeline"]["base"] == "strm"
+    assert plugin._timeline_tasks_for_entries([{"id": "t1"}])["summary"]["skipped"] == 1
 
 
 def test_target_payload_marks_strm_resources(tmp_path):
@@ -368,6 +390,27 @@ def test_search_media_candidates_returns_total_with_page_slice():
 
     assert total == 3
     assert [item["title"] for item in candidates] == ["B", "A"]
+
+
+def test_group_entries_exposes_thumbnail_poster_url():
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    entries = [
+        {
+            "id": "a",
+            "path": "/media/a.mkv",
+            "media_key": "movie-a",
+            "media_type": "movie",
+            "title": "A",
+            "date": "2024-01-01",
+            "poster_url": "https://image.tmdb.org/t/p/w500/poster.jpg",
+        }
+    ]
+
+    groups = plugin._group_entries_as_media(entries, 0)
+
+    assert groups[0]["poster_url"] == "https://image.tmdb.org/t/p/w500/poster.jpg"
+    assert groups[0]["poster_thumb_url"] == "https://image.tmdb.org/t/p/w185/poster.jpg"
 
 
 def test_search_media_candidates_reuses_media_index_cache():
@@ -442,6 +485,233 @@ def test_match_history_groups_targets_with_subtitles(tmp_path):
     assert len(items) == 1
     assert items[0]["subtitle_count"] == 2
     assert [target["episode"] for target in items[0]["targets"]] == [1, 2]
+
+
+def test_match_history_cache_reuses_scanned_items_until_invalidated(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    subtitle = tmp_path / "Movie.chi.srt"
+    video.write_text("video", encoding="utf-8")
+    subtitle.write_text("subtitle", encoding="utf-8")
+    plugin._local_entries_cache = {
+        "loaded_at": module.datetime.now(),
+        "entries": [
+            {
+                "id": "m1",
+                "media_key": "movie",
+                "media_type": "movie",
+                "title": "Movie",
+                "path": str(video),
+                "basename": "Movie",
+                "target_label": "Movie",
+                "storage": "local",
+            }
+        ],
+        "media_count": 1,
+        "persisted": False,
+    }
+    calls = {"count": 0}
+    original = plugin._subtitle_files_for_target
+
+    def counted_subtitles(entry):
+        calls["count"] += 1
+        return original(entry)
+
+    plugin._subtitle_files_for_target = counted_subtitles
+
+    first = plugin._match_history_items()
+    second = plugin._match_history_items()
+    plugin._invalidate_match_history_cache()
+    third = plugin._match_history_items()
+
+    assert first == second == third
+    assert calls["count"] == 2
+
+
+def setup_online_ai_translate(plugin, module, tmp_path):
+    video = tmp_path / "Movie.mkv"
+    video.write_text("video", encoding="utf-8")
+    entry = {
+        "id": "m1",
+        "path": str(video),
+        "basename": "Movie",
+        "filename": "Movie.mkv",
+        "target_label": "Movie",
+        "storage": "local",
+    }
+    plugin._remember_targets([entry])
+
+    class FakeOnlineService:
+        def download(self, results):
+            return [
+                {
+                    "provider": "opensubtitles",
+                    "source_name": "Movie.eng.srt",
+                    "content": b"1\n00:00:01,000 --> 00:00:02,000\nHello\n",
+                    "result": results[0],
+                }
+            ]
+
+    captured = {}
+
+    def fake_submit(entries, subtitle_overrides=None):
+        captured["overrides"] = subtitle_overrides or {}
+        return {
+            "added": [{"path": entries[0]["path"]}],
+            "skipped": [],
+            "failed": [],
+            "targets": [plugin._target_from_entry(entries[0])],
+            "tasks": {
+                "status": {"available": True},
+                "summary": {"total": 1, "active": 1, "pending": 1},
+                "tasks": [{"target_id": "m1", "status": "pending"}],
+                "task_by_target": {"m1": {"target_id": "m1", "status": "pending"}},
+            },
+        }
+
+    def fake_fix(video_path, subtitle_path, output_path):
+        output_path.write_bytes(subtitle_path.read_bytes())
+        return module.TimelineFixResult(
+            enabled=True,
+            applied=True,
+            reason="test",
+            base="audio",
+            offset_seconds=1.0,
+            scale_factor=1.0,
+            score=0.95,
+        )
+
+    plugin._online_service = lambda: FakeOnlineService()
+    plugin._submit_autosub_for_entries = fake_submit
+    module.check_timeline_fixer_dependencies = lambda: {
+        "available": True,
+        "ffmpeg": "ffmpeg",
+        "ffprobe": "ffprobe",
+        "modules": {"pysubs2": True, "numpy": True},
+    }
+    module.fix_subtitle_timeline = fake_fix
+    return entry, captured
+
+
+def test_online_ai_translate_downloads_fixes_and_does_not_create_preview(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    entry, captured = setup_online_ai_translate(plugin, module, tmp_path)
+
+    response = asyncio.run(
+        plugin.api_online_download_preview(
+            FakeRequest(
+                {
+                    "target_ids": ["m1"],
+                    "submit_ai_translate": True,
+                    "results": [
+                        {
+                            "provider": "opensubtitles",
+                            "result_id": "r1",
+                            "language_category": "english",
+                            "title": "Movie English",
+                        }
+                    ],
+                }
+            )
+        )
+    )
+
+    data = response["data"]
+    assert response["success"] is True
+    assert "session_id" not in data
+    assert "items" not in data
+    assert data["ai_translate"]["added"]
+    assert data["tasks"]["task_by_target"]["m1"]["status"] == "pending"
+    assert data["timeline_tasks"]["task_by_target"]["m1"]["status"] == "completed"
+    assert data["fixed_subtitles"][0]["timeline"]["applied"] is True
+    override = captured["overrides"][entry["path"]]
+    assert Path(override["subtitle_path"]).exists()
+    assert override["lang"] == "en"
+
+
+def test_online_ai_submit_endpoint_downloads_fixes_and_does_not_create_preview(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    entry, captured = setup_online_ai_translate(plugin, module, tmp_path)
+
+    response = asyncio.run(
+        plugin.api_online_ai_submit(
+            FakeRequest(
+                {
+                    "target_ids": ["m1"],
+                    "results": [
+                        {
+                            "provider": "opensubtitles",
+                            "result_id": "r1",
+                            "language_category": "english",
+                            "title": "Movie English",
+                        }
+                    ],
+                }
+            )
+        )
+    )
+
+    data = response["data"]
+    assert response["success"] is True
+    assert "session_id" not in data
+    assert "items" not in data
+    assert data["ai_translate"]["added"]
+    assert data["tasks"]["task_by_target"]["m1"]["status"] == "pending"
+    assert data["timeline_tasks"]["task_by_target"]["m1"]["status"] == "completed"
+    assert Path(captured["overrides"][entry["path"]]["subtitle_path"]).exists()
+
+
+def test_online_ai_submit_requires_timeline_fixer_before_download(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    video.write_text("video", encoding="utf-8")
+    plugin._remember_targets(
+        [
+            {
+                "id": "m1",
+                "path": str(video),
+                "basename": "Movie",
+                "filename": "Movie.mkv",
+                "target_label": "Movie",
+                "storage": "local",
+            }
+        ]
+    )
+    plugin._online_service = lambda: (_ for _ in ()).throw(AssertionError("timeline check should run before download"))
+    module.check_timeline_fixer_dependencies = lambda: {
+        "available": False,
+        "ffmpeg": "",
+        "ffprobe": "ffprobe",
+        "modules": {"pysubs2": True},
+    }
+
+    try:
+        asyncio.run(
+            plugin.api_online_ai_submit(
+                FakeRequest(
+                    {
+                        "target_ids": ["m1"],
+                        "results": [
+                            {
+                                "provider": "opensubtitles",
+                                "result_id": "r1",
+                                "language_category": "english",
+                                "title": "Movie English",
+                            }
+                        ],
+                    }
+                )
+            )
+        )
+    except module.HTTPException as exc:
+        assert exc.status_code == 409
+        assert "智能调轴不可用" in exc.detail
+    else:
+        raise AssertionError("timeline dependency failure should block online AI submit")
 
 
 def test_tmdb_aliases_reuse_online_title_cleaner():
@@ -657,9 +927,94 @@ def test_auto_transfer_existing_subtitle_skips_all_strategies(tmp_path):
     assert result["reason"] == "目标已有外挂字幕"
 
 
-def test_auto_search_providers_excludes_opensubtitles():
+def test_auto_search_write_uses_best_api_candidate_when_multiple_results(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
     plugin._online_provider_ids = ["assrt", "opensubtitles"]
+    entry = make_auto_entry(tmp_path, filename="Movie.mkv")
+    subtitle = tmp_path / "Movie.chi.srt"
+    subtitle.write_text("1\n00:00:01,000 --> 00:00:02,000\n你好\n", encoding="utf-8")
 
-    assert plugin._auto_search_providers() == ["assrt"]
+    class FakeAutoService:
+        def __init__(self):
+            self.downloaded = []
+
+        def search(self, **kwargs):
+            return {
+                "results": [
+                    {
+                        "provider": "opensubtitles",
+                        "result_id": "os-1",
+                        "title": "Movie 2024 Chinese",
+                        "score": 70,
+                        "downloadable": True,
+                        "language_category": "chinese",
+                    },
+                    {
+                        "provider": "assrt",
+                        "result_id": "assrt-1",
+                        "title": "Movie 2024 English",
+                        "score": 65,
+                        "downloadable": True,
+                        "language_category": "english",
+                    },
+                ]
+            }
+
+        def download(self, selected):
+            self.downloaded = selected
+            return [
+                {
+                    "provider": selected[0]["provider"],
+                    "source_name": "Movie.chi.srt",
+                    "content": subtitle.read_bytes(),
+                    "result": selected[0],
+                }
+            ]
+
+    service = FakeAutoService()
+    plugin._online_service = lambda: service
+    plugin._auto_search_keywords_for_entry = lambda item, target: ["Movie 2024"]
+    plugin._extract_subtitle_files = lambda source_name, content, session_dir: [
+        {
+            "upload_id": "u1",
+            "source_name": source_name,
+            "stored_path": str(subtitle),
+            "ext": ".srt",
+        }
+    ]
+    plugin._build_write_operations = lambda *args, **kwargs: [{"ok": True}]
+    plugin._write_operations_to_disk = lambda **kwargs: ([{"output_name": "Movie.chi.srt"}], 0, 0)
+    plugin._auto_submit_ai_for_entry = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("Chinese subtitle should not trigger AI")
+    )
+
+    result = plugin._auto_search_write_subtitle(entry)
+
+    assert result["status"] == "written"
+    assert result["candidate_count"] == 2
+    assert service.downloaded[0]["result_id"] == "os-1"
+
+
+def test_auto_search_providers_use_only_unattended_api_sources():
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._online_provider_ids = ["subhd", "zimuku", "assrt", "opensubtitles"]
+
+    assert plugin._auto_search_providers() == ["assrt", "opensubtitles"]
+
+
+def test_transfer_auto_claim_dedupes_same_video_path(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    first = make_auto_entry(tmp_path, filename="Movie.mkv")
+    duplicate = {**first}
+    other = make_auto_entry(tmp_path, filename="Other.mkv")
+
+    claimed, skipped = plugin._claim_transfer_auto_entries([first, duplicate, other])
+    claimed_again, skipped_again = plugin._claim_transfer_auto_entries([first])
+
+    assert [item["filename"] for item in claimed] == ["Movie.mkv", "Other.mkv"]
+    assert skipped == 1
+    assert claimed_again == []
+    assert skipped_again == 1

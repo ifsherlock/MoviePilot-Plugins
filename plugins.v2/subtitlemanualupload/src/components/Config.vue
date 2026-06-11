@@ -35,6 +35,8 @@ const localConfig = ref({
 })
 
 const onlineProviderItems = [
+  { title: 'SubHD 中文字幕', value: 'subhd' },
+  { title: 'Zimuku 中文字幕', value: 'zimuku' },
   { title: '射手网(伪，需 API Key)', value: 'assrt' },
   { title: 'OpenSubtitles 多语言字幕', value: 'opensubtitles' },
 ]
@@ -53,7 +55,7 @@ const autoStrategyItems = [
 ]
 
 function normalizeProviders(value) {
-  const allowed = ['assrt', 'opensubtitles']
+  const allowed = ['subhd', 'zimuku', 'assrt', 'opensubtitles']
   const providers = Array.isArray(value) ? value.filter(item => allowed.includes(item)) : []
   return providers.length ? Array.from(new Set(providers)) : ['assrt', 'opensubtitles']
 }
@@ -197,7 +199,7 @@ onMounted(() => {
           <div class="config-section">
             <div>
               <div class="config-section-title">在线字幕搜索</div>
-              <p>自动搜索仅使用 API；SubHD/Zimuku 保留为右侧手动搜索跳转。</p>
+              <p>自动搜索支持 SubHD、Zimuku、射手网(伪) 和 OpenSubtitles；站点波动时仍可使用右侧手动搜索跳转。</p>
             </div>
           </div>
 
@@ -225,7 +227,7 @@ onMounted(() => {
             />
             <VTextField
               v-model="localConfig.subhd_url"
-              label="SubHD 手动搜索地址"
+              label="SubHD 站点地址"
               placeholder="https://subhd.tv"
               variant="outlined"
               density="comfortable"
@@ -233,7 +235,7 @@ onMounted(() => {
             />
             <VTextField
               v-model="localConfig.zimuku_url"
-              label="Zimuku 手动搜索地址"
+              label="Zimuku 站点地址"
               placeholder="https://zimuku.org"
               variant="outlined"
               density="comfortable"
