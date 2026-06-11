@@ -100,7 +100,7 @@ class AutoSubv3(_PluginBase):
     # 主题色
     plugin_color = "#2C4F7E"
     # 插件版本
-    plugin_version = "3.5.50"
+    plugin_version = "3.5.51"
     # 插件作者
     plugin_author = "ifsherlock"
     # 作者主页
