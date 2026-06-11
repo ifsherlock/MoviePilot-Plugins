@@ -94,6 +94,13 @@ const matchHistoryTotal = ref(0)
 const matchHistoryHasMore = ref(false)
 const expandedHistoryIds = ref([])
 const selectedHistoryTargetIds = ref({})
+const timelineFixing = ref(false)
+const autoTransferQueue = ref({
+  summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, skipped: 0, failed: 0 },
+  tasks: [],
+  rate_limits: {},
+  season_package_cache: [],
+})
 const selectedMedia = ref(null)
 const detailTab = ref('match')
 const seasons = ref([])
@@ -146,6 +153,8 @@ const timelineTaskData = ref({
 })
 let aiTaskTimer = null
 let timelineTaskTimer = null
+let historyTimelineTimer = null
+let autoQueueTimer = null
 let onlineSearchSeq = 0
 let onlineDownloadSeq = 0
 const ONLINE_PROVIDER_TIMEOUT_MS = 25000
@@ -326,6 +335,18 @@ const aiDialogTasks = computed(() => {
 const aiDialogHasActiveTasks = computed(() => aiDialogTasks.value.some(task => isAiTaskActive(task)))
 const timelineStatus = computed(() => status.value?.timeline_fixer || { available: false, modules: {} })
 const timelineAvailable = computed(() => timelineStatus.value.available === true)
+const autoQueueSummary = computed(() => autoTransferQueue.value?.summary || status.value?.auto_transfer_queue || {})
+const autoQueueTasks = computed(() => autoTransferQueue.value?.tasks || [])
+const autoQueueActive = computed(() => Number(autoQueueSummary.value.active || 0) > 0)
+const autoQueueSummaryText = computed(() => {
+  const parts = []
+  if (autoQueueSummary.value.in_progress) parts.push(`${autoQueueSummary.value.in_progress} 个处理中`)
+  if (autoQueueSummary.value.pending) parts.push(`${autoQueueSummary.value.pending} 个排队`)
+  if (autoQueueSummary.value.failed) parts.push(`${autoQueueSummary.value.failed} 个失败`)
+  if (autoQueueSummary.value.completed) parts.push(`${autoQueueSummary.value.completed} 个完成`)
+  if (autoQueueSummary.value.skipped) parts.push(`${autoQueueSummary.value.skipped} 个跳过`)
+  return parts.length ? parts.join(' / ') : '暂无入库自动字幕任务'
+})
 const selectedPreviewTargets = computed(() => {
   const targetMap = new Map(uploadTargets.value.map(target => [target.id, target]))
   return selectedPreviewItems.value
@@ -593,6 +614,66 @@ function clearHistorySeasonSubtitles(item, season) {
 function clearHistoryAllSubtitles(item) {
   const label = item?.media_type === 'tv' ? '全季' : '全部'
   clearHistoryTargets(item, historyDeletableTargets(item), label)
+}
+
+function historyTimelineTargets(item) {
+  return historyDeletableTargets(item).filter(target => !isStreamTarget(target) && (target.subtitles || []).length)
+}
+
+function historySelectedTimelineTargets(item) {
+  const selected = new Set(historySelectedIds(item))
+  return historyTimelineTargets(item).filter(target => selected.has(target.id))
+}
+
+async function fixExistingTimeline(items, label = '选中字幕') {
+  if (!timelineAvailable.value) {
+    error.value = `智能调轴不可用：缺少 ${timelineMissing.value || '依赖'}`
+    return
+  }
+  if (!items.length) {
+    error.value = '没有可调轴的历史字幕'
+    return
+  }
+  const confirmed = window.confirm(`确认对${label}提交 ${items.length} 个智能调轴任务？`)
+  if (!confirmed) return
+  timelineFixing.value = true
+  error.value = ''
+  message.value = ''
+  try {
+    const response = await props.api.post(`${pluginBase.value}/timeline_fix_existing`, { items })
+    const data = unwrapResponse(response) || {}
+    message.value = response?.message || `已提交 ${data.accepted || 0} 个智能调轴任务`
+    await loadMatchHistory()
+    scheduleHistoryTimelinePolling()
+  } catch (err) {
+    error.value = errorMessage(err, '提交历史字幕智能调轴失败')
+  } finally {
+    timelineFixing.value = false
+  }
+}
+
+function fixHistorySelectedTimeline(item) {
+  const targets = historySelectedTimelineTargets(item)
+  fixExistingTimeline(targets.map(target => ({ target_id: target.id })), '选中集数')
+}
+
+function fixHistorySeasonTimeline(item, season) {
+  const targets = historyTimelineTargets(item).filter(target => Number(target.season || 0) === Number(season || 0))
+  fixExistingTimeline(targets.map(target => ({ target_id: target.id })), seasonLabel(season))
+}
+
+function fixHistoryAllTimeline(item) {
+  const label = item?.media_type === 'tv' ? '全季字幕' : '全部字幕'
+  const targets = historyTimelineTargets(item)
+  fixExistingTimeline(targets.map(target => ({ target_id: target.id })), label)
+}
+
+function fixHistorySubtitleTimeline(target, subtitle) {
+  if (!target || !subtitle) return
+  fixExistingTimeline(
+    [{ target_id: target.id, subtitle_path: subtitle.path }],
+    subtitle.name || '单个字幕',
+  )
 }
 
 function formatBytes(value) {
@@ -1058,11 +1139,65 @@ async function loadStatus() {
     if (status.value.ai_subtitle) {
       aiTaskData.value = { ...aiTaskData.value, status: status.value.ai_subtitle }
     }
+    if (status.value.auto_transfer_queue) {
+      autoTransferQueue.value = { ...autoTransferQueue.value, summary: status.value.auto_transfer_queue }
+      if (Number(status.value.auto_transfer_queue.active || 0) > 0) {
+        loadAutoTransferQueue()
+      }
+    }
   } catch (err) {
     error.value = errorMessage(err, '加载插件状态失败')
   } finally {
     loading.value = false
   }
+}
+
+function stopAutoQueuePolling() {
+  if (autoQueueTimer) {
+    clearTimeout(autoQueueTimer)
+    autoQueueTimer = null
+  }
+}
+
+function scheduleAutoQueuePolling() {
+  stopAutoQueuePolling()
+  if (!autoQueueActive.value) return
+  autoQueueTimer = setTimeout(() => {
+    loadAutoTransferQueue()
+  }, 3000)
+}
+
+async function loadAutoTransferQueue() {
+  try {
+    const response = await props.api.get(`${pluginBase.value}/auto_transfer_queue`)
+    autoTransferQueue.value = unwrapResponse(response) || autoTransferQueue.value
+    scheduleAutoQueuePolling()
+  } catch (err) {
+    error.value = errorMessage(err, '读取入库自动字幕队列失败')
+  }
+}
+
+function stopHistoryTimelinePolling() {
+  if (historyTimelineTimer) {
+    clearTimeout(historyTimelineTimer)
+    historyTimelineTimer = null
+  }
+}
+
+function historyHasActiveTimelineTask() {
+  return matchHistoryItems.value.some(item => (item.targets || []).some(target => {
+    const task = target.timeline_task
+    return task && (task.active || ['pending', 'in_progress'].includes(task.status))
+  }))
+}
+
+function scheduleHistoryTimelinePolling() {
+  stopHistoryTimelinePolling()
+  if (!historyHasActiveTimelineTask()) return
+  historyTimelineTimer = setTimeout(async () => {
+    await loadMatchHistory()
+    scheduleHistoryTimelinePolling()
+  }, 3000)
 }
 
 async function loadOnlineStatus() {
@@ -1229,6 +1364,7 @@ async function loadMatchHistory(options = {}) {
     matchHistoryTotal.value = Number(data.total || 0)
     matchHistoryHasMore.value = Boolean(data.has_more)
     matchHistoryItems.value = append ? [...matchHistoryItems.value, ...(data.items || [])] : (data.items || [])
+    scheduleHistoryTimelinePolling()
   } catch (err) {
     error.value = errorMessage(err, '读取匹配历史失败')
   } finally {
@@ -1924,12 +2060,15 @@ async function clearSelectedSubtitles() {
 
 onMounted(() => {
   loadStatus()
+  loadAutoTransferQueue()
   runSearch()
 })
 
 onBeforeUnmount(() => {
   stopAiPolling()
   stopTimelinePolling()
+  stopHistoryTimelinePolling()
+  stopAutoQueuePolling()
 })
 
 defineExpose({
@@ -2087,6 +2226,49 @@ defineExpose({
         {{ searching ? '正在读取本地资源...' : '输入关键词搜索；留空搜索会显示最近整理的视频。' }}
       </div>
 
+      <VCard
+        v-if="rootTab === 'history' && (autoQueueTasks.length || autoQueueSummary.active)"
+        class="auto-queue-card"
+        rounded="xl"
+        elevation="0"
+      >
+        <VCardText>
+          <div class="auto-queue-head">
+            <div>
+              <div class="section-kicker">入库自动字幕队列</div>
+              <strong>{{ autoQueueSummaryText }}</strong>
+            </div>
+            <VBtn
+              size="small"
+              variant="tonal"
+              prepend-icon="mdi-refresh"
+              @click="loadAutoTransferQueue"
+            >
+              刷新队列
+            </VBtn>
+          </div>
+          <div class="auto-queue-rates">
+            <span
+              v-for="(rate, provider) in autoTransferQueue.rate_limits || {}"
+              :key="provider"
+            >
+              {{ provider }}：{{ rate.remaining }}/{{ rate.limit_per_minute }} 可用
+            </span>
+          </div>
+          <div class="auto-queue-list">
+            <div
+              v-for="task in autoQueueTasks.slice().reverse().slice(0, 8)"
+              :key="task.id"
+              class="auto-queue-row"
+              :class="`auto-queue-${task.status}`"
+            >
+              <strong>{{ task.target_label || task.title || task.id }}</strong>
+              <span>{{ task.message || task.status }}<template v-if="task.next_run_at"> · 下次 {{ task.next_run_at }}</template></span>
+            </div>
+          </div>
+        </VCardText>
+      </VCard>
+
       <div v-if="rootTab === 'history' && matchHistoryItems.length" class="global-history-list">
         <div
           v-for="(item, index) in matchHistoryItems"
@@ -2145,6 +2327,17 @@ defineExpose({
                 >
                   删除选中
                 </VBtn>
+                <VBtn
+                  size="small"
+                  color="warning"
+                  variant="tonal"
+                  prepend-icon="mdi-timeline-clock-outline"
+                  :disabled="!historySelectedTimelineTargets(item).length || timelineFixing || !timelineAvailable"
+                  :loading="timelineFixing"
+                  @click.stop="fixHistorySelectedTimeline(item)"
+                >
+                  调轴选中
+                </VBtn>
                 <template v-if="item.media_type === 'tv'">
                   <VBtn
                     v-for="season in historySeasonGroups(item)"
@@ -2158,6 +2351,18 @@ defineExpose({
                   >
                     删{{ season.label }}
                   </VBtn>
+                  <VBtn
+                    v-for="season in historySeasonGroups(item)"
+                    :key="`${item.id}-timeline-${season.season}`"
+                    size="small"
+                    color="warning"
+                    variant="text"
+                    prepend-icon="mdi-timeline-clock"
+                    :disabled="timelineFixing || !timelineAvailable"
+                    @click.stop="fixHistorySeasonTimeline(item, season.season)"
+                  >
+                    调{{ season.label }}
+                  </VBtn>
                 </template>
                 <VBtn
                   size="small"
@@ -2169,6 +2374,17 @@ defineExpose({
                   @click.stop="clearHistoryAllSubtitles(item)"
                 >
                   {{ item.media_type === 'tv' ? '全季删除' : '删除全部' }}
+                </VBtn>
+                <VBtn
+                  size="small"
+                  color="warning"
+                  variant="flat"
+                  prepend-icon="mdi-timeline-check-outline"
+                  :disabled="!historyTimelineTargets(item).length || timelineFixing || !timelineAvailable"
+                  :loading="timelineFixing"
+                  @click.stop="fixHistoryAllTimeline(item)"
+                >
+                  {{ item.media_type === 'tv' ? '全季调轴' : '全部调轴' }}
                 </VBtn>
               </div>
             </div>
@@ -2201,6 +2417,16 @@ defineExpose({
                       <strong>{{ subtitle.name }}</strong>
                       <span>{{ formatBytes(subtitle.size) }} · {{ subtitle.modified_at || '未知时间' }}</span>
                     </div>
+                    <VBtn
+                      size="small"
+                      variant="text"
+                      color="warning"
+                      :loading="timelineFixing"
+                      :disabled="timelineFixing || !timelineAvailable || isStreamTarget(target)"
+                      @click.stop="fixHistorySubtitleTimeline(target, subtitle)"
+                    >
+                      调轴
+                    </VBtn>
                     <VBtn
                       size="small"
                       variant="text"
@@ -3328,6 +3554,55 @@ defineExpose({
 .global-history-list {
   display: grid;
   gap: 12px;
+}
+
+.auto-queue-card {
+  margin-bottom: 14px;
+  border: 1px solid rgba(192, 126, 42, 0.18);
+  background: linear-gradient(135deg, rgba(255, 246, 226, 0.92), rgba(255, 255, 255, 0.78));
+}
+
+.auto-queue-head,
+.auto-queue-rates,
+.auto-queue-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.auto-queue-rates {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+  margin-top: 10px;
+  color: rgba(35, 42, 39, 0.62);
+  font-size: 0.82rem;
+}
+
+.auto-queue-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.auto-queue-row {
+  border-radius: 14px;
+  padding: 8px 10px;
+  background: rgba(255, 255, 255, 0.74);
+}
+
+.auto-queue-row span {
+  color: rgba(35, 42, 39, 0.62);
+  font-size: 0.82rem;
+}
+
+.auto-queue-failed {
+  border: 1px solid rgba(198, 58, 58, 0.24);
+}
+
+.auto-queue-in_progress,
+.auto-queue-pending {
+  border: 1px solid rgba(192, 126, 42, 0.24);
 }
 
 .global-history-card {

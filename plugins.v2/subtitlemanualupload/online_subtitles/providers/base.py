@@ -88,4 +88,5 @@ def _subhd_manual_url(root_url: str, keyword: str) -> str:
 
 
 def _zimuku_manual_url(root_url: str, keyword: str) -> str:
-    return f"{root_url}/search?q={quote(keyword)}&chost=zimuku.org"
+    chost = _host(root_url) or "zmk.pw"
+    return f"{root_url}/search?q={quote(keyword)}&chost={quote(chost)}"

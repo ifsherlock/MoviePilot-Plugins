@@ -159,8 +159,22 @@ class SubHDProvider(BaseSubtitleProvider):
     @staticmethod
     def _extract_api_download_url(data: Any) -> str:
         if isinstance(data, str):
-            text = data.strip()
-            return text if text.startswith(("http://", "https://", "/")) else ""
+            text = html.unescape(data.strip())
+            if not text:
+                return ""
+            if text.startswith(("http://", "https://", "/")):
+                return text
+            if text.startswith("{") or text.startswith("["):
+                try:
+                    return SubHDProvider._extract_api_download_url(json.loads(text))
+                except Exception:
+                    pass
+            hrefs = _extract_download_hrefs(text)
+            if hrefs:
+                return hrefs[0]
+            if re.search(r"(?i)(download|down|api|file|zip|rar|7z|srt|ass|ssa|sub|vtt)", text) and not re.search(r"\s", text):
+                return text
+            return ""
         if isinstance(data, list):
             for item in data:
                 found = SubHDProvider._extract_api_download_url(item)
@@ -196,6 +210,17 @@ class SubHDProvider(BaseSubtitleProvider):
                 return found
         return ""
 
+    def _download_first_valid_link(self, links: List[str], base_url: str, referer: str) -> Optional[Tuple[str, bytes]]:
+        for href in links:
+            file_url = urljoin(base_url, html.unescape(href))
+            try:
+                filename, content, final_url = self.fetcher.get_bytes(file_url, referer=referer)
+                if content and not _looks_like_html_bytes(content, filename or final_url):
+                    return filename, content
+            except Exception as exc:
+                logger.info("[SubtitleManualUpload] SubHD 下载候选链接失败 host=%s error=%s", _host(file_url), exc)
+        return None
+
     def download(self, result: Dict[str, Any], captcha_code: str = "") -> Tuple[str, bytes]:
         page_url = str(result.get("page_url") or result.get("download_url") or "").replace("subhd-page:", "", 1)
         if not page_url:
@@ -208,7 +233,7 @@ class SubHDProvider(BaseSubtitleProvider):
             raise ValueError("SubHD 未找到下载按钮")
         down_url = urljoin(self.root_url, html.unescape(down_match.group(1)))
         sid = down_match.group(2)
-        self.fetcher.get_text(down_url, referer=page_url)
+        down_status, down_text, down_final_url = self.fetcher.get_text(down_url, referer=page_url)
         payload = {"sid": sid, "cap": captcha_code or ""}
         api_url = f"{self.root_url}/api/sub/down"
         data = self.fetcher.post_json(api_url, payload, referer=down_url)
@@ -219,11 +244,29 @@ class SubHDProvider(BaseSubtitleProvider):
             raise ValueError("SubHD 下载验证码校验失败或接口未返回下载地址")
         file_url = self._extract_api_download_url(data)
         if not file_url:
+            fallback_links = _extract_download_hrefs(down_text or "")
+            fallback = self._download_first_valid_link(fallback_links, down_final_url or down_url, down_url)
+            if fallback:
+                return fallback
+            url_value = data.get("url") if isinstance(data, dict) else ""
             logger.warning(
-                "[SubtitleManualUpload] SubHD API 未返回下载地址 sid=%s keys=%s",
+                "[SubtitleManualUpload] SubHD API 未返回下载地址 sid=%s keys=%s success=%s pass=%s url_len=%s url_type=%s msg_hint=%s down_status=%s",
                 sid,
                 ",".join(sorted(str(key) for key in data.keys())) if isinstance(data, dict) else type(data).__name__,
+                data.get("success") if isinstance(data, dict) else "",
+                data.get("pass") if isinstance(data, dict) else "",
+                len(str(url_value or "")),
+                type(url_value).__name__,
+                _compact_error_message(str(data.get("msg") or ""))[:80] if isinstance(data, dict) else "",
+                down_status,
             )
             raise ValueError("SubHD API 未返回下载地址")
-        filename, content, _ = self.fetcher.get_bytes(urljoin(self.root_url, file_url), referer=down_url)
+        resolved_url = urljoin(self.root_url, file_url)
+        filename, content, final_url = self.fetcher.get_bytes(resolved_url, referer=down_url)
+        if _looks_like_html_bytes(content, filename or final_url):
+            text = _decode_bytes(content, filename)
+            fallback = self._download_first_valid_link(_extract_download_hrefs(text), final_url or resolved_url, resolved_url)
+            if fallback:
+                return fallback
+            raise ValueError("SubHD 下载地址返回了 HTML 页面，未解析到有效字幕文件")
         return filename or f"subhd-{sid}.zip", content

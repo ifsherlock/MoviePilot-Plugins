@@ -120,7 +120,7 @@ def test_manual_providers_keep_subhd_zimuku_links_only():
 
     assert [item["provider"] for item in links] == ["subhd", "zimuku"]
     assert links[0]["links"][0]["url"] == "https://subhd.tv/search/Ghost%20Rider%202007"
-    assert links[1]["links"][0]["url"] == "https://zimuku.org/search?q=Ghost%20Rider%202007&chost=zimuku.org"
+    assert links[1]["links"][0]["url"] == "https://zmk.pw/search?q=Ghost%20Rider%202007&chost=zmk.pw"
     assert status["subhd"]["manual_only"] is False
     assert status["zimuku"]["manual_only"] is False
 
@@ -232,6 +232,62 @@ def test_subhd_prefers_douban_id_and_parses_subtitle_rows():
     assert results[0].download_url.startswith("subhd-page:")
 
 
+def test_subhd_download_uses_api_html_url_fallback():
+    module = load_online_module()
+
+    class SubHDFetcher(FakeWebFetcher):
+        def get_text(self, url, *, referer=""):
+            self.requested.append(url)
+            if "/a/abc" in url:
+                return 200, '<a href="/down/123">下载字幕</a>', url
+            if "/down/123" in url:
+                return 200, "<html></html>", url
+            return 404, "", url
+
+        def post_json(self, url, payload, *, referer=""):
+            return {"success": True, "pass": True, "url": '<a href="/download/from-api.zip">download</a>'}
+
+        def get_bytes(self, url, *, referer=""):
+            self.requested.append(url)
+            assert url == "https://subhd.tv/download/from-api.zip"
+            return "from-api.zip", b"PK\x03\x04" + b"x" * 2048, url
+
+    provider = module.SubHDProvider(SubHDFetcher())
+
+    filename, content = provider.download({"page_url": "https://subhd.tv/a/abc"})
+
+    assert filename == "from-api.zip"
+    assert content.startswith(b"PK\x03\x04")
+
+
+def test_subhd_download_falls_back_to_down_page_href_when_api_url_empty():
+    module = load_online_module()
+
+    class SubHDFetcher(FakeWebFetcher):
+        def get_text(self, url, *, referer=""):
+            self.requested.append(url)
+            if "/a/abc" in url:
+                return 200, '<a href="/down/123">下载字幕</a>', url
+            if "/down/123" in url:
+                return 200, '<a href="/download/from-page.zip">备用下载</a>', url
+            return 404, "", url
+
+        def post_json(self, url, payload, *, referer=""):
+            return {"success": True, "pass": True, "url": "", "msg": "ok"}
+
+        def get_bytes(self, url, *, referer=""):
+            self.requested.append(url)
+            assert url == "https://subhd.tv/download/from-page.zip"
+            return "from-page.zip", b"PK\x03\x04" + b"x" * 2048, url
+
+    provider = module.SubHDProvider(SubHDFetcher())
+
+    filename, content = provider.download({"page_url": "https://subhd.tv/a/abc"})
+
+    assert filename == "from-page.zip"
+    assert content.startswith(b"PK\x03\x04")
+
+
 def test_zimuku_searches_candidates_and_filters_episode():
     module = load_online_module()
     search_html = """
@@ -255,7 +311,7 @@ def test_zimuku_searches_candidates_and_filters_episode():
     )
 
     assert [item.result_id for item in results] == ["2"]
-    assert "chost=zimuku.org" in fetcher.requested[0]
+    assert "chost=zmk.pw" in fetcher.requested[0]
     assert results[0].provider == "zimuku"
     assert results[0].language_category == "chinese"
     assert results[0].download_url.startswith("zimuku-page:")
@@ -978,7 +1034,7 @@ def test_provider_roots_are_normalized_with_fallbacks():
     )
 
     assert roots["subhd"] == "https://sub.example"
-    assert roots["zimuku"] == "https://zimuku.org"
+    assert roots["zimuku"] == "https://zmk.pw"
     assert roots["assrt"] == "https://2.assrt.net"
     assert roots["opensubtitles"] == "https://www.opensubtitles.org"
 

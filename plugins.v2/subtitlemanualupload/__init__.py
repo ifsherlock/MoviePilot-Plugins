@@ -81,7 +81,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/subtitle-match.png"
-    plugin_version = "0.1.58"
+    plugin_version = "0.1.59"
     plugin_author = "ifsherlock"
     author_url = "https://github.com/ifsherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -101,9 +101,14 @@ class SubtitleManualUpload(_PluginBase):
     _online_site_urls = dict(DEFAULT_PROVIDER_ROOTS)
     _online_rate_records: Dict[str, List[float]] = {}
     _online_rate_limit_per_minute = 5
+    _auto_transfer_queue_debounce_seconds = 3
+    _auto_transfer_queue_history_limit = 200
     _transfer_auto_dedupe_seconds = 300
     _transfer_auto_recent: Dict[str, float] = {}
     _transfer_auto_lock = threading.Lock()
+    _auto_transfer_tasks: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
+    _auto_transfer_worker: Optional[threading.Thread] = None
+    _auto_season_package_cache: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
     _assrt_api_key = ""
     _assrt_api_url = "https://api.assrt.net"
     _opensubtitles_api_key = ""
@@ -262,6 +267,9 @@ class SubtitleManualUpload(_PluginBase):
         self._timeline_tasks = OrderedDict()
         self._transfer_auto_recent = {}
         self._transfer_auto_lock = threading.Lock()
+        self._auto_transfer_tasks = OrderedDict()
+        self._auto_transfer_worker = None
+        self._auto_season_package_cache = OrderedDict()
         self._cache_refreshing = False
         self._local_entries_cache = {"loaded_at": None, "entries": [], "media_count": 0, "persisted": False}
         self._restore_persisted_local_cache()
@@ -324,6 +332,20 @@ class SubtitleManualUpload(_PluginBase):
                 "methods": ["POST"],
                 "auth": "bear",
                 "summary": "查询智能调轴任务状态",
+            },
+            {
+                "path": "/timeline_fix_existing",
+                "endpoint": self.api_timeline_fix_existing,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "对匹配历史中的外挂字幕执行智能调轴",
+            },
+            {
+                "path": "/auto_transfer_queue",
+                "endpoint": self.api_auto_transfer_queue,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "查询入库自动字幕处理队列",
             },
             {
                 "path": "/prepare_upload",
@@ -819,17 +841,11 @@ class SubtitleManualUpload(_PluginBase):
             logger.info("[SubtitleManualUpload] 入库事件未解析到本地视频目标，跳过自动字幕搜索")
             return
         self._merge_local_entries_cache(entries)
-        entries, skipped = self._claim_transfer_auto_entries(entries)
+        queued, skipped = self._enqueue_transfer_auto_entries(entries)
         if skipped:
             logger.info("[SubtitleManualUpload] 入库自动字幕处理去重跳过重复目标 count=%s", skipped)
-        if not entries:
-            return
-        threading.Thread(
-            target=self._process_transfer_auto_subtitles,
-            args=(entries,),
-            name="SubtitleManualUploadTransferAutoSearch",
-            daemon=True,
-        ).start()
+        if queued:
+            logger.info("[SubtitleManualUpload] 入库自动字幕任务已入队 count=%s", queued)
 
     def _save_config(self) -> None:
         self.update_config(
@@ -999,10 +1015,81 @@ class SubtitleManualUpload(_PluginBase):
             records.append(now)
             self._online_rate_records[provider_id] = records
 
+    @classmethod
+    def _entry_path_is_valid(cls, entry: Dict[str, Any]) -> bool:
+        storage = cls._normalize_text(entry.get("storage")) or "local"
+        if storage != "local":
+            return True
+        path = cls._normalize_text(entry.get("path"))
+        if not path:
+            return False
+        try:
+            return Path(path).is_file()
+        except Exception:
+            return False
+
+    @classmethod
+    def _entry_filesystem_signature(cls, entry: Dict[str, Any]) -> str:
+        storage = cls._normalize_text(entry.get("storage")) or "local"
+        path_text = cls._normalize_text(entry.get("path"))
+        if storage != "local" or not path_text:
+            return f"{storage}|{path_text}|remote"
+        path = Path(path_text)
+        normalized_path = path_text.lower().replace("\\", "/")
+        try:
+            stat = path.stat()
+            parent_mtime = path.parent.stat().st_mtime_ns if path.parent.exists() else 0
+            return "|".join(
+                [
+                    "local",
+                    normalized_path,
+                    "1",
+                    str(stat.st_size),
+                    str(stat.st_mtime_ns),
+                    str(parent_mtime),
+                ]
+            )
+        except FileNotFoundError:
+            return f"local|{normalized_path}|0"
+        except Exception as exc:
+            return f"local|{normalized_path}|error:{type(exc).__name__}"
+
+    def _filter_existing_local_entries(self, entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        filtered = [entry for entry in entries if isinstance(entry, dict) and self._entry_path_is_valid(entry)]
+        dropped = len(entries or []) - len(filtered)
+        if dropped:
+            logger.info("[SubtitleManualUpload] 已剔除失效本地视频目标 count=%s", dropped)
+        return filtered
+
+    def _prune_local_entries_cache(self) -> None:
+        cache = self._local_entries_cache or {}
+        entries = [entry for entry in cache.get("entries") or [] if isinstance(entry, dict)]
+        if not entries:
+            return
+        filtered = self._filter_existing_local_entries(entries)
+        if len(filtered) == len(entries):
+            return
+        media_count = len({entry.get("media_key") for entry in filtered if entry.get("media_key")})
+        self._local_entries_cache = {
+            **cache,
+            "entries": filtered,
+            "media_count": media_count,
+            "persisted": False,
+        }
+        self._entry_map = OrderedDict(
+            (target_id, entry)
+            for target_id, entry in (self._entry_map or OrderedDict()).items()
+            if self._entry_path_is_valid(entry)
+        )
+        self._reset_media_index_cache()
+        self._invalidate_match_history_cache()
+        self._persist_local_cache()
+
     def _transfer_auto_key(self, entry: Dict[str, Any]) -> str:
         path = self._normalize_text(entry.get("path") or entry.get("relative_path"))
         if path:
-            return self._hash_text(path.lower().replace("\\", "/"))
+            normalized_path = path.lower().replace("\\", "/")
+            return self._hash_text(f"{normalized_path}|{self._entry_filesystem_signature(entry)}")
         return self._normalize_text(entry.get("id") or entry.get("target_label") or entry.get("filename"))
 
     def _claim_transfer_auto_entries(self, entries: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], int]:
@@ -1026,6 +1113,270 @@ class SubtitleManualUpload(_PluginBase):
                 self._transfer_auto_recent[key] = now
                 claimed.append(entry)
         return claimed, skipped
+
+    @staticmethod
+    def _timestamp_iso(ts: Any) -> str:
+        try:
+            return datetime.fromtimestamp(float(ts)).isoformat(timespec="seconds")
+        except Exception:
+            return ""
+
+    def _auto_transfer_entry_key(self, entry: Dict[str, Any]) -> str:
+        return self._transfer_auto_key(entry) or self._hash_text(
+            f"{entry.get('id')}|{entry.get('target_label')}|{entry.get('filename')}"
+        )
+
+    def _auto_transfer_group_key(self, entry: Dict[str, Any]) -> str:
+        if self._normalize_text(entry.get("media_type")) != "tv":
+            return self._auto_transfer_entry_key(entry)
+        media_key = self._normalize_text(entry.get("media_key") or entry.get("tmdb_id") or entry.get("title"))
+        season = self._safe_int(entry.get("season"), 0)
+        if not media_key or not season:
+            return self._auto_transfer_entry_key(entry)
+        return f"tv|{media_key}|s{season:02d}"
+
+    def _trim_auto_transfer_tasks_locked(self) -> None:
+        tasks = self._auto_transfer_tasks or OrderedDict()
+        while len(tasks) > self._auto_transfer_queue_history_limit:
+            removable = next(
+                (
+                    key
+                    for key, task in tasks.items()
+                    if task.get("status") not in {"pending", "in_progress"}
+                ),
+                None,
+            )
+            if not removable:
+                break
+            tasks.pop(removable, None)
+
+    def _enqueue_transfer_auto_entries(self, entries: List[Dict[str, Any]]) -> Tuple[int, int]:
+        valid_entries = self._filter_existing_local_entries(entries)
+        claimed, skipped = self._claim_transfer_auto_entries(valid_entries)
+        if not claimed:
+            return 0, skipped + (len(entries or []) - len(valid_entries))
+        now = time.time()
+        queued = 0
+        with self._transfer_auto_lock:
+            active_keys = {
+                self._normalize_text(task.get("entry_key"))
+                for task in (self._auto_transfer_tasks or OrderedDict()).values()
+                if task.get("status") in {"pending", "in_progress"}
+            }
+            for entry in claimed:
+                entry_key = self._auto_transfer_entry_key(entry)
+                if entry_key in active_keys:
+                    skipped += 1
+                    continue
+                task_id = self._hash_text(f"auto-transfer|{entry_key}|{now}")[:16]
+                self._auto_transfer_tasks[task_id] = {
+                    "id": task_id,
+                    "entry_key": entry_key,
+                    "group_key": self._auto_transfer_group_key(entry),
+                    "entry": entry,
+                    "target_label": entry.get("target_label") or entry.get("filename"),
+                    "media_type": entry.get("media_type"),
+                    "title": entry.get("title"),
+                    "season": self._safe_int(entry.get("season"), 0),
+                    "episode": self._safe_int(entry.get("episode"), 0),
+                    "status": "pending",
+                    "active": True,
+                    "message": "等待入库自动字幕处理",
+                    "created_ts": now,
+                    "updated_ts": now,
+                    "next_run_ts": 0,
+                    "result": {},
+                }
+                active_keys.add(entry_key)
+                queued += 1
+            self._trim_auto_transfer_tasks_locked()
+        if queued:
+            self._ensure_transfer_auto_worker()
+        return queued, skipped
+
+    def _ensure_transfer_auto_worker(self) -> None:
+        with self._transfer_auto_lock:
+            worker = self._auto_transfer_worker
+            if worker and worker.is_alive():
+                return
+            worker = threading.Thread(
+                target=self._auto_transfer_queue_loop,
+                name="SubtitleManualUploadTransferQueue",
+                daemon=True,
+            )
+            self._auto_transfer_worker = worker
+            worker.start()
+
+    def _update_auto_transfer_task(self, task_id: str, **updates: Any) -> None:
+        with self._transfer_auto_lock:
+            task = (self._auto_transfer_tasks or OrderedDict()).get(task_id)
+            if not task:
+                return
+            task.update(updates)
+            task["updated_ts"] = time.time()
+            if task.get("status") not in {"pending", "in_progress"}:
+                task["active"] = False
+                task["next_run_ts"] = 0
+            self._auto_transfer_tasks.move_to_end(task_id)
+            self._trim_auto_transfer_tasks_locked()
+
+    def _claim_next_auto_transfer_batch(self) -> Tuple[List[Dict[str, Any]], float]:
+        with self._transfer_auto_lock:
+            pending = [
+                task
+                for task in (self._auto_transfer_tasks or OrderedDict()).values()
+                if task.get("status") == "pending"
+            ]
+            if not pending:
+                self._auto_transfer_worker = None
+                return [], -1
+            first = pending[0]
+            group_key = self._normalize_text(first.get("group_key"))
+            group = [task for task in pending if self._normalize_text(task.get("group_key")) == group_key]
+            is_tv_group = self._normalize_text(first.get("media_type")) == "tv"
+            if is_tv_group:
+                newest = max(float(task.get("created_ts") or 0) for task in group)
+                wait_seconds = self._auto_transfer_queue_debounce_seconds - (time.time() - newest)
+                if wait_seconds > 0:
+                    for task in group:
+                        task["next_run_ts"] = time.time() + wait_seconds
+                        task["message"] = "等待同季入库事件聚合"
+                    return [], min(wait_seconds, 1.0)
+                batch = group
+            else:
+                batch = [first]
+            now = time.time()
+            for task in batch:
+                task["status"] = "in_progress"
+                task["active"] = True
+                task["message"] = "入库自动字幕处理中"
+                task["updated_ts"] = now
+                task["next_run_ts"] = 0
+            return [self._json_clone(task) for task in batch], 0
+
+    def _auto_wait_online_rate_limit(self, providers: Iterable[str], task_ids: Optional[List[str]] = None) -> None:
+        provider_ids = sorted({self._normalize_text(provider).lower() for provider in providers if self._normalize_text(provider)})
+        if not provider_ids:
+            return
+        task_ids = task_ids or []
+        while True:
+            now = time.time()
+            wait_until = 0.0
+            with self._transfer_auto_lock:
+                for provider_id in provider_ids:
+                    records = [item for item in self._online_rate_records.get(provider_id, []) if now - item < 60]
+                    self._online_rate_records[provider_id] = records
+                    if len(records) >= self._online_rate_limit_per_minute:
+                        wait_until = max(wait_until, min(records) + 60)
+                if wait_until <= now:
+                    for provider_id in provider_ids:
+                        records = [item for item in self._online_rate_records.get(provider_id, []) if now - item < 60]
+                        records.append(now)
+                        self._online_rate_records[provider_id] = records
+                    for task_id in task_ids:
+                        task = self._auto_transfer_tasks.get(task_id)
+                        if task and task.get("status") == "in_progress":
+                            task["next_run_ts"] = 0
+                            task["message"] = "入库自动字幕处理中"
+                    return
+                for task_id in task_ids:
+                    task = self._auto_transfer_tasks.get(task_id)
+                    if task and task.get("status") == "in_progress":
+                        task["next_run_ts"] = wait_until
+                        task["message"] = f"等待字幕源限速窗口：{','.join(provider_ids)}"
+            time.sleep(max(0.5, min(wait_until - now, 5.0)))
+
+    def _auto_transfer_rate_status(self) -> Dict[str, Any]:
+        now = time.time()
+        status: Dict[str, Any] = {}
+        for provider_id in self._auto_search_providers():
+            records = [item for item in self._online_rate_records.get(provider_id, []) if now - item < 60]
+            remaining = max(0, self._online_rate_limit_per_minute - len(records))
+            reset_ts = min(records) + 60 if records else 0
+            status[provider_id] = {
+                "used": len(records),
+                "remaining": remaining,
+                "limit_per_minute": self._online_rate_limit_per_minute,
+                "reset_at": self._timestamp_iso(reset_ts),
+            }
+        return status
+
+    def _auto_transfer_queue_summary(self) -> Dict[str, Any]:
+        with self._transfer_auto_lock:
+            tasks = list((self._auto_transfer_tasks or OrderedDict()).values())
+            worker_alive = bool(self._auto_transfer_worker and self._auto_transfer_worker.is_alive())
+        summary = {
+            "pending": 0,
+            "in_progress": 0,
+            "completed": 0,
+            "skipped": 0,
+            "failed": 0,
+            "active": 0,
+            "total": len(tasks),
+            "worker_alive": worker_alive,
+        }
+        for task in tasks:
+            status = task.get("status")
+            if status in summary:
+                summary[status] += 1
+            if task.get("active") or status in {"pending", "in_progress"}:
+                summary["active"] += 1
+        return summary
+
+    def _auto_transfer_queue_snapshot(self, limit: int = 100) -> Dict[str, Any]:
+        with self._transfer_auto_lock:
+            tasks = [self._json_clone(task) for task in (self._auto_transfer_tasks or OrderedDict()).values()]
+        pending_position = 0
+        public_tasks: List[Dict[str, Any]] = []
+        for task in tasks[-limit:]:
+            if task.get("status") == "pending":
+                pending_position += 1
+                task["queue_position"] = pending_position
+            task.pop("entry", None)
+            task["created_at"] = self._timestamp_iso(task.pop("created_ts", 0))
+            task["updated_at"] = self._timestamp_iso(task.pop("updated_ts", 0))
+            task["next_run_at"] = self._timestamp_iso(task.pop("next_run_ts", 0))
+            public_tasks.append(task)
+        cache_items = []
+        for item in list((self._auto_season_package_cache or OrderedDict()).values())[-20:]:
+            cache_items.append(
+                {
+                    "key": item.get("key"),
+                    "title": item.get("title"),
+                    "season": item.get("season"),
+                    "subtitle_count": len(item.get("items") or []),
+                    "updated_at": item.get("updated_at", ""),
+                    "provider": item.get("provider", ""),
+                    "source_title": item.get("source_title", ""),
+                }
+            )
+        return {
+            "summary": self._auto_transfer_queue_summary(),
+            "tasks": public_tasks,
+            "rate_limits": self._auto_transfer_rate_status(),
+            "season_package_cache": cache_items,
+            "debounce_seconds": self._auto_transfer_queue_debounce_seconds,
+            "rate_limit_scope": "provider",
+        }
+
+    def _auto_transfer_queue_loop(self) -> None:
+        while True:
+            batch, wait_seconds = self._claim_next_auto_transfer_batch()
+            if wait_seconds < 0:
+                return
+            if not batch:
+                time.sleep(max(0.2, wait_seconds))
+                continue
+            try:
+                self._process_transfer_auto_task_batch(batch)
+            except Exception as exc:
+                logger.warning("[SubtitleManualUpload] 入库自动字幕队列批次失败: %s", exc)
+                for task in batch:
+                    self._update_auto_transfer_task(
+                        task["id"],
+                        status="failed",
+                        message=f"入库自动字幕处理异常: {exc}",
+                    )
 
     @staticmethod
     def _is_executable_file(path: Path) -> bool:
@@ -1552,8 +1903,11 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
     def _merge_local_entries_cache(self, entries: List[Dict[str, Any]]) -> None:
         if not entries:
             return
+        entries = self._filter_existing_local_entries(entries)
+        if not entries:
+            return
         cache = self._local_entries_cache or {}
-        existing = [item for item in cache.get("entries") or [] if isinstance(item, dict)]
+        existing = self._filter_existing_local_entries([item for item in cache.get("entries") or [] if isinstance(item, dict)])
         by_path = {entry.get("path"): entry for entry in entries if entry.get("path")}
         merged = list(entries)
         for entry in existing:
@@ -1619,10 +1973,11 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         loaded_at = self._cache_loaded_at(payload.get("loaded_at")) if isinstance(payload, dict) else None
         if not loaded_at or not isinstance(entries, list):
             return False
-        media_count = int(payload.get("media_count") or len({entry.get("media_key") for entry in entries if isinstance(entry, dict) and entry.get("media_key")}))
+        valid_entries = self._filter_existing_local_entries([entry for entry in entries if isinstance(entry, dict)])
+        media_count = len({entry.get("media_key") for entry in valid_entries if entry.get("media_key")})
         self._local_entries_cache = {
             "loaded_at": loaded_at,
-            "entries": [entry for entry in entries if isinstance(entry, dict)],
+            "entries": valid_entries,
             "media_count": media_count,
             "persisted": True,
         }
@@ -1652,6 +2007,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                         self._normalize_text(entry.get("id")),
                         self._normalize_text(entry.get("path")),
                         self._normalize_text(entry.get("date")),
+                        self._entry_filesystem_signature(entry),
                     ]
                 )
             )
@@ -1867,6 +2223,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         ).start()
 
     def _load_local_entries(self, *, force: bool = False, allow_stale: bool = False) -> List[Dict[str, Any]]:
+        self._prune_local_entries_cache()
         cache = self._local_entries_cache or {}
         loaded_at = self._cache_loaded_at(cache.get("loaded_at"))
         now = datetime.now()
@@ -1896,6 +2253,8 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         for history in histories:
             entry = self._build_entry_from_history(history)
             if not entry:
+                continue
+            if not self._entry_path_is_valid(entry):
                 continue
             path = entry.get("path")
             if path in seen_paths:
@@ -2670,8 +3029,10 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         result: Dict[str, Dict[str, Any]] = {}
         for target_id in target_id_list:
             entry = self._entry_map.get(target_id)
-            if entry:
+            if entry and self._entry_path_is_valid(entry):
                 result[target_id] = entry
+            elif entry:
+                self._entry_map.pop(target_id, None)
         missing_ids = target_id_set - set(result.keys())
         if not missing_ids:
             return result
@@ -3359,7 +3720,14 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
     def _auto_search_providers(self) -> List[str]:
         return [item for item in (self._online_provider_ids or []) if item in {"assrt", "opensubtitles"}]
 
-    def _auto_search_write_subtitle(self, entry: Dict[str, Any], target: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    def _auto_search_write_subtitle(
+        self,
+        entry: Dict[str, Any],
+        target: Optional[Dict[str, Any]] = None,
+        *,
+        queue_rate_limited: bool = False,
+        task_ids: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
         target = target or self._target_from_entry(entry)
         providers = self._auto_search_providers()
         if not providers:
@@ -3368,7 +3736,10 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         if not keywords:
             return {"status": "skipped", "reason": "没有可用搜索关键词", "target": target.get("label")}
 
-        self._check_online_rate_limit(providers)
+        if queue_rate_limited:
+            self._auto_wait_online_rate_limit(providers, task_ids=task_ids)
+        else:
+            self._check_online_rate_limit(providers)
         service = self._online_service()
         search_result = service.search(
             keywords=keywords,
@@ -3482,6 +3853,26 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             return {"status": "skipped", "reason": "目标已有外挂字幕", "target": target.get("label")}
         return self._auto_search_write_subtitle(entry, target)
 
+    def _call_auto_search_write_subtitle(
+        self,
+        entry: Dict[str, Any],
+        target: Dict[str, Any],
+        *,
+        queue_rate_limited: bool = False,
+        task_ids: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        try:
+            return self._auto_search_write_subtitle(
+                entry,
+                target,
+                queue_rate_limited=queue_rate_limited,
+                task_ids=task_ids,
+            )
+        except TypeError as exc:
+            if "unexpected keyword argument" not in str(exc):
+                raise
+            return self._auto_search_write_subtitle(entry, target)
+
     def _auto_submit_ai_for_entry(
         self,
         entry: Dict[str, Any],
@@ -3539,7 +3930,13 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             },
         }
 
-    def _auto_process_transfer_entry(self, entry: Dict[str, Any]) -> Dict[str, Any]:
+    def _auto_process_transfer_entry(
+        self,
+        entry: Dict[str, Any],
+        *,
+        queue_rate_limited: bool = False,
+        task_ids: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
         target = self._target_from_entry(entry)
         strategy = self._normalize_auto_transfer_subtitle_strategy(self._auto_transfer_subtitle_strategy)
         base = {"strategy": strategy, "target": target.get("label")}
@@ -3564,15 +3961,430 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             ai_result = self._auto_submit_ai_for_entry(entry, target, "策略 ai_first")
             if ai_result.get("status") != "failed":
                 return {**base, **ai_result}
-            search_result = self._auto_search_write_subtitle(entry, target)
+            search_result = self._call_auto_search_write_subtitle(
+                entry,
+                target,
+                queue_rate_limited=queue_rate_limited,
+                task_ids=task_ids,
+            )
             return {**base, **search_result, "ai": ai_result}
 
-        search_result = self._auto_search_write_subtitle(entry, target)
+        search_result = self._call_auto_search_write_subtitle(
+            entry,
+            target,
+            queue_rate_limited=queue_rate_limited,
+            task_ids=task_ids,
+        )
         if strategy == "search_only" or search_result.get("status") == "written":
             return {**base, **search_result}
 
         ai_result = self._auto_submit_ai_for_entry(entry, target, "搜索无单一高置信结果后兜底")
         return {**base, **ai_result, "search": search_result}
+
+    def _auto_task_result_key(self, entry: Dict[str, Any]) -> str:
+        return self._normalize_text(entry.get("id")) or self._auto_transfer_entry_key(entry)
+
+    def _auto_season_cache_key(self, entry: Dict[str, Any]) -> str:
+        media_key = self._normalize_text(entry.get("media_key") or entry.get("tmdb_id") or entry.get("title"))
+        season = self._safe_int(entry.get("season"), 0)
+        if not media_key or not season:
+            return ""
+        return self._hash_text(f"{media_key}|s{season:02d}")[:20]
+
+    def _auto_season_cache_dir(self, cache_key: str) -> Path:
+        return self.get_data_path() / "auto_season_packages" / cache_key
+
+    def _auto_prepared_items_for_targets(
+        self,
+        prepared_uploads: List[Dict[str, Any]],
+        targets: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        items: List[Dict[str, Any]] = []
+        for prepared in prepared_uploads:
+            try:
+                raw_bytes = Path(prepared["stored_path"]).read_bytes()
+            except Exception:
+                raw_bytes = b""
+            language_profile = self._detect_language_profile(prepared.get("source_name", ""), raw_bytes)
+            items.append(
+                {
+                    "upload_id": prepared["upload_id"],
+                    "source_name": prepared.get("source_name", ""),
+                    "archive_name": prepared.get("archive_name", ""),
+                    "ext": prepared.get("ext") or Path(prepared.get("source_name", "")).suffix.lower() or ".srt",
+                    "target_id": self._suggest_target(prepared, targets),
+                    "detected_label": language_profile["label"],
+                    "language_suffix": language_profile["suffix"],
+                    "online_source": prepared.get("online_source", ""),
+                }
+            )
+        self._auto_fill_missing_targets(items, targets)
+        return items
+
+    def _auto_write_prepared_uploads_for_entries(
+        self,
+        *,
+        target_entries: List[Dict[str, Any]],
+        prepared_uploads: List[Dict[str, Any]],
+        session_dir: Path,
+        selected_result: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        targets = [self._target_from_entry(entry) for entry in target_entries]
+        target_entry_map = {self._normalize_text(entry.get("id")): entry for entry in target_entries}
+        upload_map = {item["upload_id"]: item for item in prepared_uploads if item.get("upload_id")}
+        items = self._auto_prepared_items_for_targets(prepared_uploads, targets)
+        chosen_items: List[Dict[str, Any]] = []
+        used_targets = set()
+        for item in items:
+            target_id = self._normalize_text(item.get("target_id"))
+            if not target_id or target_id in used_targets or target_id not in target_entry_map:
+                continue
+            chosen_items.append(item)
+            used_targets.add(target_id)
+        if not chosen_items:
+            return {
+                "status": "skipped",
+                "reason": "整季包未能匹配到当前入库集数",
+                "written_by_target": {},
+                "prepared_count": len(prepared_uploads),
+            }
+        operations = self._build_write_operations(chosen_items, upload_map, target_entry_map)
+        written, _, simplified_count = self._write_operations_to_disk(
+            session_dir=session_dir,
+            operations=operations,
+            fix_timeline=False,
+        )
+        written_by_target: Dict[str, Dict[str, Any]] = {}
+        for operation, written_item in zip(operations, written):
+            target_id = self._normalize_text(operation["target_entry"].get("id"))
+            written_by_target[target_id] = written_item
+        return {
+            "status": "written",
+            "reason": "",
+            "result": (selected_result or {}).get("title"),
+            "provider": (selected_result or {}).get("provider"),
+            "written": written,
+            "written_by_target": written_by_target,
+            "written_count": len(written),
+            "prepared_count": len(prepared_uploads),
+            "simplified_count": simplified_count,
+        }
+
+    def _store_auto_season_package_cache(
+        self,
+        entries: List[Dict[str, Any]],
+        prepared_uploads: List[Dict[str, Any]],
+        selected_result: Dict[str, Any],
+    ) -> None:
+        if not entries or not prepared_uploads:
+            return
+        cache_key = self._auto_season_cache_key(entries[0])
+        if not cache_key:
+            return
+        cache_dir = self._auto_season_cache_dir(cache_key)
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        manifest_items = []
+        for item in prepared_uploads:
+            source_path = Path(self._normalize_text(item.get("stored_path")))
+            if not source_path.is_file():
+                continue
+            stored_name = f"{item.get('upload_id')}{source_path.suffix.lower()}"
+            target_path = cache_dir / stored_name
+            shutil.copyfile(source_path, target_path)
+            manifest_items.append(
+                {
+                    **item,
+                    "stored_path": str(target_path),
+                }
+            )
+        if not manifest_items:
+            return
+        payload = {
+            "key": cache_key,
+            "title": entries[0].get("title"),
+            "media_key": entries[0].get("media_key"),
+            "season": self._safe_int(entries[0].get("season"), 0),
+            "provider": selected_result.get("provider"),
+            "source_title": selected_result.get("title"),
+            "updated_at": datetime.now().isoformat(timespec="seconds"),
+            "items": manifest_items,
+        }
+        try:
+            (cache_dir / "manifest.json").write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+        except Exception as exc:
+            logger.warning("[SubtitleManualUpload] 写入整季字幕包缓存失败: %s", exc)
+        self._auto_season_package_cache[cache_key] = payload
+        self._auto_season_package_cache.move_to_end(cache_key)
+        while len(self._auto_season_package_cache) > 50:
+            self._auto_season_package_cache.popitem(last=False)
+
+    def _load_auto_season_package_cache(self, entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        cache_key = self._auto_season_cache_key(entry)
+        if not cache_key:
+            return None
+        cached = (self._auto_season_package_cache or OrderedDict()).get(cache_key)
+        if cached:
+            return cached
+        manifest = self._auto_season_cache_dir(cache_key) / "manifest.json"
+        if not manifest.is_file():
+            return None
+        try:
+            payload = json.loads(manifest.read_text(encoding="utf-8"))
+        except Exception as exc:
+            logger.warning("[SubtitleManualUpload] 读取整季字幕包缓存失败: %s", exc)
+            return None
+        items = [
+            item
+            for item in payload.get("items") or []
+            if isinstance(item, dict) and Path(self._normalize_text(item.get("stored_path"))).is_file()
+        ]
+        if not items:
+            return None
+        payload["items"] = items
+        self._auto_season_package_cache[cache_key] = payload
+        self._auto_season_package_cache.move_to_end(cache_key)
+        return payload
+
+    def _auto_write_from_season_cache(self, entries: List[Dict[str, Any]]) -> Dict[str, Any]:
+        if not entries:
+            return {"status": "skipped", "reason": "没有待处理目标", "written_by_target": {}}
+        cached = self._load_auto_season_package_cache(entries[0])
+        if not cached:
+            return {"status": "skipped", "reason": "没有整季字幕包缓存", "written_by_target": {}}
+        session_id = self._hash_text(f"auto-season-cache|{datetime.now().isoformat()}|{cached.get('key')}")[:16]
+        session_dir = self._get_session_root() / session_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            result = self._auto_write_prepared_uploads_for_entries(
+                target_entries=entries,
+                prepared_uploads=cached.get("items") or [],
+                session_dir=session_dir,
+                selected_result={"provider": cached.get("provider"), "title": cached.get("source_title")},
+            )
+            if result.get("status") == "written":
+                result["from_cache"] = True
+            return result
+        finally:
+            shutil.rmtree(session_dir, ignore_errors=True)
+
+    def _auto_search_write_season_package(
+        self,
+        entries: List[Dict[str, Any]],
+        *,
+        task_ids: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        if not entries:
+            return {"status": "skipped", "reason": "没有待处理目标", "written_by_target": {}}
+        providers = self._auto_search_providers()
+        if not providers:
+            return {"status": "skipped", "reason": "未配置可用 API 字幕源", "written_by_target": {}}
+        targets = [self._target_from_entry(entry) for entry in entries]
+        media = self._auto_media_for_entry(entries[0])
+        self._apply_tmdb_detail(targets[0], media)
+        keywords = build_search_keywords(media, targets, "season")[:8]
+        if not keywords:
+            return {"status": "skipped", "reason": "没有可用整季搜索关键词", "written_by_target": {}}
+
+        self._auto_wait_online_rate_limit(providers, task_ids=task_ids)
+        service = self._online_service()
+        search_result = service.search(
+            keywords=keywords,
+            providers=providers,
+            targets=targets,
+            scope="season",
+        )
+        candidates = [
+            item
+            for item in search_result.get("results") or []
+            if item.get("downloadable") is not False and self._safe_int(item.get("score"), 0) >= self._auto_search_min_score
+        ]
+        if not candidates:
+            return {
+                "status": "skipped",
+                "reason": "没有高置信可下载整季结果",
+                "written_by_target": {},
+                "search_results": len(search_result.get("results") or []),
+            }
+
+        last_reason = ""
+        for selected in candidates[:3]:
+            session_id = self._hash_text(f"auto-season|{datetime.now().isoformat()}|{entries[0].get('id')}")[:16]
+            session_dir = self._get_session_root() / session_id
+            session_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                downloads = service.download([selected])
+                prepared_uploads: List[Dict[str, Any]] = []
+                for downloaded in downloads:
+                    result = downloaded.get("result") or {}
+                    source_name = self._normalize_online_download_name(
+                        downloaded.get("source_name", ""),
+                        downloaded.get("content") or b"",
+                        result,
+                    )
+                    extracted = self._extract_subtitle_files(
+                        source_name,
+                        downloaded.get("content") or b"",
+                        session_dir,
+                    )
+                    for item in extracted:
+                        item["online_source"] = downloaded.get("provider")
+                        item["online_title"] = result.get("title", "")
+                        if not item.get("archive_name") and source_name != item.get("source_name"):
+                            item["archive_name"] = source_name
+                    prepared_uploads.extend(extracted)
+                if not prepared_uploads:
+                    last_reason = "整季结果未解析到字幕文件"
+                    continue
+                self._store_auto_season_package_cache(entries, prepared_uploads, selected)
+                write_result = self._auto_write_prepared_uploads_for_entries(
+                    target_entries=entries,
+                    prepared_uploads=prepared_uploads,
+                    session_dir=session_dir,
+                    selected_result=selected,
+                )
+                if write_result.get("status") == "written":
+                    write_result["candidate_count"] = len(candidates)
+                    write_result["search_results"] = len(search_result.get("results") or [])
+                    write_result["season_package"] = True
+                    return write_result
+                last_reason = write_result.get("reason") or "整季包未匹配当前集数"
+            except Exception as exc:
+                last_reason = f"整季包下载/解析失败: {self._normalize_text(exc)}"
+                logger.warning(
+                    "[SubtitleManualUpload] %s provider=%s result=%s",
+                    last_reason,
+                    selected.get("provider"),
+                    selected.get("title"),
+                )
+            finally:
+                shutil.rmtree(session_dir, ignore_errors=True)
+        return {
+            "status": "skipped",
+            "reason": last_reason or "整季包未能写入任何字幕",
+            "written_by_target": {},
+            "candidate_count": len(candidates),
+            "search_results": len(search_result.get("results") or []),
+        }
+
+    def _auto_process_transfer_group(self, entries: List[Dict[str, Any]], task_ids: Optional[List[str]] = None) -> Dict[str, Dict[str, Any]]:
+        results: Dict[str, Dict[str, Any]] = {}
+        strategy = self._normalize_auto_transfer_subtitle_strategy(self._auto_transfer_subtitle_strategy)
+        if not entries:
+            return results
+        if strategy in {"ai_only", "ai_first"}:
+            for entry in entries:
+                results[self._auto_task_result_key(entry)] = self._auto_process_transfer_entry(
+                    entry,
+                    queue_rate_limited=True,
+                    task_ids=task_ids,
+                )
+            return results
+
+        pending_entries: List[Dict[str, Any]] = []
+        for entry in entries:
+            key = self._auto_task_result_key(entry)
+            target = self._target_from_entry(entry)
+            base = {"strategy": strategy, "target": target.get("label")}
+            if target.get("has_subtitle"):
+                results[key] = {**base, "status": "skipped", "reason": "目标已有外挂字幕"}
+                continue
+            if self._auto_skip_chinese_media_on_transfer:
+                is_chinese, evidence = self._is_chinese_transfer_media(entry)
+                if is_chinese:
+                    results[key] = {**base, "status": "skipped", "reason": f"中文资源自动跳过：{evidence}"}
+                    continue
+            pending_entries.append(entry)
+
+        cache_result = self._auto_write_from_season_cache(pending_entries)
+        written_by_target = cache_result.get("written_by_target") or {}
+        remaining_entries: List[Dict[str, Any]] = []
+        for entry in pending_entries:
+            key = self._auto_task_result_key(entry)
+            target_id = self._normalize_text(entry.get("id"))
+            if target_id in written_by_target:
+                results[key] = {
+                    "strategy": strategy,
+                    "status": "written",
+                    "target": self._target_from_entry(entry).get("label"),
+                    "result": cache_result.get("result"),
+                    "written": [written_by_target[target_id]],
+                    "from_cache": True,
+                    "season_package": True,
+                }
+            else:
+                remaining_entries.append(entry)
+
+        if remaining_entries:
+            season_result = self._auto_search_write_season_package(remaining_entries, task_ids=task_ids)
+            written_by_target = season_result.get("written_by_target") or {}
+            next_remaining: List[Dict[str, Any]] = []
+            for entry in remaining_entries:
+                key = self._auto_task_result_key(entry)
+                target_id = self._normalize_text(entry.get("id"))
+                if target_id in written_by_target:
+                    results[key] = {
+                        "strategy": strategy,
+                        "status": "written",
+                        "target": self._target_from_entry(entry).get("label"),
+                        "result": season_result.get("result"),
+                        "written": [written_by_target[target_id]],
+                        "season_package": True,
+                        "candidate_count": season_result.get("candidate_count"),
+                        "search_results": season_result.get("search_results"),
+                    }
+                else:
+                    next_remaining.append(entry)
+            remaining_entries = next_remaining
+
+        for entry in remaining_entries:
+            key = self._auto_task_result_key(entry)
+            results[key] = self._auto_process_transfer_entry(
+                entry,
+                queue_rate_limited=True,
+                task_ids=task_ids,
+            )
+        return results
+
+    def _process_transfer_auto_task_batch(self, tasks: List[Dict[str, Any]]) -> None:
+        entries = [task.get("entry") for task in tasks if isinstance(task.get("entry"), dict)]
+        task_ids = [task["id"] for task in tasks if task.get("id")]
+        is_tv_batch = (
+            bool(entries)
+            and all(self._normalize_text(entry.get("media_type")) == "tv" for entry in entries)
+            and len({self._auto_transfer_group_key(entry) for entry in entries}) == 1
+        )
+        if is_tv_batch:
+            results = self._auto_process_transfer_group(entries, task_ids=task_ids)
+        else:
+            results = {
+                self._auto_task_result_key(entry): self._auto_process_transfer_entry(
+                    entry,
+                    queue_rate_limited=True,
+                    task_ids=task_ids,
+                )
+                for entry in entries
+            }
+        for task in tasks:
+            entry = task.get("entry") or {}
+            result = results.get(self._auto_task_result_key(entry)) or {
+                "status": "failed",
+                "reason": "入库自动字幕任务没有返回结果",
+            }
+            status = result.get("status") if result.get("status") in {"completed", "written", "skipped", "failed", "ai_submitted"} else "completed"
+            public_status = "completed" if status in {"written", "ai_submitted"} else status
+            self._update_auto_transfer_task(
+                task["id"],
+                status=public_status,
+                message=result.get("reason") or result.get("status") or public_status,
+                result=result,
+            )
+            logger.info(
+                "[SubtitleManualUpload] 入库自动字幕处理完成 target=%s strategy=%s status=%s reason=%s",
+                result.get("target") or entry.get("target_label") or entry.get("filename"),
+                result.get("strategy"),
+                result.get("status"),
+                result.get("reason", ""),
+            )
 
     def _process_transfer_auto_subtitles(self, entries: List[Dict[str, Any]]) -> None:
         for entry in entries:
@@ -3732,6 +4544,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                         self._opensubtitles_username and self._opensubtitles_password
                     ),
                 },
+                "auto_transfer_queue": self._auto_transfer_queue_summary(),
                 "ai_subtitle": self._autosub_status(),
             }
         )
@@ -3745,6 +4558,160 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                 "index": cache_status,
             },
             message=f"已刷新媒体库资源清单：{cache_status['media_count']} 个媒体，{len(entries)} 个本地视频目标",
+        )
+
+    def _existing_timeline_operations(
+        self,
+        requested_items: List[Dict[str, Any]],
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
+        target_ids = [self._normalize_text(item.get("target_id")) for item in requested_items if isinstance(item, dict)]
+        target_entries = self._resolve_targets(target_ids)
+        operations: List[Dict[str, Any]] = []
+        skipped: List[Dict[str, Any]] = []
+        failed: List[Dict[str, Any]] = []
+        seen = set()
+        for request_item in requested_items:
+            if not isinstance(request_item, dict):
+                continue
+            target_id = self._normalize_text(request_item.get("target_id"))
+            if not target_id:
+                skipped.append({"reason": "缺少 target_id"})
+                continue
+            entry = target_entries.get(target_id)
+            if not entry:
+                skipped.append({"target_id": target_id, "reason": "目标视频已失效"})
+                continue
+            target = self._target_from_entry(entry)
+            if target.get("is_stream"):
+                skipped.append({"target_id": target_id, "reason": "STRM 资源不启用智能调轴"})
+                continue
+            subtitles = target.get("subtitles") or []
+            expected_path = self._normalize_text(request_item.get("subtitle_path"))
+            if expected_path:
+                subtitles = [
+                    item for item in subtitles
+                    if self._normalize_text(item.get("path")) == expected_path
+                ]
+            if not subtitles:
+                skipped.append({"target_id": target_id, "reason": "没有可调轴的外挂字幕"})
+                continue
+            for subtitle in subtitles:
+                subtitle_path = Path(self._normalize_text(subtitle.get("path")))
+                key = f"{target_id}|{subtitle_path}"
+                if key in seen:
+                    continue
+                seen.add(key)
+                if not subtitle_path.is_file():
+                    skipped.append({"target_id": target_id, "subtitle_path": str(subtitle_path), "reason": "外挂字幕不存在"})
+                    continue
+                try:
+                    raw_bytes = subtitle_path.read_bytes()
+                except Exception:
+                    raw_bytes = b""
+                language_profile = self._detect_language_profile(subtitle_path.name, raw_bytes)
+                upload_id = self._hash_text(f"existing-timeline|{target_id}|{subtitle_path}|{subtitle_path.stat().st_mtime_ns}")[:16]
+                upload_info = {
+                    "upload_id": upload_id,
+                    "source_name": subtitle_path.name,
+                    "archive_name": "",
+                    "stored_path": str(subtitle_path),
+                    "ext": subtitle_path.suffix.lower(),
+                }
+                item = {
+                    "upload_id": upload_id,
+                    "target_id": target_id,
+                    "ext": subtitle_path.suffix.lower(),
+                    "language_suffix": language_profile["suffix"],
+                }
+                try:
+                    operation = self._build_write_operations(
+                        [item],
+                        {upload_id: upload_info},
+                        {target_id: entry},
+                    )[0]
+                except HTTPException as exc:
+                    failed.append(
+                        {
+                            "target_id": target_id,
+                            "subtitle_path": str(subtitle_path),
+                            "reason": self._normalize_text(getattr(exc, "detail", "")) or str(exc),
+                        }
+                    )
+                    continue
+                operations.append(operation)
+        return operations, skipped, failed
+
+    def _run_existing_timeline_fix(self, session_dir: Path, operations: List[Dict[str, Any]]) -> None:
+        try:
+            self._write_operations_to_disk(
+                session_dir=session_dir,
+                operations=operations,
+                fix_timeline=True,
+            )
+            logger.info("[SubtitleManualUpload] 匹配历史智能调轴完成 count=%s", len(operations))
+        except Exception as exc:
+            logger.error("[SubtitleManualUpload] 匹配历史智能调轴失败: %s", exc)
+            for operation in operations:
+                target_id = self._normalize_text((operation.get("target_entry") or {}).get("id"))
+                task = self._timeline_task_for_target_id(target_id)
+                if task and task.get("status") in {"completed", "skipped", "failed"}:
+                    continue
+                self._set_timeline_task(operation, status="failed", message=f"历史字幕智能调轴失败: {exc}")
+        finally:
+            shutil.rmtree(session_dir, ignore_errors=True)
+            self._invalidate_match_history_cache()
+
+    async def api_timeline_fix_existing(self, request: Request) -> Dict[str, Any]:
+        body = await request.json()
+        requested_items = body.get("items") if isinstance(body, dict) else []
+        if not isinstance(requested_items, list) or not requested_items:
+            raise HTTPException(status_code=400, detail="请先选择要调轴的历史字幕")
+        timeline_status = check_timeline_fixer_dependencies()
+        if not timeline_status.get("available"):
+            missing = [
+                key
+                for key, value in {
+                    "ffmpeg": timeline_status.get("ffmpeg"),
+                    "ffprobe": timeline_status.get("ffprobe"),
+                    **(timeline_status.get("modules") or {}),
+                }.items()
+                if not value
+            ]
+            raise HTTPException(status_code=409, detail=f"智能调轴不可用：缺少 {', '.join(missing) or '依赖'}")
+        operations, skipped, failed = self._existing_timeline_operations(requested_items)
+        if not operations:
+            return self._ok(
+                {
+                    "accepted": 0,
+                    "skipped": skipped,
+                    "failed": failed,
+                    "summary": self._timeline_task_summary([]),
+                    "tasks": [],
+                    "task_by_target": {},
+                },
+                message="没有可提交智能调轴的历史字幕",
+            )
+        for operation in operations:
+            self._set_timeline_task(operation, status="pending", message="等待历史字幕智能调轴")
+        session_id = self._hash_text(f"existing-timeline|{datetime.now().isoformat()}|{len(operations)}")[:16]
+        session_dir = self._get_session_root() / session_id
+        session_dir.mkdir(parents=True, exist_ok=True)
+        threading.Thread(
+            target=self._run_existing_timeline_fix,
+            args=(session_dir, operations),
+            name="SubtitleManualUploadExistingTimelineFix",
+            daemon=True,
+        ).start()
+        target_entries = [operation["target_entry"] for operation in operations]
+        task_data = self._timeline_tasks_for_entries(target_entries)
+        return self._ok(
+            {
+                "accepted": len(operations),
+                "skipped": skipped,
+                "failed": failed,
+                **task_data,
+            },
+            message=f"已提交 {len(operations)} 个历史字幕智能调轴任务，跳过 {len(skipped)} 个，失败 {len(failed)} 个",
         )
 
     async def api_ai_submit(self, request: Request) -> Dict[str, Any]:
@@ -4177,6 +5144,10 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         if not target_entries:
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
         return self._ok(self._timeline_tasks_for_entries(target_entries))
+
+    def api_auto_transfer_queue(self, request: Request) -> Dict[str, Any]:
+        limit = min(max(self._safe_int(request.query_params.get("limit"), 100), 1), 200)
+        return self._ok(self._auto_transfer_queue_snapshot(limit=limit))
 
     async def api_search(self, request: Request) -> Dict[str, Any]:
         keyword = self._normalize_text(request.query_params.get("keyword"))

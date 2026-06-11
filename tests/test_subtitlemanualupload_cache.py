@@ -87,6 +87,9 @@ def make_plugin(module):
     plugin._local_entries_cache = {"loaded_at": None, "entries": [], "media_count": 0, "persisted": False}
     plugin._entry_map = module.OrderedDict()
     plugin._media_index_cache = module.OrderedDict()
+    plugin._auto_transfer_tasks = module.OrderedDict()
+    plugin._auto_transfer_worker = None
+    plugin._auto_season_package_cache = module.OrderedDict()
     plugin._cache_refreshing = False
     plugin._cache_ttl_seconds = 1800
     plugin._cache_max_entries = 10
@@ -122,11 +125,23 @@ class FakeRequest:
         return self._body
 
 
-def test_local_entries_cache_hits_until_forced_refresh():
+def make_history_entry(tmp_path, entry_id, filename, **extra):
+    path = tmp_path / filename
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("video", encoding="utf-8")
+    return {
+        "id": entry_id,
+        "path": str(path),
+        "media_key": extra.pop("media_key", f"movie-{entry_id}"),
+        **extra,
+    }
+
+
+def test_local_entries_cache_hits_until_forced_refresh(tmp_path):
     module, histories, _ = load_plugin_module()
     plugin = make_plugin(module)
     histories.calls = 0
-    histories.data = [{"id": "a", "path": "/media/a.mkv", "media_key": "movie-a"}]
+    histories.data = [make_history_entry(tmp_path, "a", "a.mkv", media_key="movie-a")]
 
     first = plugin._load_local_entries()
     second = plugin._load_local_entries()
@@ -138,25 +153,25 @@ def test_local_entries_cache_hits_until_forced_refresh():
     assert plugin._cache_status()["media_count"] == 1
 
 
-def test_refresh_local_cache_rebuilds_entries():
+def test_refresh_local_cache_rebuilds_entries(tmp_path):
     module, histories, _ = load_plugin_module()
     plugin = make_plugin(module)
     histories.calls = 0
-    histories.data = [{"id": "a", "path": "/media/a.mkv", "media_key": "movie-a"}]
+    histories.data = [make_history_entry(tmp_path, "a", "a.mkv", media_key="movie-a")]
     plugin._load_local_entries()
 
-    histories.data = [{"id": "b", "path": "/media/b.mkv", "media_key": "movie-b"}]
+    histories.data = [make_history_entry(tmp_path, "b", "b.mkv", media_key="movie-b")]
     refreshed = plugin._refresh_local_cache()
 
     assert [item["id"] for item in refreshed] == ["b"]
     assert list(plugin._entry_map.keys()) == ["b"]
 
 
-def test_local_entries_cache_persists_between_plugin_instances():
+def test_local_entries_cache_persists_between_plugin_instances(tmp_path):
     module, histories, _ = load_plugin_module()
     plugin = make_plugin(module)
     histories.calls = 0
-    histories.data = [{"id": "a", "path": "/media/a.mkv", "media_key": "movie-a"}]
+    histories.data = [make_history_entry(tmp_path, "a", "a.mkv", media_key="movie-a")]
 
     first = plugin._load_local_entries()
     plugin2 = module.SubtitleManualUpload.__new__(module.SubtitleManualUpload)
@@ -177,13 +192,15 @@ def test_local_entries_cache_persists_between_plugin_instances():
     assert plugin2._cache_status()["persisted"] is True
 
 
-def test_stale_persisted_cache_returns_before_background_refresh():
+def test_stale_persisted_cache_returns_before_background_refresh(tmp_path):
     module, histories, _ = load_plugin_module()
     plugin = make_plugin(module)
     old_time = module.datetime.now() - module.timedelta(seconds=1900)
+    stale_path = tmp_path / "stale.mkv"
+    stale_path.write_text("video", encoding="utf-8")
     plugin._local_entries_cache = {
         "loaded_at": old_time,
-        "entries": [{"id": "stale", "path": "/media/stale.mkv", "media_key": "movie-stale"}],
+        "entries": [{"id": "stale", "path": str(stale_path), "media_key": "movie-stale"}],
         "media_count": 1,
         "persisted": True,
     }
@@ -374,13 +391,13 @@ def test_delete_single_subtitle_only_allows_target_subtitles(tmp_path):
     assert unrelated.exists()
 
 
-def test_search_media_candidates_returns_total_with_page_slice():
+def test_search_media_candidates_returns_total_with_page_slice(tmp_path):
     module, histories, _ = load_plugin_module()
     plugin = make_plugin(module)
     histories.data = [
-        {"id": "a", "path": "/media/a.mkv", "media_key": "movie-a", "media_type": "movie", "title": "A", "date": "2024-01-01"},
-        {"id": "b", "path": "/media/b.mkv", "media_key": "movie-b", "media_type": "movie", "title": "B", "date": "2024-01-02"},
-        {"id": "c", "path": "/media/c.mkv", "media_key": "movie-c", "media_type": "movie", "title": "C", "date": "2024-01-03"},
+        make_history_entry(tmp_path, "a", "a.mkv", media_key="movie-a", media_type="movie", title="A", date="2024-01-01"),
+        make_history_entry(tmp_path, "b", "b.mkv", media_key="movie-b", media_type="movie", title="B", date="2024-01-02"),
+        make_history_entry(tmp_path, "c", "c.mkv", media_key="movie-c", media_type="movie", title="C", date="2024-01-03"),
     ]
     plugin._targets_for_media = lambda **kwargs: (_ for _ in ()).throw(
         AssertionError("media list search should not load target details")
@@ -413,13 +430,13 @@ def test_group_entries_exposes_thumbnail_poster_url():
     assert groups[0]["poster_thumb_url"] == "https://image.tmdb.org/t/p/w185/poster.jpg"
 
 
-def test_search_media_candidates_reuses_media_index_cache():
+def test_search_media_candidates_reuses_media_index_cache(tmp_path):
     module, histories, _ = load_plugin_module()
     plugin = make_plugin(module)
     histories.data = [
-        {"id": "a", "path": "/media/a.mkv", "media_key": "movie-a", "media_type": "movie", "title": "A", "date": "2024-01-01"},
-        {"id": "b", "path": "/media/b.mkv", "media_key": "movie-b", "media_type": "movie", "title": "B", "date": "2024-01-02"},
-        {"id": "c", "path": "/media/c.mkv", "media_key": "movie-c", "media_type": "movie", "title": "C", "date": "2024-01-03"},
+        make_history_entry(tmp_path, "a", "a.mkv", media_key="movie-a", media_type="movie", title="A", date="2024-01-01"),
+        make_history_entry(tmp_path, "b", "b.mkv", media_key="movie-b", media_type="movie", title="B", date="2024-01-02"),
+        make_history_entry(tmp_path, "c", "c.mkv", media_key="movie-c", media_type="movie", title="C", date="2024-01-03"),
     ]
     calls = {"count": 0}
     original_group = plugin._group_entries_as_media
@@ -527,6 +544,145 @@ def test_match_history_cache_reuses_scanned_items_until_invalidated(tmp_path):
 
     assert first == second == third
     assert calls["count"] == 2
+
+
+def test_match_history_filters_deleted_local_targets(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    subtitle = tmp_path / "Movie.chi.srt"
+    video.write_text("video", encoding="utf-8")
+    subtitle.write_text("subtitle", encoding="utf-8")
+    entry = {
+        "id": "m1",
+        "media_key": "movie",
+        "media_type": "movie",
+        "title": "Movie",
+        "path": str(video),
+        "basename": "Movie",
+        "target_label": "Movie",
+        "storage": "local",
+    }
+    plugin._local_entries_cache = {
+        "loaded_at": module.datetime.now(),
+        "entries": [entry],
+        "media_count": 1,
+        "persisted": False,
+    }
+    plugin._remember_targets([entry])
+
+    assert len(plugin._match_history_items()) == 1
+
+    video.unlink()
+    assert plugin._match_history_items() == []
+    assert plugin._cache_status()["entry_count"] == 0
+
+
+def test_match_history_cache_invalidates_when_external_subtitle_changes(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    video.write_text("video", encoding="utf-8")
+    plugin._local_entries_cache = {
+        "loaded_at": module.datetime.now(),
+        "entries": [
+            {
+                "id": "m1",
+                "media_key": "movie",
+                "media_type": "movie",
+                "title": "Movie",
+                "path": str(video),
+                "basename": "Movie",
+                "target_label": "Movie",
+                "storage": "local",
+            }
+        ],
+        "media_count": 1,
+        "persisted": False,
+    }
+
+    assert plugin._match_history_items() == []
+
+    (tmp_path / "Movie.chi.srt").write_text("subtitle", encoding="utf-8")
+    future = module.time.time() + 10
+    module.os.utime(tmp_path, (future, future))
+
+    items = plugin._match_history_items()
+    assert len(items) == 1
+    assert items[0]["subtitle_count"] == 1
+
+
+def test_transfer_auto_dedupe_key_changes_when_same_path_is_reimported(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    entry = make_auto_entry(tmp_path)
+
+    claimed, skipped = plugin._claim_transfer_auto_entries([entry])
+    assert len(claimed) == 1
+    assert skipped == 0
+
+    claimed, skipped = plugin._claim_transfer_auto_entries([entry])
+    assert claimed == []
+    assert skipped == 1
+
+    Path(entry["path"]).write_text("video reimported with different size", encoding="utf-8")
+    claimed, skipped = plugin._claim_transfer_auto_entries([entry])
+    assert len(claimed) == 1
+    assert skipped == 0
+
+
+def test_timeline_fix_existing_accepts_all_subtitles_for_target(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    chi = tmp_path / "Movie.chi.srt"
+    eng = tmp_path / "Movie.eng.srt"
+    video.write_text("video", encoding="utf-8")
+    chi.write_text("1\n00:00:01,000 --> 00:00:02,000\n你好\n", encoding="utf-8")
+    eng.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+    entry = {
+        "id": "m1",
+        "media_key": "movie",
+        "media_type": "movie",
+        "title": "Movie",
+        "path": str(video),
+        "basename": "Movie",
+        "target_label": "Movie",
+        "storage": "local",
+    }
+    plugin._local_entries_cache = {
+        "loaded_at": module.datetime.now(),
+        "entries": [entry],
+        "media_count": 1,
+        "persisted": False,
+    }
+    plugin._remember_targets([entry])
+    module.check_timeline_fixer_dependencies = lambda: {
+        "available": True,
+        "ffmpeg": True,
+        "ffprobe": True,
+        "modules": {},
+    }
+
+    class NoopThread:
+        def __init__(self, *args, **kwargs):
+            self.args = args
+            self.kwargs = kwargs
+
+        def start(self):
+            return None
+
+    original_thread = module.threading.Thread
+    module.threading.Thread = NoopThread
+    try:
+        response = asyncio.run(plugin.api_timeline_fix_existing(FakeRequest({"items": [{"target_id": "m1"}]})))
+    finally:
+        module.threading.Thread = original_thread
+
+    assert response["success"] is True
+    assert response["data"]["accepted"] == 2
+    assert response["data"]["summary"]["pending"] == 2
+    assert response["data"]["task_by_target"]["m1"]["status"] == "pending"
 
 
 def setup_online_ai_translate(plugin, module, tmp_path):
@@ -781,6 +937,129 @@ def make_auto_entry(tmp_path, filename="Movie.mkv", **overrides):
     }
     entry.update(overrides)
     return entry
+
+
+def test_auto_transfer_queue_enqueues_tv_season_tasks_without_starting_immediately(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._ensure_transfer_auto_worker = lambda: None
+    entries = [
+        make_auto_entry(
+            tmp_path,
+            filename="Show.S01E01.mkv",
+            media_key="tv-key",
+            media_type="tv",
+            title="Show",
+            season=1,
+            episode=1,
+        ),
+        make_auto_entry(
+            tmp_path,
+            filename="Show.S01E02.mkv",
+            media_key="tv-key",
+            media_type="tv",
+            title="Show",
+            season=1,
+            episode=2,
+        ),
+    ]
+
+    queued, skipped = plugin._enqueue_transfer_auto_entries(entries)
+    snapshot = plugin._auto_transfer_queue_snapshot()
+
+    assert queued == 2
+    assert skipped == 0
+    assert snapshot["summary"]["pending"] == 2
+    assert len({task["group_key"] for task in snapshot["tasks"]}) == 1
+
+
+def test_auto_transfer_group_prefers_season_package_then_single_episode(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._auto_skip_chinese_media_on_transfer = False
+    entries = [
+        make_auto_entry(
+            tmp_path,
+            filename="Show.S01E01.mkv",
+            id="e1",
+            media_key="tv-key",
+            media_type="tv",
+            title="Show",
+            season=1,
+            episode=1,
+        ),
+        make_auto_entry(
+            tmp_path,
+            filename="Show.S01E02.mkv",
+            id="e2",
+            media_key="tv-key",
+            media_type="tv",
+            title="Show",
+            season=1,
+            episode=2,
+        ),
+    ]
+    calls = []
+    plugin._auto_write_from_season_cache = lambda items: {"status": "skipped", "written_by_target": {}}
+
+    def fake_season(items, task_ids=None):
+        calls.append(("season", [item["id"] for item in items], list(task_ids or [])))
+        return {
+            "status": "written",
+            "result": "Show S01 pack",
+            "written_by_target": {"e1": {"path": "Show.S01E01.chi.srt"}},
+            "candidate_count": 1,
+            "search_results": 1,
+        }
+
+    def fake_single(entry, target, **kwargs):
+        calls.append(("single", entry["id"], kwargs.get("queue_rate_limited")))
+        return {"status": "written", "target": target.get("label"), "result": "single episode"}
+
+    plugin._auto_search_write_season_package = fake_season
+    plugin._auto_search_write_subtitle = fake_single
+
+    results = plugin._auto_process_transfer_group(entries, task_ids=["t1", "t2"])
+
+    assert calls == [("season", ["e1", "e2"], ["t1", "t2"]), ("single", "e2", True)]
+    assert results["e1"]["season_package"] is True
+    assert results["e2"]["result"] == "single episode"
+
+
+def test_auto_transfer_rate_limit_is_tracked_per_provider(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._online_provider_ids = ["assrt", "opensubtitles"]
+    plugin._auto_transfer_tasks["t1"] = {
+        "id": "t1",
+        "status": "in_progress",
+        "active": True,
+        "next_run_ts": 0,
+        "message": "",
+    }
+    now = {"value": 1000.0}
+    observed = {}
+    original_time = module.time.time
+    original_sleep = module.time.sleep
+    module.time.time = lambda: now["value"]
+
+    def fake_sleep(seconds):
+        observed["next_run_ts"] = plugin._auto_transfer_tasks["t1"]["next_run_ts"]
+        observed["message"] = plugin._auto_transfer_tasks["t1"]["message"]
+        now["value"] += seconds
+
+    module.time.sleep = fake_sleep
+    try:
+        plugin._online_rate_records = {"assrt": [941.0, 950.0, 960.0, 970.0, 980.0]}
+        plugin._auto_wait_online_rate_limit(["assrt"], task_ids=["t1"])
+    finally:
+        module.time.time = original_time
+        module.time.sleep = original_sleep
+
+    assert observed["next_run_ts"] == 1001.0
+    assert "assrt" in observed["message"]
+    assert len(plugin._online_rate_records["assrt"]) == 5
+    assert plugin._auto_transfer_tasks["t1"]["next_run_ts"] == 0
 
 
 def test_auto_transfer_skips_chinese_media_by_tmdb_language(tmp_path):

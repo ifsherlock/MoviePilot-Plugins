@@ -39,7 +39,7 @@ const localConfig = ref({
   auto_skip_chinese_media_on_transfer: true,
   auto_transfer_subtitle_strategy: 'search_first',
   subhd_url: 'https://subhd.tv',
-  zimuku_url: 'https://zimuku.org',
+  zimuku_url: 'https://zmk.pw',
   assrt_url: 'https://2.assrt.net',
   assrt_api_key: '',
   assrt_api_url: 'https://api.assrt.net',
@@ -84,6 +84,11 @@ function normalizeRootUrl(value, fallback) {
   return /^https?:\/\//i.test(text) ? text : fallback
 }
 
+function normalizeZimukuRootUrl(value) {
+  const normalized = normalizeRootUrl(value, 'https://zmk.pw');
+  return normalized === 'https://zimuku.org' ? 'https://zmk.pw' : normalized
+}
+
 function normalizeConfig(input) {
   const assrtApiKey = String(input?.assrt_api_key || '').trim();
   const opensubtitlesApiKey = String(input?.opensubtitles_api_key || '').trim();
@@ -110,7 +115,7 @@ function normalizeConfig(input) {
     auto_skip_chinese_media_on_transfer: input?.auto_skip_chinese_media_on_transfer !== false,
     auto_transfer_subtitle_strategy: autoStrategy,
     subhd_url: normalizeRootUrl(input?.subhd_url, 'https://subhd.tv'),
-    zimuku_url: normalizeRootUrl(input?.zimuku_url, 'https://zimuku.org'),
+    zimuku_url: normalizeZimukuRootUrl(input?.zimuku_url),
     assrt_url: normalizeRootUrl(input?.assrt_url, 'https://2.assrt.net'),
     assrt_api_key: assrtApiKey,
     assrt_api_url: normalizeRootUrl(input?.assrt_api_url, 'https://api.assrt.net'),
@@ -295,7 +300,7 @@ return (_ctx, _cache) => {
                   modelValue: localConfig.value.zimuku_url,
                   "onUpdate:modelValue": _cache[11] || (_cache[11] = $event => ((localConfig.value.zimuku_url) = $event)),
                   label: "Zimuku 站点地址",
-                  placeholder: "https://zimuku.org",
+                  placeholder: "https://zmk.pw",
                   variant: "outlined",
                   density: "comfortable",
                   "hide-details": ""
@@ -430,6 +435,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-5abcb791"]]);
+const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-be627b90"]]);
 
 export { Config as default };

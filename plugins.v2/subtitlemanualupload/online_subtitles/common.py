@@ -32,9 +32,12 @@ MP_BROWSER_ENGINE = "mp_browser"
 ONLINE_ENGINES = {DEFAULT_ENGINE, MP_BROWSER_ENGINE}
 DEFAULT_PROVIDER_ROOTS = {
     "subhd": "https://subhd.tv",
-    "zimuku": "https://zimuku.org",
+    "zimuku": "https://zmk.pw",
     "assrt": "https://2.assrt.net",
     "opensubtitles": "https://www.opensubtitles.com",
+}
+LEGACY_PROVIDER_ROOTS = {
+    "zimuku": {"https://zimuku.org"},
 }
 DEFAULT_ASSRT_API_URL = "https://api.assrt.net"
 DEFAULT_OPENSUBTITLES_API_URL = "https://api.opensubtitles.com/api/v1"
@@ -765,10 +768,13 @@ def normalize_root_url(value: Any, default: str) -> str:
 
 def normalize_provider_roots(value: Optional[Dict[str, Any]]) -> Dict[str, str]:
     raw = value if isinstance(value, dict) else {}
-    return {
-        provider_id: normalize_root_url(raw.get(provider_id), default_url)
-        for provider_id, default_url in DEFAULT_PROVIDER_ROOTS.items()
-    }
+    roots: Dict[str, str] = {}
+    for provider_id, default_url in DEFAULT_PROVIDER_ROOTS.items():
+        normalized = normalize_root_url(raw.get(provider_id), default_url)
+        if normalized in LEGACY_PROVIDER_ROOTS.get(provider_id, set()):
+            normalized = default_url
+        roots[provider_id] = normalized
+    return roots
 
 
 def _episode_from_text(value: str) -> Optional[Tuple[int, int]]:
