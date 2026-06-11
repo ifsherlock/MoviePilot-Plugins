@@ -2413,29 +2413,31 @@ defineExpose({
                     :key="subtitle.path"
                     class="subtitle-history-item"
                   >
-                    <div>
+                    <div class="subtitle-history-copy">
                       <strong>{{ subtitle.name }}</strong>
                       <span>{{ formatBytes(subtitle.size) }} · {{ subtitle.modified_at || '未知时间' }}</span>
                     </div>
-                    <VBtn
-                      size="small"
-                      variant="text"
-                      color="warning"
-                      :loading="timelineFixing"
-                      :disabled="timelineFixing || !timelineAvailable || isStreamTarget(target)"
-                      @click.stop="fixHistorySubtitleTimeline(target, subtitle)"
-                    >
-                      调轴
-                    </VBtn>
-                    <VBtn
-                      size="small"
-                      variant="text"
-                      color="error"
-                      :loading="clearing"
-                      @click.stop="deleteSubtitle(target, subtitle)"
-                    >
-                      删除
-                    </VBtn>
+                    <div class="subtitle-history-actions">
+                      <VBtn
+                        size="small"
+                        variant="tonal"
+                        color="warning"
+                        :loading="timelineFixing"
+                        :disabled="timelineFixing || !timelineAvailable || isStreamTarget(target)"
+                        @click.stop="fixHistorySubtitleTimeline(target, subtitle)"
+                      >
+                        调轴
+                      </VBtn>
+                      <VBtn
+                        size="small"
+                        variant="tonal"
+                        color="error"
+                        :loading="clearing"
+                        @click.stop="deleteSubtitle(target, subtitle)"
+                      >
+                        删除
+                      </VBtn>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -2755,19 +2757,31 @@ defineExpose({
                     :key="subtitle.path"
                     class="subtitle-history-item"
                   >
-                    <div>
+                    <div class="subtitle-history-copy">
                       <strong>{{ subtitle.name }}</strong>
                       <span>{{ formatBytes(subtitle.size) }} · {{ subtitle.modified_at || '未知时间' }}</span>
                     </div>
-                    <VBtn
-                      size="small"
-                      variant="text"
-                      color="error"
-                      :loading="clearing"
-                      @click="deleteSubtitle(row.target, subtitle)"
-                    >
-                      删除
-                    </VBtn>
+                    <div class="subtitle-history-actions">
+                      <VBtn
+                        size="small"
+                        variant="tonal"
+                        color="warning"
+                        :loading="timelineFixing"
+                        :disabled="timelineFixing || !timelineAvailable || isStreamTarget(row.target)"
+                        @click.stop="fixHistorySubtitleTimeline(row.target, subtitle)"
+                      >
+                        调轴
+                      </VBtn>
+                      <VBtn
+                        size="small"
+                        variant="tonal"
+                        color="error"
+                        :loading="clearing"
+                        @click.stop="deleteSubtitle(row.target, subtitle)"
+                      >
+                        删除
+                      </VBtn>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -4012,15 +4026,16 @@ defineExpose({
 .subtitle-history-item {
   display: flex;
   justify-content: space-between;
-  gap: 12px;
+  gap: 10px;
   align-items: center;
   padding: 10px 12px;
   border-radius: 14px;
   background: rgba(245, 241, 232, 0.68);
 }
 
-.subtitle-history-item div {
+.subtitle-history-copy {
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .subtitle-history-item strong,
@@ -4032,6 +4047,22 @@ defineExpose({
 .subtitle-history-item span {
   color: #687873;
   font-size: 12px;
+}
+
+.subtitle-history-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid rgba(91, 109, 100, 0.14);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.78);
+}
+
+.subtitle-history-actions .v-btn {
+  min-width: 52px;
 }
 
 .upload-dialog {
@@ -4662,9 +4693,13 @@ defineExpose({
     flex-direction: column;
   }
 
-  .history-actions,
-  .subtitle-history-item {
+  .history-actions {
     justify-content: flex-start;
+  }
+
+  .subtitle-history-actions {
+    width: 100%;
+    justify-content: flex-end;
   }
 
   .online-title-actions {
