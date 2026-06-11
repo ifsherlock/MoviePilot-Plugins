@@ -267,12 +267,13 @@ def test_subhd_download_falls_back_to_down_page_href_when_api_url_empty():
         def get_text(self, url, *, referer=""):
             self.requested.append(url)
             if "/a/abc" in url:
-                return 200, '<a href="/down/123">下载字幕</a>', url
-            if "/down/123" in url:
+                return 200, '<a href="/down/bqsyNZ">下载字幕</a>', url
+            if "/down/bqsyNZ" in url:
                 return 200, '<a href="/download/from-page.zip">备用下载</a>', url
             return 404, "", url
 
         def post_json(self, url, payload, *, referer=""):
+            assert payload["sid"] == "bqsyNZ"
             return {"success": True, "pass": True, "url": "", "msg": "ok"}
 
         def get_bytes(self, url, *, referer=""):

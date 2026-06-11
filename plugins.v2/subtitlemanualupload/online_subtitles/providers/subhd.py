@@ -228,11 +228,13 @@ class SubHDProvider(BaseSubtitleProvider):
         status, text, _ = self.fetcher.get_text(page_url, referer=self.root_url)
         if status >= 400 or not text:
             raise ValueError("SubHD 下载页面不可访问")
-        down_match = re.search(r'href=["\']([^"\']*/down/(\d+)[^"\']*)["\']', text, re.I)
+        down_match = re.search(r'href=["\']([^"\']*/down/[A-Za-z0-9_-]+[^"\']*)["\']', text, re.I)
         if not down_match:
             raise ValueError("SubHD 未找到下载按钮")
         down_url = urljoin(self.root_url, html.unescape(down_match.group(1)))
-        sid = down_match.group(2)
+        sid = Path(urlparse(down_url).path).name
+        if not sid:
+            raise ValueError("SubHD 下载按钮缺少 sid")
         down_status, down_text, down_final_url = self.fetcher.get_text(down_url, referer=page_url)
         payload = {"sid": sid, "cap": captcha_code or ""}
         api_url = f"{self.root_url}/api/sub/down"
