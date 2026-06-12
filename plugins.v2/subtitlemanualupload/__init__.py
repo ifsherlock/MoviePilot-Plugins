@@ -4020,7 +4020,13 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     target_entries=[entry],
                     prepared_uploads=prepared_uploads,
                 )
-                ai_submit = self._submit_autosub_for_entries([entry], subtitle_overrides=subtitle_overrides)
+                ai_submit = self._submit_autosub_for_entries(
+                    [entry],
+                    subtitle_overrides=subtitle_overrides,
+                    trigger="subtitle_fallback",
+                    source_policy="matched_external",
+                    overwrite_policy="new_variant",
+                )
                 ai_result = {
                     "status": "ai_submitted" if ai_submit.get("added") else "skipped",
                     "reason": "自动入库外语字幕已智能调轴后提交 AI 翻译",
@@ -4319,7 +4325,13 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                 target_entries=foreign_entries,
                 prepared_uploads=foreign_uploads,
             )
-            ai_submit_result = self._submit_autosub_for_entries(foreign_entries, subtitle_overrides=subtitle_overrides)
+            ai_submit_result = self._submit_autosub_for_entries(
+                foreign_entries,
+                subtitle_overrides=subtitle_overrides,
+                trigger="subtitle_fallback",
+                source_policy="matched_external",
+                overwrite_policy="new_variant",
+            )
 
         written_by_target: Dict[str, Dict[str, Any]] = {}
         for operation, written_item in zip(operations, written):

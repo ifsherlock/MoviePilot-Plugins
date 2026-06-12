@@ -1318,6 +1318,75 @@ def test_levius_season_package_requires_all_twelve_episodes(tmp_path):
     assert set(result["written_by_target"]) == {f"e{episode}" for episode in range(1, 13)}
 
 
+def test_auto_season_foreign_srt_submits_ai_as_subtitle_fallback(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    entries = [
+        make_auto_entry(tmp_path, filename="Show.S01E01.mkv", id="e1", media_key="tv-key", media_type="tv", title="Show", season=1, episode=1),
+        make_auto_entry(tmp_path, filename="Show.S01E02.mkv", id="e2", media_key="tv-key", media_type="tv", title="Show", season=1, episode=2),
+    ]
+    prepared_uploads = []
+    for entry in entries:
+        subtitle = tmp_path / f"{entry['basename']}.eng.srt"
+        subtitle.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+        prepared_uploads.append(
+            {
+                "upload_id": entry["id"],
+                "source_name": subtitle.name,
+                "stored_path": str(subtitle),
+                "ext": ".srt",
+                "target_id": entry["id"],
+            }
+        )
+
+    captured = {}
+    plugin._auto_prepared_items_for_targets = lambda uploads, targets: [
+        {
+            "upload_id": item["upload_id"],
+            "source_name": item["source_name"],
+            "ext": ".srt",
+            "target_id": item["target_id"],
+            "language_suffix": "eng",
+        }
+        for item in uploads
+    ]
+    plugin._prepare_online_ai_subtitle_overrides = lambda **kwargs: (
+        {entry["path"]: {"subtitle_path": str(tmp_path / f"{entry['basename']}.fixed.srt"), "lang": "en"} for entry in kwargs["target_entries"]},
+        [{"target_id": entry["id"], "subtitle_path": str(tmp_path / f"{entry['basename']}.fixed.srt"), "autosub_lang": "en"} for entry in kwargs["target_entries"]],
+    )
+
+    def fake_submit(entries_arg, subtitle_overrides=None, **kwargs):
+        captured["entries"] = entries_arg
+        captured["overrides"] = subtitle_overrides
+        captured["submit_kwargs"] = kwargs
+        return {
+            "added": [{"path": entry["path"]} for entry in entries_arg],
+            "skipped": [],
+            "failed": [],
+        }
+
+    plugin._submit_autosub_for_entries = fake_submit
+    plugin._write_operations_to_disk = lambda **kwargs: (_ for _ in ()).throw(
+        AssertionError("Foreign season package should be submitted to AI instead of written")
+    )
+
+    result = plugin._auto_write_prepared_uploads_for_entries(
+        target_entries=entries,
+        prepared_uploads=prepared_uploads,
+        session_dir=tmp_path,
+        selected_result={"provider": "opensubtitles", "title": "Show English pack"},
+    )
+
+    assert result["status"] == "written"
+    assert result["ai_count"] == 2
+    assert result["coverage_complete"] is True
+    assert [entry["id"] for entry in captured["entries"]] == ["e1", "e2"]
+    assert set(captured["overrides"]) == {entry["path"] for entry in entries}
+    assert captured["submit_kwargs"]["trigger"] == "subtitle_fallback"
+    assert captured["submit_kwargs"]["source_policy"] == "matched_external"
+    assert captured["submit_kwargs"]["overwrite_policy"] == "new_variant"
+
+
 def test_auto_transfer_rate_limit_is_tracked_per_provider(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
@@ -1678,8 +1747,9 @@ def test_auto_search_write_foreign_srt_submits_ai_without_writing(tmp_path):
         [{"target_id": entry["id"], "subtitle_path": str(subtitle), "autosub_lang": "en"}],
     )
 
-    def fake_submit(entries, subtitle_overrides=None):
+    def fake_submit(entries, subtitle_overrides=None, **kwargs):
         captured["overrides"] = subtitle_overrides
+        captured["submit_kwargs"] = kwargs
         return {
             "added": [{"path": entries[0]["path"]}],
             "skipped": [],
@@ -1693,6 +1763,9 @@ def test_auto_search_write_foreign_srt_submits_ai_without_writing(tmp_path):
 
     assert result["status"] == "ai_submitted"
     assert captured["overrides"][entry["path"]]["lang"] == "en"
+    assert captured["submit_kwargs"]["trigger"] == "subtitle_fallback"
+    assert captured["submit_kwargs"]["source_policy"] == "matched_external"
+    assert captured["submit_kwargs"]["overwrite_policy"] == "new_variant"
     assert result["fixed_subtitles"][0]["autosub_lang"] == "en"
 
 
