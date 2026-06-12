@@ -81,7 +81,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/subtitle-match.png"
-    plugin_version = "0.1.65"
+    plugin_version = "0.1.66"
     plugin_author = "ifsherlock"
     author_url = "https://github.com/ifsherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -5113,7 +5113,35 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         target_entries = list(self._resolve_targets(target_ids).values())
         if not target_entries:
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
-        result = self._submit_autosub_for_entries(target_entries)
+        source_policy = self._normalize_text(body.get("source_policy")) or "auto"
+        if source_policy == "reuse":
+            source_policy = "auto"
+        source_subtitle_path = self._normalize_text(body.get("source_subtitle_path") or body.get("subtitle_path"))
+        source_subtitle_lang = self._normalize_text(body.get("source_subtitle_lang") or body.get("lang"))
+        overwrite_policy = self._normalize_text(body.get("overwrite_policy")) or ("new_variant" if source_policy != "auto" else "skip")
+        if source_policy == "matched_external":
+            if not source_subtitle_path:
+                raise HTTPException(status_code=400, detail="请选择要用于 AI 生成的外挂 SRT 字幕")
+            subtitle_overrides = self._selected_external_subtitle_override_for_entries(
+                target_entries,
+                source_subtitle_path=source_subtitle_path,
+                source_subtitle_lang=source_subtitle_lang,
+                overwrite_policy=overwrite_policy,
+            )
+            result = self._submit_autosub_for_entries(
+                target_entries,
+                subtitle_overrides=subtitle_overrides,
+                trigger="manual",
+                source_policy="matched_external",
+                overwrite_policy=overwrite_policy,
+            )
+        else:
+            result = self._submit_autosub_for_entries(
+                target_entries,
+                trigger="manual",
+                source_policy=source_policy,
+                overwrite_policy=overwrite_policy,
+            )
         if locked_skipped:
             result["skipped"] = [*(result.get("skipped") or []), *locked_skipped]
         return self._ok(
@@ -5595,7 +5623,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         if not hasattr(plugin, "restart_tasks"):
             raise HTTPException(status_code=409, detail="AI 字幕插件版本过旧，请更新到支持重新生成的联动版")
         if source_policy == "matched_external" and source_subtitle_path:
-            subtitle_overrides = self._restart_subtitle_override_for_entries(
+            subtitle_overrides = self._selected_external_subtitle_override_for_entries(
                 target_entries,
                 source_subtitle_path=source_subtitle_path,
                 source_subtitle_lang=source_subtitle_lang,
@@ -5650,7 +5678,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             "tasks": refreshed_tasks,
         }
 
-    def _restart_subtitle_override_for_entries(
+    def _selected_external_subtitle_override_for_entries(
         self,
         target_entries: List[Dict[str, Any]],
         *,

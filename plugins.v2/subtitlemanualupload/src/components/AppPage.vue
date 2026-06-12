@@ -347,6 +347,9 @@ const aiDialogTasks = computed(() => {
   return targetId ? tasks.filter(item => item.target_id === targetId) : tasks
 })
 const aiDialogHasActiveTasks = computed(() => aiDialogTasks.value.some(task => isAiTaskActive(task)))
+const aiDialogHasExistingTasks = computed(() => Boolean(aiDialogTasks.value.length))
+const aiDialogActionText = computed(() => (aiDialogHasExistingTasks.value ? '重新生成' : '生成'))
+const aiDialogSourceLabel = computed(() => (aiDialogHasExistingTasks.value ? '重新生成来源' : '生成来源'))
 const aiRestartSubtitleOptions = computed(() => {
   const target = aiTaskDialogTarget.value
   const subtitles = target?.subtitles || []
@@ -1234,7 +1237,7 @@ function timelineTaskText(task) {
 
 function openAiTaskDialog(target = null) {
   aiTaskDialogTarget.value = target
-  aiRestartSourcePolicy.value = 'reuse'
+  aiRestartSourcePolicy.value = target && aiTaskForTarget(target) ? 'reuse' : 'auto'
   aiRestartSubtitlePath.value = ''
   aiTaskDialog.value = true
   const scopeTargets = target
@@ -1253,6 +1256,10 @@ async function focusAiStatusStrip() {
 }
 
 async function submitAiForTargets(scopeTargets) {
+  return submitAiForTargetsWithOptions(scopeTargets)
+}
+
+async function submitAiForTargetsWithOptions(scopeTargets, options = {}) {
   const streamCount = scopeTargets.filter(isStreamTarget).length
   const usableTargets = scopeTargets.filter(item => !isLocked(item.id) && item.writable !== false)
   const capableTargets = usableTargets.filter(item => !isStreamTarget(item))
@@ -1270,10 +1277,14 @@ async function submitAiForTargets(scopeTargets) {
   error.value = ''
   message.value = ''
   try {
-    const response = await props.api.post(`${pluginBase.value}/ai_submit`, {
+    const payload = {
       target_ids: usableTargets.map(item => item.id),
       locked_target_ids: lockedTargetPayload(),
-    })
+    }
+    if (options.source_policy) payload.source_policy = options.source_policy
+    if (options.source_subtitle_path) payload.source_subtitle_path = options.source_subtitle_path
+    if (options.overwrite_policy) payload.overwrite_policy = options.overwrite_policy
+    const response = await props.api.post(`${pluginBase.value}/ai_submit`, payload)
     const data = unwrapResponse(response) || {}
     if (data.tasks) {
       aiTaskData.value = data.tasks
@@ -1342,6 +1353,21 @@ async function regenerateDialogAiTasks() {
     message.value = '请先选择要用于重新生成的外挂 SRT 字幕'
     return
   }
+  const hasExistingTasks = aiDialogHasExistingTasks.value
+  const sourcePolicy = !hasExistingTasks && aiRestartSourcePolicy.value === 'reuse'
+    ? 'auto'
+    : aiRestartSourcePolicy.value
+  const overwritePolicy = hasExistingTasks
+    ? (sourcePolicy === 'reuse' ? 'backup_replace' : 'new_variant')
+    : (sourcePolicy === 'auto' ? 'skip' : 'new_variant')
+  if (!hasExistingTasks) {
+    await submitAiForTargetsWithOptions(usableTargets, {
+      source_policy: sourcePolicy,
+      source_subtitle_path: sourcePolicy === 'matched_external' ? aiRestartSubtitlePath.value : '',
+      overwrite_policy: overwritePolicy,
+    })
+    return
+  }
   aiSubmitting.value = true
   error.value = ''
   message.value = ''
@@ -1349,9 +1375,9 @@ async function regenerateDialogAiTasks() {
     const response = await props.api.post(`${pluginBase.value}/ai_restart`, {
       target_ids: usableTargets.map(item => item.id),
       locked_target_ids: lockedTargetPayload(),
-      source_policy: aiRestartSourcePolicy.value,
-      source_subtitle_path: aiRestartSourcePolicy.value === 'matched_external' ? aiRestartSubtitlePath.value : '',
-      overwrite_policy: aiRestartSourcePolicy.value === 'reuse' ? 'backup_replace' : 'new_variant',
+      source_policy: sourcePolicy,
+      source_subtitle_path: sourcePolicy === 'matched_external' ? aiRestartSubtitlePath.value : '',
+      overwrite_policy: overwritePolicy,
     })
     const data = unwrapResponse(response) || {}
     if (data.tasks) {
@@ -1368,12 +1394,7 @@ async function regenerateDialogAiTasks() {
 }
 
 function openSingleAiGenerate(target) {
-  const task = aiTaskForTarget(target)
-  if (task) {
-    openAiTaskDialog(target)
-    return
-  }
-  submitAiForTargets([target])
+  openAiTaskDialog(target)
 }
 
 function clearTargetState() {
@@ -3126,7 +3147,7 @@ defineExpose({
               :loading="aiSubmitting"
               @click="regenerateDialogAiTasks"
             >
-              重新生成
+              {{ aiDialogActionText }}
             </VBtn>
             <VBtn
               variant="tonal"
@@ -3153,7 +3174,7 @@ defineExpose({
             <VSelect
               v-model="aiRestartSourcePolicy"
               :items="aiRestartSourceOptions"
-              label="重新生成来源"
+              :label="aiDialogSourceLabel"
               density="comfortable"
               hint="改选来源会写入来源变体后缀，如 .aiasr.srt 或 .aiembedded.srt"
               persistent-hint
