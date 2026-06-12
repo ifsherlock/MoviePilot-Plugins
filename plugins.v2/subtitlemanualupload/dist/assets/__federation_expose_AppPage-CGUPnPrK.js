@@ -3233,6 +3233,14 @@ return (_ctx, _cache) => {
                                 "hide-details": "",
                                 "onUpdate:modelValue": value => toggleTarget(target.id, value)
                               }, null, 8, ["model-value", "onUpdate:modelValue"]),
+                              _createVNode(_component_VBtn, {
+                                class: "episode-expand-btn",
+                                variant: "tonal",
+                                density: "comfortable",
+                                icon: detailExpanded(target) ? 'mdi-chevron-down' : 'mdi-chevron-right',
+                                title: detailExpanded(target) ? '收起外挂字幕' : '展开外挂字幕',
+                                onClick: $event => (toggleDetailExpanded(target))
+                              }, null, 8, ["icon", "title", "onClick"]),
                               _createElementVNode("div", _hoisted_58, _toDisplayString(target.media_type === 'tv' ? `E${String(target.episode || 0).padStart(2, '0')}` : 'MOV'), 1),
                               _createElementVNode("div", _hoisted_59, [
                                 _createElementVNode("div", _hoisted_60, _toDisplayString(compactTargetName(target)), 1),
@@ -3288,12 +3296,6 @@ return (_ctx, _cache) => {
                                     icon: "mdi-closed-caption-outline",
                                     title: "暂无外挂字幕"
                                   })),
-                              _createVNode(_component_VBtn, {
-                                variant: "text",
-                                icon: detailExpanded(target) ? 'mdi-chevron-up' : 'mdi-chevron-down',
-                                title: detailExpanded(target) ? '收起外挂字幕' : '展开外挂字幕',
-                                onClick: $event => (toggleDetailExpanded(target))
-                              }, null, 8, ["icon", "title", "onClick"]),
                               (aiEnabled.value)
                                 ? (_openBlock(), _createBlock(_component_VBtn, {
                                     key: 2,
@@ -4398,6 +4400,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-4c754840"]]);
+const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-6774b6d4"]]);
 
 export { AppPage as default };

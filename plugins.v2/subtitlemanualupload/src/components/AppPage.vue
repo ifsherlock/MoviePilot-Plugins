@@ -2831,6 +2831,14 @@ defineExpose({
                 hide-details
                 @update:model-value="value => toggleTarget(target.id, value)"
               />
+              <VBtn
+                class="episode-expand-btn"
+                variant="tonal"
+                density="comfortable"
+                :icon="detailExpanded(target) ? 'mdi-chevron-down' : 'mdi-chevron-right'"
+                :title="detailExpanded(target) ? '收起外挂字幕' : '展开外挂字幕'"
+                @click="toggleDetailExpanded(target)"
+              />
               <div class="episode-index">
                 {{ target.media_type === 'tv' ? `E${String(target.episode || 0).padStart(2, '0')}` : 'MOV' }}
               </div>
@@ -2866,12 +2874,6 @@ defineExpose({
                 variant="text"
                 icon="mdi-closed-caption-outline"
                 title="暂无外挂字幕"
-              />
-              <VBtn
-                variant="text"
-                :icon="detailExpanded(target) ? 'mdi-chevron-up' : 'mdi-chevron-down'"
-                :title="detailExpanded(target) ? '收起外挂字幕' : '展开外挂字幕'"
-                @click="toggleDetailExpanded(target)"
               />
               <VBtn
                 v-if="aiEnabled"
@@ -4215,7 +4217,7 @@ defineExpose({
 
 .episode-row {
   display: grid;
-  grid-template-columns: auto 58px minmax(0, 1fr) repeat(6, auto);
+  grid-template-columns: auto auto 58px minmax(0, 1fr) repeat(5, auto);
   gap: 10px;
   align-items: center;
   padding: 10px 12px;
@@ -4226,6 +4228,15 @@ defineExpose({
 
 .episode-row.locked {
   background: rgba(238, 228, 207, 0.68);
+}
+
+.episode-expand-btn {
+  min-width: 34px;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(91, 109, 100, 0.16);
+  background: rgba(232, 237, 240, 0.82);
+  color: #53655f;
 }
 
 .episode-expanded {
@@ -5131,11 +5142,11 @@ defineExpose({
   }
 
   .episode-row {
-    grid-template-columns: auto 48px minmax(0, 1fr);
+    grid-template-columns: auto auto 48px minmax(0, 1fr);
   }
 
   .episode-row > .cc-btn,
-  .episode-row > .v-btn {
+  .episode-row > .v-btn:not(.episode-expand-btn) {
     justify-self: start;
   }
 }
