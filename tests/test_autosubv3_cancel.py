@@ -103,6 +103,13 @@ def make_plugin(module):
     plugin._consumer_thread = None
     plugin._running = True
     plugin._enabled = True
+    plugin._file_size = 0
+    plugin._skip_chinese = False
+    plugin._send_notify = False
+    plugin._enable_asr = True
+    plugin._translate_zh = True
+    plugin._subtitle_output_mode = "bilingual"
+    plugin._event = module.Event()
     return plugin
 
 
@@ -379,6 +386,8 @@ def test_independent_monitor_is_blocked_when_subtitlemanualupload_auto_transfer_
 
     class FakeSubtitleManualUpload:
         _auto_search_on_transfer = True
+        _ai_link_enabled = True
+        _auto_transfer_subtitle_strategy = "online_then_ai_source"
 
         def get_state(self):
             return True
@@ -392,6 +401,32 @@ def test_independent_monitor_is_blocked_when_subtitlemanualupload_auto_transfer_
     assert status["independent_monitor_enabled"] is False
     assert status["independent_monitor_blocked_reason"] == "字幕匹配入库自动处理已启用"
     assert "接管" in status["message"]
+
+
+def test_online_source_only_does_not_block_independent_monitor():
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._enabled = True
+    plugin._running = True
+    plugin._task_queue = queue.Queue()
+    plugin._generation_mode = module.GenerationMode.MONITOR.value
+
+    class FakeSubtitleManualUpload:
+        _auto_search_on_transfer = True
+        _ai_link_enabled = True
+        _auto_transfer_subtitle_strategy = "online_source_only"
+
+        def get_state(self):
+            return True
+
+    module.PluginManager = lambda: types.SimpleNamespace(
+        running_plugins={"SubtitleManualUpload": FakeSubtitleManualUpload()}
+    )
+
+    status = plugin._status_payload()
+
+    assert status["independent_monitor_enabled"] is True
+    assert status["independent_monitor_blocked_reason"] == ""
 
 
 def test_submit_tasks_treats_reuse_source_policy_as_auto(tmp_path):
@@ -491,6 +526,8 @@ def test_restart_reuse_preserves_output_variant_and_forces_generation(tmp_path):
     assert len(result["added"]) == 1
     assert rerun.force_generate is True
     assert rerun.output_variant == "aiasr"
+    assert rerun.source_policy == module.SourcePolicy.ASR.value
+    assert rerun.reuse_output_path == str(tmp_path / "Movie.chi&jp.aiasr.srt")
     assert rerun.overwrite_policy == module.OverwritePolicy.BACKUP_REPLACE.value
 
 
@@ -506,10 +543,57 @@ def test_prepare_output_path_uses_inherited_variant_for_backup_replace(tmp_path)
         module.ResolvedSource.EMBEDDED.value,
         module.OverwritePolicy.BACKUP_REPLACE.value,
         inherited_variant="aimatch",
+        inherited_output_path=str(tmp_path / "Movie.chi&jp.aimatch.srt"),
     )
 
-    assert path == f"{base}.chi&eng.aimatch.srt"
+    assert path == str(tmp_path / "Movie.chi&jp.aimatch.srt")
     assert variant == "aimatch"
+
+
+def test_reuse_backup_replace_writes_original_output_path_even_when_lang_changes(tmp_path):
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    source_sub = tmp_path / "Movie.en.srt"
+    output = tmp_path / "Movie.chi&jp.aiasr.srt"
+    video.write_bytes(b"video")
+    source_sub.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+    output.write_text("old subtitle", encoding="utf-8")
+
+    plugin._AutoSubv3__generate_subtitle = lambda *args, **kwargs: (
+        True,
+        "en",
+        (source_sub, module.ResolvedSource.ASR.value),
+    )
+    plugin._AutoSubv3__translate_zh_subtitle = lambda _lang, _src, dest, **_kwargs: Path(dest).write_text(
+        "new subtitle",
+        encoding="utf-8",
+    )
+    plugin._AutoSubv3__raise_if_task_cancelled = lambda: None
+    plugin.is_video_skipped = lambda _path: False
+    plugin.is_video_skip_chinese = lambda _path: False
+    plugin._current_processing_task = module.TaskItem(
+        task_id="rerun",
+        video_file=str(video),
+        source=module.TaskSource.MANUAL,
+        add_time=module.datetime.now(),
+    )
+
+    status = plugin._AutoSubv3__process_autosub(
+        str(video),
+        force_generate=True,
+        source_policy=module.SourcePolicy.ASR.value,
+        overwrite_policy=module.OverwritePolicy.BACKUP_REPLACE.value,
+        output_variant="aiasr",
+        reuse_output_path=str(output),
+        reuse_source_lang="ja",
+    )
+
+    assert status == module.TaskStatus.COMPLETED
+    assert output.read_text(encoding="utf-8") == "new subtitle"
+    assert Path(f"{output}.mp-ai-bk").read_text(encoding="utf-8") == "old subtitle"
+    assert plugin._current_processing_task.output_path == str(output)
+    assert plugin._current_processing_task.source_lang == "en"
 
 
 def test_restart_reports_missing_matched_subtitle_source(tmp_path):

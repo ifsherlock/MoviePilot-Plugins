@@ -598,9 +598,13 @@ def test_ai_restart_forwards_selected_task_ids_without_using_latest(tmp_path):
     assert result["added"] == [{"task_id": "old-match"}]
 
 
-def test_api_ai_restart_accepts_task_ids_without_target_ids():
+def test_api_ai_restart_accepts_task_ids_without_target_ids(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    video.write_text("video", encoding="utf-8")
+    entry = {"id": "t1", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}
+    plugin._remember_targets([entry])
     captured = {}
 
     def fake_restart(entries, **kwargs):
@@ -613,8 +617,80 @@ def test_api_ai_restart_accepts_task_ids_without_target_ids():
     response = asyncio.run(plugin.api_ai_restart(FakeRequest({"task_ids": ["old-match"]})))
 
     assert response["success"] is True
-    assert captured["entries"] == []
+    assert captured["entries"] == [entry]
     assert captured["kwargs"]["task_ids"] == ["old-match"]
+
+
+def test_ai_restart_filters_task_ids_outside_current_target(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video1 = tmp_path / "Episode1.mkv"
+    video2 = tmp_path / "Episode2.mkv"
+    video1.write_text("video", encoding="utf-8")
+    video2.write_text("video", encoding="utf-8")
+    entry1 = {"id": "e1", "path": str(video1), "basename": "Episode1", "target_label": "E01", "storage": "local"}
+    entry2 = {"id": "e2", "path": str(video2), "basename": "Episode2", "target_label": "E02", "storage": "local"}
+    captured = {}
+
+    class FakeAutoSub:
+        def _status_payload(self):
+            return {"available": True, "enabled": True}
+
+        def tasks_payload(self, **kwargs):
+            return {
+                "status": {"available": True},
+                "tasks": [
+                    {"task_id": "task-e1", "video_file": str(video1), "status": "completed", "active": False},
+                    {"task_id": "task-e2", "video_file": str(video2), "status": "completed", "active": False},
+                ],
+            }
+
+        def restart_tasks(self, **kwargs):
+            captured.update(kwargs)
+            return {"added": [{"task_id": "task-e1"}], "skipped": [], "failed": []}
+
+    plugin._ai_link_enabled = True
+    plugin._autosub_plugin = lambda: (FakeAutoSub(), "")
+
+    result = plugin._restart_autosub_for_entries([entry1], task_ids=["task-e1", "task-e2"])
+
+    assert captured["task_ids"] == ["task-e1"]
+    assert result["skipped"][0]["task_id"] == "task-e2"
+    assert "不属于当前可操作目标" in result["skipped"][0]["reason"]
+
+
+def test_ai_restart_task_ids_for_locked_target_are_skipped(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Locked.mkv"
+    video.write_text("video", encoding="utf-8")
+    locked_entry = {"id": "locked", "path": str(video), "basename": "Locked", "target_label": "Locked", "storage": "local"}
+    plugin._remember_targets([locked_entry])
+    called = {"restart": False}
+
+    class FakeAutoSub:
+        def _status_payload(self):
+            return {"available": True, "enabled": True}
+
+        def tasks_payload(self, **kwargs):
+            return {"status": {"available": True}, "tasks": []}
+
+        def restart_tasks(self, **kwargs):
+            called["restart"] = True
+            return {"added": [], "skipped": [], "failed": []}
+
+    plugin._ai_link_enabled = True
+    plugin._autosub_plugin = lambda: (FakeAutoSub(), "")
+
+    response = asyncio.run(
+        plugin.api_ai_restart(
+            FakeRequest({"task_ids": ["locked-task"], "locked_target_ids": ["locked"]})
+        )
+    )
+
+    assert response["success"] is True
+    assert called["restart"] is False
+    assert response["data"]["skipped"][0]["task_id"] == "locked-task"
 
 
 def test_ai_restart_rejects_external_subtitle_outside_current_target(tmp_path):
@@ -633,6 +709,16 @@ def test_ai_restart_rejects_external_subtitle_outside_current_target(tmp_path):
         assert "当前集" in exc.detail
     else:
         raise AssertionError("should reject unrelated subtitle path")
+
+
+def test_ai_tasks_empty_request_includes_tasks_by_target():
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+
+    response = asyncio.run(plugin.api_ai_tasks(FakeRequest({})))
+
+    assert response["success"] is True
+    assert response["data"]["tasks_by_target"] == {}
 
 
 def test_delete_single_subtitle_only_allows_target_subtitles(tmp_path):
@@ -1116,6 +1202,28 @@ def test_online_ai_submit_endpoint_downloads_fixes_and_does_not_create_preview(t
     assert data["timeline_tasks"]["task_by_target"]["m1"]["status"] == "completed"
     assert Path(captured["overrides"][entry["path"]]["subtitle_path"]).exists()
     assert captured["submit_kwargs"]["source_policy"] == "matched_external"
+
+
+def test_online_ai_submit_stale_target_returns_400_without_name_error():
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+
+    try:
+        asyncio.run(
+            plugin.api_online_ai_submit(
+                FakeRequest(
+                    {
+                        "target_ids": ["missing"],
+                        "results": [{"provider": "opensubtitles", "result_id": "r1"}],
+                    }
+                )
+            )
+        )
+    except module.HTTPException as exc:
+        assert exc.status_code == 400
+        assert "目标视频已失效" in exc.detail
+    else:
+        raise AssertionError("stale target should be rejected")
 
 
 def test_online_ai_submit_can_allow_risky_offset_after_manual_confirm(tmp_path):

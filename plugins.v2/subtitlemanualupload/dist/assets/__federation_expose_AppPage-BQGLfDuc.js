@@ -486,6 +486,7 @@ const selectedTargets = computed(() => {
   const picked = new Set(selectedTargetIds.value || []);
   return visibleTargets.value.filter(item => picked.has(item.id))
 });
+const targetById = computed(() => new Map(visibleTargets.value.map(target => [target.id, target])));
 const unlockedVisibleTargets = computed(() => visibleTargets.value.filter(item => !isLocked(item.id) && item.writable !== false));
 const uploadTargets = computed(() => uploadScopeTargets.value.filter(item => !isLocked(item.id) && item.writable !== false));
 const batchUploadTargets = computed(() => {
@@ -1455,6 +1456,17 @@ function isAiTaskRestartable(task) {
   return Boolean(task && !isAiTaskActive(task) && ['completed', 'failed', 'cancelled', 'ignored', 'no_audio'].includes(task.status))
 }
 
+function targetForAiTask(task) {
+  return targetById.value.get(task?.target_id) || null
+}
+
+function isAiTaskAllowed(task) {
+  if (!isAiTaskRestartable(task)) return false
+  const target = targetForAiTask(task);
+  if (!target) return false
+  return !isLocked(target.id) && target.writable !== false && !isStreamTarget(target)
+}
+
 function aiTaskColor(target) {
   const task = aiTaskForTarget(target);
   if (!aiAvailable.value) return undefined
@@ -1509,7 +1521,6 @@ function timelineTaskText(task) {
 
 function openAiTaskDialog(target = null) {
   aiTaskDialogTarget.value = target;
-  aiRestartSourcePolicy.value = target && aiTaskForTarget(target) ? 'reuse' : 'auto';
   aiRestartSubtitlePath.value = '';
   aiSelectedTaskIds.value = [];
   aiTaskDialog.value = true;
@@ -1517,7 +1528,15 @@ function openAiTaskDialog(target = null) {
     ? [target]
     : (aiTaskScopeTargets.value.length ? aiTaskScopeTargets.value : visibleTargets.value);
   aiTaskScopeTargets.value = scopeTargets;
-  loadAiTasks({ silent: true, targets: scopeTargets });
+  const existingTasks = target
+    ? (aiTaskForTarget(target) ? [aiTaskForTarget(target)] : [])
+    : (aiTaskData.value.tasks || []).filter(task => scopeTargets.some(item => item.id === task.target_id));
+  aiRestartSourcePolicy.value = existingTasks.length ? 'reuse' : 'auto';
+  loadAiTasks({ silent: true, targets: scopeTargets }).then(() => {
+    if (aiTaskDialog.value) {
+      aiRestartSourcePolicy.value = aiDialogHasExistingTasks.value ? 'reuse' : 'auto';
+    }
+  });
 }
 
 async function focusAiStatusStrip() {
@@ -1614,12 +1633,14 @@ function cancelDialogAiTasks() {
 }
 
 async function regenerateDialogAiTasks() {
-  const selectedTaskIds = aiDialogSelectedRestartableTasks.value.map(task => task.task_id);
+  const selectedTaskIds = aiDialogSelectedRestartableTasks.value
+    .filter(isAiTaskAllowed)
+    .map(task => task.task_id);
   return regenerateAiTasksByIds(selectedTaskIds)
 }
 
 async function regenerateSingleAiTask(task) {
-  if (!isAiTaskRestartable(task)) return
+  if (!isAiTaskAllowed(task)) return
   await regenerateAiTasksByIds([task.task_id]);
 }
 
@@ -1638,7 +1659,7 @@ async function regenerateAiTasksByIds(taskIds = []) {
   }
   const hasExistingTasks = aiDialogHasExistingTasks.value;
   if (hasExistingTasks && !taskIds.length) {
-    message.value = '请先勾选要重新生成的 AI 历史任务';
+    message.value = '请先勾选可重新生成的 AI 历史任务；锁定、不可写、STRM 或正在处理的任务不能重跑';
     return
   }
   const sourcePolicy = !hasExistingTasks && aiRestartSourcePolicy.value === 'reuse'
@@ -3755,7 +3776,7 @@ return (_ctx, _cache) => {
                             value: task.task_id,
                             density: "compact",
                             "hide-details": "",
-                            disabled: !isAiTaskRestartable(task)
+                            disabled: !isAiTaskAllowed(task)
                           }, null, 8, ["modelValue", "value", "disabled"]),
                           _createElementVNode("div", _hoisted_80, [
                             _createVNode(_component_VIcon, {
@@ -3785,7 +3806,7 @@ return (_ctx, _cache) => {
                               size: "small",
                               variant: "tonal",
                               color: "warning",
-                              disabled: !isAiTaskRestartable(task),
+                              disabled: !isAiTaskAllowed(task),
                               loading: aiSubmitting.value,
                               onClick: $event => (regenerateSingleAiTask(task))
                             }, {
@@ -4563,6 +4584,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-e8a5d23b"]]);
+const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-f53a1329"]]);
 
 export { AppPage as default };

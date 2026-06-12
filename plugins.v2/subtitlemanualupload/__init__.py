@@ -3195,6 +3195,15 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             )
         return result
 
+    def _cached_unlocked_targets(self, locked_ids: set) -> List[Dict[str, Any]]:
+        entries: List[Dict[str, Any]] = []
+        for target_id, entry in list((self._entry_map or OrderedDict()).items()):
+            if self._normalize_text(target_id) in locked_ids:
+                continue
+            if self._entry_path_is_valid(entry):
+                entries.append(entry)
+        return entries
+
     @classmethod
     def _build_destination_name(
         cls,
@@ -5160,8 +5169,8 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             if locked_skipped:
                 raise HTTPException(status_code=423, detail="选中的目标均已锁定，不能提交在线字幕 AI 翻译")
             raise HTTPException(status_code=400, detail="请先选择要生成 AI 字幕的本地视频")
-        target_entries = list(self._resolve_targets(target_ids).values()) if target_ids else []
-        if not target_entries and not task_ids:
+        target_entries = list(self._resolve_targets(target_ids).values())
+        if not target_entries:
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
         selected_results = self._results_from_body(body)
         if not selected_results:
@@ -5567,7 +5576,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     message=f"已跳过 {len(locked_skipped)} 个锁定目标，没有重新生成 AI 字幕任务",
                 )
             raise HTTPException(status_code=400, detail="请先选择要重新生成 AI 字幕的本地视频")
-        target_entries = list(self._resolve_targets(target_ids).values()) if target_ids else []
+        target_entries = list(self._resolve_targets(target_ids).values()) if target_ids else self._cached_unlocked_targets(locked_ids)
         if not target_entries and not task_ids:
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
         result = self._restart_autosub_for_entries(
@@ -5645,6 +5654,13 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             )
         tasks_data = self._autosub_tasks_for_entries(target_entries)
         requested_task_ids = [self._normalize_text(item) for item in (task_ids or []) if self._normalize_text(item)]
+        ownership_skipped: List[Dict[str, str]] = []
+        if requested_task_ids:
+            requested_task_ids, ownership_skipped = self._filter_restart_task_ids_by_targets(
+                requested_task_ids,
+                tasks_data,
+                target_entries,
+            )
         restart_task_ids = requested_task_ids or [
             task.get("task_id")
             for task in (tasks_data.get("tasks") or [])
@@ -5653,7 +5669,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         if not restart_task_ids:
             return {
                 "added": [],
-                "skipped": [{"reason": "当前范围没有可重新生成的已完成/失败/取消 AI 任务"}],
+                "skipped": ownership_skipped or [{"reason": "当前范围没有可重新生成的已完成/失败/取消 AI 任务"}],
                 "failed": [],
                 "targets": [self._target_from_entry(entry) for entry in target_entries],
                 "tasks": tasks_data,
@@ -5680,11 +5696,44 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         return {
             **result,
             "added": result.get("added") or [],
-            "skipped": result.get("skipped") or [],
+            "skipped": [*ownership_skipped, *(result.get("skipped") or [])],
             "failed": result.get("failed") or [],
             "targets": [self._target_from_entry(entry) for entry in target_entries],
             "tasks": refreshed_tasks,
         }
+
+    def _filter_restart_task_ids_by_targets(
+        self,
+        task_ids: List[str],
+        tasks_data: Dict[str, Any],
+        target_entries: List[Dict[str, Any]],
+    ) -> Tuple[List[str], List[Dict[str, str]]]:
+        allowed_paths = {
+            self._normalize_text(entry.get("path"))
+            for entry in target_entries
+            if self._normalize_text(entry.get("path"))
+        }
+        task_by_id = {
+            self._normalize_text(task.get("task_id")): task
+            for task in (tasks_data.get("tasks") or [])
+            if self._normalize_text(task.get("task_id"))
+        }
+        allowed: List[str] = []
+        skipped: List[Dict[str, str]] = []
+        for task_id in task_ids:
+            task = task_by_id.get(task_id)
+            if not task:
+                skipped.append({"task_id": task_id, "reason": "任务不属于当前可操作目标或目标已锁定"})
+                continue
+            video_file = self._normalize_text(task.get("video_file"))
+            if allowed_paths and video_file not in allowed_paths:
+                skipped.append({"task_id": task_id, "path": video_file, "reason": "任务不属于当前可操作目标"})
+                continue
+            if task.get("active") or task.get("status") in {"pending", "in_progress"}:
+                skipped.append({"task_id": task_id, "path": video_file, "reason": "任务正在处理，不能重新生成"})
+                continue
+            allowed.append(task_id)
+        return allowed, skipped
 
     def _selected_external_subtitle_override_for_entries(
         self,
@@ -5742,6 +5791,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     "summary": self._autosub_task_summary([]),
                     "tasks": [],
                     "task_by_target": {},
+                    "tasks_by_target": {},
                 }
             )
         target_entries = list(self._resolve_targets(target_ids).values())

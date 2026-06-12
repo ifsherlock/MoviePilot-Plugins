@@ -115,6 +115,8 @@ class TaskItem:
     source_lang: str = ""
     output_path: str = ""
     output_variant: str = ""
+    reuse_output_path: str = ""
+    reuse_source_lang: str = ""
     overwrite_policy: str = OverwritePolicy.SKIP.value
     rerun_of: str = ""
     status: TaskStatus = TaskStatus.PENDING
@@ -305,6 +307,8 @@ class AutoSubv3(_PluginBase):
                     source_lang=task_dict.get("source_lang", ""),
                     output_path=task_dict.get("output_path", ""),
                     output_variant=task_dict.get("output_variant", ""),
+                    reuse_output_path=task_dict.get("reuse_output_path", ""),
+                    reuse_source_lang=task_dict.get("reuse_source_lang", ""),
                     overwrite_policy=task_dict.get("overwrite_policy") or OverwritePolicy.SKIP.value,
                     rerun_of=task_dict.get("rerun_of", ""),
                     status=TaskStatus(task_dict["status"]),
@@ -335,6 +339,8 @@ class AutoSubv3(_PluginBase):
             "source_lang": task.source_lang or "",
             "output_path": task.output_path or "",
             "output_variant": task.output_variant or "",
+            "reuse_output_path": task.reuse_output_path or "",
+            "reuse_source_lang": task.reuse_source_lang or "",
             "overwrite_policy": task.overwrite_policy or OverwritePolicy.SKIP.value,
             "rerun_of": task.rerun_of or "",
             "status": task.status.value,
@@ -442,6 +448,15 @@ class AutoSubv3(_PluginBase):
         }.get(status, "")
 
     @staticmethod
+    def _source_policy_for_resolved_source(resolved_source: Any) -> str:
+        return {
+            ResolvedSource.ASR.value: SourcePolicy.ASR.value,
+            ResolvedSource.EMBEDDED.value: SourcePolicy.EMBEDDED.value,
+            ResolvedSource.LOCAL_EXTERNAL.value: SourcePolicy.LOCAL_EXTERNAL.value,
+            ResolvedSource.MATCHED_EXTERNAL.value: SourcePolicy.MATCHED_EXTERNAL.value,
+        }.get(str(resolved_source or ""), "")
+
+    @staticmethod
     def _subtitlemanualupload_auto_transfer_enabled() -> bool:
         if PluginManager is None:
             return False
@@ -461,10 +476,12 @@ class AutoSubv3(_PluginBase):
         try:
             enabled = bool(plugin.get_state()) if hasattr(plugin, "get_state") else bool(getattr(plugin, "_enabled", False))
             auto_transfer = bool(getattr(plugin, "_auto_search_on_transfer", False))
+            ai_link_enabled = bool(getattr(plugin, "_ai_link_enabled", True))
+            strategy = str(getattr(plugin, "_auto_transfer_subtitle_strategy", "") or "").strip()
         except Exception as exc:
             logger.warning("[AutoSubv3] 判断字幕匹配入库自动处理状态失败: %s", exc)
             return False
-        return enabled and auto_transfer
+        return enabled and auto_transfer and ai_link_enabled and strategy in {"online_then_ai_source", "ai_source_only"}
 
     def _queue_positions(self) -> Dict[str, int]:
         positions: Dict[str, int] = {}
@@ -521,6 +538,8 @@ class AutoSubv3(_PluginBase):
             "output_path": task.output_path or "",
             "output_name": os.path.basename(task.output_path or ""),
             "output_variant": task.output_variant or "",
+            "reuse_output_path": task.reuse_output_path or "",
+            "reuse_source_lang": task.reuse_source_lang or "",
             "overwrite_policy": task.overwrite_policy or OverwritePolicy.SKIP.value,
             "rerun_of": task.rerun_of or "",
             "status": status.value,
@@ -886,10 +905,14 @@ class AutoSubv3(_PluginBase):
             if task.status not in restartable_statuses:
                 skipped.append({"task_id": task_id, "path": task.video_file, "reason": f"任务状态 {self._status_label(task.status)} 不能重新生成"})
                 continue
+            reuse_requested = requested_policy == SourcePolicy.REUSE.value
             next_source_subtitle = task.source_asset_path or task.source_subtitle_path
-            next_policy = task.source_policy if requested_policy == SourcePolicy.REUSE.value else requested_policy
+            if reuse_requested:
+                next_policy = self._source_policy_for_resolved_source(task.resolved_source) or task.source_policy
+            else:
+                next_policy = requested_policy
             next_policy = self._normalize_source_policy(next_policy)
-            if requested_policy == SourcePolicy.REUSE.value and next_source_subtitle and next_policy == SourcePolicy.AUTO.value:
+            if reuse_requested and next_source_subtitle and next_policy == SourcePolicy.AUTO.value:
                 next_policy = SourcePolicy.MATCHED_EXTERNAL.value
             if next_policy == SourcePolicy.MATCHED_EXTERNAL.value:
                 if not next_source_subtitle or not os.path.isfile(next_source_subtitle):
@@ -902,7 +925,9 @@ class AutoSubv3(_PluginBase):
             elif next_policy != SourcePolicy.MATCHED_EXTERNAL.value:
                 next_source_subtitle = ""
             force_generate = True
-            reuse_output_variant = task.output_variant if requested_policy == SourcePolicy.REUSE.value else ""
+            reuse_output_variant = task.output_variant if reuse_requested else ""
+            reuse_output_path = task.output_path if reuse_requested and requested_overwrite == OverwritePolicy.BACKUP_REPLACE.value else ""
+            reuse_source_lang = task.source_lang or task.source_subtitle_lang or ""
             ok = self.add_task(
                 task.video_file,
                 task.source if isinstance(task.source, TaskSource) else TaskSource.MANUAL,
@@ -915,6 +940,8 @@ class AutoSubv3(_PluginBase):
                 rerun_of=task.task_id,
                 source_name=os.path.basename(next_source_subtitle or ""),
                 output_variant=reuse_output_variant,
+                reuse_output_path=reuse_output_path,
+                reuse_source_lang=reuse_source_lang if reuse_requested else "",
             )
             if ok:
                 added.append({"task_id": task_id, "path": task.video_file, "source_policy": next_policy})
@@ -1053,6 +1080,8 @@ class AutoSubv3(_PluginBase):
         rerun_of: str = "",
         source_name: str = "",
         output_variant: str = "",
+        reuse_output_path: str = "",
+        reuse_source_lang: str = "",
     ):
         """
         添加新任务到队列和任务列表中，若任务已存在则跳过。
@@ -1077,6 +1106,8 @@ class AutoSubv3(_PluginBase):
             overwrite_policy=self._normalize_overwrite_policy(overwrite_policy),
             rerun_of=rerun_of,
             output_variant=self._normalize_text(output_variant),
+            reuse_output_path=self._normalize_text(reuse_output_path),
+            reuse_source_lang=self._normalize_text(reuse_source_lang),
             add_time=datetime.now()
         )
         if source_subtitle_path:
@@ -1155,6 +1186,8 @@ class AutoSubv3(_PluginBase):
                     source_policy=task.source_policy,
                     overwrite_policy=task.overwrite_policy,
                     output_variant=task.output_variant,
+                    reuse_output_path=task.reuse_output_path,
+                    reuse_source_lang=task.reuse_source_lang,
                 )
                 if task.cancel_requested or task.status == TaskStatus.CANCELLED:
                     task.status = TaskStatus.CANCELLED
@@ -1371,9 +1404,13 @@ class AutoSubv3(_PluginBase):
         resolved_source: str,
         overwrite_policy: str,
         inherited_variant: str = "",
+        inherited_output_path: str = "",
     ) -> Tuple[str, str]:
         policy = self._normalize_overwrite_policy(overwrite_policy)
         variant = self._normalize_text(inherited_variant)
+        inherited_path = self._normalize_text(inherited_output_path)
+        if inherited_path and policy == OverwritePolicy.BACKUP_REPLACE.value:
+            return inherited_path, variant or "ai"
         if not variant and policy == OverwritePolicy.NEW_VARIANT.value:
             variant = self._variant_for_source(resolved_source)
         if not variant:
@@ -1417,6 +1454,8 @@ class AutoSubv3(_PluginBase):
         source_policy: str = SourcePolicy.AUTO.value,
         overwrite_policy: str = OverwritePolicy.SKIP.value,
         output_variant: str = "",
+        reuse_output_path: str = "",
+        reuse_source_lang: str = "",
     ) -> TaskStatus:
         if not video_file:
             logger.error(f"[Step 0] video_file 为空")
@@ -1471,6 +1510,13 @@ class AutoSubv3(_PluginBase):
             if self._current_processing_task:
                 self._current_processing_task.resolved_source = resolved_source or ""
                 self._current_processing_task.source_lang = lang or ""
+                if reuse_source_lang and lang and self._normalize_text(reuse_source_lang).lower() != self._normalize_text(lang).lower():
+                    logger.info(
+                        "重跑沿用原输出路径，检测语言发生变化 old=%s new=%s output=%s",
+                        reuse_source_lang,
+                        lang,
+                        reuse_output_path or "-",
+                    )
             self._raise_if_task_cancelled()
             if not ret:
                 # 检查是否是无声音跳过（刚记录的）
@@ -1501,6 +1547,7 @@ class AutoSubv3(_PluginBase):
                     resolved_source,
                     overwrite_policy,
                     inherited_variant=output_variant,
+                    inherited_output_path=reuse_output_path,
                 )
                 normalized_overwrite = self._normalize_overwrite_policy(overwrite_policy)
                 if os.path.exists(translated_subtitle):
