@@ -566,6 +566,11 @@ function historySelectedCount(item) {
   return historyDeletableTargets(item).filter(target => selected.has(target.id)).length
 }
 
+function allHistoryTargetsSelected(item) {
+  const targets = historyDeletableTargets(item)
+  return targets.length > 0 && historySelectedCount(item) === targets.length
+}
+
 function setHistorySelection(item, ids) {
   const itemId = item?.id
   if (!itemId) return
@@ -586,15 +591,22 @@ function toggleHistoryTarget(item, targetId, checked) {
   setHistorySelection(item, Array.from(selected))
 }
 
+function toggleHistoryItemTargets(item) {
+  if (allHistoryTargetsSelected(item)) {
+    setHistorySelection(item, [])
+    return
+  }
+  setHistorySelection(item, historyDeletableTargets(item).map(target => target.id))
+}
+
 function historySeasonGroups(item) {
   const targets = historyDeletableTargets(item)
   if (!targets.length) return []
   if (item?.media_type !== 'tv') {
     return [
       {
-        key: 'all',
-        season: 'all',
-        label: '全部',
+        key: 'movie',
+        direct: true,
         targets,
         subtitleCount: targets.reduce((sum, target) => sum + (target.subtitles || []).length, 0),
       },
@@ -616,17 +628,7 @@ function historySeasonGroups(item) {
     group.targets.push(target)
     group.subtitleCount += (target.subtitles || []).length
   })
-  const seasonGroups = Array.from(groups.values()).sort((a, b) => a.season - b.season)
-  return [
-    {
-      key: 'all',
-      season: 'all',
-      label: '全部季',
-      targets,
-      subtitleCount: targets.reduce((sum, target) => sum + (target.subtitles || []).length, 0),
-    },
-    ...seasonGroups,
-  ]
+  return Array.from(groups.values()).sort((a, b) => a.season - b.season)
 }
 
 function historySeasonSelectedCount(item, group) {
@@ -2507,6 +2509,15 @@ defineExpose({
               <div class="history-bulk-actions">
                 <VBtn
                   size="small"
+                  variant="tonal"
+                  prepend-icon="mdi-checkbox-multiple-marked-outline"
+                  :disabled="!historyDeletableTargets(item).length || clearing"
+                  @click.stop="toggleHistoryItemTargets(item)"
+                >
+                  {{ allHistoryTargetsSelected(item) ? '取消全选' : '全选' }}
+                </VBtn>
+                <VBtn
+                  size="small"
                   color="error"
                   variant="tonal"
                   prepend-icon="mdi-delete-sweep"
@@ -2535,7 +2546,7 @@ defineExpose({
                 :key="historySeasonKey(item, season)"
                 class="history-season-node"
               >
-                <div class="history-season-row">
+                <div v-if="!season.direct" class="history-season-row">
                   <VCheckbox
                     :model-value="allHistorySeasonTargetsSelected(item, season)"
                     :indeterminate="historySeasonPartiallySelected(item, season)"
@@ -2556,7 +2567,11 @@ defineExpose({
                     <em v-if="historySeasonSelectedCount(item, season)">已选 {{ historySeasonSelectedCount(item, season) }}</em>
                   </button>
                 </div>
-                <div v-if="historySeasonExpanded(item, season)" class="history-episode-list">
+                <div
+                  v-if="season.direct || historySeasonExpanded(item, season)"
+                  class="history-episode-list"
+                  :class="{ 'direct-targets': season.direct }"
+                >
                   <div
                     v-for="target in season.targets"
                     :key="`${historySeasonKey(item, season)}-${target.id}`"
@@ -3989,6 +4004,10 @@ defineExpose({
   display: grid;
   gap: 6px;
   padding: 0 10px 10px 42px;
+}
+
+.history-episode-list.direct-targets {
+  padding: 8px 10px 10px;
 }
 
 .history-episode-node {

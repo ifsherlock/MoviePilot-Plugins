@@ -76,177 +76,176 @@ const _hoisted_26 = { class: "history-bulk-toolbar" };
 const _hoisted_27 = { class: "history-bulk-copy" };
 const _hoisted_28 = { class: "history-bulk-actions" };
 const _hoisted_29 = { class: "history-season-tree" };
-const _hoisted_30 = { class: "history-season-row" };
+const _hoisted_30 = {
+  key: 0,
+  class: "history-season-row"
+};
 const _hoisted_31 = ["onClick"];
 const _hoisted_32 = { key: 0 };
-const _hoisted_33 = {
-  key: 0,
-  class: "history-episode-list"
-};
-const _hoisted_34 = { class: "history-episode-row" };
-const _hoisted_35 = ["onClick"];
-const _hoisted_36 = { class: "episode-title" };
-const _hoisted_37 = {
+const _hoisted_33 = { class: "history-episode-row" };
+const _hoisted_34 = ["onClick"];
+const _hoisted_35 = { class: "episode-title" };
+const _hoisted_36 = {
   key: 0,
   class: "history-subtitle-children"
 };
-const _hoisted_38 = { class: "episode-path" };
-const _hoisted_39 = {
+const _hoisted_37 = { class: "episode-path" };
+const _hoisted_38 = {
   key: 0,
   class: "history-status compact-status"
 };
-const _hoisted_40 = { class: "subtitle-history-list compact-subtitles" };
-const _hoisted_41 = { class: "subtitle-history-copy" };
-const _hoisted_42 = { class: "subtitle-history-actions" };
-const _hoisted_43 = {
+const _hoisted_39 = { class: "subtitle-history-list compact-subtitles" };
+const _hoisted_40 = { class: "subtitle-history-copy" };
+const _hoisted_41 = { class: "subtitle-history-actions" };
+const _hoisted_42 = {
   key: 0,
   class: "empty-state compact-empty"
 };
-const _hoisted_44 = {
+const _hoisted_43 = {
   key: 5,
   class: "pager-row"
 };
-const _hoisted_45 = {
+const _hoisted_44 = {
   key: 6,
   class: "empty-state"
 };
-const _hoisted_46 = {
+const _hoisted_45 = {
   key: 5,
   class: "episode-stage"
 };
-const _hoisted_47 = { class: "detail-head" };
-const _hoisted_48 = { class: "selected-media" };
-const _hoisted_49 = { class: "mini-poster" };
-const _hoisted_50 = ["src", "alt"];
-const _hoisted_51 = { key: 1 };
-const _hoisted_52 = { class: "section-kicker" };
-const _hoisted_53 = {
+const _hoisted_46 = { class: "detail-head" };
+const _hoisted_47 = { class: "selected-media" };
+const _hoisted_48 = { class: "mini-poster" };
+const _hoisted_49 = ["src", "alt"];
+const _hoisted_50 = { key: 1 };
+const _hoisted_51 = { class: "section-kicker" };
+const _hoisted_52 = {
   key: 0,
   class: "season-strip"
 };
-const _hoisted_54 = ["onClick"];
-const _hoisted_55 = { class: "ai-status-orb" };
-const _hoisted_56 = { class: "match-panel" };
-const _hoisted_57 = { class: "toolbar-row" };
-const _hoisted_58 = {
+const _hoisted_53 = ["onClick"];
+const _hoisted_54 = { class: "ai-status-orb" };
+const _hoisted_55 = { class: "match-panel" };
+const _hoisted_56 = { class: "toolbar-row" };
+const _hoisted_57 = {
   key: 0,
   class: "episode-list"
 };
-const _hoisted_59 = { class: "episode-index" };
-const _hoisted_60 = { class: "episode-copy" };
-const _hoisted_61 = { class: "episode-title" };
-const _hoisted_62 = { class: "episode-path" };
-const _hoisted_63 = {
+const _hoisted_58 = { class: "episode-index" };
+const _hoisted_59 = { class: "episode-copy" };
+const _hoisted_60 = { class: "episode-title" };
+const _hoisted_61 = { class: "episode-path" };
+const _hoisted_62 = {
   key: 3,
   class: "episode-expanded"
 };
-const _hoisted_64 = { class: "history-status compact-status" };
-const _hoisted_65 = { key: 0 };
-const _hoisted_66 = { key: 1 };
-const _hoisted_67 = {
+const _hoisted_63 = { class: "history-status compact-status" };
+const _hoisted_64 = { key: 0 };
+const _hoisted_65 = { key: 1 };
+const _hoisted_66 = {
   key: 0,
   class: "subtitle-history-list compact-subtitles"
 };
-const _hoisted_68 = { class: "subtitle-history-copy" };
-const _hoisted_69 = { class: "subtitle-history-actions" };
-const _hoisted_70 = {
+const _hoisted_67 = { class: "subtitle-history-copy" };
+const _hoisted_68 = { class: "subtitle-history-actions" };
+const _hoisted_69 = {
   key: 1,
   class: "empty-state compact-empty"
 };
-const _hoisted_71 = {
+const _hoisted_70 = {
   key: 1,
   class: "empty-state"
 };
-const _hoisted_72 = {
+const _hoisted_71 = {
   key: 2,
   class: "result-panel"
 };
-const _hoisted_73 = {
+const _hoisted_72 = {
   key: 0,
   class: "timeline-meta-list"
 };
-const _hoisted_74 = { class: "online-title-actions" };
-const _hoisted_75 = { class: "auto-queue-rates" };
-const _hoisted_76 = {
+const _hoisted_73 = { class: "online-title-actions" };
+const _hoisted_74 = { class: "auto-queue-rates" };
+const _hoisted_75 = {
   key: 0,
   class: "auto-queue-list"
 };
-const _hoisted_77 = {
+const _hoisted_76 = {
   key: 1,
   class: "empty-state compact-empty"
 };
-const _hoisted_78 = { class: "online-title-actions" };
-const _hoisted_79 = {
+const _hoisted_77 = { class: "online-title-actions" };
+const _hoisted_78 = {
   key: 1,
   class: "ai-task-list"
 };
-const _hoisted_80 = { class: "ai-task-badge" };
-const _hoisted_81 = { class: "ai-task-main" };
-const _hoisted_82 = { class: "ai-task-time" };
-const _hoisted_83 = {
+const _hoisted_79 = { class: "ai-task-badge" };
+const _hoisted_80 = { class: "ai-task-main" };
+const _hoisted_81 = { class: "ai-task-time" };
+const _hoisted_82 = {
   key: 2,
   class: "empty-state"
 };
-const _hoisted_84 = { class: "online-title-actions" };
-const _hoisted_85 = { class: "online-message-summary-content" };
-const _hoisted_86 = { class: "online-layout" };
-const _hoisted_87 = { class: "online-results-panel" };
-const _hoisted_88 = { class: "online-panel-head" };
-const _hoisted_89 = {
+const _hoisted_83 = { class: "online-title-actions" };
+const _hoisted_84 = { class: "online-message-summary-content" };
+const _hoisted_85 = { class: "online-layout" };
+const _hoisted_86 = { class: "online-results-panel" };
+const _hoisted_87 = { class: "online-panel-head" };
+const _hoisted_88 = {
   key: 2,
   class: "online-provider-progress"
 };
-const _hoisted_90 = {
+const _hoisted_89 = {
   key: 3,
   class: "online-loading"
 };
-const _hoisted_91 = {
+const _hoisted_90 = {
   key: 4,
   class: "online-result-list"
 };
-const _hoisted_92 = { class: "online-result-main" };
-const _hoisted_93 = { class: "online-result-title" };
-const _hoisted_94 = { class: "online-result-meta" };
-const _hoisted_95 = {
+const _hoisted_91 = { class: "online-result-main" };
+const _hoisted_92 = { class: "online-result-title" };
+const _hoisted_93 = { class: "online-result-meta" };
+const _hoisted_94 = {
   key: 0,
   class: "online-manual-badge"
 };
-const _hoisted_96 = { key: 0 };
-const _hoisted_97 = {
+const _hoisted_95 = { key: 0 };
+const _hoisted_96 = {
   key: 1,
   class: "online-match-detail"
 };
-const _hoisted_98 = ["href"];
-const _hoisted_99 = {
+const _hoisted_97 = ["href"];
+const _hoisted_98 = {
   key: 5,
   class: "empty-state"
 };
-const _hoisted_100 = { class: "manual-links-panel" };
-const _hoisted_101 = { class: "manual-provider-head" };
-const _hoisted_102 = { class: "manual-keywords" };
-const _hoisted_103 = ["href"];
-const _hoisted_104 = {
+const _hoisted_99 = { class: "manual-links-panel" };
+const _hoisted_100 = { class: "manual-provider-head" };
+const _hoisted_101 = { class: "manual-keywords" };
+const _hoisted_102 = ["href"];
+const _hoisted_103 = {
   key: 1,
   class: "support-row"
 };
-const _hoisted_105 = {
+const _hoisted_104 = {
   key: 2,
   class: "file-list"
 };
-const _hoisted_106 = {
+const _hoisted_105 = {
   key: 3,
   class: "preview-list"
 };
-const _hoisted_107 = { class: "preview-head" };
-const _hoisted_108 = { class: "batch-language" };
-const _hoisted_109 = { class: "subtitle-source" };
-const _hoisted_110 = { class: "output-name" };
-const _hoisted_111 = { class: "rar-help-list" };
-const _hoisted_112 = { class: "rar-help-row-head" };
-const _hoisted_113 = { class: "rar-help-row-title" };
-const _hoisted_114 = { class: "rar-help-step" };
-const _hoisted_115 = ["onClick"];
-const _hoisted_116 = { class: "command-block" };
+const _hoisted_106 = { class: "preview-head" };
+const _hoisted_107 = { class: "batch-language" };
+const _hoisted_108 = { class: "subtitle-source" };
+const _hoisted_109 = { class: "output-name" };
+const _hoisted_110 = { class: "rar-help-list" };
+const _hoisted_111 = { class: "rar-help-row-head" };
+const _hoisted_112 = { class: "rar-help-row-title" };
+const _hoisted_113 = { class: "rar-help-step" };
+const _hoisted_114 = ["onClick"];
+const _hoisted_115 = { class: "command-block" };
 
 const {computed,nextTick,onBeforeUnmount,onMounted,ref} = await importShared('vue');
 
@@ -820,6 +819,11 @@ function historySelectedCount(item) {
   return historyDeletableTargets(item).filter(target => selected.has(target.id)).length
 }
 
+function allHistoryTargetsSelected(item) {
+  const targets = historyDeletableTargets(item);
+  return targets.length > 0 && historySelectedCount(item) === targets.length
+}
+
 function setHistorySelection(item, ids) {
   const itemId = item?.id;
   if (!itemId) return
@@ -840,15 +844,22 @@ function toggleHistoryTarget(item, targetId, checked) {
   setHistorySelection(item, Array.from(selected));
 }
 
+function toggleHistoryItemTargets(item) {
+  if (allHistoryTargetsSelected(item)) {
+    setHistorySelection(item, []);
+    return
+  }
+  setHistorySelection(item, historyDeletableTargets(item).map(target => target.id));
+}
+
 function historySeasonGroups(item) {
   const targets = historyDeletableTargets(item);
   if (!targets.length) return []
   if (item?.media_type !== 'tv') {
     return [
       {
-        key: 'all',
-        season: 'all',
-        label: '全部',
+        key: 'movie',
+        direct: true,
         targets,
         subtitleCount: targets.reduce((sum, target) => sum + (target.subtitles || []).length, 0),
       },
@@ -870,17 +881,7 @@ function historySeasonGroups(item) {
     group.targets.push(target);
     group.subtitleCount += (target.subtitles || []).length;
   });
-  const seasonGroups = Array.from(groups.values()).sort((a, b) => a.season - b.season);
-  return [
-    {
-      key: 'all',
-      season: 'all',
-      label: '全部季',
-      targets,
-      subtitleCount: targets.reduce((sum, target) => sum + (target.subtitles || []).length, 0),
-    },
-    ...seasonGroups,
-  ]
+  return Array.from(groups.values()).sort((a, b) => a.season - b.season)
 }
 
 function historySeasonSelectedCount(item, group) {
@@ -2816,6 +2817,18 @@ return (_ctx, _cache) => {
                             _createElementVNode("div", _hoisted_28, [
                               _createVNode(_component_VBtn, {
                                 size: "small",
+                                variant: "tonal",
+                                "prepend-icon": "mdi-checkbox-multiple-marked-outline",
+                                disabled: !historyDeletableTargets(item).length || clearing.value,
+                                onClick: _withModifiers($event => (toggleHistoryItemTargets(item)), ["stop"])
+                              }, {
+                                default: _withCtx(() => [
+                                  _createTextVNode(_toDisplayString(allHistoryTargetsSelected(item) ? '取消全选' : '全选'), 1)
+                                ]),
+                                _: 2
+                              }, 1032, ["disabled", "onClick"]),
+                              _createVNode(_component_VBtn, {
+                                size: "small",
                                 color: "error",
                                 variant: "tonal",
                                 "prepend-icon": "mdi-delete-sweep",
@@ -2850,39 +2863,44 @@ return (_ctx, _cache) => {
                                 key: historySeasonKey(item, season),
                                 class: "history-season-node"
                               }, [
-                                _createElementVNode("div", _hoisted_30, [
-                                  _createVNode(_component_VCheckbox, {
-                                    "model-value": allHistorySeasonTargetsSelected(item, season),
-                                    indeterminate: historySeasonPartiallySelected(item, season),
-                                    density: "compact",
-                                    "hide-details": "",
-                                    disabled: !season.targets.length || clearing.value,
-                                    onClick: _cache[5] || (_cache[5] = _withModifiers(() => {}, ["stop"])),
-                                    "onUpdate:modelValue": value => toggleHistorySeasonTargets(item, season, value)
-                                  }, null, 8, ["model-value", "indeterminate", "disabled", "onUpdate:modelValue"]),
-                                  _createElementVNode("button", {
-                                    type: "button",
-                                    class: "history-season-toggle",
-                                    onClick: _withModifiers($event => (toggleHistorySeasonExpanded(item, season)), ["stop"])
-                                  }, [
-                                    _createVNode(_component_VIcon, {
-                                      icon: historySeasonExpanded(item, season) ? 'mdi-chevron-down' : 'mdi-chevron-right'
-                                    }, null, 8, ["icon"]),
-                                    _createElementVNode("strong", null, _toDisplayString(season.label), 1),
-                                    _createElementVNode("span", null, _toDisplayString(season.targets.length) + " 集 · " + _toDisplayString(season.subtitleCount) + " 个外挂字幕", 1),
-                                    (historySeasonSelectedCount(item, season))
-                                      ? (_openBlock(), _createElementBlock("em", _hoisted_32, "已选 " + _toDisplayString(historySeasonSelectedCount(item, season)), 1))
-                                      : _createCommentVNode("", true)
-                                  ], 8, _hoisted_31)
-                                ]),
-                                (historySeasonExpanded(item, season))
-                                  ? (_openBlock(), _createElementBlock("div", _hoisted_33, [
+                                (!season.direct)
+                                  ? (_openBlock(), _createElementBlock("div", _hoisted_30, [
+                                      _createVNode(_component_VCheckbox, {
+                                        "model-value": allHistorySeasonTargetsSelected(item, season),
+                                        indeterminate: historySeasonPartiallySelected(item, season),
+                                        density: "compact",
+                                        "hide-details": "",
+                                        disabled: !season.targets.length || clearing.value,
+                                        onClick: _cache[5] || (_cache[5] = _withModifiers(() => {}, ["stop"])),
+                                        "onUpdate:modelValue": value => toggleHistorySeasonTargets(item, season, value)
+                                      }, null, 8, ["model-value", "indeterminate", "disabled", "onUpdate:modelValue"]),
+                                      _createElementVNode("button", {
+                                        type: "button",
+                                        class: "history-season-toggle",
+                                        onClick: _withModifiers($event => (toggleHistorySeasonExpanded(item, season)), ["stop"])
+                                      }, [
+                                        _createVNode(_component_VIcon, {
+                                          icon: historySeasonExpanded(item, season) ? 'mdi-chevron-down' : 'mdi-chevron-right'
+                                        }, null, 8, ["icon"]),
+                                        _createElementVNode("strong", null, _toDisplayString(season.label), 1),
+                                        _createElementVNode("span", null, _toDisplayString(season.targets.length) + " 集 · " + _toDisplayString(season.subtitleCount) + " 个外挂字幕", 1),
+                                        (historySeasonSelectedCount(item, season))
+                                          ? (_openBlock(), _createElementBlock("em", _hoisted_32, "已选 " + _toDisplayString(historySeasonSelectedCount(item, season)), 1))
+                                          : _createCommentVNode("", true)
+                                      ], 8, _hoisted_31)
+                                    ]))
+                                  : _createCommentVNode("", true),
+                                (season.direct || historySeasonExpanded(item, season))
+                                  ? (_openBlock(), _createElementBlock("div", {
+                                      key: 1,
+                                      class: _normalizeClass(["history-episode-list", { 'direct-targets': season.direct }])
+                                    }, [
                                       (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(season.targets, (target) => {
                                         return (_openBlock(), _createElementBlock("div", {
                                           key: `${historySeasonKey(item, season)}-${target.id}`,
                                           class: "history-episode-node"
                                         }, [
-                                          _createElementVNode("div", _hoisted_34, [
+                                          _createElementVNode("div", _hoisted_33, [
                                             _createVNode(_component_VCheckbox, {
                                               "model-value": historySelectedIds(item).includes(target.id),
                                               density: "compact",
@@ -2899,9 +2917,9 @@ return (_ctx, _cache) => {
                                               _createVNode(_component_VIcon, {
                                                 icon: historyTargetExpanded(target) ? 'mdi-chevron-down' : 'mdi-chevron-right'
                                               }, null, 8, ["icon"]),
-                                              _createElementVNode("span", _hoisted_36, _toDisplayString(compactTargetName(target)), 1),
+                                              _createElementVNode("span", _hoisted_35, _toDisplayString(compactTargetName(target)), 1),
                                               _createElementVNode("small", null, _toDisplayString((target.subtitles || []).length) + " 个外挂字幕", 1)
-                                            ], 8, _hoisted_35),
+                                            ], 8, _hoisted_34),
                                             _createVNode(_component_VBtn, {
                                               size: "small",
                                               variant: "tonal",
@@ -2916,10 +2934,10 @@ return (_ctx, _cache) => {
                                             }, 8, ["disabled", "onClick"])
                                           ]),
                                           (historyTargetExpanded(target))
-                                            ? (_openBlock(), _createElementBlock("div", _hoisted_37, [
-                                                _createElementVNode("div", _hoisted_38, _toDisplayString(target.relative_path), 1),
+                                            ? (_openBlock(), _createElementBlock("div", _hoisted_36, [
+                                                _createElementVNode("div", _hoisted_37, _toDisplayString(target.relative_path), 1),
                                                 (target.timeline_task)
-                                                  ? (_openBlock(), _createElementBlock("div", _hoisted_39, [
+                                                  ? (_openBlock(), _createElementBlock("div", _hoisted_38, [
                                                       _createElementVNode("span", null, "调轴：" + _toDisplayString(timelineTaskText(target.timeline_task)), 1),
                                                       (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(timelineMetaItems(target.timeline_task.timeline), (meta) => {
                                                         return (_openBlock(), _createElementBlock("span", {
@@ -2929,17 +2947,17 @@ return (_ctx, _cache) => {
                                                       }), 128))
                                                     ]))
                                                   : _createCommentVNode("", true),
-                                                _createElementVNode("div", _hoisted_40, [
+                                                _createElementVNode("div", _hoisted_39, [
                                                   (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(target.subtitles, (subtitle) => {
                                                     return (_openBlock(), _createElementBlock("div", {
                                                       key: subtitle.path,
                                                       class: "subtitle-history-item"
                                                     }, [
-                                                      _createElementVNode("div", _hoisted_41, [
+                                                      _createElementVNode("div", _hoisted_40, [
                                                         _createElementVNode("strong", null, _toDisplayString(subtitle.name), 1),
                                                         _createElementVNode("span", null, _toDisplayString(formatBytes(subtitle.size)) + " · " + _toDisplayString(subtitle.modified_at || '未知时间'), 1)
                                                       ]),
-                                                      _createElementVNode("div", _hoisted_42, [
+                                                      _createElementVNode("div", _hoisted_41, [
                                                         _createVNode(_component_VBtn, {
                                                           size: "small",
                                                           variant: "tonal",
@@ -2973,13 +2991,13 @@ return (_ctx, _cache) => {
                                             : _createCommentVNode("", true)
                                         ]))
                                       }), 128))
-                                    ]))
+                                    ], 2))
                                   : _createCommentVNode("", true)
                               ]))
                             }), 128))
                           ]),
                           (!historySeasonGroups(item).length)
-                            ? (_openBlock(), _createElementBlock("div", _hoisted_43, " 暂无可管理的外挂字幕 "))
+                            ? (_openBlock(), _createElementBlock("div", _hoisted_42, " 暂无可管理的外挂字幕 "))
                             : _createCommentVNode("", true)
                         ]))
                       : _createCommentVNode("", true)
@@ -2988,7 +3006,7 @@ return (_ctx, _cache) => {
               ]))
             : _createCommentVNode("", true),
           (rootTab.value === 'history' && matchHistoryItems.value.length)
-            ? (_openBlock(), _createElementBlock("div", _hoisted_44, [
+            ? (_openBlock(), _createElementBlock("div", _hoisted_43, [
                 _createElementVNode("span", null, _toDisplayString(matchHistoryItems.value.length) + "/" + _toDisplayString(matchHistoryTotal.value || matchHistoryItems.value.length) + " 部资源", 1),
                 (matchHistoryHasMore.value)
                   ? (_openBlock(), _createBlock(_component_VBtn, {
@@ -3005,10 +3023,10 @@ return (_ctx, _cache) => {
                   : _createCommentVNode("", true)
               ]))
             : (rootTab.value === 'history')
-              ? (_openBlock(), _createElementBlock("div", _hoisted_45, _toDisplayString(matchHistoryLoading.value ? '正在读取匹配历史...' : '还没有找到已匹配字幕记录。'), 1))
+              ? (_openBlock(), _createElementBlock("div", _hoisted_44, _toDisplayString(matchHistoryLoading.value ? '正在读取匹配历史...' : '还没有找到已匹配字幕记录。'), 1))
               : _createCommentVNode("", true)
         ]))
-      : (_openBlock(), _createElementBlock("section", _hoisted_46, [
+      : (_openBlock(), _createElementBlock("section", _hoisted_45, [
           _createVNode(_component_VCard, {
             class: "glass-card detail-card",
             rounded: "xl",
@@ -3017,15 +3035,15 @@ return (_ctx, _cache) => {
             default: _withCtx(() => [
               _createVNode(_component_VCardText, null, {
                 default: _withCtx(() => [
-                  _createElementVNode("div", _hoisted_47, [
-                    _createElementVNode("div", _hoisted_48, [
+                  _createElementVNode("div", _hoisted_46, [
+                    _createElementVNode("div", _hoisted_47, [
                       _createElementVNode("button", {
                         class: "back-btn",
                         onClick: resetSelection
                       }, [
                         _createVNode(_component_VIcon, { icon: "mdi-arrow-left" })
                       ]),
-                      _createElementVNode("div", _hoisted_49, [
+                      _createElementVNode("div", _hoisted_48, [
                         (posterImageSrc(selectedMedia.value))
                           ? (_openBlock(), _createElementBlock("img", {
                               key: 0,
@@ -3036,11 +3054,11 @@ return (_ctx, _cache) => {
                               decoding: "async",
                               draggable: "false",
                               onError: _cache[7] || (_cache[7] = $event => (markPosterFailed(selectedMedia.value)))
-                            }, null, 40, _hoisted_50))
-                          : (_openBlock(), _createElementBlock("span", _hoisted_51, _toDisplayString(formatMediaType(selectedMedia.value.media_type)), 1))
+                            }, null, 40, _hoisted_49))
+                          : (_openBlock(), _createElementBlock("span", _hoisted_50, _toDisplayString(formatMediaType(selectedMedia.value.media_type)), 1))
                       ]),
                       _createElementVNode("div", null, [
-                        _createElementVNode("div", _hoisted_52, _toDisplayString(formatMediaType(selectedMedia.value.media_type)), 1),
+                        _createElementVNode("div", _hoisted_51, _toDisplayString(formatMediaType(selectedMedia.value.media_type)), 1),
                         _createElementVNode("h2", null, _toDisplayString(_unref(mediaLabel)(selectedMedia.value)), 1),
                         _createElementVNode("p", null, _toDisplayString(visibleTargets.value.length) + " 个本地目标 · " + _toDisplayString(selectedTargets.value.length) + " 个已选 · " + _toDisplayString(lockedTargetIds.value.length) + " 个锁定", 1)
                       ])
@@ -3057,7 +3075,7 @@ return (_ctx, _cache) => {
                     }, 8, ["loading"])
                   ]),
                   (selectedMedia.value.media_type === 'tv')
-                    ? (_openBlock(), _createElementBlock("div", _hoisted_53, [
+                    ? (_openBlock(), _createElementBlock("div", _hoisted_52, [
                         (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(seasonCards.value, (season) => {
                           return (_openBlock(), _createElementBlock("button", {
                             key: season.value,
@@ -3066,7 +3084,7 @@ return (_ctx, _cache) => {
                           }, [
                             _createElementVNode("span", null, _toDisplayString(season.title), 1),
                             _createElementVNode("strong", null, _toDisplayString(season.subtitle), 1)
-                          ], 10, _hoisted_54))
+                          ], 10, _hoisted_53))
                         }), 128))
                       ]))
                     : _createCommentVNode("", true),
@@ -3079,7 +3097,7 @@ return (_ctx, _cache) => {
                         type: "button",
                         onClick: _cache[9] || (_cache[9] = $event => (openAiTaskDialog()))
                       }, [
-                        _createElementVNode("span", _hoisted_55, [
+                        _createElementVNode("span", _hoisted_54, [
                           (aiTasksLoading.value || aiHasActiveTasks.value)
                             ? (_openBlock(), _createBlock(_component_VProgressCircular, {
                                 key: 0,
@@ -3097,8 +3115,8 @@ return (_ctx, _cache) => {
                         _createElementVNode("em", null, _toDisplayString(aiAvailable.value ? '点击查看当前资源任务' : aiStatus.value.message), 1)
                       ], 2))
                     : _createCommentVNode("", true),
-                  _createElementVNode("div", _hoisted_56, [
-                    _createElementVNode("div", _hoisted_57, [
+                  _createElementVNode("div", _hoisted_55, [
+                    _createElementVNode("div", _hoisted_56, [
                       _createVNode(_component_VBtn, {
                         variant: "tonal",
                         onClick: toggleSelectAll
@@ -3203,7 +3221,7 @@ return (_ctx, _cache) => {
                       }, 8, ["disabled", "loading"])
                     ]),
                     (visibleTargets.value.length)
-                      ? (_openBlock(), _createElementBlock("div", _hoisted_58, [
+                      ? (_openBlock(), _createElementBlock("div", _hoisted_57, [
                           (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(visibleTargets.value, (target) => {
                             return (_openBlock(), _createElementBlock("div", {
                               key: target.id,
@@ -3215,10 +3233,10 @@ return (_ctx, _cache) => {
                                 "hide-details": "",
                                 "onUpdate:modelValue": value => toggleTarget(target.id, value)
                               }, null, 8, ["model-value", "onUpdate:modelValue"]),
-                              _createElementVNode("div", _hoisted_59, _toDisplayString(target.media_type === 'tv' ? `E${String(target.episode || 0).padStart(2, '0')}` : 'MOV'), 1),
-                              _createElementVNode("div", _hoisted_60, [
-                                _createElementVNode("div", _hoisted_61, _toDisplayString(compactTargetName(target)), 1),
-                                _createElementVNode("div", _hoisted_62, _toDisplayString(target.relative_path), 1)
+                              _createElementVNode("div", _hoisted_58, _toDisplayString(target.media_type === 'tv' ? `E${String(target.episode || 0).padStart(2, '0')}` : 'MOV'), 1),
+                              _createElementVNode("div", _hoisted_59, [
+                                _createElementVNode("div", _hoisted_60, _toDisplayString(compactTargetName(target)), 1),
+                                _createElementVNode("div", _hoisted_61, _toDisplayString(target.relative_path), 1)
                               ]),
                               (target.has_subtitle)
                                 ? (_openBlock(), _createBlock(_component_VMenu, {
@@ -3315,11 +3333,11 @@ return (_ctx, _cache) => {
                                 _: 1
                               }, 8, ["disabled", "onClick"]),
                               (detailExpanded(target))
-                                ? (_openBlock(), _createElementBlock("div", _hoisted_63, [
-                                    _createElementVNode("div", _hoisted_64, [
+                                ? (_openBlock(), _createElementBlock("div", _hoisted_62, [
+                                    _createElementVNode("div", _hoisted_63, [
                                       _createElementVNode("span", null, _toDisplayString((target.subtitles || []).length ? `${target.subtitles.length} 个外挂字幕` : '暂无外挂字幕'), 1),
                                       (detailRowForTarget(target).task)
-                                        ? (_openBlock(), _createElementBlock("span", _hoisted_65, "AI：" + _toDisplayString(aiStatusText(detailRowForTarget(target).task)), 1))
+                                        ? (_openBlock(), _createElementBlock("span", _hoisted_64, "AI：" + _toDisplayString(aiStatusText(detailRowForTarget(target).task)), 1))
                                         : _createCommentVNode("", true),
                                       _createElementVNode("span", null, _toDisplayString(timelineResultForTarget(detailRowForTarget(target))), 1),
                                       (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(timelineMetaItems(timelineTaskForTarget(target)?.timeline), (meta) => {
@@ -3329,21 +3347,21 @@ return (_ctx, _cache) => {
                                         }, _toDisplayString(meta), 1))
                                       }), 128)),
                                       (isStreamTarget(target))
-                                        ? (_openBlock(), _createElementBlock("span", _hoisted_66, "STRM 资源不启用 AI 生成和智能调轴"))
+                                        ? (_openBlock(), _createElementBlock("span", _hoisted_65, "STRM 资源不启用 AI 生成和智能调轴"))
                                         : _createCommentVNode("", true)
                                     ]),
                                     ((target.subtitles || []).length)
-                                      ? (_openBlock(), _createElementBlock("div", _hoisted_67, [
+                                      ? (_openBlock(), _createElementBlock("div", _hoisted_66, [
                                           (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(target.subtitles, (subtitle) => {
                                             return (_openBlock(), _createElementBlock("div", {
                                               key: subtitle.path,
                                               class: "subtitle-history-item"
                                             }, [
-                                              _createElementVNode("div", _hoisted_68, [
+                                              _createElementVNode("div", _hoisted_67, [
                                                 _createElementVNode("strong", null, _toDisplayString(subtitle.name), 1),
                                                 _createElementVNode("span", null, _toDisplayString(formatBytes(subtitle.size)) + " · " + _toDisplayString(subtitle.modified_at || '未知时间'), 1)
                                               ]),
-                                              _createElementVNode("div", _hoisted_69, [
+                                              _createElementVNode("div", _hoisted_68, [
                                                 _createVNode(_component_VBtn, {
                                                   size: "small",
                                                   variant: "tonal",
@@ -3387,15 +3405,15 @@ return (_ctx, _cache) => {
                                             ]))
                                           }), 128))
                                         ]))
-                                      : (_openBlock(), _createElementBlock("div", _hoisted_70, " 当前集暂无外挂字幕。 "))
+                                      : (_openBlock(), _createElementBlock("div", _hoisted_69, " 当前集暂无外挂字幕。 "))
                                   ]))
                                 : _createCommentVNode("", true)
                             ], 2))
                           }), 128))
                         ]))
-                      : (_openBlock(), _createElementBlock("div", _hoisted_71, _toDisplayString(resolving.value ? '正在读取本地视频目标...' : '这个资源没有本地视频文件。'), 1)),
+                      : (_openBlock(), _createElementBlock("div", _hoisted_70, _toDisplayString(resolving.value ? '正在读取本地视频目标...' : '这个资源没有本地视频文件。'), 1)),
                     (lastWritten.value.length)
-                      ? (_openBlock(), _createElementBlock("div", _hoisted_72, [
+                      ? (_openBlock(), _createElementBlock("div", _hoisted_71, [
                           _cache[48] || (_cache[48] = _createElementVNode("div", { class: "section-kicker" }, "写入结果", -1)),
                           (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(lastWritten.value, (item) => {
                             return (_openBlock(), _createElementBlock("div", {
@@ -3408,7 +3426,7 @@ return (_ctx, _cache) => {
                               ]),
                               _createElementVNode("em", null, _toDisplayString(timelineResultText(item)), 1),
                               (timelineMetaItems(item).length)
-                                ? (_openBlock(), _createElementBlock("div", _hoisted_73, [
+                                ? (_openBlock(), _createElementBlock("div", _hoisted_72, [
                                     (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(timelineMetaItems(item), (meta) => {
                                       return (_openBlock(), _createElementBlock("span", {
                                         key: `${item.output_path}-${meta}`,
@@ -3446,7 +3464,7 @@ return (_ctx, _cache) => {
                   _cache[49] || (_cache[49] = _createElementVNode("span", null, "入库自动字幕队列", -1)),
                   _createElementVNode("p", null, _toDisplayString(autoQueueSummaryText.value), 1)
                 ]),
-                _createElementVNode("div", _hoisted_74, [
+                _createElementVNode("div", _hoisted_73, [
                   _createVNode(_component_VBtn, {
                     variant: "tonal",
                     "prepend-icon": "mdi-refresh",
@@ -3469,13 +3487,13 @@ return (_ctx, _cache) => {
             _createVNode(_component_VDivider),
             _createVNode(_component_VCardText, null, {
               default: _withCtx(() => [
-                _createElementVNode("div", _hoisted_75, [
+                _createElementVNode("div", _hoisted_74, [
                   (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(autoTransferQueue.value.rate_limits || {}, (rate, provider) => {
                     return (_openBlock(), _createElementBlock("span", { key: provider }, _toDisplayString(provider) + "：" + _toDisplayString(rate.remaining) + "/" + _toDisplayString(rate.limit_per_minute) + " 可用 ", 1))
                   }), 128))
                 ]),
                 (autoQueueTasks.value.length)
-                  ? (_openBlock(), _createElementBlock("div", _hoisted_76, [
+                  ? (_openBlock(), _createElementBlock("div", _hoisted_75, [
                       (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(autoQueueTasks.value.slice().reverse().slice(0, 12), (task) => {
                         return (_openBlock(), _createElementBlock("div", {
                           key: task.id,
@@ -3493,7 +3511,7 @@ return (_ctx, _cache) => {
                         ], 2))
                       }), 128))
                     ]))
-                  : (_openBlock(), _createElementBlock("div", _hoisted_77, " 当前没有入库自动字幕任务。 "))
+                  : (_openBlock(), _createElementBlock("div", _hoisted_76, " 当前没有入库自动字幕任务。 "))
               ]),
               _: 1
             })
@@ -3520,7 +3538,7 @@ return (_ctx, _cache) => {
                   _createElementVNode("span", null, _toDisplayString(aiTaskDialogTarget.value ? `AI 状态 · ${compactTargetName(aiTaskDialogTarget.value)}` : 'AI 字幕生成状态'), 1),
                   _createElementVNode("p", null, _toDisplayString(aiSummaryText.value) + " · 状态来自 AI字幕生成(联动版) 队列", 1)
                 ]),
-                _createElementVNode("div", _hoisted_78, [
+                _createElementVNode("div", _hoisted_77, [
                   (aiDialogHasActiveTasks.value)
                     ? (_openBlock(), _createBlock(_component_VBtn, {
                         key: 0,
@@ -3584,23 +3602,23 @@ return (_ctx, _cache) => {
                     }, null, 8, ["text"]))
                   : _createCommentVNode("", true),
                 (aiDialogTasks.value.length)
-                  ? (_openBlock(), _createElementBlock("div", _hoisted_79, [
+                  ? (_openBlock(), _createElementBlock("div", _hoisted_78, [
                       (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(aiDialogTasks.value, (task) => {
                         return (_openBlock(), _createElementBlock("div", {
                           key: task.task_id,
                           class: _normalizeClass(["ai-task-row", `ai-${task.status}`])
                         }, [
-                          _createElementVNode("div", _hoisted_80, [
+                          _createElementVNode("div", _hoisted_79, [
                             _createVNode(_component_VIcon, {
                               icon: aiTaskIcon({ id: task.target_id })
                             }, null, 8, ["icon"])
                           ]),
-                          _createElementVNode("div", _hoisted_81, [
+                          _createElementVNode("div", _hoisted_80, [
                             _createElementVNode("strong", null, _toDisplayString(task.target_label || task.video_name), 1),
                             _createElementVNode("span", null, _toDisplayString(task.source_subtitle_name ? `字幕源：${task.source_subtitle_name}` : task.video_name), 1),
                             _createElementVNode("p", null, _toDisplayString(aiStatusText(task)), 1)
                           ]),
-                          _createElementVNode("div", _hoisted_82, [
+                          _createElementVNode("div", _hoisted_81, [
                             _createVNode(_component_VChip, {
                               size: "small",
                               variant: "tonal"
@@ -3615,7 +3633,7 @@ return (_ctx, _cache) => {
                         ], 2))
                       }), 128))
                     ]))
-                  : (_openBlock(), _createElementBlock("div", _hoisted_83, " 当前资源还没有 AI 字幕生成任务。可以点击单集 AI 图标，或使用上方“AI 生成”批量提交。 "))
+                  : (_openBlock(), _createElementBlock("div", _hoisted_82, " 当前资源还没有 AI 字幕生成任务。可以点击单集 AI 图标，或使用上方“AI 生成”批量提交。 "))
               ]),
               _: 1
             })
@@ -3642,7 +3660,7 @@ return (_ctx, _cache) => {
                   _createElementVNode("span", null, _toDisplayString(onlineTitle.value || '在线字幕搜索'), 1),
                   _createElementVNode("p", null, _toDisplayString(onlineTargets.value.length) + " 个目标 · 下载会进入匹配预览，提交 AI 翻译会直接进入 AI 状态", 1)
                 ]),
-                _createElementVNode("div", _hoisted_84, [
+                _createElementVNode("div", _hoisted_83, [
                   _createVNode(_component_VBtn, {
                     color: "success",
                     disabled: !selectedOnlineResults.value.length || onlineAiDownloading.value,
@@ -3761,7 +3779,7 @@ return (_ctx, _cache) => {
                       density: "compact"
                     }, {
                       default: _withCtx(() => [
-                        _createElementVNode("div", _hoisted_85, [
+                        _createElementVNode("div", _hoisted_84, [
                           _createElementVNode("span", null, _toDisplayString(onlineMessageSummary.value), 1),
                           _createVNode(_component_VBtn, {
                             size: "x-small",
@@ -3778,9 +3796,9 @@ return (_ctx, _cache) => {
                       _: 1
                     }, 8, ["type"]))
                   : _createCommentVNode("", true),
-                _createElementVNode("div", _hoisted_86, [
-                  _createElementVNode("section", _hoisted_87, [
-                    _createElementVNode("div", _hoisted_88, [
+                _createElementVNode("div", _hoisted_85, [
+                  _createElementVNode("section", _hoisted_86, [
+                    _createElementVNode("div", _hoisted_87, [
                       _cache[60] || (_cache[60] = _createElementVNode("div", null, [
                         _createElementVNode("div", { class: "section-kicker" }, "自动搜索"),
                         _createElementVNode("h3", null, "选择要下载的字幕")
@@ -3842,7 +3860,7 @@ return (_ctx, _cache) => {
                         }, 8, ["modelValue"]))
                       : _createCommentVNode("", true),
                     (onlineProviderProgressItems.value.length)
-                      ? (_openBlock(), _createElementBlock("div", _hoisted_89, [
+                      ? (_openBlock(), _createElementBlock("div", _hoisted_88, [
                           (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(onlineProviderProgressItems.value, (item) => {
                             return (_openBlock(), _createBlock(_component_VChip, {
                               key: item.provider,
@@ -3859,10 +3877,10 @@ return (_ctx, _cache) => {
                         ]))
                       : _createCommentVNode("", true),
                     (onlineSearching.value && !filteredOnlineResults.value.length)
-                      ? (_openBlock(), _createElementBlock("div", _hoisted_90, " 正在从 API 搜索字幕，先返回的结果会先显示... "))
+                      ? (_openBlock(), _createElementBlock("div", _hoisted_89, " 正在从 API 搜索字幕，先返回的结果会先显示... "))
                       : _createCommentVNode("", true),
                     (filteredOnlineResults.value.length)
-                      ? (_openBlock(), _createElementBlock("div", _hoisted_91, [
+                      ? (_openBlock(), _createElementBlock("div", _hoisted_90, [
                           (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(filteredOnlineResults.value, (item) => {
                             return (_openBlock(), _createElementBlock("div", {
                               key: onlineResultKey(item),
@@ -3878,20 +3896,20 @@ return (_ctx, _cache) => {
                                 disabled: !isOnlineResultDownloadable(item),
                                 "onUpdate:modelValue": value => toggleOnlineResult(item, value)
                               }, null, 8, ["model-value", "disabled", "onUpdate:modelValue"]),
-                              _createElementVNode("div", _hoisted_92, [
-                                _createElementVNode("div", _hoisted_93, _toDisplayString(item.title), 1),
-                                _createElementVNode("div", _hoisted_94, [
+                              _createElementVNode("div", _hoisted_91, [
+                                _createElementVNode("div", _hoisted_92, _toDisplayString(item.title), 1),
+                                _createElementVNode("div", _hoisted_93, [
                                   _createElementVNode("span", null, _toDisplayString(providerName(item.provider)), 1),
                                   _createElementVNode("span", null, _toDisplayString(onlineResultMeta(item)), 1),
                                   (!isOnlineResultDownloadable(item))
-                                    ? (_openBlock(), _createElementBlock("span", _hoisted_95, " 需手动下载 "))
+                                    ? (_openBlock(), _createElementBlock("span", _hoisted_94, " 需手动下载 "))
                                     : _createCommentVNode("", true)
                                 ]),
                                 (item.note)
-                                  ? (_openBlock(), _createElementBlock("p", _hoisted_96, _toDisplayString(item.note), 1))
+                                  ? (_openBlock(), _createElementBlock("p", _hoisted_95, _toDisplayString(item.note), 1))
                                   : _createCommentVNode("", true),
                                 (item.match_detail)
-                                  ? (_openBlock(), _createElementBlock("p", _hoisted_97, _toDisplayString(item.match_detail), 1))
+                                  ? (_openBlock(), _createElementBlock("p", _hoisted_96, _toDisplayString(item.match_detail), 1))
                                   : _createCommentVNode("", true)
                               ]),
                               (item.page_url)
@@ -3901,16 +3919,16 @@ return (_ctx, _cache) => {
                                     href: item.page_url,
                                     target: "_blank",
                                     rel: "noopener noreferrer"
-                                  }, " 查看 ", 8, _hoisted_98))
+                                  }, " 查看 ", 8, _hoisted_97))
                                 : _createCommentVNode("", true)
                             ], 2))
                           }), 128))
                         ]))
                       : (!onlineSearching.value)
-                        ? (_openBlock(), _createElementBlock("div", _hoisted_99, _toDisplayString(hasOnlineResults.value ? '当前平台筛选下没有结果。' : '没有可自动下载的字幕结果。可以换关键词重试，或使用右侧手动搜索。'), 1))
+                        ? (_openBlock(), _createElementBlock("div", _hoisted_98, _toDisplayString(hasOnlineResults.value ? '当前平台筛选下没有结果。' : '没有可自动下载的字幕结果。可以换关键词重试，或使用右侧手动搜索。'), 1))
                         : _createCommentVNode("", true)
                   ]),
-                  _createElementVNode("aside", _hoisted_100, [
+                  _createElementVNode("aside", _hoisted_99, [
                     _cache[61] || (_cache[61] = _createElementVNode("div", { class: "section-kicker" }, "手动搜索", -1)),
                     _cache[62] || (_cache[62] = _createElementVNode("h3", null, "跳转字幕站", -1)),
                     _cache[63] || (_cache[63] = _createElementVNode("p", null, "自动搜索失败或源站需要验证时，可打开链接下载字幕包后回到本页上传。", -1)),
@@ -3919,17 +3937,17 @@ return (_ctx, _cache) => {
                         key: provider.provider,
                         class: "manual-provider"
                       }, [
-                        _createElementVNode("div", _hoisted_101, [
+                        _createElementVNode("div", _hoisted_100, [
                           _createElementVNode("strong", null, _toDisplayString(provider.name), 1)
                         ]),
-                        _createElementVNode("div", _hoisted_102, [
+                        _createElementVNode("div", _hoisted_101, [
                           (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(provider.links, (link) => {
                             return (_openBlock(), _createElementBlock("a", {
                               key: `${provider.provider}-${link.keyword}`,
                               href: link.url,
                               target: "_blank",
                               rel: "noopener noreferrer"
-                            }, _toDisplayString(link.keyword), 9, _hoisted_103))
+                            }, _toDisplayString(link.keyword), 9, _hoisted_102))
                           }), 128))
                         ])
                       ]))
@@ -4128,7 +4146,7 @@ return (_ctx, _cache) => {
                     ], 34))
                   : _createCommentVNode("", true),
                 (!hasPreviewItems.value)
-                  ? (_openBlock(), _createElementBlock("div", _hoisted_104, [
+                  ? (_openBlock(), _createElementBlock("div", _hoisted_103, [
                       _createElementVNode("span", {
                         class: _normalizeClass({ ok: rarPythonAvailable.value })
                       }, "rarfile：" + _toDisplayString(rarPythonAvailable.value ? '已安装' : '将由 requirements.txt 安装'), 3),
@@ -4149,7 +4167,7 @@ return (_ctx, _cache) => {
                     ]))
                   : _createCommentVNode("", true),
                 (!hasPreviewItems.value && files.value.length)
-                  ? (_openBlock(), _createElementBlock("div", _hoisted_105, [
+                  ? (_openBlock(), _createElementBlock("div", _hoisted_104, [
                       (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(files.value, (file) => {
                         return (_openBlock(), _createElementBlock("div", {
                           key: `${file.name}-${file.size}`,
@@ -4175,13 +4193,13 @@ return (_ctx, _cache) => {
                     ]))
                   : _createCommentVNode("", true),
                 (hasPreviewItems.value)
-                  ? (_openBlock(), _createElementBlock("div", _hoisted_106, [
-                      _createElementVNode("div", _hoisted_107, [
+                  ? (_openBlock(), _createElementBlock("div", _hoisted_105, [
+                      _createElementVNode("div", _hoisted_106, [
                         _cache[76] || (_cache[76] = _createElementVNode("div", null, [
                           _createElementVNode("div", { class: "section-kicker" }, "字幕匹配"),
                           _createElementVNode("h3", null, "确认集数与输出文件名")
                         ], -1)),
-                        _createElementVNode("div", _hoisted_108, [
+                        _createElementVNode("div", _hoisted_107, [
                           _createVNode(_component_VTextField, {
                             modelValue: batchLanguageSuffix.value,
                             "onUpdate:modelValue": _cache[24] || (_cache[24] = $event => ((batchLanguageSuffix).value = $event)),
@@ -4216,7 +4234,7 @@ return (_ctx, _cache) => {
                             "hide-details": "",
                             "onUpdate:modelValue": value => togglePreviewItem(item.upload_id, value)
                           }, null, 8, ["model-value", "onUpdate:modelValue"]),
-                          _createElementVNode("div", _hoisted_109, [
+                          _createElementVNode("div", _hoisted_108, [
                             _createElementVNode("strong", null, _toDisplayString(item.source_name), 1),
                             _createElementVNode("span", null, _toDisplayString(item.archive_name ? `来自 ${item.archive_name} · ` : '') + _toDisplayString(item.detected_label || '未知语言'), 1)
                           ]),
@@ -4239,7 +4257,7 @@ return (_ctx, _cache) => {
                             disabled: item.selected === false,
                             "onUpdate:modelValue": value => updateLanguageSuffix(item.upload_id, value)
                           }, null, 8, ["model-value", "disabled", "onUpdate:modelValue"]),
-                          _createElementVNode("div", _hoisted_110, [
+                          _createElementVNode("div", _hoisted_109, [
                             _cache[77] || (_cache[77] = _createElementVNode("span", null, "改名为", -1)),
                             _createElementVNode("strong", null, _toDisplayString(item.output_name || buildOutputName(uploadTargets.value.find(target => target.id === item.target_id), item) || '待选择目标'), 1)
                           ])
@@ -4310,25 +4328,25 @@ return (_ctx, _cache) => {
                     _createTextVNode("。")
                   ])
                 ], -1)),
-                _createElementVNode("div", _hoisted_111, [
+                _createElementVNode("div", _hoisted_110, [
                   (_openBlock(), _createElementBlock(_Fragment, null, _renderList(rarHelpItems, (item) => {
                     return _createElementVNode("section", {
                       key: item.title,
                       class: "rar-help-row"
                     }, [
-                      _createElementVNode("div", _hoisted_112, [
-                        _createElementVNode("div", _hoisted_113, [
-                          _createElementVNode("span", _hoisted_114, _toDisplayString(item.badge), 1),
+                      _createElementVNode("div", _hoisted_111, [
+                        _createElementVNode("div", _hoisted_112, [
+                          _createElementVNode("span", _hoisted_113, _toDisplayString(item.badge), 1),
                           _createElementVNode("strong", null, _toDisplayString(item.title), 1)
                         ]),
                         _createElementVNode("button", {
                           type: "button",
                           class: "rar-help-copy",
                           onClick: $event => (copyHelpText(item.command, item.copyLabel))
-                        }, _toDisplayString(item.button), 9, _hoisted_115)
+                        }, _toDisplayString(item.button), 9, _hoisted_114)
                       ]),
                       _createElementVNode("p", null, _toDisplayString(item.description), 1),
-                      _createElementVNode("div", _hoisted_116, [
+                      _createElementVNode("div", _hoisted_115, [
                         _createElementVNode("pre", null, _toDisplayString(item.command), 1)
                       ])
                     ])
@@ -4380,6 +4398,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-3f239c44"]]);
+const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-4c754840"]]);
 
 export { AppPage as default };
