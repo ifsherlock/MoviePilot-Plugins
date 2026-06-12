@@ -144,6 +144,7 @@ const aiTaskDialog = ref(false)
 const aiTaskDialogTarget = ref(null)
 const aiTaskScopeTargets = ref([])
 const aiRestartSourcePolicy = ref('reuse')
+const aiRestartSubtitlePath = ref('')
 const aiStatusStripRef = ref(null)
 const aiTaskData = ref({
   status: null,
@@ -174,6 +175,7 @@ const onlineProviderItems = [
 const aiRestartSourceOptions = [
   { title: '沿用原任务来源', value: 'reuse' },
   { title: '自动选择', value: 'auto' },
+  { title: '选中外挂字幕', value: 'matched_external' },
   { title: '本地外挂字幕', value: 'local_external' },
   { title: '视频内嵌字幕', value: 'embedded' },
   { title: '音轨 ASR', value: 'asr' },
@@ -345,6 +347,16 @@ const aiDialogTasks = computed(() => {
   return targetId ? tasks.filter(item => item.target_id === targetId) : tasks
 })
 const aiDialogHasActiveTasks = computed(() => aiDialogTasks.value.some(task => isAiTaskActive(task)))
+const aiRestartSubtitleOptions = computed(() => {
+  const target = aiTaskDialogTarget.value
+  const subtitles = target?.subtitles || []
+  return subtitles
+    .filter(subtitle => String(subtitle.ext || '').toLowerCase() === '.srt')
+    .map(subtitle => ({
+      title: `${subtitle.name} · ${formatBytes(subtitle.size)}`,
+      value: subtitle.path,
+    }))
+})
 const timelineStatus = computed(() => status.value?.timeline_fixer || { available: false, modules: {} })
 const timelineAvailable = computed(() => timelineStatus.value.available === true)
 const timelineConfiguredMaxOffset = computed(() => {
@@ -1222,6 +1234,8 @@ function timelineTaskText(task) {
 
 function openAiTaskDialog(target = null) {
   aiTaskDialogTarget.value = target
+  aiRestartSourcePolicy.value = 'reuse'
+  aiRestartSubtitlePath.value = ''
   aiTaskDialog.value = true
   const scopeTargets = target
     ? [target]
@@ -1324,6 +1338,10 @@ async function regenerateDialogAiTasks() {
     message.value = '没有可重新生成 AI 字幕的目标：选中的集数可能都已锁定或是 STRM'
     return
   }
+  if (aiRestartSourcePolicy.value === 'matched_external' && !aiRestartSubtitlePath.value) {
+    message.value = '请先选择要用于重新生成的外挂 SRT 字幕'
+    return
+  }
   aiSubmitting.value = true
   error.value = ''
   message.value = ''
@@ -1332,6 +1350,7 @@ async function regenerateDialogAiTasks() {
       target_ids: usableTargets.map(item => item.id),
       locked_target_ids: lockedTargetPayload(),
       source_policy: aiRestartSourcePolicy.value,
+      source_subtitle_path: aiRestartSourcePolicy.value === 'matched_external' ? aiRestartSubtitlePath.value : '',
       overwrite_policy: aiRestartSourcePolicy.value === 'reuse' ? 'backup_replace' : 'new_variant',
     })
     const data = unwrapResponse(response) || {}
@@ -3138,6 +3157,17 @@ defineExpose({
               density="comfortable"
               hint="改选来源会写入来源变体后缀，如 .aiasr.srt 或 .aiembedded.srt"
               persistent-hint
+            />
+            <VSelect
+              v-if="aiRestartSourcePolicy === 'matched_external'"
+              v-model="aiRestartSubtitlePath"
+              class="mt-3"
+              :items="aiRestartSubtitleOptions"
+              label="外挂字幕"
+              density="comfortable"
+              :hint="aiRestartSubtitleOptions.length ? '使用这条外挂 SRT 作为 AI 翻译来源' : '当前集没有可用于 AI 翻译的 SRT 外挂字幕'"
+              persistent-hint
+              :disabled="!aiRestartSubtitleOptions.length"
             />
           </div>
           <div v-if="aiDialogTasks.length" class="ai-task-list">

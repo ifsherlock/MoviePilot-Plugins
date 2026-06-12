@@ -5541,6 +5541,8 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             target_entries,
             source_policy=self._normalize_text(body.get("source_policy")) or "reuse",
             overwrite_policy=self._normalize_text(body.get("overwrite_policy")) or "backup_replace",
+            source_subtitle_path=self._normalize_text(body.get("source_subtitle_path") or body.get("subtitle_path")),
+            source_subtitle_lang=self._normalize_text(body.get("source_subtitle_lang") or body.get("lang")),
         )
         if locked_skipped:
             result["skipped"] = [*(result.get("skipped") or []), *locked_skipped]
@@ -5584,12 +5586,28 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         *,
         source_policy: str = "reuse",
         overwrite_policy: str = "backup_replace",
+        source_subtitle_path: str = "",
+        source_subtitle_lang: str = "",
     ) -> Dict[str, Any]:
         plugin, reason = self._autosub_plugin()
         if not plugin:
             raise HTTPException(status_code=409, detail=reason)
         if not hasattr(plugin, "restart_tasks"):
             raise HTTPException(status_code=409, detail="AI 字幕插件版本过旧，请更新到支持重新生成的联动版")
+        if source_policy == "matched_external" and source_subtitle_path:
+            subtitle_overrides = self._restart_subtitle_override_for_entries(
+                target_entries,
+                source_subtitle_path=source_subtitle_path,
+                source_subtitle_lang=source_subtitle_lang,
+                overwrite_policy=overwrite_policy,
+            )
+            return self._submit_autosub_for_entries(
+                target_entries,
+                subtitle_overrides=subtitle_overrides,
+                trigger="manual",
+                source_policy="matched_external",
+                overwrite_policy=overwrite_policy,
+            )
         tasks_data = self._autosub_tasks_for_entries(target_entries)
         task_ids = [
             task.get("task_id")
@@ -5630,6 +5648,52 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             "failed": result.get("failed") or [],
             "targets": [self._target_from_entry(entry) for entry in target_entries],
             "tasks": refreshed_tasks,
+        }
+
+    def _restart_subtitle_override_for_entries(
+        self,
+        target_entries: List[Dict[str, Any]],
+        *,
+        source_subtitle_path: str,
+        source_subtitle_lang: str = "",
+        overwrite_policy: str = "new_variant",
+    ) -> Dict[str, Dict[str, Any]]:
+        if len(target_entries) != 1:
+            raise HTTPException(status_code=400, detail="选中外挂字幕重新生成一次只能选择单个目标")
+        entry = target_entries[0]
+        video_path = self._normalize_text(entry.get("path"))
+        candidate = Path(self._normalize_text(source_subtitle_path))
+        if not video_path or not candidate.exists() or candidate.suffix.lower() != ".srt":
+            raise HTTPException(status_code=400, detail="请选择当前集已有的 SRT 外挂字幕")
+        try:
+            candidate_resolved = str(candidate.resolve())
+        except Exception:
+            candidate_resolved = str(candidate)
+        allowed_paths = set()
+        for subtitle in self._subtitle_files_for_target(entry):
+            if self._normalize_text(subtitle.get("ext")).lower() != ".srt":
+                continue
+            try:
+                allowed_paths.add(str(Path(self._normalize_text(subtitle.get("path"))).resolve()))
+            except Exception:
+                allowed_paths.add(self._normalize_text(subtitle.get("path")))
+        if candidate_resolved not in allowed_paths:
+            raise HTTPException(status_code=400, detail="请选择当前集已有的外挂 SRT 字幕")
+        try:
+            raw_bytes = candidate.read_bytes()
+        except Exception:
+            raw_bytes = b""
+        profile = self._detect_language_profile(candidate.name, raw_bytes)
+        lang = source_subtitle_lang or self._autosub_lang_from_suffix(profile.get("suffix"))
+        return {
+            video_path: {
+                "subtitle_path": str(candidate),
+                "lang": lang,
+                "source_policy": "matched_external",
+                "source_name": candidate.name,
+                "timeline_fixed": False,
+                "overwrite_policy": overwrite_policy,
+            }
         }
 
     async def api_ai_tasks(self, request: Request) -> Dict[str, Any]:

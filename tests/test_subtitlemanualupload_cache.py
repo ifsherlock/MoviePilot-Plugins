@@ -420,6 +420,63 @@ def test_ai_submit_skips_strm_without_requiring_autosub_plugin(tmp_path):
     assert result["skipped"][0]["reason"] == "STRM 资源暂不支持 AI 生成字幕"
 
 
+def test_ai_restart_with_selected_external_subtitle_submits_matched_override(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    subtitle = tmp_path / "Movie.eng.srt"
+    video.write_text("video", encoding="utf-8")
+    subtitle.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+    entry = {"id": "t1", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}
+    captured = {}
+
+    plugin._autosub_plugin = lambda: (types.SimpleNamespace(restart_tasks=lambda **kwargs: None), "")
+
+    def fake_submit(entries, subtitle_overrides=None, **kwargs):
+        captured["entries"] = entries
+        captured["overrides"] = subtitle_overrides
+        captured["submit_kwargs"] = kwargs
+        return {"added": [{"path": entries[0]["path"]}], "skipped": [], "failed": [], "targets": [], "tasks": {}}
+
+    plugin._submit_autosub_for_entries = fake_submit
+
+    result = plugin._restart_autosub_for_entries(
+        [entry],
+        source_policy="matched_external",
+        overwrite_policy="new_variant",
+        source_subtitle_path=str(subtitle),
+    )
+
+    override = captured["overrides"][str(video)]
+    assert result["added"]
+    assert captured["entries"] == [entry]
+    assert override["subtitle_path"] == str(subtitle)
+    assert override["lang"] == "en"
+    assert override["source_policy"] == "matched_external"
+    assert override["source_name"] == subtitle.name
+    assert captured["submit_kwargs"]["trigger"] == "manual"
+    assert captured["submit_kwargs"]["source_policy"] == "matched_external"
+    assert captured["submit_kwargs"]["overwrite_policy"] == "new_variant"
+
+
+def test_ai_restart_rejects_external_subtitle_outside_current_target(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    subtitle = tmp_path / "Other.eng.srt"
+    video.write_text("video", encoding="utf-8")
+    subtitle.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+    entry = {"id": "t1", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}
+
+    try:
+        plugin._restart_subtitle_override_for_entries([entry], source_subtitle_path=str(subtitle))
+    except module.HTTPException as exc:
+        assert exc.status_code == 400
+        assert "当前集" in exc.detail
+    else:
+        raise AssertionError("should reject unrelated subtitle path")
+
+
 def test_delete_single_subtitle_only_allows_target_subtitles(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
