@@ -337,6 +337,11 @@ const aiDialogTasks = computed(() => {
 const aiDialogHasActiveTasks = computed(() => aiDialogTasks.value.some(task => isAiTaskActive(task)))
 const timelineStatus = computed(() => status.value?.timeline_fixer || { available: false, modules: {} })
 const timelineAvailable = computed(() => timelineStatus.value.available === true)
+const timelineConfiguredMaxOffset = computed(() => {
+  const value = Number(timelineStatus.value.configured_max_offset_seconds || timelineStatus.value.max_offset_seconds || 120)
+  return Number.isFinite(value) && value > 0 ? value : 120
+})
+const timelineNeedsRiskyConfirm = computed(() => timelineConfiguredMaxOffset.value > 120)
 const autoQueueSummary = computed(() => autoTransferQueue.value?.summary || status.value?.auto_transfer_queue || {})
 const autoQueueTasks = computed(() => autoTransferQueue.value?.tasks || [])
 const autoQueueActive = computed(() => Number(autoQueueSummary.value.active || 0) > 0)
@@ -643,6 +648,8 @@ async function fixExistingTimeline(items, label = '选中字幕') {
   }
   const confirmed = window.confirm(`确认对${label}提交 ${items.length} 个智能调轴任务？`)
   if (!confirmed) return
+  const allowRiskyOffset = timelineNeedsRiskyConfirm.value
+  if (allowRiskyOffset && !confirmRiskyTimelineOffset(`${label}智能调轴`)) return
   timelineFixing.value = true
   error.value = ''
   message.value = ''
@@ -650,6 +657,7 @@ async function fixExistingTimeline(items, label = '选中字幕') {
     const response = await props.api.post(`${pluginBase.value}/timeline_fix_existing`, {
       items,
       locked_target_ids: lockedTargetPayload(),
+      allow_risky_offset: allowRiskyOffset,
     })
     const data = unwrapResponse(response) || {}
     message.value = response?.message || `已提交 ${data.accepted || 0} 个智能调轴任务`
@@ -781,14 +789,65 @@ function formatOffset(value) {
   return `${number >= 0 ? '+' : ''}${number.toFixed(3)}s`
 }
 
+function timelineBaseText(base) {
+  const value = String(base || '')
+  if (value.startsWith('embedded:')) return '内嵌字幕基准'
+  if (value === 'audio:rms' || value === 'audio:rms:cache') return 'RMS 音频检测（低精度）'
+  if (value === 'audio:webrtc' || value === 'audio:webrtc:cache') return 'WebRTC 音频检测'
+  if (value.startsWith('audio:')) return '音频基准'
+  return value || '未知基准'
+}
+
+function timelineConfidenceText(value) {
+  const known = {
+    high: '高可信',
+    medium: '中可信',
+    low: '低可信',
+    rejected: '已拒绝',
+  }
+  return known[value] || value || '未知可信度'
+}
+
+function timelineRiskText(value) {
+  const known = {
+    offset_over_120s: '偏移超过 120s',
+    offset_over_configured_max: '超过配置最大偏移',
+    low_score: '匹配分数过低',
+    weak_score_margin: '最佳与次优差距过小',
+    unstable_subtitle_activity: '字幕活动区间异常',
+    unusual_scale_factor: '帧率比例异常',
+  }
+  return known[value] || value
+}
+
+function confirmRiskyTimelineOffset(actionLabel = '智能调轴') {
+  if (!timelineNeedsRiskyConfirm.value) return false
+  return window.confirm(
+    `${actionLabel}当前允许最大偏移 ${timelineConfiguredMaxOffset.value}s。\n\n` +
+    '超过 120s 的调轴结果通常意味着错集、错版本或整季包映射错误，不建议超过 120s。\n\n' +
+    '确认后，本次请求才会允许 120-300s 的结果人工写入；自动入库不会放行高风险偏移。',
+  )
+}
+
 function timelineResultText(item) {
   const timeline = item?.timeline || {}
   if (!timeline.enabled) return '未启用智能调轴'
-  const base = timeline.base === 'audio' ? '音频基准' : '内置字幕基准'
+  const base = timelineBaseText(timeline.base)
   if (timeline.applied) {
     return `已调轴 ${formatOffset(timeline.offset_seconds)} · ${base}`
   }
   return `未调整：偏移 ${formatOffset(timeline.offset_seconds)} 小于阈值 · ${base}`
+}
+
+function timelineMetaItems(item) {
+  const timeline = item?.timeline || item || {}
+  if (!timeline.enabled) return []
+  const items = []
+  if (timeline.confidence) items.push(`置信度：${timelineConfidenceText(timeline.confidence)}`)
+  if (timeline.score_margin !== undefined) items.push(`差距：${Number(timeline.score_margin || 0).toFixed(3)}`)
+  if (timeline.active_ratio !== undefined) items.push(`活动：${(Number(timeline.active_ratio || 0) * 100).toFixed(1)}%`)
+  ;(timeline.risk_flags || []).forEach(flag => items.push(timelineRiskText(flag)))
+  return items
 }
 
 function errorMessage(err, fallback) {
@@ -1880,6 +1939,8 @@ async function submitOnlineAiTranslate() {
       : 'AI 字幕生成联动当前不可用，无法提交翻译任务。'
     return
   }
+  const allowRiskyOffset = timelineNeedsRiskyConfirm.value
+  if (allowRiskyOffset && !confirmRiskyTimelineOffset('在线字幕提交 AI 前智能调轴')) return
   const downloadSeq = ++onlineDownloadSeq
   onlineDownloading.value = true
   onlineAiDownloading.value = true
@@ -1890,6 +1951,7 @@ async function submitOnlineAiTranslate() {
       props.api.post(`${pluginBase.value}/online_ai_submit`, {
         ...onlinePayload(),
         results: selectedOnlineResults.value,
+        allow_risky_offset: allowRiskyOffset,
       }),
       ONLINE_DOWNLOAD_TIMEOUT_MS,
       'AI 字幕任务提交仍在等待响应，已停止等待；可稍后打开 AI 状态刷新查看。',
@@ -2117,12 +2179,15 @@ async function copyHelpText(text, label) {
 
 async function applyUpload() {
   if (!canApply.value || !preview.value) return
+  const allowRiskyOffset = timelineEnabledForApply.value && timelineNeedsRiskyConfirm.value
+  if (allowRiskyOffset && !confirmRiskyTimelineOffset('写入字幕智能调轴')) return
   applying.value = true
   error.value = ''
   try {
     const payload = {
       session_id: preview.value.session_id,
       fix_timeline: timelineEnabledForApply.value,
+      allow_risky_offset: allowRiskyOffset,
       locked_target_ids: lockedTargetPayload(),
       items: selectedPreviewItems.value.map(item => ({
         upload_id: item.upload_id,
@@ -2488,6 +2553,13 @@ defineExpose({
                 <div class="episode-path">{{ target.relative_path }}</div>
                 <div v-if="target.timeline_task" class="history-status compact-status">
                   <span>调轴：{{ timelineTaskText(target.timeline_task) }}</span>
+                  <span
+                    v-for="meta in timelineMetaItems(target.timeline_task.timeline)"
+                    :key="`${target.id}-${meta}`"
+                    class="timeline-meta"
+                  >
+                    {{ meta }}
+                  </span>
                 </div>
                 <div class="subtitle-history-list compact-subtitles">
                   <div
@@ -2789,6 +2861,13 @@ defineExpose({
                   <span>{{ (target.subtitles || []).length ? `${target.subtitles.length} 个外挂字幕` : '暂无外挂字幕' }}</span>
                   <span v-if="detailRowForTarget(target).task">AI：{{ aiStatusText(detailRowForTarget(target).task) }}</span>
                   <span>{{ timelineResultForTarget(detailRowForTarget(target)) }}</span>
+                  <span
+                    v-for="meta in timelineMetaItems(timelineTaskForTarget(target)?.timeline)"
+                    :key="`${target.id}-detail-${meta}`"
+                    class="timeline-meta"
+                  >
+                    {{ meta }}
+                  </span>
                   <span v-if="isStreamTarget(target)">STRM 资源不启用 AI 生成和智能调轴</span>
                 </div>
                 <div v-if="(target.subtitles || []).length" class="subtitle-history-list compact-subtitles">
@@ -2853,6 +2932,15 @@ defineExpose({
                 <span>{{ item.target_label }}</span>
               </div>
               <em>{{ timelineResultText(item) }}</em>
+              <div v-if="timelineMetaItems(item).length" class="timeline-meta-list">
+                <span
+                  v-for="meta in timelineMetaItems(item)"
+                  :key="`${item.output_path}-${meta}`"
+                  class="timeline-meta"
+                >
+                  {{ meta }}
+                </span>
+              </div>
             </div>
           </div>
           </div>
@@ -4020,6 +4108,27 @@ defineExpose({
   margin-top: 0;
 }
 
+.timeline-meta-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+  min-width: 160px;
+}
+
+.timeline-meta {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 2px 8px;
+  border-radius: 6px;
+  border: 1px solid rgba(var(--v-theme-outline), 0.24);
+  background: rgba(var(--v-theme-surface), 0.78);
+  color: rgba(var(--v-theme-on-surface), 0.74);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
 .compact-subtitles {
   grid-column: 1 / -1;
 }
@@ -4110,6 +4219,11 @@ defineExpose({
 .result-row div {
   display: grid;
   gap: 3px;
+}
+
+.result-row .timeline-meta-list {
+  display: flex;
+  gap: 6px;
 }
 
 .result-row span,

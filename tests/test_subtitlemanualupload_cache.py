@@ -341,6 +341,56 @@ def test_strm_target_skips_timeline_fixing(tmp_path):
     assert plugin._timeline_tasks_for_entries([{"id": "t1"}])["summary"]["skipped"] == 1
 
 
+def test_write_operations_passes_allow_risky_offset_to_timeline_fixer(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    video = tmp_path / "Movie.mkv"
+    source = tmp_path / "subtitle.srt"
+    destination = tmp_path / "Movie.chi.srt"
+    video.write_text("video", encoding="utf-8")
+    source.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+    captured = {}
+
+    def fake_fix(video_path, subtitle_path, output_path, **kwargs):
+        captured["kwargs"] = kwargs
+        output_path.write_bytes(subtitle_path.read_bytes())
+        return module.TimelineFixResult(
+            enabled=True,
+            applied=True,
+            reason="timeline adjusted",
+            base="audio:webrtc",
+            offset_seconds=121.0,
+            scale_factor=1.0,
+            score=0.8,
+        )
+
+    module.fix_subtitle_timeline = fake_fix
+
+    results, fixed_count, _ = plugin._write_operations_to_disk(
+        session_dir=session_dir,
+        operations=[
+            {
+                "upload_info": {"upload_id": "u1", "source_name": "subtitle.srt", "archive_name": ""},
+                "target_entry": {"id": "t1", "path": str(video), "basename": "Movie", "storage": "local"},
+                "video_path": video,
+                "source_path": source,
+                "language_suffix": "chi",
+                "destination_name": destination.name,
+                "destination_path": destination,
+            }
+        ],
+        fix_timeline=True,
+        allow_risky_offset=True,
+    )
+
+    assert destination.exists()
+    assert fixed_count == 1
+    assert results[0]["timeline"]["offset_seconds"] == 121.0
+    assert captured["kwargs"]["allow_risky_offset"] is True
+
+
 def test_target_payload_marks_strm_resources(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
@@ -751,7 +801,8 @@ def setup_online_ai_translate(plugin, module, tmp_path):
             },
         }
 
-    def fake_fix(video_path, subtitle_path, output_path):
+    def fake_fix(video_path, subtitle_path, output_path, **kwargs):
+        captured["fix_kwargs"] = kwargs
         output_path.write_bytes(subtitle_path.read_bytes())
         return module.TimelineFixResult(
             enabled=True,
@@ -843,6 +894,34 @@ def test_online_ai_submit_endpoint_downloads_fixes_and_does_not_create_preview(t
     assert data["tasks"]["task_by_target"]["m1"]["status"] == "pending"
     assert data["timeline_tasks"]["task_by_target"]["m1"]["status"] == "completed"
     assert Path(captured["overrides"][entry["path"]]["subtitle_path"]).exists()
+
+
+def test_online_ai_submit_can_allow_risky_offset_after_manual_confirm(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    _, captured = setup_online_ai_translate(plugin, module, tmp_path)
+
+    response = asyncio.run(
+        plugin.api_online_ai_submit(
+            FakeRequest(
+                {
+                    "target_ids": ["m1"],
+                    "allow_risky_offset": True,
+                    "results": [
+                        {
+                            "provider": "opensubtitles",
+                            "result_id": "r1",
+                            "language_category": "english",
+                            "title": "Movie English",
+                        }
+                    ],
+                }
+            )
+        )
+    )
+
+    assert response["success"] is True
+    assert captured["fix_kwargs"]["allow_risky_offset"] is True
 
 
 def test_online_ai_submit_requires_timeline_fixer_before_download(tmp_path):
@@ -1153,6 +1232,83 @@ def test_auto_season_package_tries_next_candidate_when_coverage_incomplete(tmp_p
     assert service.downloaded == ["partial", "full"]
     assert result["result"] == "full pack"
     assert result["coverage_complete"] is True
+
+
+def test_levius_season_package_requires_all_twelve_episodes(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._online_provider_ids = ["opensubtitles"]
+    entries = [
+        make_auto_entry(
+            tmp_path,
+            filename=f"Levius.S01E{episode:02d}.mkv",
+            id=f"e{episode}",
+            media_key="levius-tv-key",
+            media_type="tv",
+            title="Levius",
+            season=1,
+            episode=episode,
+        )
+        for episode in range(1, 13)
+    ]
+
+    class FakeSeasonService:
+        def __init__(self):
+            self.downloaded = []
+
+        def search(self, **kwargs):
+            return {
+                "results": [
+                    {"provider": "opensubtitles", "result_id": "levius-11", "title": "Levius pack 11 episodes", "score": 96, "downloadable": True},
+                    {"provider": "opensubtitles", "result_id": "levius-12", "title": "Levius pack 12 episodes", "score": 95, "downloadable": True},
+                ]
+            }
+
+        def download(self, selected):
+            self.downloaded.append(selected[0]["result_id"])
+            return [{"provider": "opensubtitles", "source_name": f"{selected[0]['result_id']}.zip", "content": b"zip", "result": selected[0]}]
+
+    service = FakeSeasonService()
+    plugin._online_service = lambda: service
+    plugin._auto_wait_online_rate_limit = lambda *args, **kwargs: None
+    plugin._auto_media_for_entry = lambda entry: {"media_type": "tv", "title": "Levius", "year": "2019"}
+    plugin._apply_tmdb_detail = lambda target, media: None
+    plugin._extract_subtitle_files = lambda source_name, content, session_dir: [
+        {"upload_id": source_name, "source_name": source_name, "stored_path": str(tmp_path / source_name), "ext": ".srt"}
+    ]
+    plugin._store_auto_season_package_cache = lambda *args, **kwargs: None
+
+    def fake_write(**kwargs):
+        selected_title = kwargs["selected_result"]["title"]
+        if "11 episodes" in selected_title:
+            return {
+                "status": "written",
+                "result": selected_title,
+                "written_by_target": {f"e{episode}": {"path": f"Levius.S01E{episode:02d}.chi.srt"} for episode in range(1, 12)},
+                "completed_count": 11,
+                "missing_target_ids": ["e12"],
+                "coverage_complete": False,
+            }
+        return {
+            "status": "written",
+            "result": selected_title,
+            "written_by_target": {
+                f"e{episode}": {"path": f"Levius.S01E{episode:02d}.chi.srt"} for episode in range(1, 13)
+            },
+            "completed_count": 12,
+            "missing_target_ids": [],
+            "coverage_complete": True,
+        }
+
+    plugin._auto_write_prepared_uploads_for_entries = fake_write
+
+    result = plugin._auto_search_write_season_package(entries)
+
+    assert service.downloaded == ["levius-11", "levius-12"]
+    assert result["result"] == "Levius pack 12 episodes"
+    assert result["completed_count"] == 12
+    assert result["coverage_complete"] is True
+    assert set(result["written_by_target"]) == {f"e{episode}" for episode in range(1, 13)}
 
 
 def test_auto_transfer_rate_limit_is_tracked_per_provider(tmp_path):

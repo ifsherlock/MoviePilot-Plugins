@@ -25,6 +25,8 @@ MIN_SUBTITLE_EVENTS = 4
 MIN_CONFIDENT_SCORE = 0.02
 MIN_SCORE_MARGIN = 0.002
 TIMELINE_CACHE_VERSION = "v2-webrtc-202606"
+DEFAULT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60
+DEFAULT_CACHE_MAX_BYTES = 2 * 1024 * 1024 * 1024
 TEXT_SUBTITLE_CODECS = {
     "ass",
     "mov_text",
@@ -119,6 +121,8 @@ def fix_subtitle_timeline(
     cache_dir: Optional[Path] = None,
     allow_risky_offset: bool = False,
     vad_mode: str = "webrtc",
+    cache_ttl_seconds: int = DEFAULT_CACHE_TTL_SECONDS,
+    cache_max_bytes: int = DEFAULT_CACHE_MAX_BYTES,
 ) -> TimelineFixResult:
     status = check_timeline_fixer_dependencies()
     if not status["available"]:
@@ -131,6 +135,9 @@ def fix_subtitle_timeline(
     video_path = Path(video_path)
     subtitle_path = Path(subtitle_path)
     output_path = Path(output_path)
+    cache_dir = Path(cache_dir) if cache_dir else None
+    if cache_dir:
+        _prepare_timeline_cache(cache_dir, ttl_seconds=cache_ttl_seconds, max_bytes=cache_max_bytes)
     if not video_path.exists():
         raise RuntimeError(f"video does not exist: {video_path}")
     if not subtitle_path.exists():
@@ -141,6 +148,30 @@ def fix_subtitle_timeline(
         raise RuntimeError("not enough dialogue lines in uploaded subtitle")
 
     max_offset_seconds = _normalize_max_offset(max_offset_seconds)
+    result_cache_key = _timeline_result_cache_key(
+        video_path=video_path,
+        subtitle_path=subtitle_path,
+        max_offset_seconds=max_offset_seconds,
+        min_offset_seconds=min_offset_seconds,
+        vad_mode=vad_mode,
+        allow_risky_offset=allow_risky_offset,
+    )
+    cached_result = _load_timeline_result_cache(cache_dir, result_cache_key) if cache_dir else None
+    if cached_result:
+        result = TimelineFixResult(**cached_result["result"])
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        if result.applied:
+            _save_adjusted_subtitle(
+                pysubs2=pysubs2,
+                source_path=subtitle_path,
+                output_path=output_path,
+                scale_factor=result.scale_factor,
+                offset_seconds=result.offset_seconds,
+            )
+        else:
+            shutil.copyfile(subtitle_path, output_path)
+        return result
+
     base_vad, base_name = _build_base_vad(np, pysubs2, video_path, cache_dir=cache_dir, vad_mode=vad_mode)
     if base_vad.size < SAMPLE_RATE:
         raise RuntimeError("not enough reference speech features")
@@ -149,7 +180,9 @@ def fix_subtitle_timeline(
         np=np,
         base_vad=base_vad,
         source_events=source_events,
+        subtitle_path=subtitle_path,
         max_offset_seconds=max_offset_seconds,
+        cache_dir=cache_dir,
     )
     offset_seconds = best["offset_samples"] / float(SAMPLE_RATE)
     scale_factor = best["scale_factor"]
@@ -173,7 +206,7 @@ def fix_subtitle_timeline(
 
     if abs(offset_seconds) < min_offset_seconds and abs(scale_factor - 1.0) < 0.0001:
         shutil.copyfile(subtitle_path, output_path)
-        return TimelineFixResult(
+        result = TimelineFixResult(
             enabled=True,
             applied=False,
             reason="offset below threshold",
@@ -186,6 +219,8 @@ def fix_subtitle_timeline(
             active_ratio=best.get("active_ratio", 0.0),
             risk_flags=risk_flags,
         )
+        _store_timeline_result_cache(cache_dir, result_cache_key, result) if cache_dir else None
+        return result
 
     _save_adjusted_subtitle(
         pysubs2=pysubs2,
@@ -194,7 +229,7 @@ def fix_subtitle_timeline(
         scale_factor=scale_factor,
         offset_seconds=offset_seconds,
     )
-    return TimelineFixResult(
+    result = TimelineFixResult(
         enabled=True,
         applied=True,
         reason="timeline adjusted",
@@ -207,6 +242,8 @@ def fix_subtitle_timeline(
         active_ratio=best.get("active_ratio", 0.0),
         risk_flags=risk_flags,
     )
+    _store_timeline_result_cache(cache_dir, result_cache_key, result) if cache_dir else None
+    return result
 
 
 def _normalize_max_offset(value: Any) -> int:
@@ -286,6 +323,12 @@ def _build_embedded_subtitle_vad(
                 result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
                 if result.returncode != 0 or not out_path.exists() or out_path.stat().st_size < 128:
                     continue
+                _record_cache_entry(
+                    out_path,
+                    kind="embedded_subtitle",
+                    source=str(video_path),
+                    metadata={"stream_index": int(stream_index), "order": int(order)},
+                )
             try:
                 events = _load_subtitle_events(pysubs2, out_path)
             except Exception:
@@ -342,19 +385,23 @@ def _build_audio_vad(np: Any, video_path: Path, *, cache_dir: Optional[Path], va
         return values.astype(np.float32), f"audio:{vad_mode}:cache"
 
     if vad_mode == "webrtc" and importlib_util.find_spec("webrtcvad") is not None:
-        vad = _build_webrtc_audio_vad(np, video_path)
+        vad = _build_webrtc_audio_vad(np, video_path, cache_dir=cache_dir)
         base_name = "audio:webrtc"
     else:
-        vad = _build_rms_audio_vad(np, video_path)
+        vad = _build_rms_audio_vad(np, video_path, cache_dir=cache_dir)
         base_name = "audio:rms"
 
     if cache_path:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
         np.save(str(cache_path), vad)
+        _record_cache_entry(cache_path, kind="vad", source=str(video_path), metadata={"mode": vad_mode})
     return vad, base_name
 
 
-def _read_pcm_frames(video_path: Path) -> Tuple[bytes, str]:
+def _read_pcm_frames(video_path: Path, cache_dir: Optional[Path] = None) -> Tuple[bytes, str]:
+    cache_path = _cached_audio_pcm_path(cache_dir, video_path)
+    if cache_path and cache_path.exists():
+        return cache_path.read_bytes(), ""
     cmd = [
         "ffmpeg",
         "-hide_banner",
@@ -376,13 +423,17 @@ def _read_pcm_frames(video_path: Path) -> Tuple[bytes, str]:
     if result.returncode != 0:
         stderr = result.stderr.decode("utf-8", errors="ignore").strip()
         raise RuntimeError(f"ffmpeg audio extraction failed: {stderr or result.returncode}")
+    if cache_path:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        cache_path.write_bytes(result.stdout)
+        _record_cache_entry(cache_path, kind="audio", source=str(video_path), metadata={"sample_rate": AUDIO_SAMPLE_RATE})
     return result.stdout, result.stderr.decode("utf-8", errors="ignore").strip()
 
 
-def _build_webrtc_audio_vad(np: Any, video_path: Path) -> Any:
+def _build_webrtc_audio_vad(np: Any, video_path: Path, *, cache_dir: Optional[Path]) -> Any:
     import webrtcvad
 
-    pcm, _ = _read_pcm_frames(video_path)
+    pcm, _ = _read_pcm_frames(video_path, cache_dir=cache_dir)
     if len(pcm) < FRAME_BYTES * SAMPLE_RATE:
         raise RuntimeError("not enough audio frames for timeline fixing")
 
@@ -396,8 +447,8 @@ def _build_webrtc_audio_vad(np: Any, video_path: Path) -> Any:
     return _active_flags_to_vad(np, active)
 
 
-def _build_rms_audio_vad(np: Any, video_path: Path) -> Any:
-    pcm, stderr = _read_pcm_frames(video_path)
+def _build_rms_audio_vad(np: Any, video_path: Path, *, cache_dir: Optional[Path]) -> Any:
+    pcm, stderr = _read_pcm_frames(video_path, cache_dir=cache_dir)
     energies: List[float] = []
     pending = b""
     chunk_size = FRAME_BYTES * 500
@@ -487,12 +538,20 @@ def _calculate_best_alignment(
     np: Any,
     base_vad: Any,
     source_events: Sequence[Tuple[int, int, str]],
+    subtitle_path: Path,
     max_offset_seconds: int,
+    cache_dir: Optional[Path],
 ) -> Dict[str, float]:
     max_offset_samples = int(abs(max_offset_seconds) * SAMPLE_RATE)
     candidates = []
     for ratio in _unique_float_values(FRAMERATE_RATIOS):
-        source_vad = _subtitle_events_to_vad(np, source_events, ratio)
+        source_vad = _subtitle_events_to_vad_cached(
+            np=np,
+            events=source_events,
+            scale_factor=ratio,
+            subtitle_path=subtitle_path,
+            cache_dir=cache_dir,
+        )
         if source_vad.size < SAMPLE_RATE:
             continue
         offset_samples, raw_score = _fft_fit(
@@ -632,16 +691,245 @@ def _file_signature(path: Path) -> str:
     return sha1(raw.encode("utf-8", errors="ignore")).hexdigest()
 
 
+def _subtitle_content_signature(path: Path) -> str:
+    try:
+        stat = path.stat()
+        digest = sha1()
+        digest.update(f"{TIMELINE_CACHE_VERSION}|{path.resolve()}|{stat.st_size}|{stat.st_mtime_ns}|".encode("utf-8", errors="ignore"))
+        with path.open("rb") as fh:
+            for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+                digest.update(chunk)
+        return digest.hexdigest()
+    except Exception:
+        return _file_signature(path)
+
+
+def _cache_manifest_path(cache_dir: Optional[Path]) -> Optional[Path]:
+    if not cache_dir:
+        return None
+    return Path(cache_dir) / "manifest.json"
+
+
+def _prepare_timeline_cache(cache_dir: Path, *, ttl_seconds: int, max_bytes: int) -> None:
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    for name in ("audio", "embedded_subtitles", "vad", "subtitle_activity", "results"):
+        (cache_dir / name).mkdir(parents=True, exist_ok=True)
+    manifest = _cache_manifest_path(cache_dir)
+    if manifest and not manifest.exists():
+        manifest.write_text(json.dumps({"version": TIMELINE_CACHE_VERSION, "items": {}}, ensure_ascii=False), encoding="utf-8")
+    _cleanup_timeline_cache(cache_dir, ttl_seconds=ttl_seconds, max_bytes=max_bytes)
+
+
+def _read_cache_manifest(cache_dir: Optional[Path]) -> Dict[str, Any]:
+    manifest = _cache_manifest_path(cache_dir)
+    if not manifest or not manifest.exists():
+        return {"version": TIMELINE_CACHE_VERSION, "items": {}}
+    try:
+        payload = json.loads(manifest.read_text(encoding="utf-8"))
+    except Exception:
+        return {"version": TIMELINE_CACHE_VERSION, "items": {}}
+    if payload.get("version") != TIMELINE_CACHE_VERSION:
+        return {"version": TIMELINE_CACHE_VERSION, "items": {}}
+    if not isinstance(payload.get("items"), dict):
+        payload["items"] = {}
+    return payload
+
+
+def _write_cache_manifest(cache_dir: Optional[Path], payload: Dict[str, Any]) -> None:
+    manifest = _cache_manifest_path(cache_dir)
+    if not manifest:
+        return
+    manifest.parent.mkdir(parents=True, exist_ok=True)
+    manifest.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def _record_cache_entry(path: Path, *, kind: str, source: str, metadata: Optional[Dict[str, Any]] = None) -> None:
+    cache_dir = _timeline_cache_root_for(path)
+    if not cache_dir:
+        return
+    payload = _read_cache_manifest(cache_dir)
+    rel_path = str(path.relative_to(cache_dir)).replace("\\", "/")
+    try:
+        size = path.stat().st_size
+    except Exception:
+        size = 0
+    payload["items"][rel_path] = {
+        "kind": kind,
+        "source": source,
+        "size": int(size),
+        "updated_at": int(_now_ts()),
+        "metadata": metadata or {},
+    }
+    _write_cache_manifest(cache_dir, payload)
+
+
+def _timeline_cache_root_for(path: Path) -> Optional[Path]:
+    known_subdirs = {"audio", "embedded_subtitles", "vad", "subtitle_activity", "results"}
+    if path.parent.name in known_subdirs:
+        return path.parent.parent
+    parts = path.parts
+    for index, part in enumerate(parts):
+        if part == "timeline_cache":
+            return Path(*parts[: index + 1])
+    for parent in path.parents:
+        if parent.name == "timeline_cache":
+            return parent
+    return None
+
+
+def _cleanup_timeline_cache(cache_dir: Path, *, ttl_seconds: int, max_bytes: int) -> None:
+    payload = _read_cache_manifest(cache_dir)
+    now = _now_ts()
+    items = payload.get("items") or {}
+    changed = False
+    for rel_path, item in list(items.items()):
+        path = cache_dir / rel_path
+        updated_at = float((item or {}).get("updated_at") or 0)
+        if not path.exists() or (ttl_seconds > 0 and now - updated_at > ttl_seconds):
+            path.unlink(missing_ok=True)
+            items.pop(rel_path, None)
+            changed = True
+
+    file_items = []
+    total_size = 0
+    for rel_path, item in list(items.items()):
+        path = cache_dir / rel_path
+        try:
+            stat = path.stat()
+        except Exception:
+            items.pop(rel_path, None)
+            changed = True
+            continue
+        size = int(stat.st_size)
+        total_size += size
+        file_items.append((float((item or {}).get("updated_at") or stat.st_mtime), size, rel_path, path))
+
+    if max_bytes > 0 and total_size > max_bytes:
+        for _, size, rel_path, path in sorted(file_items):
+            if total_size <= max_bytes:
+                break
+            path.unlink(missing_ok=True)
+            items.pop(rel_path, None)
+            total_size -= size
+            changed = True
+    if changed:
+        payload["items"] = items
+        _write_cache_manifest(cache_dir, payload)
+
+
+def _now_ts() -> float:
+    import time
+
+    return time.time()
+
+
 def _cached_vad_path(cache_dir: Optional[Path], video_path: Path, vad_mode: str) -> Optional[Path]:
     if not cache_dir:
         return None
     return Path(cache_dir) / "vad" / f"{_file_signature(video_path)}.{vad_mode}.npy"
 
 
+def _cached_audio_pcm_path(cache_dir: Optional[Path], video_path: Path) -> Optional[Path]:
+    if not cache_dir:
+        return None
+    return Path(cache_dir) / "audio" / f"{_file_signature(video_path)}.s16le"
+
+
 def _cached_embedded_subtitle_path(cache_dir: Optional[Path], video_path: Path, stream_index: int, order: int) -> Optional[Path]:
     if not cache_dir:
         return None
     return Path(cache_dir) / "embedded_subtitles" / f"{_file_signature(video_path)}.{order}.{stream_index}.srt"
+
+
+def _cached_subtitle_vad_path(cache_dir: Optional[Path], subtitle_path: Path, scale_factor: float) -> Optional[Path]:
+    if not cache_dir:
+        return None
+    ratio_key = f"{float(scale_factor):.8f}".replace(".", "_")
+    return Path(cache_dir) / "subtitle_activity" / f"{_subtitle_content_signature(subtitle_path)}.{ratio_key}.npy"
+
+
+def _subtitle_events_to_vad_cached(
+    *,
+    np: Any,
+    events: Sequence[Tuple[int, int, str]],
+    scale_factor: float,
+    subtitle_path: Path,
+    cache_dir: Optional[Path],
+) -> Any:
+    cache_path = _cached_subtitle_vad_path(cache_dir, subtitle_path, scale_factor)
+    if cache_path and cache_path.exists():
+        return np.load(str(cache_path)).astype(np.float32)
+    vad = _subtitle_events_to_vad(np, events, scale_factor)
+    if cache_path:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        np.save(str(cache_path), vad)
+        _record_cache_entry(
+            cache_path,
+            kind="subtitle_activity",
+            source=str(subtitle_path),
+            metadata={"scale_factor": float(scale_factor)},
+        )
+    return vad
+
+
+def _timeline_result_cache_key(
+    *,
+    video_path: Path,
+    subtitle_path: Path,
+    max_offset_seconds: int,
+    min_offset_seconds: float,
+    vad_mode: str,
+    allow_risky_offset: bool,
+) -> str:
+    raw = "|".join(
+        [
+            TIMELINE_CACHE_VERSION,
+            "result",
+            _file_signature(video_path),
+            _subtitle_content_signature(subtitle_path),
+            str(int(max_offset_seconds)),
+            f"{float(min_offset_seconds):.3f}",
+            str(vad_mode or "webrtc"),
+            "risky" if allow_risky_offset else "safe",
+        ]
+    )
+    return sha1(raw.encode("utf-8", errors="ignore")).hexdigest()
+
+
+def _cached_result_path(cache_dir: Optional[Path], key: str) -> Optional[Path]:
+    if not cache_dir:
+        return None
+    return Path(cache_dir) / "results" / f"{key}.json"
+
+
+def _load_timeline_result_cache(cache_dir: Optional[Path], key: str) -> Optional[Dict[str, Any]]:
+    path = _cached_result_path(cache_dir, key)
+    if not path or not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if payload.get("version") != TIMELINE_CACHE_VERSION:
+        return None
+    result = payload.get("result")
+    if not isinstance(result, dict):
+        return None
+    return payload
+
+
+def _store_timeline_result_cache(cache_dir: Optional[Path], key: str, result: TimelineFixResult) -> None:
+    path = _cached_result_path(cache_dir, key)
+    if not path:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "version": TIMELINE_CACHE_VERSION,
+        "key": key,
+        "result": result.to_dict(),
+    }
+    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    _record_cache_entry(path, kind="result", source=key, metadata={"confidence": result.confidence})
 
 
 def _save_adjusted_subtitle(

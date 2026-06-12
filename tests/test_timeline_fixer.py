@@ -1,8 +1,13 @@
 from __future__ import annotations
 
 import importlib.util
+import json
+import shutil
+import subprocess
 import sys
 from pathlib import Path
+
+import pytest
 
 
 def load_timeline_module():
@@ -69,3 +74,199 @@ def test_alignment_confidence_rejects_over_configured_max_and_flags_over_120():
     )
     assert confidence == "low"
     assert "offset_over_120s" in risks
+
+
+def test_audio_pcm_cache_writes_manifest_and_reuses_cached_bytes(tmp_path, monkeypatch):
+    module = load_timeline_module()
+    cache_dir = tmp_path / "timeline_cache"
+    video = tmp_path / "Movie.mkv"
+    video.write_bytes(b"video")
+    calls = {"count": 0}
+
+    class Result:
+        returncode = 0
+        stdout = b"\x01\x00" * module.FRAME_SAMPLES * module.SAMPLE_RATE
+        stderr = b""
+
+    def fake_run(*args, **kwargs):
+        calls["count"] += 1
+        return Result()
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    first, _ = module._read_pcm_frames(video, cache_dir=cache_dir)
+    second, _ = module._read_pcm_frames(video, cache_dir=cache_dir)
+    manifest = json.loads((cache_dir / "manifest.json").read_text(encoding="utf-8"))
+
+    assert first == second
+    assert calls["count"] == 1
+    assert list((cache_dir / "audio").glob("*.s16le"))
+    assert any(item["kind"] == "audio" for item in manifest["items"].values())
+
+
+def test_timeline_result_cache_roundtrips_with_manifest(tmp_path):
+    module = load_timeline_module()
+    cache_dir = tmp_path / "timeline_cache"
+    module._prepare_timeline_cache(cache_dir, ttl_seconds=3600, max_bytes=1024 * 1024)
+    result = module.TimelineFixResult(
+        enabled=True,
+        applied=True,
+        reason="timeline adjusted",
+        base="audio:webrtc",
+        offset_seconds=5.0,
+        scale_factor=1.0,
+        score=0.9,
+        confidence="high",
+        score_margin=0.5,
+        active_ratio=0.2,
+        risk_flags=[],
+    )
+
+    module._store_timeline_result_cache(cache_dir, "abc", result)
+    cached = module._load_timeline_result_cache(cache_dir, "abc")
+    manifest = json.loads((cache_dir / "manifest.json").read_text(encoding="utf-8"))
+
+    assert cached["result"]["offset_seconds"] == 5.0
+    assert cached["result"]["confidence"] == "high"
+    assert any(item["kind"] == "result" for item in manifest["items"].values())
+
+
+def test_cache_cleanup_removes_expired_manifest_entries(tmp_path, monkeypatch):
+    module = load_timeline_module()
+    cache_dir = tmp_path / "timeline_cache"
+    old_file = cache_dir / "audio" / "old.s16le"
+    old_file.parent.mkdir(parents=True)
+    old_file.write_bytes(b"old")
+    monkeypatch.setattr(module, "_now_ts", lambda: 1000.0)
+    module._record_cache_entry(old_file, kind="audio", source="video")
+
+    monkeypatch.setattr(module, "_now_ts", lambda: 2000.0)
+    module._prepare_timeline_cache(cache_dir, ttl_seconds=1, max_bytes=1024 * 1024)
+    manifest = json.loads((cache_dir / "manifest.json").read_text(encoding="utf-8"))
+
+    assert not old_file.exists()
+    assert manifest["items"] == {}
+
+
+def test_subtitle_activity_cache_reuses_vad_file(tmp_path, monkeypatch):
+    np = pytest.importorskip("numpy")
+    module = load_timeline_module()
+    cache_dir = tmp_path / "timeline_cache"
+    subtitle = tmp_path / "Movie.eng.srt"
+    subtitle.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+    events = [(1000, 2000, "Hello"), (3000, 4000, "World"), (5000, 6000, "Again"), (7000, 8000, "End")]
+
+    first = module._subtitle_events_to_vad_cached(
+        np=np,
+        events=events,
+        scale_factor=1.0,
+        subtitle_path=subtitle,
+        cache_dir=cache_dir,
+    )
+    monkeypatch.setattr(module, "_subtitle_events_to_vad", lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("cache miss")))
+    second = module._subtitle_events_to_vad_cached(
+        np=np,
+        events=events,
+        scale_factor=1.0,
+        subtitle_path=subtitle,
+        cache_dir=cache_dir,
+    )
+
+    assert second.tolist() == first.tolist()
+    assert list((cache_dir / "subtitle_activity").glob("*.npy"))
+
+
+def test_real_media_fixture_fixes_five_second_offset_against_embedded_subtitle(tmp_path):
+    pytest.importorskip("numpy")
+    pytest.importorskip("pysubs2")
+    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        pytest.skip("ffmpeg/ffprobe not available")
+    module = load_timeline_module()
+    base = tmp_path / "base.srt"
+    shifted = tmp_path / "shifted.srt"
+    fixed = tmp_path / "fixed.srt"
+    video = tmp_path / "fixture.mkv"
+    base.write_text(
+        "\n".join(
+            [
+                "1",
+                "00:00:02,000 --> 00:00:03,000",
+                "line one",
+                "",
+                "2",
+                "00:00:05,000 --> 00:00:06,000",
+                "line two",
+                "",
+                "3",
+                "00:00:08,000 --> 00:00:09,000",
+                "line three",
+                "",
+                "4",
+                "00:00:11,000 --> 00:00:12,000",
+                "line four",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    shifted.write_text(
+        "\n".join(
+            [
+                "1",
+                "00:00:07,000 --> 00:00:08,000",
+                "line one",
+                "",
+                "2",
+                "00:00:10,000 --> 00:00:11,000",
+                "line two",
+                "",
+                "3",
+                "00:00:13,000 --> 00:00:14,000",
+                "line three",
+                "",
+                "4",
+                "00:00:16,000 --> 00:00:17,000",
+                "line four",
+                "",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    cmd = [
+        "ffmpeg",
+        "-hide_banner",
+        "-nostdin",
+        "-loglevel",
+        "error",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        "color=c=black:s=160x90:d=20",
+        "-i",
+        str(base),
+        "-c:v",
+        "libx264",
+        "-t",
+        "20",
+        "-c:s",
+        "srt",
+        str(video),
+    ]
+    result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+    if result.returncode != 0:
+        pytest.skip(f"ffmpeg fixture generation failed: {result.stderr[:200]}")
+
+    timeline = module.fix_subtitle_timeline(
+        video_path=video,
+        subtitle_path=shifted,
+        output_path=fixed,
+        max_offset_seconds=120,
+        min_offset_seconds=0.2,
+        cache_dir=tmp_path / "timeline_cache",
+        vad_mode="rms",
+    )
+
+    assert timeline.applied is True
+    assert -5.5 < timeline.offset_seconds < -4.5
+    assert fixed.exists()

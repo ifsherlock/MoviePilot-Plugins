@@ -3648,6 +3648,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         session_dir: Path,
         operations: List[Dict[str, Any]],
         fix_timeline: bool = False,
+        allow_risky_offset: bool = False,
     ) -> Tuple[List[Dict[str, Any]], int, int]:
         fixed_dir = session_dir / "timeline_fixed"
         simplified_dir = session_dir / "simplified"
@@ -3690,6 +3691,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                         video_path=operation["video_path"],
                         subtitle_path=operation["source_path"],
                         output_path=fixed_source_path,
+                        allow_risky_offset=allow_risky_offset,
                     )
                 except Exception as exc:
                     self._set_timeline_task(operation, status="failed", message=f"智能调轴失败: {exc}")
@@ -3794,7 +3796,17 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             shutil.copyfile(subtitle_path, backup_path)
         return backup_path
 
-    def _run_timeline_fix(self, *, video_path: Path, subtitle_path: Path, output_path: Path) -> TimelineFixResult:
+    def _run_timeline_fix(
+        self,
+        *,
+        video_path: Path,
+        subtitle_path: Path,
+        output_path: Path,
+        allow_risky_offset: Optional[bool] = None,
+    ) -> TimelineFixResult:
+        effective_allow_risky_offset = (
+            self._timeline_allow_risky_offset if allow_risky_offset is None else bool(allow_risky_offset)
+        )
         try:
             return fix_subtitle_timeline(
                 video_path=video_path,
@@ -3803,7 +3815,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                 max_offset_seconds=self._timeline_max_offset_seconds,
                 min_offset_seconds=self._timeline_min_offset_seconds,
                 cache_dir=self._timeline_cache_dir(),
-                allow_risky_offset=self._timeline_allow_risky_offset,
+                allow_risky_offset=effective_allow_risky_offset,
                 vad_mode=self._timeline_vad_mode,
             )
         except TypeError as exc:
@@ -4953,12 +4965,18 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                 operations.append(operation)
         return operations, skipped, failed
 
-    def _run_existing_timeline_fix(self, session_dir: Path, operations: List[Dict[str, Any]]) -> None:
+    def _run_existing_timeline_fix(
+        self,
+        session_dir: Path,
+        operations: List[Dict[str, Any]],
+        allow_risky_offset: bool = False,
+    ) -> None:
         try:
             self._write_operations_to_disk(
                 session_dir=session_dir,
                 operations=operations,
                 fix_timeline=True,
+                allow_risky_offset=allow_risky_offset,
             )
             logger.info("[SubtitleManualUpload] 匹配历史智能调轴完成 count=%s", len(operations))
         except Exception as exc:
@@ -4976,6 +4994,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
     async def api_timeline_fix_existing(self, request: Request) -> Dict[str, Any]:
         body = await request.json()
         requested_items = body.get("items") if isinstance(body, dict) else []
+        allow_risky_offset = bool(body.get("allow_risky_offset")) if isinstance(body, dict) else False
         if not isinstance(requested_items, list) or not requested_items:
             raise HTTPException(status_code=400, detail="请先选择要调轴的历史字幕")
         locked_ids = self._locked_target_ids_from_body(body if isinstance(body, dict) else {})
@@ -5034,7 +5053,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         session_dir.mkdir(parents=True, exist_ok=True)
         threading.Thread(
             target=self._run_existing_timeline_fix,
-            args=(session_dir, operations),
+            args=(session_dir, operations, allow_risky_offset),
             name="SubtitleManualUploadExistingTimelineFix",
             daemon=True,
         ).start()
@@ -5077,6 +5096,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         body = await request.json()
         target_ids = self._target_ids_from_body(body)
         locked_ids = self._locked_target_ids_from_body(body)
+        allow_risky_offset = bool(body.get("allow_risky_offset")) if isinstance(body, dict) else False
         target_ids, locked_skipped = self._filter_unlocked_target_ids(target_ids, locked_ids)
         if not target_ids:
             if locked_skipped:
@@ -5088,7 +5108,12 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         selected_results = self._results_from_body(body)
         if not selected_results:
             raise HTTPException(status_code=400, detail="请至少选择一个在线字幕结果")
-        return await run_in_threadpool(self._submit_online_ai_translate, target_entries, selected_results)
+        return await run_in_threadpool(
+            self._submit_online_ai_translate,
+            target_entries,
+            selected_results,
+            allow_risky_offset,
+        )
 
     def _download_online_results_to_uploads(
         self,
@@ -5184,6 +5209,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         session_dir: Path,
         target_entries: List[Dict[str, Any]],
         prepared_uploads: List[Dict[str, Any]],
+        allow_risky_offset: bool = False,
     ) -> Tuple[Dict[str, Dict[str, str]], List[Dict[str, Any]]]:
         targets = [self._target_from_entry(item) for item in target_entries]
         candidate_items = self._online_ai_candidate_items(prepared_uploads=prepared_uploads, targets=targets)
@@ -5225,6 +5251,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     video_path=operation["video_path"],
                     subtitle_path=operation["source_path"],
                     output_path=fixed_path,
+                    allow_risky_offset=allow_risky_offset,
                 )
             except Exception as exc:
                 self._set_timeline_task(operation, status="failed", message=f"在线字幕智能调轴失败: {exc}")
@@ -5267,6 +5294,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         self,
         target_entries: List[Dict[str, Any]],
         selected_results: List[Dict[str, Any]],
+        allow_risky_offset: bool = False,
     ) -> Dict[str, Any]:
         if any((item.get("language_category") or "").lower() == "chinese" for item in selected_results):
             raise HTTPException(status_code=400, detail="请只选择外语字幕结果后再提交 AI 翻译")
@@ -5305,6 +5333,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                 session_dir=session_dir,
                 target_entries=target_entries,
                 prepared_uploads=prepared_uploads,
+                allow_risky_offset=allow_risky_offset,
             )
             ai_result = self._submit_autosub_for_entries(target_entries, subtitle_overrides=subtitle_overrides)
         except HTTPException:
@@ -5733,8 +5762,14 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         if not selected_results:
             raise HTTPException(status_code=400, detail="请至少选择一个在线字幕结果")
         submit_ai_translate = bool(body.get("submit_ai_translate"))
+        allow_risky_offset = bool(body.get("allow_risky_offset")) if isinstance(body, dict) else False
         if submit_ai_translate:
-            return await run_in_threadpool(self._submit_online_ai_translate, target_entries, selected_results)
+            return await run_in_threadpool(
+                self._submit_online_ai_translate,
+                target_entries,
+                selected_results,
+                allow_risky_offset,
+            )
         self._check_online_rate_limit([item.get("provider") for item in selected_results if isinstance(item, dict)])
 
         session_id = self._hash_text(f"online|{datetime.now().isoformat()}|{','.join(sorted(map(str, target_ids)))}")[:16]
@@ -5910,6 +5945,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         session_id = self._normalize_text(body.get("session_id"))
         items = body.get("items") or []
         fix_timeline = bool(body.get("fix_timeline"))
+        allow_risky_offset = bool(body.get("allow_risky_offset"))
         if not session_id or not isinstance(items, list) or not items:
             logger.warning("[SubtitleManualUpload] 写入失败：缺少会话或匹配结果 session=%s", session_id or "-")
             raise HTTPException(status_code=400, detail="缺少上传会话或匹配结果")
@@ -5961,6 +5997,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             session_dir=session_dir,
             operations=operations,
             fix_timeline=fix_timeline,
+            allow_risky_offset=allow_risky_offset,
         )
 
         shutil.rmtree(session_dir, ignore_errors=True)
