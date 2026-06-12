@@ -552,17 +552,6 @@ class AutoSubv3(_PluginBase):
         if normalized_policy == SourcePolicy.REUSE.value:
             normalized_policy = SourcePolicy.AUTO.value
         normalized_overwrite = self._normalize_overwrite_policy(overwrite_policy)
-        if (
-            normalized_trigger == TriggerType.SUBTITLE_FALLBACK.value
-            and self._generation_mode == GenerationMode.MONITOR.value
-        ):
-            return {
-                "added": [],
-                "skipped": [{"reason": "AI 字幕生成当前为主动监测模式，已跳过字幕匹配自动兜底"}],
-                "failed": [],
-                "status": self._status_payload(),
-            }
-
         added: List[Dict[str, Any]] = []
         skipped: List[Dict[str, str]] = []
         failed: List[Dict[str, str]] = []
@@ -876,7 +865,8 @@ class AutoSubv3(_PluginBase):
                     continue
             elif next_policy != SourcePolicy.MATCHED_EXTERNAL.value:
                 next_source_subtitle = ""
-            force_generate = task.force_generate or task.source == TaskSource.SUBTITLE_MANUAL_UPLOAD
+            force_generate = True
+            reuse_output_variant = task.output_variant if requested_policy == SourcePolicy.REUSE.value else ""
             ok = self.add_task(
                 task.video_file,
                 task.source if isinstance(task.source, TaskSource) else TaskSource.MANUAL,
@@ -888,6 +878,7 @@ class AutoSubv3(_PluginBase):
                 overwrite_policy=requested_overwrite,
                 rerun_of=task.task_id,
                 source_name=os.path.basename(next_source_subtitle or ""),
+                output_variant=reuse_output_variant,
             )
             if ok:
                 added.append({"task_id": task_id, "path": task.video_file, "source_policy": next_policy})
