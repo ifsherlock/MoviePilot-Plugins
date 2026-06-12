@@ -33,6 +33,11 @@ from app.utils.system import SystemUtils
 from .ffmpeg import Ffmpeg
 from .translate.openai_translate import OpenAi
 
+try:
+    from app.core.plugin import PluginManager
+except Exception:
+    PluginManager = None
+
 
 class UserInterruptException(Exception):
     """用户中断当前任务的异常"""
@@ -360,7 +365,8 @@ class AutoSubv3(_PluginBase):
 
     @classmethod
     def _normalize_generation_mode(cls, value: Any) -> str:
-        return cls._enum_value(GenerationMode, value, GenerationMode.MONITOR.value)
+        mode = cls._enum_value(GenerationMode, value, GenerationMode.MONITOR.value)
+        return GenerationMode.MONITOR.value if mode == GenerationMode.MIXED.value else mode
 
     @classmethod
     def _normalize_trigger(cls, value: Any) -> str:
@@ -406,9 +412,9 @@ class AutoSubv3(_PluginBase):
     @staticmethod
     def _generation_mode_label(value: Any) -> str:
         return {
-            GenerationMode.FALLBACK.value: "后备模式",
-            GenerationMode.MONITOR.value: "主动监测模式",
-            GenerationMode.MIXED.value: "混合模式",
+            GenerationMode.FALLBACK.value: "独立入库监控关闭",
+            GenerationMode.MONITOR.value: "独立入库监控开启",
+            GenerationMode.MIXED.value: "独立入库监控开启",
         }.get(str(value or ""), str(value or ""))
 
     @staticmethod
@@ -434,6 +440,31 @@ class AutoSubv3(_PluginBase):
             TaskStatus.FAILED: "字幕生成失败，请查看 AI字幕生成(联动版) 日志",
             TaskStatus.CANCELLED: "用户已取消",
         }.get(status, "")
+
+    @staticmethod
+    def _subtitlemanualupload_auto_transfer_enabled() -> bool:
+        if PluginManager is None:
+            return False
+        try:
+            running_plugins = PluginManager().running_plugins or {}
+        except Exception as exc:
+            logger.warning("[AutoSubv3] 读取字幕匹配插件状态失败: %s", exc)
+            return False
+        plugin = running_plugins.get("SubtitleManualUpload") or running_plugins.get("subtitlemanualupload")
+        if not plugin:
+            for candidate in running_plugins.values():
+                if candidate.__class__.__name__ == "SubtitleManualUpload":
+                    plugin = candidate
+                    break
+        if not plugin:
+            return False
+        try:
+            enabled = bool(plugin.get_state()) if hasattr(plugin, "get_state") else bool(getattr(plugin, "_enabled", False))
+            auto_transfer = bool(getattr(plugin, "_auto_search_on_transfer", False))
+        except Exception as exc:
+            logger.warning("[AutoSubv3] 判断字幕匹配入库自动处理状态失败: %s", exc)
+            return False
+        return enabled and auto_transfer
 
     def _queue_positions(self) -> Dict[str, int]:
         positions: Dict[str, int] = {}
@@ -504,8 +535,11 @@ class AutoSubv3(_PluginBase):
 
     def _status_payload(self) -> Dict[str, Any]:
         ready = bool(self._running and self._task_queue)
+        monitor_taken_over = self._subtitlemanualupload_auto_transfer_enabled()
         if not self._enabled:
             message = "插件未启用"
+        elif monitor_taken_over:
+            message = "独立入库监控已由字幕匹配接管，仍可接收手动和联动任务"
         elif not ready:
             message = "插件已启用但任务队列未启动，请检查 Whisper 或 OpenAI 配置"
         else:
@@ -524,6 +558,8 @@ class AutoSubv3(_PluginBase):
             "plugin_version": self.plugin_version,
             "generation_mode": self._generation_mode or GenerationMode.MONITOR.value,
             "generation_mode_label": self._generation_mode_label(self._generation_mode or GenerationMode.MONITOR.value),
+            "independent_monitor_enabled": self._generation_mode != GenerationMode.FALLBACK.value and not monitor_taken_over,
+            "independent_monitor_blocked_reason": "字幕匹配入库自动处理已启用" if monitor_taken_over else "",
             "message": message,
             "counts": self._task_counts(),
             "updated_at": latest_time,
@@ -1016,6 +1052,7 @@ class AutoSubv3(_PluginBase):
         overwrite_policy: str = OverwritePolicy.SKIP.value,
         rerun_of: str = "",
         source_name: str = "",
+        output_variant: str = "",
     ):
         """
         添加新任务到队列和任务列表中，若任务已存在则跳过。
@@ -1039,6 +1076,7 @@ class AutoSubv3(_PluginBase):
             source_policy=normalized_policy,
             overwrite_policy=self._normalize_overwrite_policy(overwrite_policy),
             rerun_of=rerun_of,
+            output_variant=self._normalize_text(output_variant),
             add_time=datetime.now()
         )
         if source_subtitle_path:
@@ -1116,6 +1154,7 @@ class AutoSubv3(_PluginBase):
                     source_subtitle_lang=task.source_subtitle_lang,
                     source_policy=task.source_policy,
                     overwrite_policy=task.overwrite_policy,
+                    output_variant=task.output_variant,
                 )
                 if task.cancel_requested or task.status == TaskStatus.CANCELLED:
                     task.status = TaskStatus.CANCELLED
@@ -1167,6 +1206,9 @@ class AutoSubv3(_PluginBase):
         if self._generation_mode == GenerationMode.FALLBACK.value:
             logger.info("AI 字幕生成当前为后备模式，不启动主动目录监控")
             return
+        if self._subtitlemanualupload_auto_transfer_enabled():
+            logger.info("字幕匹配入库自动处理已启用，AutoSubv3 不启动独立目录监控")
+            return
 
         # 全量扫描（仅处理新增关闭时）
         if not self._process_new_only:
@@ -1207,6 +1249,9 @@ class AutoSubv3(_PluginBase):
             return
         if self._generation_mode == GenerationMode.FALLBACK.value:
             logger.info("AI 字幕生成当前为后备模式，忽略主动监控新增文件：%s", file_path)
+            return
+        if self._subtitlemanualupload_auto_transfer_enabled():
+            logger.info("字幕匹配入库自动处理已启用，忽略 AutoSubv3 独立监控新增文件：%s", file_path)
             return
         with self._lock:
             self.add_task(
@@ -1325,12 +1370,14 @@ class AutoSubv3(_PluginBase):
         output_mode: str,
         resolved_source: str,
         overwrite_policy: str,
+        inherited_variant: str = "",
     ) -> Tuple[str, str]:
-        default_path = self.__translated_subtitle_path(file_path, source_lang, output_mode)
         policy = self._normalize_overwrite_policy(overwrite_policy)
-        variant = "ai"
-        if policy == OverwritePolicy.NEW_VARIANT.value:
+        variant = self._normalize_text(inherited_variant)
+        if not variant and policy == OverwritePolicy.NEW_VARIANT.value:
             variant = self._variant_for_source(resolved_source)
+        if not variant:
+            variant = "ai"
         return self.__translated_subtitle_path_with_variant(file_path, source_lang, output_mode, variant), variant
 
     @staticmethod
@@ -1369,6 +1416,7 @@ class AutoSubv3(_PluginBase):
         source_subtitle_lang: str = "",
         source_policy: str = SourcePolicy.AUTO.value,
         overwrite_policy: str = OverwritePolicy.SKIP.value,
+        output_variant: str = "",
     ) -> TaskStatus:
         if not video_file:
             logger.error(f"[Step 0] video_file 为空")
@@ -1452,6 +1500,7 @@ class AutoSubv3(_PluginBase):
                     self._subtitle_output_mode,
                     resolved_source,
                     overwrite_policy,
+                    inherited_variant=output_variant,
                 )
                 normalized_overwrite = self._normalize_overwrite_policy(overwrite_policy)
                 if os.path.exists(translated_subtitle):
@@ -2525,15 +2574,13 @@ class AutoSubv3(_PluginBase):
                                 "props": {"cols": 12, "md": 4},
                                 "content": [
                                     {
-                                        "component": "VSelect",
+                                        "component": "VSwitch",
                                         "props": {
                                             "model": "generation_mode",
-                                            "label": "AI 字幕默认生成模式",
-                                            "items": [
-                                                {"title": "后备模式：只作为字幕匹配兜底", "value": "fallback"},
-                                                {"title": "主动监测模式：独立监控入库", "value": "monitor"},
-                                                {"title": "混合模式：监控与字幕匹配兜底都启用", "value": "mixed"},
-                                            ],
+                                            "label": "启用独立入库监控",
+                                            "true-value": "monitor",
+                                            "false-value": "fallback",
+                                            "hint": "关闭后仍可接收字幕匹配联动任务和手动任务",
                                         },
                                     }
                                 ],

@@ -18,7 +18,7 @@ const localConfig = ref({
   traditional_to_simplified: false,
   auto_search_on_transfer: false,
   auto_skip_chinese_media_on_transfer: true,
-  auto_transfer_subtitle_strategy: 'search_first',
+  auto_transfer_subtitle_strategy: 'online_then_ai_source',
   timeline_max_offset_seconds: 120,
   timeline_min_offset_seconds: 0.2,
   timeline_vad_mode: 'webrtc',
@@ -52,10 +52,9 @@ const rarDependencyModes = [
 ]
 
 const autoStrategyItems = [
-  { title: '搜索优先，AI 兜底', value: 'search_first' },
-  { title: '只搜索匹配字幕', value: 'search_only' },
-  { title: '只提交 AI 生成', value: 'ai_only' },
-  { title: 'AI 优先，失败再搜索', value: 'ai_first' },
+  { title: '在线匹配优先，AI 来源兜底', value: 'online_then_ai_source' },
+  { title: '只用在线匹配来源', value: 'online_source_only' },
+  { title: '只用 AI 来源生成', value: 'ai_source_only' },
 ]
 
 const timelineVadItems = [
@@ -84,15 +83,26 @@ function normalizePositiveNumber(value, fallback) {
   return Number.isFinite(number) && number > 0 ? number : fallback
 }
 
+function normalizeAutoStrategy(value) {
+  const aliases = {
+    search_first: 'online_then_ai_source',
+    search_only: 'online_source_only',
+    ai_only: 'ai_source_only',
+    ai_first: 'ai_source_only',
+  }
+  const normalized = aliases[value] || value
+  return autoStrategyItems.some(item => item.value === normalized)
+    ? normalized
+    : 'online_then_ai_source'
+}
+
 function normalizeConfig(input) {
   const assrtApiKey = String(input?.assrt_api_key || '').trim()
   const opensubtitlesApiKey = String(input?.opensubtitles_api_key || '').trim()
   const opensubtitlesUsername = String(input?.opensubtitles_username || '').trim()
   const opensubtitlesPassword = String(input?.opensubtitles_password || '').trim()
   const providers = normalizeProviders(input?.online_providers)
-  const autoStrategy = autoStrategyItems.some(item => item.value === input?.auto_transfer_subtitle_strategy)
-    ? input.auto_transfer_subtitle_strategy
-    : 'search_first'
+  const autoStrategy = normalizeAutoStrategy(input?.auto_transfer_subtitle_strategy)
   if (assrtApiKey && !providers.includes('assrt')) {
     providers.push('assrt')
   }

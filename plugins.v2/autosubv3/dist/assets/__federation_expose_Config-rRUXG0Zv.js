@@ -65,7 +65,13 @@ const defaultConfig = {
   parallel_workers: 10,
 };
 
-const config = reactive({ ...defaultConfig, ...(props.initialConfig || {}) });
+function normalizeInitialConfig(value = {}) {
+  const merged = { ...defaultConfig, ...(value || {}) };
+  merged.generation_mode = merged.generation_mode === 'fallback' ? 'fallback' : 'monitor';
+  return merged
+}
+
+const config = reactive(normalizeInitialConfig(props.initialConfig));
 const saving = ref(false);
 const error = ref('');
 
@@ -86,16 +92,10 @@ const preferences = [
   { title: '英文优先', value: 'english_first' },
   { title: '原音优先', value: 'origin_first' },
 ];
-const generationModes = [
-  { title: '主动监测模式', value: 'monitor' },
-  { title: '后备模式', value: 'fallback' },
-  { title: '混合模式', value: 'mixed' },
-];
-
 watch(
   () => props.initialConfig,
   (value) => {
-    Object.assign(config, defaultConfig, value || {});
+    Object.assign(config, normalizeInitialConfig(value));
   },
 );
 
@@ -117,11 +117,11 @@ return (_ctx, _cache) => {
   const _component_VToolbar = _resolveComponent("VToolbar");
   const _component_VDivider = _resolveComponent("VDivider");
   const _component_VAlert = _resolveComponent("VAlert");
-  const _component_VSelect = _resolveComponent("VSelect");
-  const _component_VCol = _resolveComponent("VCol");
   const _component_VSwitch = _resolveComponent("VSwitch");
+  const _component_VCol = _resolveComponent("VCol");
   const _component_VRow = _resolveComponent("VRow");
   const _component_VTextarea = _resolveComponent("VTextarea");
+  const _component_VSelect = _resolveComponent("VSelect");
   const _component_VTextField = _resolveComponent("VTextField");
 
   return (_openBlock(), _createElementBlock("div", _hoisted_1, [
@@ -183,12 +183,13 @@ return (_ctx, _cache) => {
               md: "6"
             }, {
               default: _withCtx(() => [
-                _createVNode(_component_VSelect, {
+                _createVNode(_component_VSwitch, {
                   modelValue: config.generation_mode,
                   "onUpdate:modelValue": _cache[2] || (_cache[2] = $event => ((config.generation_mode) = $event)),
-                  items: generationModes,
-                  label: "AI 字幕默认生成模式",
-                  hint: "后备模式只作为字幕匹配兜底；主动监测模式保持独立监控；混合模式两者都启用",
+                  label: "启用独立入库监控",
+                  "true-value": "monitor",
+                  "false-value": "fallback",
+                  hint: "关闭后仍可接收字幕匹配联动任务和手动任务",
                   "persistent-hint": ""
                 }, null, 8, ["modelValue"])
               ]),
@@ -656,6 +657,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-ea83e3ad"]]);
+const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-abe96cf8"]]);
 
 export { Config as default };

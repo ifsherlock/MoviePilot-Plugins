@@ -57,6 +57,7 @@ def load_plugin_module():
         "app.core.config": types.SimpleNamespace(settings=types.SimpleNamespace(RMT_MEDIAEXT={".mkv", ".mp4"})),
         "app.core.context": types.SimpleNamespace(MediaInfo=object),
         "app.core.event": types.SimpleNamespace(eventmanager=FakeEventManager(), Event=object),
+        "app.core.plugin": types.SimpleNamespace(PluginManager=lambda: types.SimpleNamespace(running_plugins={})),
         "app.schemas": types.SimpleNamespace(TransferInfo=object),
         "app.schemas.types": types.SimpleNamespace(
             NotificationType=types.SimpleNamespace(Manual="Manual"),
@@ -332,7 +333,7 @@ def test_source_variant_suffixes_are_single_segment_for_player_compatibility(tmp
     assert variant == "aiasr"
 
 
-def test_monitor_mode_skips_subtitle_fallback_tasks(tmp_path):
+def test_monitor_mode_accepts_subtitle_fallback_tasks(tmp_path):
     module = load_plugin_module()
     plugin = make_plugin(module)
     plugin._generation_mode = module.GenerationMode.MONITOR.value
@@ -345,10 +346,10 @@ def test_monitor_mode_skips_subtitle_fallback_tasks(tmp_path):
         trigger=module.TriggerType.SUBTITLE_FALLBACK.value,
     )
 
-    assert result["added"] == []
+    assert len(result["added"]) == 1
     assert result["failed"] == []
-    assert "主动监测模式" in result["skipped"][0]["reason"]
-    assert plugin._tasks == {}
+    assert result["skipped"] == []
+    assert len(plugin._tasks) == 1
 
 
 def test_fallback_mode_accepts_subtitle_fallback_tasks(tmp_path):
@@ -366,6 +367,31 @@ def test_fallback_mode_accepts_subtitle_fallback_tasks(tmp_path):
 
     assert len(result["added"]) == 1
     assert len(plugin._tasks) == 1
+
+
+def test_independent_monitor_is_blocked_when_subtitlemanualupload_auto_transfer_enabled():
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._enabled = True
+    plugin._running = True
+    plugin._task_queue = queue.Queue()
+    plugin._generation_mode = module.GenerationMode.MONITOR.value
+
+    class FakeSubtitleManualUpload:
+        _auto_search_on_transfer = True
+
+        def get_state(self):
+            return True
+
+    module.PluginManager = lambda: types.SimpleNamespace(
+        running_plugins={"SubtitleManualUpload": FakeSubtitleManualUpload()}
+    )
+
+    status = plugin._status_payload()
+
+    assert status["independent_monitor_enabled"] is False
+    assert status["independent_monitor_blocked_reason"] == "字幕匹配入库自动处理已启用"
+    assert "接管" in status["message"]
 
 
 def test_submit_tasks_treats_reuse_source_policy_as_auto(tmp_path):
@@ -443,6 +469,47 @@ def test_restart_completed_task_reuses_stable_matched_subtitle_asset(tmp_path):
     assert Path(rerun.source_subtitle_path).exists()
     assert Path(rerun.source_subtitle_path).read_text(encoding="utf-8") == subtitle.read_text(encoding="utf-8")
     assert rerun.overwrite_policy == module.OverwritePolicy.BACKUP_REPLACE.value
+    assert rerun.force_generate is True
+
+
+def test_restart_reuse_preserves_output_variant_and_forces_generation(tmp_path):
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    video.write_bytes(b"video")
+    assert plugin.add_task(str(video), module.TaskSource.MANUAL, source_policy=module.SourcePolicy.ASR.value)
+    original = next(iter(plugin._tasks.values()))
+    plugin._task_queue.get_nowait()
+    original.status = module.TaskStatus.COMPLETED
+    original.complete_time = module.datetime.now()
+    original.output_variant = "aiasr"
+    original.output_path = str(tmp_path / "Movie.chi&jp.aiasr.srt")
+
+    result = plugin.restart_tasks([original.task_id])
+    rerun = [task for task in plugin._tasks.values() if task.rerun_of == original.task_id][0]
+
+    assert len(result["added"]) == 1
+    assert rerun.force_generate is True
+    assert rerun.output_variant == "aiasr"
+    assert rerun.overwrite_policy == module.OverwritePolicy.BACKUP_REPLACE.value
+
+
+def test_prepare_output_path_uses_inherited_variant_for_backup_replace(tmp_path):
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    base = str(tmp_path / "Movie")
+
+    path, variant = plugin._prepare_output_path(
+        base,
+        "en",
+        "bilingual",
+        module.ResolvedSource.EMBEDDED.value,
+        module.OverwritePolicy.BACKUP_REPLACE.value,
+        inherited_variant="aimatch",
+    )
+
+    assert path == f"{base}.chi&eng.aimatch.srt"
+    assert variant == "aimatch"
 
 
 def test_restart_reports_missing_matched_subtitle_source(tmp_path):

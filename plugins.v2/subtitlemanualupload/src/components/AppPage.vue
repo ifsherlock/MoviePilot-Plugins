@@ -145,12 +145,14 @@ const aiTaskDialogTarget = ref(null)
 const aiTaskScopeTargets = ref([])
 const aiRestartSourcePolicy = ref('reuse')
 const aiRestartSubtitlePath = ref('')
+const aiSelectedTaskIds = ref([])
 const aiStatusStripRef = ref(null)
 const aiTaskData = ref({
   status: null,
   summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, ignored: 0, no_audio: 0, failed: 0, cancelled: 0 },
   tasks: [],
   task_by_target: {},
+  tasks_by_target: {},
 })
 const timelineTaskData = ref({
   summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, skipped: 0, failed: 0 },
@@ -343,12 +345,20 @@ const aiSummaryText = computed(() => {
 })
 const aiDialogTasks = computed(() => {
   const targetId = aiTaskDialogTarget.value?.id
-  const tasks = aiTaskData.value.tasks || []
-  return targetId ? tasks.filter(item => item.target_id === targetId) : tasks
+  if (targetId) {
+    return (aiTaskData.value.tasks_by_target || {})[targetId] || []
+  }
+  return aiTaskData.value.tasks || []
 })
-const aiDialogHasActiveTasks = computed(() => aiDialogTasks.value.some(task => isAiTaskActive(task)))
 const aiDialogHasExistingTasks = computed(() => Boolean(aiDialogTasks.value.length))
-const aiDialogActionText = computed(() => (aiDialogHasExistingTasks.value ? '重新生成' : '生成'))
+const aiDialogActiveTasks = computed(() => aiDialogTasks.value.filter(task => isAiTaskActive(task)))
+const aiDialogHasActiveTasks = computed(() => aiDialogActiveTasks.value.length > 0)
+const aiDialogRestartableTasks = computed(() => aiDialogTasks.value.filter(task => isAiTaskRestartable(task)))
+const aiDialogSelectedRestartableTasks = computed(() => {
+  const selected = new Set(aiSelectedTaskIds.value)
+  return aiDialogRestartableTasks.value.filter(task => selected.has(task.task_id))
+})
+const aiDialogActionText = computed(() => (aiDialogHasExistingTasks.value ? '重新生成选中' : '生成'))
 const aiDialogSourceLabel = computed(() => (aiDialogHasExistingTasks.value ? '重新生成来源' : '生成来源'))
 const aiRestartSubtitleOptions = computed(() => {
   const target = aiTaskDialogTarget.value
@@ -1183,6 +1193,10 @@ function isAiTaskActive(task) {
   return Boolean(task && (task.active || ['pending', 'in_progress'].includes(task.status)))
 }
 
+function isAiTaskRestartable(task) {
+  return Boolean(task && !isAiTaskActive(task) && ['completed', 'failed', 'cancelled', 'ignored', 'no_audio'].includes(task.status))
+}
+
 function aiTaskColor(target) {
   const task = aiTaskForTarget(target)
   if (!aiAvailable.value) return undefined
@@ -1239,6 +1253,7 @@ function openAiTaskDialog(target = null) {
   aiTaskDialogTarget.value = target
   aiRestartSourcePolicy.value = target && aiTaskForTarget(target) ? 'reuse' : 'auto'
   aiRestartSubtitlePath.value = ''
+  aiSelectedTaskIds.value = []
   aiTaskDialog.value = true
   const scopeTargets = target
     ? [target]
@@ -1341,6 +1356,16 @@ function cancelDialogAiTasks() {
 }
 
 async function regenerateDialogAiTasks() {
+  const selectedTaskIds = aiDialogSelectedRestartableTasks.value.map(task => task.task_id)
+  return regenerateAiTasksByIds(selectedTaskIds)
+}
+
+async function regenerateSingleAiTask(task) {
+  if (!isAiTaskRestartable(task)) return
+  await regenerateAiTasksByIds([task.task_id])
+}
+
+async function regenerateAiTasksByIds(taskIds = []) {
   const scopeTargets = aiTaskDialogTarget.value
     ? [aiTaskDialogTarget.value]
     : (aiTaskScopeTargets.value.length ? aiTaskScopeTargets.value : visibleTargets.value)
@@ -1354,6 +1379,10 @@ async function regenerateDialogAiTasks() {
     return
   }
   const hasExistingTasks = aiDialogHasExistingTasks.value
+  if (hasExistingTasks && !taskIds.length) {
+    message.value = '请先勾选要重新生成的 AI 历史任务'
+    return
+  }
   const sourcePolicy = !hasExistingTasks && aiRestartSourcePolicy.value === 'reuse'
     ? 'auto'
     : aiRestartSourcePolicy.value
@@ -1374,6 +1403,7 @@ async function regenerateDialogAiTasks() {
   try {
     const response = await props.api.post(`${pluginBase.value}/ai_restart`, {
       target_ids: usableTargets.map(item => item.id),
+      task_ids: taskIds,
       locked_target_ids: lockedTargetPayload(),
       source_policy: sourcePolicy,
       source_subtitle_path: sourcePolicy === 'matched_external' ? aiRestartSubtitlePath.value : '',
@@ -1412,6 +1442,7 @@ function clearTargetState() {
     summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, ignored: 0, no_audio: 0, failed: 0, cancelled: 0 },
     tasks: [],
     task_by_target: {},
+    tasks_by_target: {},
   }
   timelineTaskData.value = {
     summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, skipped: 0, failed: 0 },
@@ -3140,10 +3171,11 @@ defineExpose({
               取消任务
             </VBtn>
             <VBtn
-              v-else-if="aiAvailable && (aiTaskDialogTarget || aiDialogTasks.length)"
+              v-if="aiAvailable && (aiTaskDialogTarget || aiDialogTasks.length)"
               variant="tonal"
               color="warning"
               prepend-icon="mdi-robot-happy-outline"
+              :disabled="aiDialogHasExistingTasks && !aiDialogSelectedRestartableTasks.length"
               :loading="aiSubmitting"
               @click="regenerateDialogAiTasks"
             >
@@ -3170,7 +3202,7 @@ defineExpose({
             variant="tonal"
             :text="aiStatus.message || '请先安装并启用 AI字幕生成(联动版)'"
           />
-          <div v-if="aiAvailable && !aiDialogHasActiveTasks && (aiTaskDialogTarget || aiDialogTasks.length)" class="ai-restart-options">
+          <div v-if="aiAvailable && (aiTaskDialogTarget || aiDialogTasks.length)" class="ai-restart-options">
             <VSelect
               v-model="aiRestartSourcePolicy"
               :items="aiRestartSourceOptions"
@@ -3198,6 +3230,13 @@ defineExpose({
               class="ai-task-row"
               :class="`ai-${task.status}`"
             >
+              <VCheckbox
+                v-model="aiSelectedTaskIds"
+                :value="task.task_id"
+                density="compact"
+                hide-details
+                :disabled="!isAiTaskRestartable(task)"
+              />
               <div class="ai-task-badge">
                 <VIcon :icon="aiTaskIcon({ id: task.target_id })" />
               </div>
@@ -3210,6 +3249,16 @@ defineExpose({
               <div class="ai-task-time">
                 <VChip size="small" variant="tonal">{{ task.status_label }}</VChip>
                 <span>{{ task.complete_time || task.add_time || '-' }}</span>
+                <VBtn
+                  size="small"
+                  variant="tonal"
+                  color="warning"
+                  :disabled="!isAiTaskRestartable(task)"
+                  :loading="aiSubmitting"
+                  @click="regenerateSingleAiTask(task)"
+                >
+                  重新生成
+                </VBtn>
               </div>
             </div>
           </div>
@@ -4599,7 +4648,7 @@ defineExpose({
 
 .ai-task-row {
   display: grid;
-  grid-template-columns: 42px minmax(0, 1fr) auto;
+  grid-template-columns: auto 42px minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
   padding: 12px;
@@ -4669,6 +4718,17 @@ defineExpose({
   display: grid;
   justify-items: end;
   gap: 6px;
+}
+
+@media (max-width: 720px) {
+  .ai-task-row {
+    grid-template-columns: auto 42px minmax(0, 1fr);
+  }
+
+  .ai-task-time {
+    grid-column: 1 / -1;
+    justify-items: start;
+  }
 }
 
 .online-search-actions {

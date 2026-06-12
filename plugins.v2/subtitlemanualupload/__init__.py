@@ -119,7 +119,7 @@ class SubtitleManualUpload(_PluginBase):
     _traditional_to_simplified = False
     _auto_search_on_transfer = False
     _auto_skip_chinese_media_on_transfer = True
-    _auto_transfer_subtitle_strategy = "search_first"
+    _auto_transfer_subtitle_strategy = "online_then_ai_source"
     _auto_search_min_score = 20
     _timeline_max_offset_seconds = 120
     _timeline_min_offset_seconds = 0.2
@@ -162,7 +162,13 @@ class SubtitleManualUpload(_PluginBase):
     _rar_tools = ("unrar", "bsdtar", "7z", "7za", "7zz")
     _rar_python_package = "rarfile"
     _rar_dependency_modes = {"none", "container_install", "mapped_binary"}
-    _auto_transfer_subtitle_strategies = {"search_first", "search_only", "ai_only", "ai_first"}
+    _auto_transfer_subtitle_strategies = {"online_then_ai_source", "online_source_only", "ai_source_only"}
+    _auto_transfer_subtitle_strategy_aliases = {
+        "search_first": "online_then_ai_source",
+        "search_only": "online_source_only",
+        "ai_only": "ai_source_only",
+        "ai_first": "ai_source_only",
+    }
     _chinese_media_language_codes = {"zh", "cn", "zho", "cmn", "yue"}
     _chinese_media_country_codes = {"cn", "hk", "tw", "sg"}
     _chinese_media_region_names = {
@@ -610,10 +616,9 @@ class SubtitleManualUpload(_PluginBase):
                                             "model": "auto_transfer_subtitle_strategy",
                                             "label": "入库后字幕处理策略",
                                             "items": [
-                                                {"title": "搜索优先，AI 兜底", "value": "search_first"},
-                                                {"title": "只搜索匹配字幕", "value": "search_only"},
-                                                {"title": "只提交 AI 生成", "value": "ai_only"},
-                                                {"title": "AI 优先，失败再搜索", "value": "ai_first"},
+                                                {"title": "在线匹配优先，AI 来源兜底", "value": "online_then_ai_source"},
+                                                {"title": "只用在线匹配来源", "value": "online_source_only"},
+                                                {"title": "只用 AI 来源生成", "value": "ai_source_only"},
                                             ],
                                         },
                                     }
@@ -874,7 +879,7 @@ class SubtitleManualUpload(_PluginBase):
             "traditional_to_simplified": False,
             "auto_search_on_transfer": False,
             "auto_skip_chinese_media_on_transfer": True,
-            "auto_transfer_subtitle_strategy": "search_first",
+            "auto_transfer_subtitle_strategy": "online_then_ai_source",
             "timeline_max_offset_seconds": 120,
             "timeline_min_offset_seconds": 0.2,
             "timeline_vad_mode": "webrtc",
@@ -1077,9 +1082,10 @@ class SubtitleManualUpload(_PluginBase):
     @classmethod
     def _normalize_auto_transfer_subtitle_strategy(cls, value: Any) -> str:
         strategy = cls._normalize_text(value).lower()
+        strategy = cls._auto_transfer_subtitle_strategy_aliases.get(strategy, strategy)
         if strategy in cls._auto_transfer_subtitle_strategies:
             return strategy
-        return "search_first"
+        return "online_then_ai_source"
 
     @classmethod
     def _normalize_provider_ids(cls, value: Any, *, fallback: bool = True) -> List[str]:
@@ -2516,12 +2522,14 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         status = self._autosub_status()
         paths = [self._normalize_text(entry.get("path")) for entry in target_entries if self._normalize_text(entry.get("path"))]
         task_by_target: Dict[str, Any] = {}
+        tasks_by_target: Dict[str, List[Dict[str, Any]]] = {}
         if not status.get("available"):
             return {
                 "status": status,
                 "summary": self._autosub_task_summary([]),
                 "tasks": [],
                 "task_by_target": task_by_target,
+                "tasks_by_target": tasks_by_target,
             }
         plugin, reason = self._autosub_plugin()
         if not plugin or not hasattr(plugin, "tasks_payload"):
@@ -2532,6 +2540,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                 "summary": self._autosub_task_summary([]),
                 "tasks": [],
                 "task_by_target": task_by_target,
+                "tasks_by_target": tasks_by_target,
             }
         try:
             payload = plugin.tasks_payload(paths=paths, limit=max(300, len(paths) * 20))
@@ -2544,31 +2553,35 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                 "summary": self._autosub_task_summary([]),
                 "tasks": [],
                 "task_by_target": task_by_target,
+                "tasks_by_target": tasks_by_target,
             }
         status = {**status, **(payload.get("status") or {})}
-        latest_by_path: Dict[str, Dict[str, Any]] = {}
+        tasks_by_path: Dict[str, List[Dict[str, Any]]] = {}
         for task in payload.get("tasks") or []:
             path = self._normalize_text(task.get("video_file"))
-            if path and path not in latest_by_path:
-                latest_by_path[path] = task
+            if path:
+                tasks_by_path.setdefault(path, []).append(task)
 
         tasks: List[Dict[str, Any]] = []
         for entry in target_entries:
             target_id = self._normalize_text(entry.get("id"))
             path = self._normalize_text(entry.get("path"))
-            task = dict(latest_by_path.get(path) or {})
-            if task:
+            target_label = entry.get("target_label") or entry.get("filename") or Path(path).name
+            target_tasks = []
+            for raw_task in tasks_by_path.get(path) or []:
+                task = dict(raw_task)
                 task["target_id"] = target_id
-                task["target_label"] = entry.get("target_label") or entry.get("filename") or Path(path).name
-                task_by_target[target_id] = task
+                task["target_label"] = target_label
+                target_tasks.append(task)
                 tasks.append(task)
-            else:
-                task_by_target[target_id] = None
+            tasks_by_target[target_id] = target_tasks
+            task_by_target[target_id] = target_tasks[0] if target_tasks else None
         return {
             "status": status,
             "summary": self._autosub_task_summary(tasks),
             "tasks": tasks,
             "task_by_target": task_by_target,
+            "tasks_by_target": tasks_by_target,
         }
 
     @classmethod
@@ -4199,20 +4212,8 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                 evidence,
             )
 
-        if strategy == "ai_only":
-            return {**base, **self._auto_submit_ai_for_entry(entry, target, "策略 ai_only")}
-
-        if strategy == "ai_first":
-            ai_result = self._auto_submit_ai_for_entry(entry, target, "策略 ai_first")
-            if ai_result.get("status") != "failed":
-                return {**base, **ai_result}
-            search_result = self._call_auto_search_write_subtitle(
-                entry,
-                target,
-                queue_rate_limited=queue_rate_limited,
-                task_ids=task_ids,
-            )
-            return {**base, **search_result, "ai": ai_result}
+        if strategy == "ai_source_only":
+            return {**base, **self._auto_submit_ai_for_entry(entry, target, "策略 ai_source_only")}
 
         search_result = self._call_auto_search_write_subtitle(
             entry,
@@ -4220,7 +4221,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             queue_rate_limited=queue_rate_limited,
             task_ids=task_ids,
         )
-        if strategy == "search_only" or search_result.get("status") == "written":
+        if strategy == "online_source_only" or search_result.get("status") == "written":
             return {**base, **search_result}
 
         ai_result = self._auto_submit_ai_for_entry(entry, target, "搜索无单一高置信结果后兜底")
@@ -4582,7 +4583,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         strategy = self._normalize_auto_transfer_subtitle_strategy(self._auto_transfer_subtitle_strategy)
         if not entries:
             return results
-        if strategy in {"ai_only", "ai_first"}:
+        if strategy == "ai_source_only":
             for entry in entries:
                 results[self._auto_task_result_key(entry)] = self._auto_process_transfer_entry(
                     entry,
@@ -5159,8 +5160,8 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             if locked_skipped:
                 raise HTTPException(status_code=423, detail="选中的目标均已锁定，不能提交在线字幕 AI 翻译")
             raise HTTPException(status_code=400, detail="请先选择要生成 AI 字幕的本地视频")
-        target_entries = list(self._resolve_targets(target_ids).values())
-        if not target_entries:
+        target_entries = list(self._resolve_targets(target_ids).values()) if target_ids else []
+        if not target_entries and not task_ids:
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
         selected_results = self._results_from_body(body)
         if not selected_results:
@@ -5553,17 +5554,21 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
     async def api_ai_restart(self, request: Request) -> Dict[str, Any]:
         body = await request.json()
         target_ids = self._target_ids_from_body(body)
+        task_ids = body.get("task_ids") or []
+        if isinstance(task_ids, str):
+            task_ids = [task_ids]
+        task_ids = [self._normalize_text(item) for item in task_ids if self._normalize_text(item)] if isinstance(task_ids, list) else []
         locked_ids = self._locked_target_ids_from_body(body)
         target_ids, locked_skipped = self._filter_unlocked_target_ids(target_ids, locked_ids)
-        if not target_ids:
+        if not target_ids and not task_ids:
             if locked_skipped:
                 return self._ok(
                     {"added": [], "skipped": locked_skipped, "failed": [], "targets": [], "tasks": {}},
                     message=f"已跳过 {len(locked_skipped)} 个锁定目标，没有重新生成 AI 字幕任务",
                 )
             raise HTTPException(status_code=400, detail="请先选择要重新生成 AI 字幕的本地视频")
-        target_entries = list(self._resolve_targets(target_ids).values())
-        if not target_entries:
+        target_entries = list(self._resolve_targets(target_ids).values()) if target_ids else []
+        if not target_entries and not task_ids:
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
         result = self._restart_autosub_for_entries(
             target_entries,
@@ -5571,6 +5576,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             overwrite_policy=self._normalize_text(body.get("overwrite_policy")) or "backup_replace",
             source_subtitle_path=self._normalize_text(body.get("source_subtitle_path") or body.get("subtitle_path")),
             source_subtitle_lang=self._normalize_text(body.get("source_subtitle_lang") or body.get("lang")),
+            task_ids=task_ids,
         )
         if locked_skipped:
             result["skipped"] = [*(result.get("skipped") or []), *locked_skipped]
@@ -5616,6 +5622,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         overwrite_policy: str = "backup_replace",
         source_subtitle_path: str = "",
         source_subtitle_lang: str = "",
+        task_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         plugin, reason = self._autosub_plugin()
         if not plugin:
@@ -5637,12 +5644,13 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                 overwrite_policy=overwrite_policy,
             )
         tasks_data = self._autosub_tasks_for_entries(target_entries)
-        task_ids = [
+        requested_task_ids = [self._normalize_text(item) for item in (task_ids or []) if self._normalize_text(item)]
+        restart_task_ids = requested_task_ids or [
             task.get("task_id")
             for task in (tasks_data.get("tasks") or [])
             if task.get("task_id") and not task.get("active")
         ]
-        if not task_ids:
+        if not restart_task_ids:
             return {
                 "added": [],
                 "skipped": [{"reason": "当前范围没有可重新生成的已完成/失败/取消 AI 任务"}],
@@ -5652,7 +5660,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             }
         try:
             result = plugin.restart_tasks(
-                task_ids=task_ids,
+                task_ids=restart_task_ids,
                 source_policy=source_policy,
                 overwrite_policy=overwrite_policy,
             )

@@ -101,7 +101,7 @@ def make_plugin(module):
     plugin._timeline_tasks = module.OrderedDict()
     plugin._ai_link_enabled = False
     plugin._auto_skip_chinese_media_on_transfer = True
-    plugin._auto_transfer_subtitle_strategy = "search_first"
+    plugin._auto_transfer_subtitle_strategy = "online_then_ai_source"
     plugin._auto_search_min_score = 20
     plugin._online_provider_ids = ["assrt"]
     plugin._online_rate_records = {}
@@ -536,6 +536,85 @@ def test_ai_submit_with_asr_source_policy_forwards_source_choice(tmp_path):
     assert captured["submit_kwargs"]["trigger"] == "manual"
     assert captured["submit_kwargs"]["source_policy"] == "asr"
     assert captured["submit_kwargs"]["overwrite_policy"] == "new_variant"
+
+
+def test_autosub_tasks_for_entries_returns_all_tasks_by_target(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    video.write_text("video", encoding="utf-8")
+    entry = {"id": "t1", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}
+    tasks = [
+        {"task_id": "new-asr", "video_file": str(video), "status": "completed", "output_variant": "aiasr"},
+        {"task_id": "old-match", "video_file": str(video), "status": "completed", "output_variant": "aimatch"},
+        {"task_id": "old-embedded", "video_file": str(video), "status": "failed", "output_variant": "aiembedded"},
+    ]
+    fake_plugin = types.SimpleNamespace(
+        _status_payload=lambda: {"available": True, "enabled": True},
+        tasks_payload=lambda **kwargs: {"status": {"available": True}, "tasks": tasks},
+    )
+    plugin._ai_link_enabled = True
+    plugin._autosub_plugin = lambda: (fake_plugin, "")
+
+    result = plugin._autosub_tasks_for_entries([entry])
+
+    assert [task["task_id"] for task in result["tasks"]] == ["new-asr", "old-match", "old-embedded"]
+    assert result["task_by_target"]["t1"]["task_id"] == "new-asr"
+    assert [task["task_id"] for task in result["tasks_by_target"]["t1"]] == ["new-asr", "old-match", "old-embedded"]
+    assert result["summary"]["total"] == 3
+
+
+def test_ai_restart_forwards_selected_task_ids_without_using_latest(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    video.write_text("video", encoding="utf-8")
+    entry = {"id": "t1", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}
+    captured = {}
+
+    class FakeAutoSub:
+        def _status_payload(self):
+            return {"available": True, "enabled": True}
+
+        def tasks_payload(self, **kwargs):
+            return {
+                "status": {"available": True},
+                "tasks": [
+                    {"task_id": "latest-asr", "video_file": str(video), "status": "completed", "active": False},
+                    {"task_id": "old-match", "video_file": str(video), "status": "completed", "active": False},
+                ],
+            }
+
+        def restart_tasks(self, **kwargs):
+            captured.update(kwargs)
+            return {"added": [{"task_id": "old-match"}], "skipped": [], "failed": []}
+
+    plugin._ai_link_enabled = True
+    plugin._autosub_plugin = lambda: (FakeAutoSub(), "")
+
+    result = plugin._restart_autosub_for_entries([entry], task_ids=["old-match"])
+
+    assert captured["task_ids"] == ["old-match"]
+    assert result["added"] == [{"task_id": "old-match"}]
+
+
+def test_api_ai_restart_accepts_task_ids_without_target_ids():
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    captured = {}
+
+    def fake_restart(entries, **kwargs):
+        captured["entries"] = entries
+        captured["kwargs"] = kwargs
+        return {"added": [{"task_id": "old-match"}], "skipped": [], "failed": [], "tasks": {}}
+
+    plugin._restart_autosub_for_entries = fake_restart
+
+    response = asyncio.run(plugin.api_ai_restart(FakeRequest({"task_ids": ["old-match"]})))
+
+    assert response["success"] is True
+    assert captured["entries"] == []
+    assert captured["kwargs"]["task_ids"] == ["old-match"]
 
 
 def test_ai_restart_rejects_external_subtitle_outside_current_target(tmp_path):
@@ -1597,7 +1676,7 @@ def test_auto_transfer_chinese_title_is_not_skip_evidence_without_tmdb_match(tmp
     assert result["result"] == "Haigakura S01E07"
 
 
-def test_auto_transfer_search_first_falls_back_to_ai_when_search_is_uncertain(tmp_path):
+def test_auto_transfer_online_then_ai_source_falls_back_to_ai_when_search_is_uncertain(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
     entry = make_auto_entry(tmp_path)
@@ -1618,14 +1697,15 @@ def test_auto_transfer_search_first_falls_back_to_ai_when_search_is_uncertain(tm
 
     assert result["status"] == "ai_submitted"
     assert result["search"]["search_results"] == 0
+    assert result["strategy"] == "online_then_ai_source"
 
 
-def test_auto_transfer_search_only_never_submits_ai(tmp_path):
+def test_auto_transfer_online_source_only_never_submits_ai_source_fallback(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
     entry = make_auto_entry(tmp_path)
     plugin._auto_skip_chinese_media_on_transfer = False
-    plugin._auto_transfer_subtitle_strategy = "search_only"
+    plugin._auto_transfer_subtitle_strategy = "online_source_only"
     plugin._auto_search_write_subtitle = lambda item, target: {
         "status": "skipped",
         "target": target.get("label"),
@@ -1638,15 +1718,15 @@ def test_auto_transfer_search_only_never_submits_ai(tmp_path):
     result = plugin._auto_process_transfer_entry(entry)
 
     assert result["status"] == "skipped"
-    assert result["strategy"] == "search_only"
+    assert result["strategy"] == "online_source_only"
 
 
-def test_auto_transfer_ai_only_never_searches(tmp_path):
+def test_auto_transfer_ai_source_only_never_searches(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
     entry = make_auto_entry(tmp_path)
     plugin._auto_skip_chinese_media_on_transfer = False
-    plugin._auto_transfer_subtitle_strategy = "ai_only"
+    plugin._auto_transfer_subtitle_strategy = "ai_source_only"
     plugin._auto_search_write_subtitle = lambda *args, **kwargs: (_ for _ in ()).throw(
         AssertionError("ai_only should not search")
     )
@@ -1659,30 +1739,37 @@ def test_auto_transfer_ai_only_never_searches(tmp_path):
     result = plugin._auto_process_transfer_entry(entry)
 
     assert result["status"] == "ai_submitted"
-    assert result["strategy"] == "ai_only"
+    assert result["strategy"] == "ai_source_only"
 
 
-def test_auto_transfer_ai_first_falls_back_to_search_only_when_ai_fails(tmp_path):
+def test_auto_transfer_legacy_ai_first_maps_to_ai_source_only(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
     entry = make_auto_entry(tmp_path)
     plugin._auto_skip_chinese_media_on_transfer = False
     plugin._auto_transfer_subtitle_strategy = "ai_first"
+    plugin._auto_search_write_subtitle = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("ai_first legacy value should migrate to ai_source_only and never search")
+    )
     plugin._auto_submit_ai_for_entry = lambda item, target, reason: {
-        "status": "failed",
+        "status": "ai_submitted",
         "target": target.get("label"),
-        "reason": "AI 插件不可用",
-    }
-    plugin._auto_search_write_subtitle = lambda item, target: {
-        "status": "written",
-        "target": target.get("label"),
-        "result": "ASSRT subtitle",
+        "reason": reason,
     }
 
     result = plugin._auto_process_transfer_entry(entry)
 
-    assert result["status"] == "written"
-    assert result["ai"]["status"] == "failed"
+    assert result["status"] == "ai_submitted"
+    assert result["strategy"] == "ai_source_only"
+
+
+def test_auto_transfer_legacy_strategy_aliases_are_migrated():
+    module, _, _ = load_plugin_module()
+
+    assert module.SubtitleManualUpload._normalize_auto_transfer_subtitle_strategy("search_first") == "online_then_ai_source"
+    assert module.SubtitleManualUpload._normalize_auto_transfer_subtitle_strategy("search_only") == "online_source_only"
+    assert module.SubtitleManualUpload._normalize_auto_transfer_subtitle_strategy("ai_only") == "ai_source_only"
+    assert module.SubtitleManualUpload._normalize_auto_transfer_subtitle_strategy("ai_first") == "ai_source_only"
 
 
 def test_auto_transfer_existing_subtitle_skips_all_strategies(tmp_path):

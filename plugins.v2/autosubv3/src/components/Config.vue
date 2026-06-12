@@ -44,7 +44,13 @@ const defaultConfig = {
   parallel_workers: 10,
 }
 
-const config = reactive({ ...defaultConfig, ...(props.initialConfig || {}) })
+function normalizeInitialConfig(value = {}) {
+  const merged = { ...defaultConfig, ...(value || {}) }
+  merged.generation_mode = merged.generation_mode === 'fallback' ? 'fallback' : 'monitor'
+  return merged
+}
+
+const config = reactive(normalizeInitialConfig(props.initialConfig))
 const saving = ref(false)
 const error = ref('')
 
@@ -65,16 +71,10 @@ const preferences = [
   { title: '英文优先', value: 'english_first' },
   { title: '原音优先', value: 'origin_first' },
 ]
-const generationModes = [
-  { title: '主动监测模式', value: 'monitor' },
-  { title: '后备模式', value: 'fallback' },
-  { title: '混合模式', value: 'mixed' },
-]
-
 watch(
   () => props.initialConfig,
   (value) => {
-    Object.assign(config, defaultConfig, value || {})
+    Object.assign(config, normalizeInitialConfig(value))
   },
 )
 
@@ -109,11 +109,12 @@ function save() {
         <div class="section-title">基础设置</div>
         <VRow>
           <VCol cols="12" md="6">
-            <VSelect
+            <VSwitch
               v-model="config.generation_mode"
-              :items="generationModes"
-              label="AI 字幕默认生成模式"
-              hint="后备模式只作为字幕匹配兜底；主动监测模式保持独立监控；混合模式两者都启用"
+              label="启用独立入库监控"
+              true-value="monitor"
+              false-value="fallback"
+              hint="关闭后仍可接收字幕匹配联动任务和手动任务"
               persistent-hint
             />
           </VCol>
