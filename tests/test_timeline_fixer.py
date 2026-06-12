@@ -246,7 +246,7 @@ def test_real_media_fixture_fixes_five_second_offset_against_embedded_subtitle(t
         "-i",
         str(base),
         "-c:v",
-        "libx264",
+        "ffv1",
         "-t",
         "20",
         "-c:s",
