@@ -121,6 +121,10 @@ class SubtitleManualUpload(_PluginBase):
     _auto_skip_chinese_media_on_transfer = True
     _auto_transfer_subtitle_strategy = "search_first"
     _auto_search_min_score = 20
+    _timeline_max_offset_seconds = 120
+    _timeline_min_offset_seconds = 0.2
+    _timeline_vad_mode = "webrtc"
+    _timeline_allow_risky_offset = False
     _cache_ttl_seconds = 1800
     _cache_max_entries = 5000
     _entry_map_max_size = 2000
@@ -242,6 +246,10 @@ class SubtitleManualUpload(_PluginBase):
         self._auto_transfer_subtitle_strategy = self._normalize_auto_transfer_subtitle_strategy(
             config.get("auto_transfer_subtitle_strategy")
         )
+        self._timeline_max_offset_seconds = self._normalize_timeline_max_offset(config.get("timeline_max_offset_seconds"))
+        self._timeline_min_offset_seconds = self._normalize_timeline_min_offset(config.get("timeline_min_offset_seconds"))
+        self._timeline_vad_mode = self._normalize_timeline_vad_mode(config.get("timeline_vad_mode"))
+        self._timeline_allow_risky_offset = bool(config.get("timeline_allow_risky_offset", False))
         if not config.get("assrt_provider_migrated") and not self._assrt_api_key:
             self._online_provider_ids = [item for item in self._online_provider_ids if item != "assrt"]
         if self._assrt_api_key and "assrt" not in self._online_provider_ids:
@@ -261,6 +269,10 @@ class SubtitleManualUpload(_PluginBase):
         type(self)._auto_search_on_transfer = self._auto_search_on_transfer
         type(self)._auto_skip_chinese_media_on_transfer = self._auto_skip_chinese_media_on_transfer
         type(self)._auto_transfer_subtitle_strategy = self._auto_transfer_subtitle_strategy
+        type(self)._timeline_max_offset_seconds = self._timeline_max_offset_seconds
+        type(self)._timeline_min_offset_seconds = self._timeline_min_offset_seconds
+        type(self)._timeline_vad_mode = self._timeline_vad_mode
+        type(self)._timeline_allow_risky_offset = self._timeline_allow_risky_offset
         self._entry_map = OrderedDict()
         self._media_index_cache = OrderedDict()
         self._match_history_cache = {"loaded_at": None, "signature": "", "items": [], "entry_count": 0, "persisted": False}
@@ -374,6 +386,13 @@ class SubtitleManualUpload(_PluginBase):
                 "methods": ["POST"],
                 "auth": "bear",
                 "summary": "删除单个已匹配外挂字幕",
+            },
+            {
+                "path": "/restore_subtitle_backup",
+                "endpoint": self.api_restore_subtitle_backup,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "恢复智能调轴前的字幕备份",
             },
             {
                 "path": "/ai_submit",
@@ -496,6 +515,57 @@ class SubtitleManualUpload(_PluginBase):
                                         "props": {
                                             "model": "auto_search_on_transfer",
                                             "label": "入库后自动搜索匹配字幕",
+                                        },
+                                    }
+                                ],
+                            },
+                        ],
+                    },
+                    {
+                        "component": "VRow",
+                        "content": [
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [
+                                    {
+                                        "component": "VTextField",
+                                        "props": {
+                                            "model": "timeline_max_offset_seconds",
+                                            "label": "智能调轴最大偏移秒数",
+                                            "placeholder": "120",
+                                            "hint": "默认 120；不建议超过 120 秒，过大偏移通常意味着字幕错集或错版本。",
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [
+                                    {
+                                        "component": "VTextField",
+                                        "props": {
+                                            "model": "timeline_min_offset_seconds",
+                                            "label": "智能调轴最小应用阈值",
+                                            "placeholder": "0.2",
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [
+                                    {
+                                        "component": "VSelect",
+                                        "props": {
+                                            "model": "timeline_vad_mode",
+                                            "label": "音频 VAD 模式",
+                                            "items": [
+                                                {"title": "WebRTC VAD（推荐）", "value": "webrtc"},
+                                                {"title": "RMS 能量阈值（降级）", "value": "rms"},
+                                            ],
                                         },
                                     }
                                 ],
@@ -793,6 +863,10 @@ class SubtitleManualUpload(_PluginBase):
             "auto_search_on_transfer": False,
             "auto_skip_chinese_media_on_transfer": True,
             "auto_transfer_subtitle_strategy": "search_first",
+            "timeline_max_offset_seconds": 120,
+            "timeline_min_offset_seconds": 0.2,
+            "timeline_vad_mode": "webrtc",
+            "timeline_allow_risky_offset": False,
             "online_providers": list(self._default_online_provider_ids),
             "online_engine": DEFAULT_ENGINE,
             "online_use_proxy": False,
@@ -858,6 +932,10 @@ class SubtitleManualUpload(_PluginBase):
                 "auto_search_on_transfer": self._auto_search_on_transfer,
                 "auto_skip_chinese_media_on_transfer": self._auto_skip_chinese_media_on_transfer,
                 "auto_transfer_subtitle_strategy": self._auto_transfer_subtitle_strategy,
+                "timeline_max_offset_seconds": self._timeline_max_offset_seconds,
+                "timeline_min_offset_seconds": self._timeline_min_offset_seconds,
+                "timeline_vad_mode": self._timeline_vad_mode,
+                "timeline_allow_risky_offset": self._timeline_allow_risky_offset,
                 "online_providers": self._online_provider_ids,
                 "online_engine": self._online_engine,
                 "online_use_proxy": self._online_use_proxy,
@@ -886,6 +964,28 @@ class SubtitleManualUpload(_PluginBase):
             return int(value)
         except Exception:
             return default
+
+    @classmethod
+    def _normalize_timeline_max_offset(cls, value: Any) -> int:
+        seconds = cls._safe_int(value, 120)
+        if seconds <= 0:
+            return 120
+        return min(seconds, 300)
+
+    @classmethod
+    def _normalize_timeline_min_offset(cls, value: Any) -> float:
+        try:
+            seconds = float(value)
+        except Exception:
+            seconds = 0.2
+        if seconds <= 0 or seconds > 1:
+            return 0.2
+        return seconds
+
+    @classmethod
+    def _normalize_timeline_vad_mode(cls, value: Any) -> str:
+        mode = cls._normalize_text(value).lower()
+        return mode if mode in {"webrtc", "rms"} else "webrtc"
 
     @staticmethod
     def _normalize_text(value: Any) -> str:
@@ -3108,12 +3208,22 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     continue
                 if sub_file.stem != stem and not sub_file.name.startswith(f"{stem}."):
                     continue
+                try:
+                    raw_bytes = sub_file.read_bytes()
+                except Exception:
+                    raw_bytes = b""
+                language_profile = cls._detect_language_profile(sub_file.name, raw_bytes)
+                backup_path = cls._subtitle_backup_path(sub_file)
                 subtitles.append(
                     {
                         "name": sub_file.name,
                         "path": str(sub_file),
                         "relative_path": str(sub_file).replace("\\", "/"),
                         "ext": sub_file.suffix.lower(),
+                        "language_suffix": language_profile.get("suffix", ""),
+                        "language_category": language_profile.get("category", ""),
+                        "backup_path": str(backup_path) if backup_path.exists() else "",
+                        "backup_available": backup_path.exists(),
                         "size": sub_file.stat().st_size,
                         "modified_at": datetime.fromtimestamp(sub_file.stat().st_mtime).isoformat(timespec="seconds"),
                     }
@@ -3576,7 +3686,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     continue
                 try:
                     self._set_timeline_task(operation, status="in_progress", message="智能调轴处理中")
-                    timeline_result = fix_subtitle_timeline(
+                    timeline_result = self._run_timeline_fix(
                         video_path=operation["video_path"],
                         subtitle_path=operation["source_path"],
                         output_path=fixed_source_path,
@@ -3610,6 +3720,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             if temp_path.exists():
                 temp_path.unlink()
 
+            backup_path = self._backup_subtitle_if_needed(destination_path)
             shutil.copyfile(operation["write_source_path"], temp_path)
             temp_path.replace(destination_path)
             timeline_result = operation.get("timeline_result")
@@ -3620,6 +3731,8 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     "target_label": self._target_from_entry(operation["target_entry"]).get("label"),
                     "output_name": operation["destination_name"],
                     "output_path": str(destination_path),
+                    "backup_path": str(backup_path) if backup_path else "",
+                    "backup_available": bool(backup_path and backup_path.exists()),
                     "timeline": timeline_result.to_dict() if timeline_result else {"enabled": False},
                     "simplified": operation.get("simplified_result") or {"enabled": False, "converted": False},
                 }
@@ -3665,6 +3778,39 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"读取上传会话失败: {exc}") from exc
 
+    def _timeline_cache_dir(self) -> Path:
+        return self.get_data_path() / "timeline_cache"
+
+    @classmethod
+    def _subtitle_backup_path(cls, subtitle_path: Path) -> Path:
+        return subtitle_path.with_name(f"{subtitle_path.name}.mp-timeline-bk")
+
+    @classmethod
+    def _backup_subtitle_if_needed(cls, subtitle_path: Path) -> Optional[Path]:
+        if not subtitle_path.exists():
+            return None
+        backup_path = cls._subtitle_backup_path(subtitle_path)
+        if not backup_path.exists():
+            shutil.copyfile(subtitle_path, backup_path)
+        return backup_path
+
+    def _run_timeline_fix(self, *, video_path: Path, subtitle_path: Path, output_path: Path) -> TimelineFixResult:
+        try:
+            return fix_subtitle_timeline(
+                video_path=video_path,
+                subtitle_path=subtitle_path,
+                output_path=output_path,
+                max_offset_seconds=self._timeline_max_offset_seconds,
+                min_offset_seconds=self._timeline_min_offset_seconds,
+                cache_dir=self._timeline_cache_dir(),
+                allow_risky_offset=self._timeline_allow_risky_offset,
+                vad_mode=self._timeline_vad_mode,
+            )
+        except TypeError as exc:
+            if "unexpected keyword" not in str(exc):
+                raise
+            return fix_subtitle_timeline(video_path, subtitle_path, output_path)
+
     def _online_service(self) -> OnlineSubtitleSearchService:
         return OnlineSubtitleSearchService(
             engine=self._online_engine,
@@ -3689,6 +3835,37 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         if not isinstance(target_ids, list):
             return []
         return [cls._normalize_text(item) for item in target_ids if cls._normalize_text(item)]
+
+    @classmethod
+    def _locked_target_ids_from_body(cls, body: Dict[str, Any]) -> set:
+        locked_ids = body.get("locked_target_ids") or []
+        if isinstance(locked_ids, str):
+            try:
+                locked_ids = json.loads(locked_ids)
+            except Exception:
+                locked_ids = [locked_ids]
+        if not isinstance(locked_ids, list):
+            return set()
+        return {cls._normalize_text(item) for item in locked_ids if cls._normalize_text(item)}
+
+    @classmethod
+    def _filter_unlocked_target_ids(cls, target_ids: Iterable[str], locked_ids: set) -> Tuple[List[str], List[Dict[str, str]]]:
+        unlocked: List[str] = []
+        skipped: List[Dict[str, str]] = []
+        for target_id in target_ids:
+            clean_id = cls._normalize_text(target_id)
+            if not clean_id:
+                continue
+            if clean_id in locked_ids:
+                skipped.append({"target_id": clean_id, "reason": "目标已锁定"})
+                continue
+            unlocked.append(clean_id)
+        return unlocked, skipped
+
+    @classmethod
+    def _ensure_target_not_locked(cls, target_id: str, locked_ids: set) -> None:
+        if cls._normalize_text(target_id) in locked_ids:
+            raise HTTPException(status_code=423, detail="目标已锁定，不能执行该操作")
 
     @classmethod
     def _results_from_body(cls, body: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -3802,6 +3979,45 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                 "ext": prepared["ext"],
                 "language_suffix": language_profile["suffix"],
             }
+            language_suffix = item.get("language_suffix")
+            is_foreign_subtitle = not self._is_chinese_language_suffix(language_suffix)
+            if is_foreign_subtitle and prepared.get("ext") != ".srt":
+                return {
+                    "status": "skipped",
+                    "reason": "自动入库外语字幕仅支持 SRT 调轴后提交 AI 翻译，已跳过非 SRT 字幕",
+                    "target": target.get("label"),
+                    "result": selected.get("title"),
+                    "candidate_count": len(candidates),
+                    "search_results": len(search_result.get("results") or []),
+                }
+            if is_foreign_subtitle:
+                subtitle_overrides, fixed_subtitles = self._prepare_online_ai_subtitle_overrides(
+                    session_dir=session_dir,
+                    target_entries=[entry],
+                    prepared_uploads=prepared_uploads,
+                )
+                ai_submit = self._submit_autosub_for_entries([entry], subtitle_overrides=subtitle_overrides)
+                ai_result = {
+                    "status": "ai_submitted" if ai_submit.get("added") else "skipped",
+                    "reason": "自动入库外语字幕已智能调轴后提交 AI 翻译",
+                    "target": target.get("label"),
+                    "ai": {
+                        "added": len(ai_submit.get("added") or []),
+                        "skipped": len(ai_submit.get("skipped") or []),
+                        "failed": len(ai_submit.get("failed") or []),
+                    },
+                    "tasks": ai_submit.get("tasks"),
+                }
+                return {
+                    "status": ai_result["status"],
+                    "target": target.get("label"),
+                    "result": selected.get("title"),
+                    "fixed_subtitles": fixed_subtitles,
+                    "candidate_count": len(candidates),
+                    "search_results": len(search_result.get("results") or []),
+                    "ai": ai_result,
+                }
+
             operations = self._build_write_operations(
                 [item],
                 {prepared["upload_id"]: prepared},
@@ -3810,13 +4026,8 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             written, _, simplified_count = self._write_operations_to_disk(
                 session_dir=session_dir,
                 operations=operations,
-                fix_timeline=False,
+                fix_timeline=True,
             )
-            ai_result = None
-            if selected.get("language_category") == "english":
-                ai_result = self._auto_submit_ai_for_entry(entry, target, "自动入库写入英文字幕后提交翻译")
-                if ai_result.get("status") == "failed":
-                    logger.warning("[SubtitleManualUpload] 自动入库英文字幕提交 AI 翻译失败: %s", ai_result.get("reason"))
             return {
                 "status": "written",
                 "target": target.get("label"),
@@ -3825,7 +4036,6 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                 "simplified_count": simplified_count,
                 "candidate_count": len(candidates),
                 "search_results": len(search_result.get("results") or []),
-                "ai": ai_result,
             }
         except Exception as exc:
             message = f"自动下载最佳在线字幕失败: {self._normalize_text(exc)}"
@@ -4048,26 +4258,70 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                 "written_by_target": {},
                 "prepared_count": len(prepared_uploads),
             }
-        operations = self._build_write_operations(chosen_items, upload_map, target_entry_map)
-        written, _, simplified_count = self._write_operations_to_disk(
-            session_dir=session_dir,
-            operations=operations,
-            fix_timeline=False,
-        )
+
+        missing_target_ids = [
+            target_id
+            for target_id in target_entry_map
+            if target_id not in used_targets
+        ]
+        chinese_items = [item for item in chosen_items if self._is_chinese_language_suffix(item.get("language_suffix"))]
+        foreign_items = [item for item in chosen_items if not self._is_chinese_language_suffix(item.get("language_suffix"))]
+
+        written: List[Dict[str, Any]] = []
+        simplified_count = 0
+        operations: List[Dict[str, Any]] = []
+        if chinese_items:
+            operations = self._build_write_operations(chinese_items, upload_map, target_entry_map)
+            written, _, simplified_count = self._write_operations_to_disk(
+                session_dir=session_dir,
+                operations=operations,
+                fix_timeline=True,
+            )
+
+        ai_submit_result: Optional[Dict[str, Any]] = None
+        fixed_subtitles: List[Dict[str, Any]] = []
+        if foreign_items:
+            foreign_target_ids = {self._normalize_text(item.get("target_id")) for item in foreign_items}
+            foreign_entries = [entry for target_id, entry in target_entry_map.items() if target_id in foreign_target_ids]
+            foreign_upload_ids = {item.get("upload_id") for item in foreign_items}
+            foreign_uploads = [item for item in prepared_uploads if item.get("upload_id") in foreign_upload_ids]
+            subtitle_overrides, fixed_subtitles = self._prepare_online_ai_subtitle_overrides(
+                session_dir=session_dir,
+                target_entries=foreign_entries,
+                prepared_uploads=foreign_uploads,
+            )
+            ai_submit_result = self._submit_autosub_for_entries(foreign_entries, subtitle_overrides=subtitle_overrides)
+
         written_by_target: Dict[str, Dict[str, Any]] = {}
         for operation, written_item in zip(operations, written):
             target_id = self._normalize_text(operation["target_entry"].get("id"))
             written_by_target[target_id] = written_item
+        ai_by_target: Dict[str, Dict[str, Any]] = {}
+        if ai_submit_result:
+            for fixed_item in fixed_subtitles:
+                target_id = self._normalize_text(fixed_item.get("target_id"))
+                if target_id:
+                    ai_by_target[target_id] = fixed_item
+
+        total_completed = len(written_by_target) + len(ai_by_target)
+        coverage_complete = not missing_target_ids and total_completed >= len(target_entry_map)
         return {
-            "status": "written",
-            "reason": "",
+            "status": "written" if total_completed else "skipped",
+            "reason": "" if coverage_complete else f"整季包覆盖 {total_completed}/{len(target_entry_map)} 集",
             "result": (selected_result or {}).get("title"),
             "provider": (selected_result or {}).get("provider"),
             "written": written,
             "written_by_target": written_by_target,
+            "ai_by_target": ai_by_target,
+            "ai_translate": ai_submit_result,
+            "fixed_subtitles": fixed_subtitles,
             "written_count": len(written),
+            "ai_count": len(ai_by_target),
+            "completed_count": total_completed,
             "prepared_count": len(prepared_uploads),
             "simplified_count": simplified_count,
+            "missing_target_ids": missing_target_ids,
+            "coverage_complete": coverage_complete,
         }
 
     def _store_auto_season_package_cache(
@@ -4207,6 +4461,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             }
 
         last_reason = ""
+        best_partial_result: Optional[Dict[str, Any]] = None
         for selected in candidates[:3]:
             session_id = self._hash_text(f"auto-season|{datetime.now().isoformat()}|{entries[0].get('id')}")[:16]
             session_dir = self._get_session_root() / session_id
@@ -4246,7 +4501,14 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     write_result["candidate_count"] = len(candidates)
                     write_result["search_results"] = len(search_result.get("results") or [])
                     write_result["season_package"] = True
-                    return write_result
+                    if write_result.get("coverage_complete", True):
+                        return write_result
+                    current_completed = self._safe_int(write_result.get("completed_count"), 0)
+                    best_completed = self._safe_int((best_partial_result or {}).get("completed_count"), 0)
+                    if not best_partial_result or current_completed > best_completed:
+                        best_partial_result = write_result
+                    last_reason = write_result.get("reason") or "整季包未完整覆盖当前集数"
+                    continue
                 last_reason = write_result.get("reason") or "整季包未匹配当前集数"
             except Exception as exc:
                 last_reason = f"整季包下载/解析失败: {self._normalize_text(exc)}"
@@ -4258,6 +4520,14 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                 )
             finally:
                 shutil.rmtree(session_dir, ignore_errors=True)
+        if best_partial_result:
+            logger.warning(
+                "[SubtitleManualUpload] 未找到完整覆盖整季字幕包，使用最佳部分覆盖结果 result=%s completed=%s missing=%s",
+                best_partial_result.get("result"),
+                best_partial_result.get("completed_count"),
+                len(best_partial_result.get("missing_target_ids") or []),
+            )
+            return best_partial_result
         return {
             "status": "skipped",
             "reason": last_reason or "整季包未能写入任何字幕",
@@ -4286,8 +4556,19 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             target = self._target_from_entry(entry)
             base = {"strategy": strategy, "target": target.get("label")}
             if target.get("has_subtitle"):
-                results[key] = {**base, "status": "skipped", "reason": "目标已有外挂字幕"}
-                continue
+                subtitles = target.get("subtitles") or []
+                has_chinese_subtitle = any(
+                    self._is_chinese_language_suffix((item or {}).get("language_suffix") or (item or {}).get("language"))
+                    for item in subtitles
+                    if isinstance(item, dict)
+                )
+                if has_chinese_subtitle:
+                    results[key] = {**base, "status": "skipped", "reason": "目标已有中文字幕"}
+                    continue
+                logger.info(
+                    "[SubtitleManualUpload] 目标已有外挂字幕但未确认中文，继续自动匹配/AI target=%s",
+                    target.get("label"),
+                )
             if self._auto_skip_chinese_media_on_transfer:
                 is_chinese, evidence = self._is_chinese_transfer_media(entry)
                 if is_chinese:
@@ -4297,6 +4578,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
 
         cache_result = self._auto_write_from_season_cache(pending_entries)
         written_by_target = cache_result.get("written_by_target") or {}
+        ai_by_target = cache_result.get("ai_by_target") or {}
         remaining_entries: List[Dict[str, Any]] = []
         for entry in pending_entries:
             key = self._auto_task_result_key(entry)
@@ -4311,12 +4593,24 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     "from_cache": True,
                     "season_package": True,
                 }
+            elif target_id in ai_by_target:
+                results[key] = {
+                    "strategy": strategy,
+                    "status": "ai_submitted",
+                    "target": self._target_from_entry(entry).get("label"),
+                    "result": cache_result.get("result"),
+                    "fixed_subtitles": [ai_by_target[target_id]],
+                    "ai": cache_result.get("ai_translate"),
+                    "from_cache": True,
+                    "season_package": True,
+                }
             else:
                 remaining_entries.append(entry)
 
         if remaining_entries:
             season_result = self._auto_search_write_season_package(remaining_entries, task_ids=task_ids)
             written_by_target = season_result.get("written_by_target") or {}
+            ai_by_target = season_result.get("ai_by_target") or {}
             next_remaining: List[Dict[str, Any]] = []
             for entry in remaining_entries:
                 key = self._auto_task_result_key(entry)
@@ -4328,6 +4622,18 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                         "target": self._target_from_entry(entry).get("label"),
                         "result": season_result.get("result"),
                         "written": [written_by_target[target_id]],
+                        "season_package": True,
+                        "candidate_count": season_result.get("candidate_count"),
+                        "search_results": season_result.get("search_results"),
+                    }
+                elif target_id in ai_by_target:
+                    results[key] = {
+                        "strategy": strategy,
+                        "status": "ai_submitted",
+                        "target": self._target_from_entry(entry).get("label"),
+                        "result": season_result.get("result"),
+                        "fixed_subtitles": [ai_by_target[target_id]],
+                        "ai": season_result.get("ai_translate"),
                         "season_package": True,
                         "candidate_count": season_result.get("candidate_count"),
                         "search_results": season_result.get("search_results"),
@@ -4533,7 +4839,13 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     "dependency_mode": self._rar_dependency_mode,
                     "dependency_status": self._rar_dependency_status,
                 },
-                "timeline_fixer": check_timeline_fixer_dependencies(),
+                "timeline_fixer": {
+                    **check_timeline_fixer_dependencies(),
+                    "configured_max_offset_seconds": self._timeline_max_offset_seconds,
+                    "configured_min_offset_seconds": self._timeline_min_offset_seconds,
+                    "vad_mode": self._timeline_vad_mode,
+                    "allow_risky_offset": bool(self._timeline_allow_risky_offset),
+                },
                 "online_search": {
                     "enabled_providers": self._online_provider_ids,
                     "assrt_api_configured": bool(self._assrt_api_key),
@@ -4666,6 +4978,29 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         requested_items = body.get("items") if isinstance(body, dict) else []
         if not isinstance(requested_items, list) or not requested_items:
             raise HTTPException(status_code=400, detail="请先选择要调轴的历史字幕")
+        locked_ids = self._locked_target_ids_from_body(body if isinstance(body, dict) else {})
+        locked_skipped: List[Dict[str, str]] = []
+        if locked_ids:
+            filtered_items = []
+            for item in requested_items:
+                target_id = self._normalize_text((item or {}).get("target_id")) if isinstance(item, dict) else ""
+                if target_id in locked_ids:
+                    locked_skipped.append({"target_id": target_id, "reason": "目标已锁定"})
+                    continue
+                filtered_items.append(item)
+            requested_items = filtered_items
+        if not requested_items:
+            return self._ok(
+                {
+                    "accepted": 0,
+                    "skipped": locked_skipped,
+                    "failed": [],
+                    "summary": self._timeline_task_summary([]),
+                    "tasks": [],
+                    "task_by_target": {},
+                },
+                message="没有可提交智能调轴的历史字幕，锁定项已跳过",
+            )
         timeline_status = check_timeline_fixer_dependencies()
         if not timeline_status.get("available"):
             missing = [
@@ -4675,10 +5010,11 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     "ffprobe": timeline_status.get("ffprobe"),
                     **(timeline_status.get("modules") or {}),
                 }.items()
-                if not value
+                if not value and key != "webrtcvad"
             ]
             raise HTTPException(status_code=409, detail=f"智能调轴不可用：缺少 {', '.join(missing) or '依赖'}")
         operations, skipped, failed = self._existing_timeline_operations(requested_items)
+        skipped = [*locked_skipped, *skipped]
         if not operations:
             return self._ok(
                 {
@@ -4717,12 +5053,21 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
     async def api_ai_submit(self, request: Request) -> Dict[str, Any]:
         body = await request.json()
         target_ids = self._target_ids_from_body(body)
+        locked_ids = self._locked_target_ids_from_body(body)
+        target_ids, locked_skipped = self._filter_unlocked_target_ids(target_ids, locked_ids)
         if not target_ids:
+            if locked_skipped:
+                return self._ok(
+                    {"added": [], "skipped": locked_skipped, "failed": [], "targets": [], "tasks": {}},
+                    message=f"已跳过 {len(locked_skipped)} 个锁定目标，没有提交 AI 字幕任务",
+                )
             raise HTTPException(status_code=400, detail="请先选择要生成 AI 字幕的本地视频")
         target_entries = list(self._resolve_targets(target_ids).values())
         if not target_entries:
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
         result = self._submit_autosub_for_entries(target_entries)
+        if locked_skipped:
+            result["skipped"] = [*(result.get("skipped") or []), *locked_skipped]
         return self._ok(
             result,
             message=f"已提交 {len(result.get('added') or [])} 个 AI 字幕生成任务，跳过 {len(result.get('skipped') or [])} 个，失败 {len(result.get('failed') or [])} 个",
@@ -4731,7 +5076,11 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
     async def api_online_ai_submit(self, request: Request) -> Dict[str, Any]:
         body = await request.json()
         target_ids = self._target_ids_from_body(body)
+        locked_ids = self._locked_target_ids_from_body(body)
+        target_ids, locked_skipped = self._filter_unlocked_target_ids(target_ids, locked_ids)
         if not target_ids:
+            if locked_skipped:
+                raise HTTPException(status_code=423, detail="选中的目标均已锁定，不能提交在线字幕 AI 翻译")
             raise HTTPException(status_code=400, detail="请先选择要生成 AI 字幕的本地视频")
         target_entries = list(self._resolve_targets(target_ids).values())
         if not target_entries:
@@ -4872,7 +5221,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             fixed_path = fixed_dir / f"{operation['upload_info'].get('upload_id')}.srt"
             try:
                 self._set_timeline_task(operation, status="in_progress", message="在线字幕智能调轴处理中")
-                timeline_result = fix_subtitle_timeline(
+                timeline_result = self._run_timeline_fix(
                     video_path=operation["video_path"],
                     subtitle_path=operation["source_path"],
                     output_path=fixed_path,
@@ -4932,7 +5281,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     "ffprobe": timeline_status.get("ffprobe"),
                     **(timeline_status.get("modules") or {}),
                 }.items()
-                if not value
+                if not value and key != "webrtcvad"
             ]
             raise HTTPException(
                 status_code=409,
@@ -5072,12 +5421,21 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
     async def api_ai_cancel(self, request: Request) -> Dict[str, Any]:
         body = await request.json()
         target_ids = self._target_ids_from_body(body)
+        locked_ids = self._locked_target_ids_from_body(body)
+        target_ids, locked_skipped = self._filter_unlocked_target_ids(target_ids, locked_ids)
         if not target_ids:
+            if locked_skipped:
+                return self._ok(
+                    {"cancelled": [], "skipped": locked_skipped, "targets": [], "tasks": {}},
+                    message=f"已跳过 {len(locked_skipped)} 个锁定目标，没有取消 AI 字幕任务",
+                )
             raise HTTPException(status_code=400, detail="请先选择要取消的 AI 字幕任务")
         target_entries = list(self._resolve_targets(target_ids).values())
         if not target_entries:
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
         result = self._cancel_autosub_for_entries(target_entries)
+        if locked_skipped:
+            result["skipped"] = [*(result.get("skipped") or []), *locked_skipped]
         return self._ok(
             result,
             message=f"已取消 {len(result.get('cancelled') or [])} 个 AI 字幕任务，跳过 {len(result.get('skipped') or [])} 个",
@@ -5362,7 +5720,11 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
     async def api_online_download_preview(self, request: Request) -> Dict[str, Any]:
         body = await request.json()
         target_ids = self._target_ids_from_body(body)
+        locked_ids = self._locked_target_ids_from_body(body)
+        target_ids, locked_skipped = self._filter_unlocked_target_ids(target_ids, locked_ids)
         if not target_ids:
+            if locked_skipped:
+                raise HTTPException(status_code=423, detail="选中的目标均已锁定，不能下载写入在线字幕")
             raise HTTPException(status_code=400, detail="请先选择要写入字幕的本地视频")
         target_entries = list(self._resolve_targets(target_ids).values())
         if not target_entries:
@@ -5551,6 +5913,26 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         if not session_id or not isinstance(items, list) or not items:
             logger.warning("[SubtitleManualUpload] 写入失败：缺少会话或匹配结果 session=%s", session_id or "-")
             raise HTTPException(status_code=400, detail="缺少上传会话或匹配结果")
+        locked_ids = self._locked_target_ids_from_body(body)
+        locked_skipped: List[Dict[str, str]] = []
+        if locked_ids:
+            filtered_items = []
+            for item in items:
+                target_id = self._normalize_text((item or {}).get("target_id")) if isinstance(item, dict) else ""
+                if target_id in locked_ids:
+                    locked_skipped.append({"target_id": target_id, "reason": "目标已锁定"})
+                    continue
+                filtered_items.append(item)
+            items = filtered_items
+        if not items:
+            return self._ok(
+                {
+                    "count": 0,
+                    "written": [],
+                    "skipped": locked_skipped,
+                },
+                message="没有写入字幕，锁定项已跳过",
+            )
 
         session_dir, session_payload = self._load_session(session_id)
         upload_map = {
@@ -5601,21 +5983,27 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             {
                 "count": len(written_results),
                 "written": written_results,
+                "skipped": locked_skipped,
             },
             message=message,
         )
 
     async def api_clear_subtitles(self, request: Request) -> Dict[str, Any]:
         body = await request.json()
-        target_ids = body.get("target_ids") or []
-        if isinstance(target_ids, str):
-            try:
-                target_ids = json.loads(target_ids)
-            except Exception as exc:
-                logger.warning("[SubtitleManualUpload] 清空外挂字幕失败：目标参数格式错误 %s", exc)
-                raise HTTPException(status_code=400, detail=f"目标参数格式错误: {exc}") from exc
+        target_ids = self._target_ids_from_body(body)
+        locked_ids = self._locked_target_ids_from_body(body)
+        target_ids, locked_skipped = self._filter_unlocked_target_ids(target_ids, locked_ids)
 
-        if not isinstance(target_ids, list) or not target_ids:
+        if not target_ids:
+            if locked_skipped:
+                return self._ok(
+                    {
+                        "count": 0,
+                        "deleted": [],
+                        "failed": locked_skipped,
+                    },
+                    message=f"已跳过 {len(locked_skipped)} 个锁定目标，没有删除外挂字幕",
+                )
             logger.warning("[SubtitleManualUpload] 清空外挂字幕失败：目标列表为空")
             raise HTTPException(status_code=400, detail="请至少选择一个目标视频")
 
@@ -5628,7 +6016,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新搜索媒体并选择季度/文件")
 
         deleted: List[Dict[str, Any]] = []
-        failed: List[Dict[str, str]] = []
+        failed: List[Dict[str, str]] = [*locked_skipped]
         visited_paths = set()
         for target_id in target_ids:
             clean_target_id = self._normalize_text(target_id)
@@ -5693,6 +6081,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         target_id = self._normalize_text(body.get("target_id"))
         subtitle_path_raw = self._normalize_text(body.get("subtitle_path"))
         subtitle_name = self._normalize_text(body.get("subtitle_name"))
+        self._ensure_target_not_locked(target_id, self._locked_target_ids_from_body(body))
         if not target_id:
             raise HTTPException(status_code=400, detail="请先选择目标视频")
         if not subtitle_path_raw and not subtitle_name:
@@ -5747,4 +6136,66 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                 },
             },
             message=f"已删除外挂字幕：{target_path.name}",
+        )
+
+    async def api_restore_subtitle_backup(self, request: Request) -> Dict[str, Any]:
+        body = await request.json()
+        target_id = self._normalize_text(body.get("target_id"))
+        subtitle_path_raw = self._normalize_text(body.get("subtitle_path"))
+        subtitle_name = self._normalize_text(body.get("subtitle_name"))
+        self._ensure_target_not_locked(target_id, self._locked_target_ids_from_body(body))
+        if not target_id:
+            raise HTTPException(status_code=400, detail="请先选择目标视频")
+        if not subtitle_path_raw and not subtitle_name:
+            raise HTTPException(status_code=400, detail="请指定要恢复的字幕")
+
+        target_entries = self._resolve_targets([target_id])
+        target_entry = target_entries.get(target_id)
+        if not target_entry:
+            raise HTTPException(status_code=400, detail="目标视频已失效，请重新搜索媒体并选择季度/文件")
+        if self._normalize_text(target_entry.get("storage")) not in {"", "local"}:
+            raise HTTPException(status_code=400, detail="当前仅支持恢复本地媒体文件的外挂字幕")
+
+        allowed_subtitles = self._subtitle_files_for_target(target_entry)
+        target_path: Optional[Path] = None
+        for subtitle in allowed_subtitles:
+            subtitle_path = Path(subtitle["path"])
+            if subtitle_path_raw and str(subtitle_path) == subtitle_path_raw:
+                target_path = subtitle_path
+                break
+            if subtitle_name and subtitle_path.name == subtitle_name:
+                target_path = subtitle_path
+                break
+        if not target_path:
+            raise HTTPException(status_code=400, detail="字幕不属于当前目标或已经被删除")
+
+        backup_path = self._subtitle_backup_path(target_path)
+        if not backup_path.exists():
+            raise HTTPException(status_code=404, detail="没有找到调轴前备份")
+        temp_path = target_path.with_name(f"{target_path.name}.mp-restore")
+        try:
+            shutil.copyfile(backup_path, temp_path)
+            temp_path.replace(target_path)
+        except Exception as exc:
+            temp_path.unlink(missing_ok=True)
+            logger.error(
+                "[SubtitleManualUpload] 恢复字幕备份失败 target=%s subtitle=%s error=%s",
+                target_id[:8],
+                target_path.name,
+                exc,
+            )
+            raise HTTPException(status_code=500, detail=f"恢复字幕备份失败: {exc}") from exc
+
+        self._invalidate_match_history_cache()
+        return self._ok(
+            {
+                "restored": {
+                    "target_id": target_id,
+                    "target_label": self._target_from_entry(target_entry).get("label"),
+                    "name": target_path.name,
+                    "path": str(target_path),
+                    "backup_path": str(backup_path),
+                },
+            },
+            message=f"已恢复调轴前字幕：{target_path.name}",
         )

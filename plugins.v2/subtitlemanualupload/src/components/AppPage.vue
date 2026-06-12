@@ -93,6 +93,7 @@ const matchHistoryPageSize = 20
 const matchHistoryTotal = ref(0)
 const matchHistoryHasMore = ref(false)
 const expandedHistoryIds = ref([])
+const expandedDetailTargetIds = ref([])
 const selectedHistoryTargetIds = ref({})
 const timelineFixing = ref(false)
 const autoTransferQueue = ref({
@@ -101,6 +102,7 @@ const autoTransferQueue = ref({
   rate_limits: {},
   season_package_cache: [],
 })
+const autoQueueDialog = ref(false)
 const selectedMedia = ref(null)
 const detailTab = ref('match')
 const seasons = ref([])
@@ -410,6 +412,9 @@ const matchHistoryRows = computed(() => visibleTargets.value.map(target => {
     hasTimelineRunning: applying.value && selectedPreviewTargets.value.some(item => item.id === target.id) && timelineEnabledForApply.value,
   }
 }))
+const selectedSubtitleTargets = computed(() => selectedTargets.value.filter(target => !isLocked(target.id) && (target.subtitles || []).length))
+const selectedTimelineTargets = computed(() => selectedSubtitleTargets.value.filter(target => !isStreamTarget(target)))
+const selectedRestorableTargets = computed(() => selectedSubtitleTargets.value.filter(target => (target.subtitles || []).some(subtitle => subtitle.backup_available)))
 const matchHistorySummary = computed(() => {
   if (!matchHistoryTotal.value) return '暂无已匹配字幕记录'
   return `${matchHistoryTotal.value} 部资源有外挂字幕记录`
@@ -420,6 +425,7 @@ const timelineMissing = computed(() => {
   if (timelineStatus.value.ffprobe === false) missing.push('ffprobe')
   const modules = timelineStatus.value.modules || {}
   Object.entries(modules).forEach(([name, ok]) => {
+    if (name === 'webrtcvad') return
     if (!ok) missing.push(name)
   })
   return missing.join('、')
@@ -588,6 +594,7 @@ async function clearHistoryTargets(item, targetsToClear, label) {
   try {
     const response = await props.api.post(`${pluginBase.value}/clear_subtitles`, {
       target_ids: targetIds,
+      locked_target_ids: lockedTargetPayload(),
     })
     const data = unwrapResponse(response) || {}
     message.value = response?.message || `已删除 ${data.count || 0} 个外挂字幕`
@@ -640,7 +647,10 @@ async function fixExistingTimeline(items, label = '选中字幕') {
   error.value = ''
   message.value = ''
   try {
-    const response = await props.api.post(`${pluginBase.value}/timeline_fix_existing`, { items })
+    const response = await props.api.post(`${pluginBase.value}/timeline_fix_existing`, {
+      items,
+      locked_target_ids: lockedTargetPayload(),
+    })
     const data = unwrapResponse(response) || {}
     message.value = response?.message || `已提交 ${data.accepted || 0} 个智能调轴任务`
     await loadMatchHistory()
@@ -674,6 +684,89 @@ function fixHistorySubtitleTimeline(target, subtitle) {
     [{ target_id: target.id, subtitle_path: subtitle.path }],
     subtitle.name || '单个字幕',
   )
+}
+
+function detailExpanded(target) {
+  return expandedDetailTargetIds.value.includes(target?.id)
+}
+
+function toggleDetailExpanded(target) {
+  const id = target?.id
+  if (!id) return
+  if (expandedDetailTargetIds.value.includes(id)) {
+    expandedDetailTargetIds.value = expandedDetailTargetIds.value.filter(item => item !== id)
+    return
+  }
+  expandedDetailTargetIds.value = [...expandedDetailTargetIds.value, id]
+}
+
+function detailRowForTarget(target) {
+  return matchHistoryRows.value.find(row => row.target.id === target?.id) || {
+    target,
+    subtitles: target?.subtitles || [],
+    task: aiTaskForTarget(target),
+    timelineTask: timelineTaskForTarget(target),
+    written: [],
+  }
+}
+
+function fixSelectedDetailTimeline() {
+  fixExistingTimeline(
+    selectedTimelineTargets.value.map(target => ({ target_id: target.id })),
+    '选中集数',
+  )
+}
+
+async function restoreSubtitleBackup(target, subtitle) {
+  if (!target || !subtitle) return
+  clearing.value = true
+  error.value = ''
+  message.value = ''
+  try {
+    const response = await props.api.post(`${pluginBase.value}/restore_subtitle_backup`, {
+      target_id: target.id,
+      subtitle_path: subtitle.path,
+      subtitle_name: subtitle.name,
+      locked_target_ids: lockedTargetPayload(),
+    })
+    message.value = response?.message || `已恢复调轴前字幕：${subtitle.name}`
+    await loadTargets(selectedMedia.value, selectedSeason.value)
+  } catch (err) {
+    error.value = errorMessage(err, '恢复调轴前字幕失败')
+  } finally {
+    clearing.value = false
+  }
+}
+
+async function restoreSelectedBackups() {
+  const items = []
+  selectedRestorableTargets.value.forEach(target => {
+    ;(target.subtitles || []).forEach(subtitle => {
+      if (subtitle.backup_available) items.push({ target, subtitle })
+    })
+  })
+  if (!items.length || clearing.value) return
+  const confirmed = window.confirm(`确认恢复选中集数的 ${items.length} 个调轴前备份？`)
+  if (!confirmed) return
+  clearing.value = true
+  error.value = ''
+  message.value = ''
+  try {
+    for (const item of items) {
+      await props.api.post(`${pluginBase.value}/restore_subtitle_backup`, {
+        target_id: item.target.id,
+        subtitle_path: item.subtitle.path,
+        subtitle_name: item.subtitle.name,
+        locked_target_ids: lockedTargetPayload(),
+      })
+    }
+    message.value = `已恢复 ${items.length} 个调轴前备份`
+    await loadTargets(selectedMedia.value, selectedSeason.value)
+  } catch (err) {
+    error.value = errorMessage(err, '批量恢复调轴前字幕失败')
+  } finally {
+    clearing.value = false
+  }
 }
 
 function formatBytes(value) {
@@ -718,6 +811,10 @@ function buildOutputName(target, item) {
 
 function isLocked(targetId) {
   return lockedTargetIds.value.includes(targetId)
+}
+
+function lockedTargetPayload() {
+  return [...lockedTargetIds.value]
 }
 
 function isStreamTarget(target) {
@@ -1041,6 +1138,7 @@ async function submitAiForTargets(scopeTargets) {
   try {
     const response = await props.api.post(`${pluginBase.value}/ai_submit`, {
       target_ids: usableTargets.map(item => item.id),
+      locked_target_ids: lockedTargetPayload(),
     })
     const data = unwrapResponse(response) || {}
     if (data.tasks) {
@@ -1068,6 +1166,7 @@ async function cancelAiForTargets(scopeTargets) {
   try {
     const response = await props.api.post(`${pluginBase.value}/ai_cancel`, {
       target_ids: activeTargets.map(item => item.id),
+      locked_target_ids: lockedTargetPayload(),
     })
     const data = unwrapResponse(response) || {}
     if (data.tasks) {
@@ -1094,6 +1193,13 @@ function cancelBatchAiGenerate() {
 function cancelDialogAiTasks() {
   const scopeTargets = aiTaskDialogTarget.value ? [aiTaskDialogTarget.value] : visibleTargets.value
   cancelAiForTargets(scopeTargets)
+}
+
+function regenerateDialogAiTasks() {
+  const scopeTargets = aiTaskDialogTarget.value
+    ? [aiTaskDialogTarget.value]
+    : (aiTaskScopeTargets.value.length ? aiTaskScopeTargets.value : visibleTargets.value)
+  submitAiForTargets(scopeTargets)
 }
 
 function openSingleAiGenerate(target) {
@@ -1492,6 +1598,7 @@ async function deleteSubtitle(target, subtitle) {
       target_id: target.id,
       subtitle_path: subtitle.path,
       subtitle_name: subtitle.name,
+      locked_target_ids: lockedTargetPayload(),
     })
     message.value = response?.message || `已删除外挂字幕：${subtitle.name}`
     if (selectedMedia.value) {
@@ -1586,6 +1693,7 @@ function openSingleOnlineSearch(target) {
 function onlinePayload() {
   return {
     target_ids: onlineTargets.value.map(item => item.id),
+    locked_target_ids: lockedTargetPayload(),
     media: selectedMedia.value,
     scope: onlineScope.value,
     keyword: onlineKeyword.value.trim(),
@@ -2015,6 +2123,7 @@ async function applyUpload() {
     const payload = {
       session_id: preview.value.session_id,
       fix_timeline: timelineEnabledForApply.value,
+      locked_target_ids: lockedTargetPayload(),
       items: selectedPreviewItems.value.map(item => ({
         upload_id: item.upload_id,
         target_id: item.target_id,
@@ -2040,12 +2149,14 @@ async function applyUpload() {
 }
 
 async function clearSelectedSubtitles() {
-  if (!selectedTargetIds.value.length) return
+  const targetIds = selectedSubtitleTargets.value.map(target => target.id)
+  if (!targetIds.length) return
   clearing.value = true
   error.value = ''
   try {
     const response = await props.api.post(`${pluginBase.value}/clear_subtitles`, {
-      target_ids: selectedTargetIds.value,
+      target_ids: targetIds,
+      locked_target_ids: lockedTargetPayload(),
     })
     const data = unwrapResponse(response) || {}
     const successMessage = response?.message || `已删除 ${data.count || 0} 个外挂字幕`
@@ -2226,48 +2337,19 @@ defineExpose({
         {{ searching ? '正在读取本地资源...' : '输入关键词搜索；留空搜索会显示最近整理的视频。' }}
       </div>
 
-      <VCard
+      <div
         v-if="rootTab === 'history' && (autoQueueTasks.length || autoQueueSummary.active)"
-        class="auto-queue-card"
-        rounded="xl"
-        elevation="0"
+        class="auto-queue-entry"
       >
-        <VCardText>
-          <div class="auto-queue-head">
-            <div>
-              <div class="section-kicker">入库自动字幕队列</div>
-              <strong>{{ autoQueueSummaryText }}</strong>
-            </div>
-            <VBtn
-              size="small"
-              variant="tonal"
-              prepend-icon="mdi-refresh"
-              @click="loadAutoTransferQueue"
-            >
-              刷新队列
-            </VBtn>
-          </div>
-          <div class="auto-queue-rates">
-            <span
-              v-for="(rate, provider) in autoTransferQueue.rate_limits || {}"
-              :key="provider"
-            >
-              {{ provider }}：{{ rate.remaining }}/{{ rate.limit_per_minute }} 可用
-            </span>
-          </div>
-          <div class="auto-queue-list">
-            <div
-              v-for="task in autoQueueTasks.slice().reverse().slice(0, 8)"
-              :key="task.id"
-              class="auto-queue-row"
-              :class="`auto-queue-${task.status}`"
-            >
-              <strong>{{ task.target_label || task.title || task.id }}</strong>
-              <span>{{ task.message || task.status }}<template v-if="task.next_run_at"> · 下次 {{ task.next_run_at }}</template></span>
-            </div>
-          </div>
-        </VCardText>
-      </VCard>
+        <VBtn
+          variant="tonal"
+          color="primary"
+          prepend-icon="mdi-tray-full"
+          @click="autoQueueDialog = true"
+        >
+          入库自动字幕队列 · {{ autoQueueSummaryText }}
+        </VBtn>
+      </div>
 
       <div v-if="rootTab === 'history' && matchHistoryItems.length" class="global-history-list">
         <div
@@ -2538,24 +2620,7 @@ defineExpose({
             <em>{{ aiAvailable ? '点击查看当前资源任务' : aiStatus.message }}</em>
           </button>
 
-          <div class="detail-tabs">
-            <button
-              type="button"
-              :class="{ active: detailTab === 'match' }"
-              @click="detailTab = 'match'"
-            >
-              字幕匹配
-            </button>
-            <button
-              type="button"
-              :class="{ active: detailTab === 'history' }"
-              @click="detailTab = 'history'"
-            >
-              匹配历史
-            </button>
-          </div>
-
-          <div v-if="detailTab === 'match'" class="match-panel">
+          <div class="match-panel">
           <div class="toolbar-row">
             <VBtn variant="tonal" @click="toggleSelectAll">
               {{ allVisibleSelected ? '取消全选' : '全选当前列表' }}
@@ -2608,9 +2673,26 @@ defineExpose({
             >
               清空选中外挂字幕
             </VBtn>
-            <div class="toolbar-hint">
-              锁定项不参与批量上传；清空仅删除选中项外挂字幕。
-            </div>
+            <VBtn
+              color="warning"
+              variant="tonal"
+              prepend-icon="mdi-timeline-clock"
+              :disabled="!selectedTimelineTargets.length || timelineFixing || !timelineAvailable"
+              :loading="timelineFixing"
+              @click="fixSelectedDetailTimeline"
+            >
+              批量调轴
+            </VBtn>
+            <VBtn
+              color="secondary"
+              variant="tonal"
+              prepend-icon="mdi-restore"
+              :disabled="!selectedRestorableTargets.length || clearing"
+              :loading="clearing"
+              @click="restoreSelectedBackups"
+            >
+              批量恢复
+            </VBtn>
           </div>
 
           <div v-if="visibleTargets.length" class="episode-list">
@@ -2663,6 +2745,12 @@ defineExpose({
                 title="暂无外挂字幕"
               />
               <VBtn
+                variant="text"
+                :icon="detailExpanded(target) ? 'mdi-chevron-up' : 'mdi-chevron-down'"
+                :title="detailExpanded(target) ? '收起外挂字幕' : '展开外挂字幕'"
+                @click="toggleDetailExpanded(target)"
+              />
+              <VBtn
                 v-if="aiEnabled"
                 class="ai-row-btn"
                 :class="aiTaskStatusClass(target)"
@@ -2696,6 +2784,61 @@ defineExpose({
               >
                 单集上传
               </VBtn>
+              <div v-if="detailExpanded(target)" class="episode-expanded">
+                <div class="history-status compact-status">
+                  <span>{{ (target.subtitles || []).length ? `${target.subtitles.length} 个外挂字幕` : '暂无外挂字幕' }}</span>
+                  <span v-if="detailRowForTarget(target).task">AI：{{ aiStatusText(detailRowForTarget(target).task) }}</span>
+                  <span>{{ timelineResultForTarget(detailRowForTarget(target)) }}</span>
+                  <span v-if="isStreamTarget(target)">STRM 资源不启用 AI 生成和智能调轴</span>
+                </div>
+                <div v-if="(target.subtitles || []).length" class="subtitle-history-list compact-subtitles">
+                  <div
+                    v-for="subtitle in target.subtitles"
+                    :key="subtitle.path"
+                    class="subtitle-history-item"
+                  >
+                    <div class="subtitle-history-copy">
+                      <strong>{{ subtitle.name }}</strong>
+                      <span>{{ formatBytes(subtitle.size) }} · {{ subtitle.modified_at || '未知时间' }}</span>
+                    </div>
+                    <div class="subtitle-history-actions">
+                      <VBtn
+                        size="small"
+                        variant="tonal"
+                        color="warning"
+                        :loading="timelineFixing"
+                        :disabled="timelineFixing || !timelineAvailable || isTargetActionDisabled(target) || isStreamTarget(target)"
+                        @click.stop="fixHistorySubtitleTimeline(target, subtitle)"
+                      >
+                        调轴
+                      </VBtn>
+                      <VBtn
+                        size="small"
+                        variant="tonal"
+                        color="secondary"
+                        :loading="clearing"
+                        :disabled="!subtitle.backup_available || isTargetActionDisabled(target)"
+                        @click.stop="restoreSubtitleBackup(target, subtitle)"
+                      >
+                        恢复
+                      </VBtn>
+                      <VBtn
+                        size="small"
+                        variant="tonal"
+                        color="error"
+                        :loading="clearing"
+                        :disabled="isTargetActionDisabled(target)"
+                        @click.stop="deleteSubtitle(target, subtitle)"
+                      >
+                        删除
+                      </VBtn>
+                    </div>
+                  </div>
+                </div>
+                <div v-else class="empty-state compact-empty">
+                  当前集暂无外挂字幕。
+                </div>
+              </div>
             </div>
           </div>
           <div v-else class="empty-state">
@@ -2713,86 +2856,55 @@ defineExpose({
             </div>
           </div>
           </div>
-
-          <div v-else class="history-panel">
-            <div v-if="matchHistoryRows.length" class="history-list">
-              <div
-                v-for="row in matchHistoryRows"
-                :key="row.target.id"
-                class="history-row"
-              >
-                <div class="history-main">
-                  <div class="episode-title">{{ compactTargetName(row.target) }}</div>
-                  <div class="episode-path">{{ row.target.relative_path }}</div>
-                  <div class="history-status">
-                    <span>{{ row.subtitles.length ? `${row.subtitles.length} 个外挂字幕` : '暂无外挂字幕' }}</span>
-                    <span v-if="row.task">AI：{{ aiStatusText(row.task) }}</span>
-                    <span>{{ timelineResultForTarget(row) }}</span>
-                    <span v-if="isStreamTarget(row.target)">STRM 资源不启用 AI 生成和智能调轴</span>
-                  </div>
-                </div>
-                <div class="history-actions">
-                  <VBtn
-                    size="small"
-                    variant="tonal"
-                    prepend-icon="mdi-magnify"
-                    :disabled="isTargetActionDisabled(row.target)"
-                    @click="openSingleOnlineSearch(row.target)"
-                  >
-                    重新搜索
-                  </VBtn>
-                  <VBtn
-                    v-if="aiEnabled && row.task"
-                    size="small"
-                    variant="text"
-                    prepend-icon="mdi-robot-outline"
-                    @click="openAiTaskDialog(row.target)"
-                  >
-                    AI 状态
-                  </VBtn>
-                </div>
-                <div v-if="row.subtitles.length" class="subtitle-history-list">
-                  <div
-                    v-for="subtitle in row.subtitles"
-                    :key="subtitle.path"
-                    class="subtitle-history-item"
-                  >
-                    <div class="subtitle-history-copy">
-                      <strong>{{ subtitle.name }}</strong>
-                      <span>{{ formatBytes(subtitle.size) }} · {{ subtitle.modified_at || '未知时间' }}</span>
-                    </div>
-                    <div class="subtitle-history-actions">
-                      <VBtn
-                        size="small"
-                        variant="tonal"
-                        color="warning"
-                        :loading="timelineFixing"
-                        :disabled="timelineFixing || !timelineAvailable || isStreamTarget(row.target)"
-                        @click.stop="fixHistorySubtitleTimeline(row.target, subtitle)"
-                      >
-                        调轴
-                      </VBtn>
-                      <VBtn
-                        size="small"
-                        variant="tonal"
-                        color="error"
-                        :loading="clearing"
-                        @click.stop="deleteSubtitle(row.target, subtitle)"
-                      >
-                        删除
-                      </VBtn>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div v-else class="empty-state">
-              当前列表暂无匹配历史。
-            </div>
-          </div>
         </VCardText>
       </VCard>
     </section>
+
+    <VDialog v-model="autoQueueDialog" max-width="760">
+      <VCard class="auto-queue-card" rounded="xl">
+        <VCardTitle class="dialog-title">
+          <div>
+            <span>入库自动字幕队列</span>
+            <p>{{ autoQueueSummaryText }}</p>
+          </div>
+          <div class="online-title-actions">
+            <VBtn
+              variant="tonal"
+              prepend-icon="mdi-refresh"
+              @click="loadAutoTransferQueue"
+            >
+              刷新
+            </VBtn>
+            <VBtn icon="mdi-close" variant="text" @click="autoQueueDialog = false" />
+          </div>
+        </VCardTitle>
+        <VDivider />
+        <VCardText>
+          <div class="auto-queue-rates">
+            <span
+              v-for="(rate, provider) in autoTransferQueue.rate_limits || {}"
+              :key="provider"
+            >
+              {{ provider }}：{{ rate.remaining }}/{{ rate.limit_per_minute }} 可用
+            </span>
+          </div>
+          <div v-if="autoQueueTasks.length" class="auto-queue-list">
+            <div
+              v-for="task in autoQueueTasks.slice().reverse().slice(0, 12)"
+              :key="task.id"
+              class="auto-queue-row"
+              :class="`auto-queue-${task.status}`"
+            >
+              <strong>{{ task.target_label || task.title || task.id }}</strong>
+              <span>{{ task.message || task.status }}<template v-if="task.next_run_at"> · 下次 {{ task.next_run_at }}</template></span>
+            </div>
+          </div>
+          <div v-else class="empty-state compact-empty">
+            当前没有入库自动字幕任务。
+          </div>
+        </VCardText>
+      </VCard>
+    </VDialog>
 
     <VDialog v-model="aiTaskDialog" max-width="860">
       <VCard class="ai-task-dialog" rounded="xl">
@@ -2811,6 +2923,16 @@ defineExpose({
               @click="cancelDialogAiTasks"
             >
               取消任务
+            </VBtn>
+            <VBtn
+              v-else-if="aiAvailable && (aiTaskDialogTarget || aiDialogTasks.length)"
+              variant="tonal"
+              color="warning"
+              prepend-icon="mdi-robot-happy-outline"
+              :loading="aiSubmitting"
+              @click="regenerateDialogAiTasks"
+            >
+              重新生成
             </VBtn>
             <VBtn
               variant="tonal"
@@ -3872,7 +3994,7 @@ defineExpose({
 
 .episode-row {
   display: grid;
-  grid-template-columns: auto 58px minmax(0, 1fr) repeat(5, auto);
+  grid-template-columns: auto 58px minmax(0, 1fr) repeat(6, auto);
   gap: 10px;
   align-items: center;
   padding: 10px 12px;
@@ -3883,6 +4005,28 @@ defineExpose({
 
 .episode-row.locked {
   background: rgba(238, 228, 207, 0.68);
+}
+
+.episode-expanded {
+  display: grid;
+  grid-column: 1 / -1;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  background: rgba(248, 250, 247, 0.72);
+}
+
+.compact-status {
+  margin-top: 0;
+}
+
+.compact-subtitles {
+  grid-column: 1 / -1;
+}
+
+.compact-empty {
+  padding: 12px;
+  border-radius: 14px;
 }
 
 .episode-index {

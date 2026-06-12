@@ -391,6 +391,31 @@ def test_delete_single_subtitle_only_allows_target_subtitles(tmp_path):
     assert unrelated.exists()
 
 
+def test_delete_single_subtitle_rejects_locked_target(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    subtitle = tmp_path / "Movie.chi.srt"
+    video.write_text("video", encoding="utf-8")
+    subtitle.write_text("subtitle", encoding="utf-8")
+    entry = {"id": "t1", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}
+    plugin._remember_targets([entry])
+
+    try:
+        asyncio.run(
+            plugin.api_delete_subtitle(
+                FakeRequest({"target_id": "t1", "subtitle_path": str(subtitle), "locked_target_ids": ["t1"]})
+            )
+        )
+    except module.HTTPException as exc:
+        assert exc.status_code == 423
+        assert "锁定" in exc.detail
+    else:
+        raise AssertionError("locked target should reject subtitle deletion")
+
+    assert subtitle.exists()
+
+
 def test_search_media_candidates_returns_total_with_page_slice(tmp_path):
     module, histories, _ = load_plugin_module()
     plugin = make_plugin(module)
@@ -1026,6 +1051,110 @@ def test_auto_transfer_group_prefers_season_package_then_single_episode(tmp_path
     assert results["e2"]["result"] == "single episode"
 
 
+def test_auto_transfer_group_accepts_season_ai_by_target(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._auto_skip_chinese_media_on_transfer = False
+    entries = [
+        make_auto_entry(tmp_path, filename="Show.S01E01.mkv", id="e1", media_key="tv-key", media_type="tv", title="Show", season=1, episode=1),
+        make_auto_entry(tmp_path, filename="Show.S01E02.mkv", id="e2", media_key="tv-key", media_type="tv", title="Show", season=1, episode=2),
+    ]
+    calls = []
+    plugin._auto_write_from_season_cache = lambda items: {"status": "skipped", "written_by_target": {}}
+    plugin._auto_search_write_season_package = lambda items, task_ids=None: {
+        "status": "written",
+        "result": "Show S01 English pack",
+        "written_by_target": {},
+        "ai_by_target": {
+            "e1": {"target_id": "e1", "subtitle_path": "Show.S01E01.fixed.srt"},
+            "e2": {"target_id": "e2", "subtitle_path": "Show.S01E02.fixed.srt"},
+        },
+        "ai_translate": {"added": [{"path": entries[0]["path"]}, {"path": entries[1]["path"]}]},
+        "candidate_count": 1,
+        "search_results": 1,
+    }
+
+    def fake_single(entry, target, **kwargs):
+        calls.append(entry["id"])
+        return {"status": "written"}
+
+    plugin._auto_search_write_subtitle = fake_single
+
+    results = plugin._auto_process_transfer_group(entries, task_ids=["t1", "t2"])
+
+    assert calls == []
+    assert results["e1"]["status"] == "ai_submitted"
+    assert results["e2"]["status"] == "ai_submitted"
+    assert results["e1"]["fixed_subtitles"][0]["subtitle_path"].endswith("S01E01.fixed.srt")
+
+
+def test_auto_season_package_tries_next_candidate_when_coverage_incomplete(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._online_provider_ids = ["opensubtitles"]
+    entries = [
+        make_auto_entry(tmp_path, filename="Show.S01E01.mkv", id="e1", media_key="tv-key", media_type="tv", title="Show", season=1, episode=1),
+        make_auto_entry(tmp_path, filename="Show.S01E02.mkv", id="e2", media_key="tv-key", media_type="tv", title="Show", season=1, episode=2),
+    ]
+
+    class FakeSeasonService:
+        def __init__(self):
+            self.downloaded = []
+
+        def search(self, **kwargs):
+            return {
+                "results": [
+                    {"provider": "opensubtitles", "result_id": "partial", "title": "partial pack", "score": 90, "downloadable": True},
+                    {"provider": "opensubtitles", "result_id": "full", "title": "full pack", "score": 89, "downloadable": True},
+                ]
+            }
+
+        def download(self, selected):
+            self.downloaded.append(selected[0]["result_id"])
+            return [{"provider": "opensubtitles", "source_name": f"{selected[0]['result_id']}.zip", "content": b"zip", "result": selected[0]}]
+
+    service = FakeSeasonService()
+    plugin._online_service = lambda: service
+    plugin._auto_wait_online_rate_limit = lambda *args, **kwargs: None
+    plugin._auto_media_for_entry = lambda entry: {"media_type": "tv", "title": "Show", "year": "2024"}
+    plugin._apply_tmdb_detail = lambda target, media: None
+    plugin._extract_subtitle_files = lambda source_name, content, session_dir: [
+        {"upload_id": source_name, "source_name": source_name, "stored_path": str(tmp_path / source_name), "ext": ".srt"}
+    ]
+    plugin._store_auto_season_package_cache = lambda *args, **kwargs: None
+
+    def fake_write(**kwargs):
+        selected_title = kwargs["selected_result"]["title"]
+        if selected_title == "partial pack":
+            return {
+                "status": "written",
+                "result": selected_title,
+                "written_by_target": {"e1": {"path": "Show.S01E01.chi.srt"}},
+                "completed_count": 1,
+                "missing_target_ids": ["e2"],
+                "coverage_complete": False,
+            }
+        return {
+            "status": "written",
+            "result": selected_title,
+            "written_by_target": {
+                "e1": {"path": "Show.S01E01.chi.srt"},
+                "e2": {"path": "Show.S01E02.chi.srt"},
+            },
+            "completed_count": 2,
+            "missing_target_ids": [],
+            "coverage_complete": True,
+        }
+
+    plugin._auto_write_prepared_uploads_for_entries = fake_write
+
+    result = plugin._auto_search_write_season_package(entries)
+
+    assert service.downloaded == ["partial", "full"]
+    assert result["result"] == "full pack"
+    assert result["coverage_complete"] is True
+
+
 def test_auto_transfer_rate_limit_is_tracked_per_provider(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
@@ -1273,6 +1402,135 @@ def test_auto_search_write_uses_best_api_candidate_when_multiple_results(tmp_pat
     assert result["status"] == "written"
     assert result["candidate_count"] == 2
     assert service.downloaded[0]["result_id"] == "os-1"
+
+
+def test_auto_search_write_chinese_subtitle_enables_timeline_fix(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    entry = make_auto_entry(tmp_path, filename="Movie.mkv")
+    subtitle = tmp_path / "Movie.chi.srt"
+    subtitle.write_text("1\n00:00:01,000 --> 00:00:02,000\n你好\n", encoding="utf-8")
+
+    class FakeAutoService:
+        def search(self, **kwargs):
+            return {
+                "results": [
+                    {
+                        "provider": "opensubtitles",
+                        "result_id": "os-1",
+                        "title": "Movie Chinese",
+                        "score": 90,
+                        "downloadable": True,
+                        "language_category": "chinese",
+                    }
+                ]
+            }
+
+        def download(self, selected):
+            return [
+                {
+                    "provider": selected[0]["provider"],
+                    "source_name": "Movie.chi.srt",
+                    "content": subtitle.read_bytes(),
+                    "result": selected[0],
+                }
+            ]
+
+    observed = {}
+    plugin._online_service = lambda: FakeAutoService()
+    plugin._auto_search_keywords_for_entry = lambda item, target: ["Movie 2024"]
+    plugin._extract_subtitle_files = lambda source_name, content, session_dir: [
+        {
+            "upload_id": "u1",
+            "source_name": source_name,
+            "stored_path": str(subtitle),
+            "ext": ".srt",
+        }
+    ]
+    plugin._build_write_operations = lambda *args, **kwargs: [{"ok": True}]
+
+    def fake_write(**kwargs):
+        observed["fix_timeline"] = kwargs.get("fix_timeline")
+        return [{"output_name": "Movie.chi.srt"}], 1, 0
+
+    plugin._write_operations_to_disk = fake_write
+    plugin._submit_autosub_for_entries = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("Chinese subtitle should not trigger AI")
+    )
+
+    result = plugin._auto_search_write_subtitle(entry)
+
+    assert result["status"] == "written"
+    assert observed["fix_timeline"] is True
+
+
+def test_auto_search_write_foreign_srt_submits_ai_without_writing(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    entry = make_auto_entry(tmp_path, filename="Movie.mkv")
+    subtitle = tmp_path / "Movie.eng.srt"
+    subtitle.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+
+    class FakeAutoService:
+        def search(self, **kwargs):
+            return {
+                "results": [
+                    {
+                        "provider": "opensubtitles",
+                        "result_id": "os-1",
+                        "title": "Movie English",
+                        "score": 90,
+                        "downloadable": True,
+                        "language_category": "english",
+                    }
+                ]
+            }
+
+        def download(self, selected):
+            return [
+                {
+                    "provider": selected[0]["provider"],
+                    "source_name": "Movie.eng.srt",
+                    "content": subtitle.read_bytes(),
+                    "result": selected[0],
+                }
+            ]
+
+    captured = {}
+    plugin._online_service = lambda: FakeAutoService()
+    plugin._auto_search_keywords_for_entry = lambda item, target: ["Movie 2024"]
+    plugin._extract_subtitle_files = lambda source_name, content, session_dir: [
+        {
+            "upload_id": "u1",
+            "source_name": source_name,
+            "stored_path": str(subtitle),
+            "ext": ".srt",
+        }
+    ]
+    plugin._write_operations_to_disk = lambda **kwargs: (_ for _ in ()).throw(
+        AssertionError("Foreign SRT should be submitted to AI instead of written")
+    )
+    plugin._prepare_online_ai_subtitle_overrides = lambda **kwargs: (
+        {entry["path"]: {"subtitle_path": str(subtitle), "lang": "en"}},
+        [{"target_id": entry["id"], "subtitle_path": str(subtitle), "autosub_lang": "en"}],
+    )
+
+    def fake_submit(entries, subtitle_overrides=None):
+        captured["overrides"] = subtitle_overrides
+        return {
+            "added": [{"path": entries[0]["path"]}],
+            "skipped": [],
+            "failed": [],
+            "tasks": {"task_by_target": {"e1": {"status": "pending"}}},
+        }
+
+    plugin._submit_autosub_for_entries = fake_submit
+
+    result = plugin._auto_search_write_subtitle(entry)
+
+    assert result["status"] == "ai_submitted"
+    assert captured["overrides"][entry["path"]]["lang"] == "en"
+    assert result["fixed_subtitles"][0]["autosub_lang"] == "en"
 
 
 def test_auto_search_providers_use_only_unattended_api_sources():

@@ -177,6 +177,26 @@ def test_delete_pending_task_removes_queue_and_record():
     assert payload["tasks"] == []
 
 
+def test_delete_completed_task_only_removes_record_not_generated_subtitle(tmp_path):
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    subtitle = tmp_path / "Movie.chi&eng.ai.srt"
+    video.write_bytes(b"video")
+    subtitle.write_text("1\n00:00:01,000 --> 00:00:02,000\n你好\nHello\n", encoding="utf-8")
+    assert plugin.add_task(str(video), module.TaskSource.SUBTITLE_MANUAL_UPLOAD, force_generate=True) is True
+    task = next(iter(plugin._tasks.values()))
+    plugin._task_queue.get_nowait()
+    task.status = module.TaskStatus.COMPLETED
+
+    result = plugin.delete_tasks(task_ids=[task.task_id])
+    payload = plugin.tasks_payload(paths=[str(video)])
+
+    assert len(result["deleted"]) == 1
+    assert payload["tasks"] == []
+    assert subtitle.exists()
+
+
 def test_delete_in_progress_task_is_skipped():
     module = load_plugin_module()
     plugin = make_plugin(module)
@@ -195,13 +215,32 @@ def test_delete_in_progress_task_is_skipped():
     assert len(payload["tasks"]) == 1
 
 
-def test_translated_subtitle_uses_chs_ai_suffix():
+def test_translated_subtitle_uses_language_ai_suffixes():
     module = load_plugin_module()
 
+    assert module.AutoSubv3._AutoSubv3__translated_subtitle_path("/media/Movie") == "/media/Movie.chi.ai.srt"
+    assert module.AutoSubv3._AutoSubv3__translated_subtitle_path("/media/Movie", "ja") == "/media/Movie.chi&jp.ai.srt"
+    assert module.AutoSubv3._AutoSubv3__translated_subtitle_path("/media/Movie", "en") == "/media/Movie.chi&eng.ai.srt"
+    assert module.AutoSubv3._AutoSubv3__translated_subtitle_path("/media/Movie", "ko") == "/media/Movie.chi&kr.ai.srt"
+    assert module.AutoSubv3._AutoSubv3__translated_subtitle_path("/media/Movie", "zh") == "/media/Movie.chi.ai.srt"
     assert (
-        module.AutoSubv3._AutoSubv3__translated_subtitle_path("/media/Movie")
-        == "/media/Movie.chs.ai.srt"
+        module.AutoSubv3._AutoSubv3__translated_subtitle_path("/media/Movie", "en", "chinese_only")
+        == "/media/Movie.chi.ai.srt"
     )
+
+
+def test_format_translated_content_flattens_bilingual_linebreaks():
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+
+    plugin._subtitle_output_mode = "bilingual"
+    assert (
+        plugin._AutoSubv3__format_translated_content("Hello\\Nworld\nagain", "你好\n世界")
+        == "你好 世界\nHello world again"
+    )
+
+    plugin._subtitle_output_mode = "chinese_only"
+    assert plugin._AutoSubv3__format_translated_content("Hello", "你好\n世界") == "你好 世界"
 
 
 def test_submit_tasks_accepts_source_subtitle_override(tmp_path):
@@ -265,6 +304,27 @@ def test_chs_ai_subtitle_is_detected_as_existing_chinese_subtitle():
     assert exists is True
     assert lang == "zh"
     assert filename == "Movie.chs.ai.srt"
+
+
+def test_bilingual_ai_subtitle_suffix_is_detected_as_existing_chinese_subtitle():
+    module = load_plugin_module()
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        video_path = Path(tmpdir) / "Movie.mkv"
+        subtitle_path = Path(tmpdir) / "Movie.chi&jp.ai.srt"
+        video_path.write_bytes(b"video")
+        subtitle_path.write_text("1\n00:00:01,000 --> 00:00:02,000\n你好\nこんにちは\n", encoding="utf-8")
+
+        exists, lang, filename = module.AutoSubv3._AutoSubv3__external_subtitle_exists(
+            str(video_path),
+            prefer_langs=["zh", "chs"],
+            only_srt=True,
+            strict=True,
+        )
+
+    assert exists is True
+    assert lang == "zh"
+    assert filename == "Movie.chi&jp.ai.srt"
 
 
 def test_settings_form_uses_compatible_native_schema():

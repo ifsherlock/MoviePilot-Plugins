@@ -963,8 +963,32 @@ class AutoSubv3(_PluginBase):
             raise UserInterruptException("用户中断当前任务")
 
     @staticmethod
-    def __translated_subtitle_path(file_path: str) -> str:
-        return f"{file_path}.chs.ai.srt"
+    def __subtitle_lang_suffix(source_lang: Any, output_mode: str = "bilingual") -> str:
+        lang = str(source_lang or "").strip().lower().replace("_", "-")
+        primary = lang.split("-")[0]
+        aliases = {
+            "zh": "chi",
+            "zho": "chi",
+            "chi": "chi",
+            "cmn": "chi",
+            "cn": "chi",
+            "ja": "jp",
+            "jpn": "jp",
+            "jp": "jp",
+            "en": "eng",
+            "eng": "eng",
+            "ko": "kr",
+            "kor": "kr",
+            "kr": "kr",
+        }
+        source_suffix = aliases.get(primary) or aliases.get(lang) or primary[:3] or "und"
+        if output_mode == "chinese_only" or source_suffix in {"chi", "und"}:
+            return "chi"
+        return f"chi&{source_suffix}"
+
+    @classmethod
+    def __translated_subtitle_path(cls, file_path: str, source_lang: Any = "", output_mode: str = "bilingual") -> str:
+        return f"{file_path}.{cls.__subtitle_lang_suffix(source_lang, output_mode)}.ai.srt"
 
     def __process_autosub(
         self,
@@ -1044,7 +1068,7 @@ class AutoSubv3(_PluginBase):
             if self._translate_zh:
                 # 翻译字幕（即使源语言是中文，也过LLM处理病句、繁转简、去空格）
                 logger.info(f"开始翻译字幕为中文 ...")
-                translated_subtitle = self.__translated_subtitle_path(file_path)
+                translated_subtitle = self.__translated_subtitle_path(file_path, lang, self._subtitle_output_mode)
                 self.__translate_zh_subtitle(lang, gen_sub_path, translated_subtitle,
                                               output_mode=self._subtitle_output_mode)
                 self._raise_if_task_cancelled()
@@ -1602,6 +1626,25 @@ class AutoSubv3(_PluginBase):
         noisy_tokens = [('(', ')'), ('[', ']'), ('{', '}'), ('【', '】'), ('♪', '♪'), ('♫', '♫'), ('♪♪', '♪♪')]
         return any(content.startswith(t[0]) and content.endswith(t[1]) for t in noisy_tokens)
 
+    @staticmethod
+    def __normalize_subtitle_text_line(value: Any) -> str:
+        text = str(value or "")
+        text = text.replace("\\N", " ").replace("\\n", " ").replace("\r", "\n")
+        text = re.sub(r"\s*\n+\s*", " ", text)
+        text = re.sub(r"\s+", " ", text)
+        return text.strip()
+
+    def __format_translated_content(self, original: Any, translated: Any) -> str:
+        trans = self.__normalize_subtitle_text_line(translated)
+        origin = self.__normalize_subtitle_text_line(original)
+        if self._subtitle_output_mode == 'chinese_only':
+            return trans
+        if not origin:
+            return trans
+        if not trans:
+            return origin
+        return f"{trans}\n{origin}"
+
     def __get_context(self, all_subs: list, target_indices: List[int], is_batch: bool) -> str:
         """通用上下文获取方法"""
         min_idx = max(0, min(target_indices) - self._context_window)
@@ -1644,7 +1687,7 @@ class AutoSubv3(_PluginBase):
                 raise Exception(f"批次行数不匹配 {len(translated)}/{len(batch)}")
 
             for item, trans in zip(batch, translated):
-                item.content = f"{trans}\n{item.content}"
+                item.content = self.__format_translated_content(item.content, trans)
             self._stats['batch_success'] += 1
             self._stats['translated'] += len(batch)
             return batch
@@ -1662,10 +1705,7 @@ class AutoSubv3(_PluginBase):
         success, trans = self.__translate_to_zh(item.content, context)
 
         if success:
-            if self._subtitle_output_mode == 'chinese_only':
-                item.content = trans
-            else:
-                item.content = f"{trans}\n{item.content}"
+            item.content = self.__format_translated_content(item.content, trans)
             self._stats['line_fallback'] += 1
             self._stats['translated'] += 1
             return item
@@ -1673,7 +1713,7 @@ class AutoSubv3(_PluginBase):
             if self._subtitle_output_mode == 'chinese_only':
                 item.content = f"[翻译失败]"
             else:
-                item.content = f"[翻译失败]\n{item.content}"
+                item.content = self.__format_translated_content(item.content, "[翻译失败]")
             self._stats['failed'] += 1
             return item
 
@@ -1797,10 +1837,7 @@ class AutoSubv3(_PluginBase):
                 # 严格检查：ret=True 且 translations 不为空 且 所有条目均非 None
                 if ret and translations and all(t is not None for t in translations):
                     for item, trans in zip(batch_list, translations):
-                        if self._subtitle_output_mode == 'chinese_only':
-                            item.content = trans
-                        else:
-                            item.content = f"{trans}\n{item.content}"
+                        item.content = self.__format_translated_content(item.content, trans)
                     stats["batch_ok"] += 1
                     stats["line_ok"] += len(translations)
                     return {gidx: batch_map[gidx] for gidx in indices}
@@ -1820,16 +1857,13 @@ class AutoSubv3(_PluginBase):
                 success, trans = self.__translate_to_zh(item.content, context, max_retries=1)
                 if success:
                     line_ok_count += 1
-                    if self._subtitle_output_mode == 'chinese_only':
-                        item.content = trans
-                    else:
-                        item.content = f"{trans}\n{item.content}"
+                    item.content = self.__format_translated_content(item.content, trans)
                 else:
                     # 单条翻译失败，不重试（避免浪费调用次数）
                     if self._subtitle_output_mode == 'chinese_only':
                         item.content = "[翻译失败]"
                     else:
-                        item.content = f"[翻译失败]\n{item.content}"
+                        item.content = self.__format_translated_content(item.content, "[翻译失败]")
             stats["line_ok"] += line_ok_count
             stats["batch_fail"] += 1
             logger.info(f"[翻译] 批次 {batch_start_idx} 降级逐行完成：{line_ok_count}/{len(indices)} 条成功")
@@ -1914,17 +1948,26 @@ class AutoSubv3(_PluginBase):
             cur_metadata = []
             # 倒序遍历文件名中的标记
             for i in range(len(parts) - 1, -1, -1):
-                part = parts[i]
-                if part in metadata_flags:
-                    cur_metadata.append(part)
+                part = parts[i].strip()
+                lower_part = part.lower()
+                if lower_part in metadata_flags:
+                    cur_metadata.append(lower_part)
                 elif cur_subtitle_lang is None:
-                    normalized = language_aliases.get(part.lower())
+                    composite_langs = [
+                        language_aliases.get(item.strip().lower()) or item.strip().lower()
+                        for item in re.split(r"[&+]", lower_part)
+                        if item.strip()
+                    ]
+                    if any(item == "zh" for item in composite_langs):
+                        cur_subtitle_lang = "zh"
+                        continue
+                    normalized = language_aliases.get(lower_part)
                     if normalized:
                         cur_subtitle_lang = normalized
                         continue
                     try:
                         iso639.to_iso639_1(part)
-                    except iso639.NonExistentLanguageError:
+                    except Exception:
                         continue
                     else:
                         cur_subtitle_lang = iso639.to_iso639_1(part)  # 记录最后一个语言标记

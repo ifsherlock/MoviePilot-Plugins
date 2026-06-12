@@ -7,6 +7,7 @@ import shutil
 import subprocess
 import tempfile
 from dataclasses import asdict, dataclass
+from hashlib import sha1
 from importlib import util as importlib_util
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
@@ -16,9 +17,14 @@ AUDIO_SAMPLE_RATE = 16000
 FRAME_DURATION_MS = 10
 FRAME_SAMPLES = int(AUDIO_SAMPLE_RATE * FRAME_DURATION_MS / 1000)
 FRAME_BYTES = FRAME_SAMPLES * 2
-DEFAULT_MAX_OFFSET_SECONDS = 700
+DEFAULT_MAX_OFFSET_SECONDS = 120
 DEFAULT_MIN_OFFSET_SECONDS = 0.2
+RISKY_OFFSET_SECONDS = 120
+HARD_MAX_OFFSET_SECONDS = 300
 MIN_SUBTITLE_EVENTS = 4
+MIN_CONFIDENT_SCORE = 0.02
+MIN_SCORE_MARGIN = 0.002
+TIMELINE_CACHE_VERSION = "v2-webrtc-202606"
 TEXT_SUBTITLE_CODECS = {
     "ass",
     "mov_text",
@@ -47,12 +53,19 @@ class TimelineFixResult:
     offset_seconds: float
     scale_factor: float
     score: float
+    confidence: str = "medium"
+    score_margin: float = 0.0
+    active_ratio: float = 0.0
+    risk_flags: Optional[List[str]] = None
 
     def to_dict(self) -> Dict[str, Any]:
         data = asdict(self)
         data["offset_seconds"] = round(float(self.offset_seconds), 3)
         data["scale_factor"] = round(float(self.scale_factor), 6)
         data["score"] = round(float(self.score), 3)
+        data["score_margin"] = round(float(self.score_margin), 3)
+        data["active_ratio"] = round(float(self.active_ratio), 4)
+        data["risk_flags"] = list(self.risk_flags or [])
         return data
 
 
@@ -62,9 +75,11 @@ def check_timeline_fixer_dependencies() -> Dict[str, Any]:
     modules = {
         "numpy": importlib_util.find_spec("numpy") is not None,
         "pysubs2": importlib_util.find_spec("pysubs2") is not None,
+        "webrtcvad": importlib_util.find_spec("webrtcvad") is not None,
     }
+    required_modules = {key: modules[key] for key in ("numpy", "pysubs2")}
     return {
-        "available": bool(ffmpeg and ffprobe and all(modules.values())),
+        "available": bool(ffmpeg and ffprobe and all(required_modules.values())),
         "ffmpeg": bool(ffmpeg),
         "ffprobe": bool(ffprobe),
         "ffmpeg_path": ffmpeg or "",
@@ -100,6 +115,10 @@ def fix_subtitle_timeline(
     output_path: Path,
     max_offset_seconds: int = DEFAULT_MAX_OFFSET_SECONDS,
     min_offset_seconds: float = DEFAULT_MIN_OFFSET_SECONDS,
+    *,
+    cache_dir: Optional[Path] = None,
+    allow_risky_offset: bool = False,
+    vad_mode: str = "webrtc",
 ) -> TimelineFixResult:
     status = check_timeline_fixer_dependencies()
     if not status["available"]:
@@ -121,7 +140,8 @@ def fix_subtitle_timeline(
     if len(source_events) < MIN_SUBTITLE_EVENTS:
         raise RuntimeError("not enough dialogue lines in uploaded subtitle")
 
-    base_vad, base_name = _build_base_vad(np, pysubs2, video_path)
+    max_offset_seconds = _normalize_max_offset(max_offset_seconds)
+    base_vad, base_name = _build_base_vad(np, pysubs2, video_path, cache_dir=cache_dir, vad_mode=vad_mode)
     if base_vad.size < SAMPLE_RATE:
         raise RuntimeError("not enough reference speech features")
 
@@ -133,6 +153,22 @@ def fix_subtitle_timeline(
     )
     offset_seconds = best["offset_samples"] / float(SAMPLE_RATE)
     scale_factor = best["scale_factor"]
+    confidence, risk_flags = _alignment_confidence(
+        offset_seconds=offset_seconds,
+        scale_factor=scale_factor,
+        score=float(best.get("score", 0.0)),
+        score_margin=float(best.get("score_margin", 0.0)),
+        active_ratio=float(best.get("active_ratio", 0.0)),
+        max_offset_seconds=max_offset_seconds,
+    )
+    if confidence == "rejected" or (abs(offset_seconds) > RISKY_OFFSET_SECONDS and not allow_risky_offset):
+        reason = "timeline alignment rejected"
+        if abs(offset_seconds) > RISKY_OFFSET_SECONDS and not allow_risky_offset:
+            reason = "offset exceeds safe range"
+        raise RuntimeError(
+            f"{reason}: offset={offset_seconds:.3f}s score={float(best.get('score', 0.0)):.3f} "
+            f"margin={float(best.get('score_margin', 0.0)):.3f} risks={','.join(risk_flags) or '-'}"
+        )
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     if abs(offset_seconds) < min_offset_seconds and abs(scale_factor - 1.0) < 0.0001:
@@ -145,6 +181,10 @@ def fix_subtitle_timeline(
             offset_seconds=offset_seconds,
             scale_factor=scale_factor,
             score=best["score"],
+            confidence=confidence,
+            score_margin=best.get("score_margin", 0.0),
+            active_ratio=best.get("active_ratio", 0.0),
+            risk_flags=risk_flags,
         )
 
     _save_adjusted_subtitle(
@@ -162,7 +202,21 @@ def fix_subtitle_timeline(
         offset_seconds=offset_seconds,
         scale_factor=scale_factor,
         score=best["score"],
+        confidence=confidence,
+        score_margin=best.get("score_margin", 0.0),
+        active_ratio=best.get("active_ratio", 0.0),
+        risk_flags=risk_flags,
     )
+
+
+def _normalize_max_offset(value: Any) -> int:
+    try:
+        seconds = int(value)
+    except Exception:
+        seconds = DEFAULT_MAX_OFFSET_SECONDS
+    if seconds <= 0:
+        return DEFAULT_MAX_OFFSET_SECONDS
+    return min(seconds, HARD_MAX_OFFSET_SECONDS)
 
 
 def _missing_dependency_names(status: Dict[str, Any]) -> List[str]:
@@ -172,19 +226,34 @@ def _missing_dependency_names(status: Dict[str, Any]) -> List[str]:
     if not status.get("ffprobe"):
         missing.append("ffprobe")
     for name, ok in (status.get("modules") or {}).items():
+        if name == "webrtcvad":
+            continue
         if not ok:
             missing.append(name)
     return missing
 
 
-def _build_base_vad(np: Any, pysubs2: Any, video_path: Path) -> Tuple[Any, str]:
-    subtitle_base = _build_embedded_subtitle_vad(np, pysubs2, video_path)
+def _build_base_vad(
+    np: Any,
+    pysubs2: Any,
+    video_path: Path,
+    *,
+    cache_dir: Optional[Path],
+    vad_mode: str,
+) -> Tuple[Any, str]:
+    subtitle_base = _build_embedded_subtitle_vad(np, pysubs2, video_path, cache_dir=cache_dir)
     if subtitle_base:
         return subtitle_base
-    return _build_audio_vad(np, video_path), "audio"
+    return _build_audio_vad(np, video_path, cache_dir=cache_dir, vad_mode=vad_mode)
 
 
-def _build_embedded_subtitle_vad(np: Any, pysubs2: Any, video_path: Path) -> Optional[Tuple[Any, str]]:
+def _build_embedded_subtitle_vad(
+    np: Any,
+    pysubs2: Any,
+    video_path: Path,
+    *,
+    cache_dir: Optional[Path],
+) -> Optional[Tuple[Any, str]]:
     streams = _probe_text_subtitle_streams(video_path)
     if not streams:
         return None
@@ -196,25 +265,27 @@ def _build_embedded_subtitle_vad(np: Any, pysubs2: Any, video_path: Path) -> Opt
             stream_index = stream.get("index")
             if stream_index is None:
                 continue
-            out_path = tmp_dir / f"embedded-{order}.srt"
-            cmd = [
-                "ffmpeg",
-                "-hide_banner",
-                "-nostdin",
-                "-loglevel",
-                "error",
-                "-y",
-                "-i",
-                str(video_path),
-                "-map",
-                f"0:{stream_index}",
-                "-c:s",
-                "srt",
-                str(out_path),
-            ]
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-            if result.returncode != 0 or not out_path.exists() or out_path.stat().st_size < 128:
-                continue
+            out_path = _cached_embedded_subtitle_path(cache_dir, video_path, int(stream_index), order) or tmp_dir / f"embedded-{order}.srt"
+            if not out_path.exists():
+                out_path.parent.mkdir(parents=True, exist_ok=True)
+                cmd = [
+                    "ffmpeg",
+                    "-hide_banner",
+                    "-nostdin",
+                    "-loglevel",
+                    "error",
+                    "-y",
+                    "-i",
+                    str(video_path),
+                    "-map",
+                    f"0:{stream_index}",
+                    "-c:s",
+                    "srt",
+                    str(out_path),
+                ]
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                if result.returncode != 0 or not out_path.exists() or out_path.stat().st_size < 128:
+                    continue
             try:
                 events = _load_subtitle_events(pysubs2, out_path)
             except Exception:
@@ -264,7 +335,26 @@ def _probe_text_subtitle_streams(video_path: Path) -> List[Dict[str, Any]]:
     ]
 
 
-def _build_audio_vad(np: Any, video_path: Path) -> Any:
+def _build_audio_vad(np: Any, video_path: Path, *, cache_dir: Optional[Path], vad_mode: str) -> Tuple[Any, str]:
+    cache_path = _cached_vad_path(cache_dir, video_path, vad_mode)
+    if cache_path and cache_path.exists():
+        values = np.load(str(cache_path))
+        return values.astype(np.float32), f"audio:{vad_mode}:cache"
+
+    if vad_mode == "webrtc" and importlib_util.find_spec("webrtcvad") is not None:
+        vad = _build_webrtc_audio_vad(np, video_path)
+        base_name = "audio:webrtc"
+    else:
+        vad = _build_rms_audio_vad(np, video_path)
+        base_name = "audio:rms"
+
+    if cache_path:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        np.save(str(cache_path), vad)
+    return vad, base_name
+
+
+def _read_pcm_frames(video_path: Path) -> Tuple[bytes, str]:
     cmd = [
         "ffmpeg",
         "-hide_banner",
@@ -282,17 +372,37 @@ def _build_audio_vad(np: Any, video_path: Path) -> Any:
         "s16le",
         "-",
     ]
-    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    assert process.stdout is not None
-    assert process.stderr is not None
+    result = subprocess.run(cmd, capture_output=True, timeout=180)
+    if result.returncode != 0:
+        stderr = result.stderr.decode("utf-8", errors="ignore").strip()
+        raise RuntimeError(f"ffmpeg audio extraction failed: {stderr or result.returncode}")
+    return result.stdout, result.stderr.decode("utf-8", errors="ignore").strip()
 
+
+def _build_webrtc_audio_vad(np: Any, video_path: Path) -> Any:
+    import webrtcvad
+
+    pcm, _ = _read_pcm_frames(video_path)
+    if len(pcm) < FRAME_BYTES * SAMPLE_RATE:
+        raise RuntimeError("not enough audio frames for timeline fixing")
+
+    detector = webrtcvad.Vad()
+    detector.set_mode(3)
+    active: List[bool] = []
+    usable_len = (len(pcm) // FRAME_BYTES) * FRAME_BYTES
+    for index in range(0, usable_len, FRAME_BYTES):
+        frame = pcm[index : index + FRAME_BYTES]
+        active.append(bool(detector.is_speech(frame, AUDIO_SAMPLE_RATE)))
+    return _active_flags_to_vad(np, active)
+
+
+def _build_rms_audio_vad(np: Any, video_path: Path) -> Any:
+    pcm, stderr = _read_pcm_frames(video_path)
     energies: List[float] = []
     pending = b""
     chunk_size = FRAME_BYTES * 500
-    while True:
-        chunk = process.stdout.read(chunk_size)
-        if not chunk:
-            break
+    for index in range(0, len(pcm), chunk_size):
+        chunk = pcm[index : index + chunk_size]
         pending += chunk
         usable_len = (len(pending) // FRAME_BYTES) * FRAME_BYTES
         if usable_len <= 0:
@@ -303,12 +413,8 @@ def _build_audio_vad(np: Any, video_path: Path) -> Any:
         rms = np.sqrt(np.mean(samples.astype(np.float32) ** 2, axis=1))
         energies.extend(rms.tolist())
 
-    stderr = process.stderr.read().decode("utf-8", errors="ignore").strip()
-    return_code = process.wait()
-    if return_code != 0:
-        raise RuntimeError(f"ffmpeg audio extraction failed: {stderr or return_code}")
     if len(energies) < SAMPLE_RATE:
-        raise RuntimeError("not enough audio frames for timeline fixing")
+        raise RuntimeError(f"not enough audio frames for timeline fixing: {stderr}")
 
     values = np.asarray(energies, dtype=np.float32)
     log_values = np.log1p(values)
@@ -319,6 +425,16 @@ def _build_audio_vad(np: Any, video_path: Path) -> Any:
     if active.size >= 7:
         kernel = np.ones(7, dtype=np.float32) / 7.0
         active = np.convolve(active.astype(np.float32), kernel, mode="same") >= 0.36
+    active_ratio = float(np.mean(active))
+    if active_ratio <= 0.002 or active_ratio >= 0.998:
+        raise RuntimeError("audio speech feature is unstable")
+    return np.where(active, 1.0, -1.0).astype(np.float32)
+
+
+def _active_flags_to_vad(np: Any, active_flags: Sequence[bool]) -> Any:
+    active = np.asarray(active_flags, dtype=bool)
+    if active.size < SAMPLE_RATE:
+        raise RuntimeError("not enough audio frames for timeline fixing")
     active_ratio = float(np.mean(active))
     if active_ratio <= 0.002 or active_ratio >= 0.998:
         raise RuntimeError("audio speech feature is unstable")
@@ -388,17 +504,55 @@ def _calculate_best_alignment(
         if abs(offset_samples) > max_offset_samples:
             continue
         normalized_score = raw_score / max(1.0, float(source_vad.size))
+        active_ratio = float(np.mean(source_vad > 0))
         candidates.append(
             {
                 "offset_samples": float(offset_samples),
                 "score": float(normalized_score),
                 "raw_score": float(raw_score),
                 "scale_factor": float(ratio),
+                "active_ratio": active_ratio,
             }
         )
     if not candidates:
         raise RuntimeError("no valid timeline alignment candidate")
-    return max(candidates, key=lambda item: item["score"])
+    candidates.sort(key=lambda item: item["score"], reverse=True)
+    best = dict(candidates[0])
+    second_score = float(candidates[1]["score"]) if len(candidates) > 1 else 0.0
+    best["score_margin"] = float(best["score"]) - second_score
+    return best
+
+
+def _alignment_confidence(
+    *,
+    offset_seconds: float,
+    scale_factor: float,
+    score: float,
+    score_margin: float,
+    active_ratio: float,
+    max_offset_seconds: int,
+) -> Tuple[str, List[str]]:
+    risks: List[str] = []
+    abs_offset = abs(float(offset_seconds))
+    if abs_offset > RISKY_OFFSET_SECONDS:
+        risks.append("offset_over_120s")
+    if abs_offset > max_offset_seconds:
+        risks.append("offset_over_configured_max")
+    if score < MIN_CONFIDENT_SCORE:
+        risks.append("low_score")
+    if score_margin < MIN_SCORE_MARGIN:
+        risks.append("weak_score_margin")
+    if active_ratio <= 0.01 or active_ratio >= 0.95:
+        risks.append("unstable_subtitle_activity")
+    if abs(float(scale_factor) - 1.0) > 0.08:
+        risks.append("unusual_scale_factor")
+    if "offset_over_configured_max" in risks or "low_score" in risks:
+        return "rejected", risks
+    if "offset_over_120s" in risks or "weak_score_margin" in risks or "unstable_subtitle_activity" in risks:
+        return "low", risks
+    if abs(float(scale_factor) - 1.0) > 0.0001:
+        return "medium", risks
+    return "high", risks
 
 
 def _unique_float_values(values: Iterable[float]) -> List[float]:
@@ -467,6 +621,27 @@ def _next_power_of_two(value: int) -> int:
     if value <= 1:
         return 1
     return 1 << (int(value) - 1).bit_length()
+
+
+def _file_signature(path: Path) -> str:
+    try:
+        stat = path.stat()
+        raw = f"{TIMELINE_CACHE_VERSION}|{path.resolve()}|{stat.st_size}|{stat.st_mtime_ns}"
+    except Exception:
+        raw = f"{TIMELINE_CACHE_VERSION}|{path}"
+    return sha1(raw.encode("utf-8", errors="ignore")).hexdigest()
+
+
+def _cached_vad_path(cache_dir: Optional[Path], video_path: Path, vad_mode: str) -> Optional[Path]:
+    if not cache_dir:
+        return None
+    return Path(cache_dir) / "vad" / f"{_file_signature(video_path)}.{vad_mode}.npy"
+
+
+def _cached_embedded_subtitle_path(cache_dir: Optional[Path], video_path: Path, stream_index: int, order: int) -> Optional[Path]:
+    if not cache_dir:
+        return None
+    return Path(cache_dir) / "embedded_subtitles" / f"{_file_signature(video_path)}.{order}.{stream_index}.srt"
 
 
 def _save_adjusted_subtitle(
