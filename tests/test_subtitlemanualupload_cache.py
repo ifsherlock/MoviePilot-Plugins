@@ -786,8 +786,9 @@ def setup_online_ai_translate(plugin, module, tmp_path):
 
     captured = {}
 
-    def fake_submit(entries, subtitle_overrides=None):
+    def fake_submit(entries, subtitle_overrides=None, **kwargs):
         captured["overrides"] = subtitle_overrides or {}
+        captured["submit_kwargs"] = kwargs
         return {
             "added": [{"path": entries[0]["path"]}],
             "skipped": [],
@@ -861,6 +862,11 @@ def test_online_ai_translate_downloads_fixes_and_does_not_create_preview(tmp_pat
     override = captured["overrides"][entry["path"]]
     assert Path(override["subtitle_path"]).exists()
     assert override["lang"] == "en"
+    assert override["source_policy"] == "matched_external"
+    assert override["timeline_fixed"] is True
+    assert captured["submit_kwargs"]["trigger"] == "manual"
+    assert captured["submit_kwargs"]["source_policy"] == "matched_external"
+    assert captured["submit_kwargs"]["overwrite_policy"] == "new_variant"
 
 
 def test_online_ai_submit_endpoint_downloads_fixes_and_does_not_create_preview(tmp_path):
@@ -894,6 +900,7 @@ def test_online_ai_submit_endpoint_downloads_fixes_and_does_not_create_preview(t
     assert data["tasks"]["task_by_target"]["m1"]["status"] == "pending"
     assert data["timeline_tasks"]["task_by_target"]["m1"]["status"] == "completed"
     assert Path(captured["overrides"][entry["path"]]["subtitle_path"]).exists()
+    assert captured["submit_kwargs"]["source_policy"] == "matched_external"
 
 
 def test_online_ai_submit_can_allow_risky_offset_after_manual_confirm(tmp_path):

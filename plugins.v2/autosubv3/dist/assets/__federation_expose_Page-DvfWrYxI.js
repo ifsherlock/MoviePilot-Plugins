@@ -30,7 +30,9 @@ const _hoisted_11 = { class: "task-path" };
 const _hoisted_12 = { key: 0 };
 const _hoisted_13 = { class: "task-meta" };
 const _hoisted_14 = { key: 0 };
-const _hoisted_15 = { class: "task-actions" };
+const _hoisted_15 = { key: 1 };
+const _hoisted_16 = { key: 2 };
+const _hoisted_17 = { class: "task-actions" };
 
 const {computed,onMounted,ref} = await importShared('vue');
 
@@ -65,6 +67,16 @@ const error = ref('');
 const message = ref('');
 const status = ref({});
 const tasks = ref([]);
+const restartDialog = ref(false);
+const restartTargets = ref([]);
+const restartSourcePolicy = ref('reuse');
+const restartSourceOptions = [
+  { title: '沿用原任务来源', value: 'reuse' },
+  { title: '自动选择', value: 'auto' },
+  { title: '本地外挂字幕', value: 'local_external' },
+  { title: '视频内嵌字幕', value: 'embedded' },
+  { title: '音轨 ASR', value: 'asr' },
+];
 
 const sortedTasks = computed(() => {
   const items = [...tasks.value];
@@ -148,27 +160,29 @@ async function cancelTasks(inputTasks) {
 async function restartTasks(inputTasks) {
   const picked = (inputTasks || []).filter(canRestartTask);
   if (!picked.length || operating.value) return
+  restartTargets.value = picked;
+  restartSourcePolicy.value = 'reuse';
+  restartDialog.value = true;
+}
+
+async function confirmRestartTasks() {
+  const picked = (restartTargets.value || []).filter(canRestartTask);
+  if (!picked.length || operating.value) return
   operating.value = true;
   operation.value = 'restart';
   error.value = '';
   message.value = '';
   try {
-    const groups = picked.reduce((acc, task) => {
-      const source = task.source || 'manual';
-      acc[source] = acc[source] || [];
-      acc[source].push(task.video_file);
-      return acc
-    }, {});
-    const responses = [];
-    for (const [source, paths] of Object.entries(groups)) {
-      responses.push(await props.api.post(`${pluginBase.value}/submit`, { source, paths }));
-    }
-    message.value = responses.length === 1
-      ? responses[0]?.message || `已重新提交 ${picked.length} 个任务`
-      : `已按来源重新提交 ${picked.length} 个任务`;
+    const response = await props.api.post(`${pluginBase.value}/restart`, {
+      task_ids: picked.map(task => task.task_id),
+      source_policy: restartSourcePolicy.value,
+      overwrite_policy: restartSourcePolicy.value === 'reuse' ? 'backup_replace' : 'new_variant',
+    });
+    message.value = response?.message || `已重新提交 ${picked.length} 个任务`;
+    restartDialog.value = false;
     await loadTasks();
   } catch (err) {
-    error.value = errorMessage(err, '重启 AI 字幕任务失败');
+    error.value = errorMessage(err, '重新生成 AI 字幕任务失败');
   } finally {
     operation.value = '';
     operating.value = false;
@@ -224,7 +238,7 @@ function canCancelTask(task) {
 }
 
 function canRestartTask(task) {
-  return Boolean(task?.video_file && ['cancelled', 'failed', 'ignored', 'no_audio'].includes(task?.status))
+  return Boolean(task?.video_file && ['completed', 'cancelled', 'failed', 'ignored', 'no_audio'].includes(task?.status))
 }
 
 function canDeleteTask(task) {
@@ -257,6 +271,12 @@ function pathParts(path) {
   return [text]
 }
 
+function sourceText(task) {
+  const source = task?.resolved_source_label || task?.source_policy_label || task?.source_label || task?.source || '';
+  const asset = task?.source_asset_name || task?.source_subtitle_name || '';
+  return asset ? `${source} · ${asset}` : source
+}
+
 onMounted(loadTasks);
 
 return (_ctx, _cache) => {
@@ -267,6 +287,12 @@ return (_ctx, _cache) => {
   const _component_VAlert = _resolveComponent("VAlert");
   const _component_VChip = _resolveComponent("VChip");
   const _component_VCheckbox = _resolveComponent("VCheckbox");
+  const _component_VCardTitle = _resolveComponent("VCardTitle");
+  const _component_VSelect = _resolveComponent("VSelect");
+  const _component_VCardText = _resolveComponent("VCardText");
+  const _component_VCardActions = _resolveComponent("VCardActions");
+  const _component_VCard = _resolveComponent("VCard");
+  const _component_VDialog = _resolveComponent("VDialog");
 
   return (_openBlock(), _createElementBlock("div", _hoisted_1, [
     _createVNode(_component_VToolbar, {
@@ -276,7 +302,7 @@ return (_ctx, _cache) => {
     }, {
       default: _withCtx(() => [
         _createElementVNode("div", null, [
-          _cache[5] || (_cache[5] = _createElementVNode("div", { class: "text-h6 ms-3" }, "AI字幕生成(联动版)", -1)),
+          _cache[8] || (_cache[8] = _createElementVNode("div", { class: "text-h6 ms-3" }, "AI字幕生成(联动版)", -1)),
           _createElementVNode("div", _hoisted_2, _toDisplayString(status.value.message || '查看任务数据'), 1)
         ]),
         _createVNode(_component_VSpacer),
@@ -309,7 +335,7 @@ return (_ctx, _cache) => {
           loading: operation.value === 'cancel',
           onClick: _cache[1] || (_cache[1] = $event => (cancelTasks(cancellableSelected.value)))
         }, {
-          default: _withCtx(() => [...(_cache[6] || (_cache[6] = [
+          default: _withCtx(() => [...(_cache[9] || (_cache[9] = [
             _createTextVNode(" 批量取消 ", -1)
           ]))]),
           _: 1
@@ -322,8 +348,8 @@ return (_ctx, _cache) => {
           loading: operation.value === 'restart',
           onClick: _cache[2] || (_cache[2] = $event => (restartTasks(restartableSelected.value)))
         }, {
-          default: _withCtx(() => [...(_cache[7] || (_cache[7] = [
-            _createTextVNode(" 批量重启 ", -1)
+          default: _withCtx(() => [...(_cache[10] || (_cache[10] = [
+            _createTextVNode(" 批量重新生成 ", -1)
           ]))]),
           _: 1
         }, 8, ["disabled", "loading"]),
@@ -335,7 +361,7 @@ return (_ctx, _cache) => {
           loading: operation.value === 'delete',
           onClick: _cache[3] || (_cache[3] = $event => (deleteTasks(deletableSelected.value)))
         }, {
-          default: _withCtx(() => [...(_cache[8] || (_cache[8] = [
+          default: _withCtx(() => [...(_cache[11] || (_cache[11] = [
             _createTextVNode(" 批量删除 ", -1)
           ]))]),
           _: 1
@@ -437,14 +463,20 @@ return (_ctx, _cache) => {
                       ]),
                       _createElementVNode("div", _hoisted_13, [
                         _createElementVNode("span", null, _toDisplayString(task.source_label || task.source), 1),
+                        (sourceText(task))
+                          ? (_openBlock(), _createElementBlock("span", _hoisted_14, _toDisplayString(sourceText(task)), 1))
+                          : _createCommentVNode("", true),
+                        (task.output_name)
+                          ? (_openBlock(), _createElementBlock("span", _hoisted_15, "输出：" + _toDisplayString(task.output_name), 1))
+                          : _createCommentVNode("", true),
                         _createElementVNode("span", null, _toDisplayString(task.add_time || '-'), 1),
                         _createElementVNode("span", null, _toDisplayString(task.complete_time || '-'), 1),
                         (task.message)
-                          ? (_openBlock(), _createElementBlock("span", _hoisted_14, _toDisplayString(task.message), 1))
+                          ? (_openBlock(), _createElementBlock("span", _hoisted_16, _toDisplayString(task.message), 1))
                           : _createCommentVNode("", true)
                       ])
                     ]),
-                    _createElementVNode("div", _hoisted_15, [
+                    _createElementVNode("div", _hoisted_17, [
                       _createVNode(_component_VBtn, {
                         size: "small",
                         color: "warning",
@@ -452,7 +484,7 @@ return (_ctx, _cache) => {
                         disabled: !canCancelTask(task) || operating.value,
                         onClick: $event => (cancelTasks([task]))
                       }, {
-                        default: _withCtx(() => [...(_cache[9] || (_cache[9] = [
+                        default: _withCtx(() => [...(_cache[12] || (_cache[12] = [
                           _createTextVNode(" 取消 ", -1)
                         ]))]),
                         _: 1
@@ -464,8 +496,8 @@ return (_ctx, _cache) => {
                         disabled: !canRestartTask(task) || operating.value,
                         onClick: $event => (restartTasks([task]))
                       }, {
-                        default: _withCtx(() => [...(_cache[10] || (_cache[10] = [
-                          _createTextVNode(" 重启 ", -1)
+                        default: _withCtx(() => [...(_cache[13] || (_cache[13] = [
+                          _createTextVNode(" 重新生成 ", -1)
                         ]))]),
                         _: 1
                       }, 8, ["disabled", "onClick"]),
@@ -476,7 +508,7 @@ return (_ctx, _cache) => {
                         disabled: !canDeleteTask(task) || operating.value,
                         onClick: $event => (deleteTasks([task]))
                       }, {
-                        default: _withCtx(() => [...(_cache[11] || (_cache[11] = [
+                        default: _withCtx(() => [...(_cache[14] || (_cache[14] = [
                           _createTextVNode(" 删除 ", -1)
                         ]))]),
                         _: 1
@@ -485,12 +517,79 @@ return (_ctx, _cache) => {
                   ], 2))
                 }), 128))
               ]))
-    ])
+    ]),
+    _createVNode(_component_VDialog, {
+      modelValue: restartDialog.value,
+      "onUpdate:modelValue": _cache[7] || (_cache[7] = $event => ((restartDialog).value = $event)),
+      "max-width": "520"
+    }, {
+      default: _withCtx(() => [
+        _createVNode(_component_VCard, { rounded: "lg" }, {
+          default: _withCtx(() => [
+            _createVNode(_component_VCardTitle, null, {
+              default: _withCtx(() => [...(_cache[15] || (_cache[15] = [
+                _createTextVNode("重新生成 AI 字幕", -1)
+              ]))]),
+              _: 1
+            }),
+            _createVNode(_component_VCardText, null, {
+              default: _withCtx(() => [
+                _createVNode(_component_VAlert, {
+                  class: "mb-4",
+                  type: "info",
+                  variant: "tonal",
+                  density: "compact",
+                  text: `将重新提交 ${restartTargets.value.length} 个任务；默认沿用原任务来源，并使用当前最新模型配置。`
+                }, null, 8, ["text"]),
+                _createVNode(_component_VSelect, {
+                  modelValue: restartSourcePolicy.value,
+                  "onUpdate:modelValue": _cache[5] || (_cache[5] = $event => ((restartSourcePolicy).value = $event)),
+                  items: restartSourceOptions,
+                  label: "字幕来源",
+                  hint: "改选来源会写入来源变体后缀，如 .aiasr.srt 或 .aiembedded.srt",
+                  "persistent-hint": ""
+                }, null, 8, ["modelValue"])
+              ]),
+              _: 1
+            }),
+            _createVNode(_component_VCardActions, null, {
+              default: _withCtx(() => [
+                _createVNode(_component_VSpacer),
+                _createVNode(_component_VBtn, {
+                  variant: "text",
+                  onClick: _cache[6] || (_cache[6] = $event => (restartDialog.value = false))
+                }, {
+                  default: _withCtx(() => [...(_cache[16] || (_cache[16] = [
+                    _createTextVNode("取消", -1)
+                  ]))]),
+                  _: 1
+                }),
+                _createVNode(_component_VBtn, {
+                  color: "primary",
+                  variant: "tonal",
+                  loading: operation.value === 'restart',
+                  disabled: operating.value || !restartTargets.value.length,
+                  onClick: confirmRestartTasks
+                }, {
+                  default: _withCtx(() => [...(_cache[17] || (_cache[17] = [
+                    _createTextVNode(" 重新生成 ", -1)
+                  ]))]),
+                  _: 1
+                }, 8, ["loading", "disabled"])
+              ]),
+              _: 1
+            })
+          ]),
+          _: 1
+        })
+      ]),
+      _: 1
+    }, 8, ["modelValue"])
   ]))
 }
 }
 
 };
-const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-4cb7dbbb"]]);
+const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-ecdf57a3"]]);
 
 export { Page as default };

@@ -1,6 +1,7 @@
 ﻿import copy
 import os
 import re
+import shutil
 import tempfile
 import time
 import traceback
@@ -59,6 +60,40 @@ class TaskStatus(Enum):
     CANCELLED = "cancelled"
 
 
+class GenerationMode(Enum):
+    FALLBACK = "fallback"
+    MONITOR = "monitor"
+    MIXED = "mixed"
+
+
+class TriggerType(Enum):
+    MANUAL = "manual"
+    SUBTITLE_FALLBACK = "subtitle_fallback"
+
+
+class SourcePolicy(Enum):
+    AUTO = "auto"
+    MATCHED_EXTERNAL = "matched_external"
+    LOCAL_EXTERNAL = "local_external"
+    EMBEDDED = "embedded"
+    ASR = "asr"
+    REUSE = "reuse"
+
+
+class ResolvedSource(Enum):
+    AUTO = "auto"
+    MATCHED_EXTERNAL = "matched_external"
+    LOCAL_EXTERNAL = "local_external"
+    EMBEDDED = "embedded"
+    ASR = "asr"
+
+
+class OverwritePolicy(Enum):
+    SKIP = "skip"
+    BACKUP_REPLACE = "backup_replace"
+    NEW_VARIANT = "new_variant"
+
+
 @dataclass
 class TaskItem:
     task_id: str
@@ -68,6 +103,15 @@ class TaskItem:
     force_generate: bool = False
     source_subtitle_path: str = ""
     source_subtitle_lang: str = ""
+    trigger: str = TriggerType.MANUAL.value
+    source_policy: str = SourcePolicy.AUTO.value
+    resolved_source: str = ""
+    source_asset_path: str = ""
+    source_lang: str = ""
+    output_path: str = ""
+    output_variant: str = ""
+    overwrite_policy: str = OverwritePolicy.SKIP.value
+    rerun_of: str = ""
     status: TaskStatus = TaskStatus.PENDING
     complete_time: datetime = None
     error_message: str = ""
@@ -100,7 +144,7 @@ class AutoSubv3(_PluginBase):
     # 主题色
     plugin_color = "#2C4F7E"
     # 插件版本
-    plugin_version = "3.5.51"
+    plugin_version = "3.5.52"
     # 插件作者
     plugin_author = "ifsherlock"
     # 作者主页
@@ -144,6 +188,7 @@ class AutoSubv3(_PluginBase):
     _max_segment_duration = None
     _max_segment_chars = None
     _process_new_only = None
+    _generation_mode = None
     _observer = None
     _monitor_paths = None
     _lock = Lock()
@@ -164,6 +209,7 @@ class AutoSubv3(_PluginBase):
         self._tasks = self.load_tasks()
         self._enabled = config.get('enabled', False)
         self._clear_history = config.get('clear_history', False)
+        self._generation_mode = self._normalize_generation_mode(config.get("generation_mode"))
         # 监控路径配置
         monitor_str = config.get('path_whitelist', '').strip()
         self._monitor_paths = [p.strip() for p in monitor_str.split('\n') if p.strip()] if monitor_str else []
@@ -176,15 +222,14 @@ class AutoSubv3(_PluginBase):
         # 字幕生成设置
         self._translate_preference = config.get('translate_preference', 'english_first')
         self._enable_asr = config.get('enable_asr', True)
-        if self._enable_asr:
-            self._faster_whisper_model = config.get('faster_whisper_model', 'base')
-            self._faster_whisper_model_path = config.get('faster_whisper_model_path',
-                                                         self.get_data_path() / "faster-whisper-models")
-            self._huggingface_proxy = config.get('proxy', True)
-            self._auto_detect_language = config.get('auto_detect_language', False)
-            self._skip_chinese = config.get('skip_chinese', False)
-            self._max_segment_duration = float(config.get('max_segment_duration')) if config.get('max_segment_duration') else 8.0
-            self._max_segment_chars = int(config.get('max_segment_chars')) if config.get('max_segment_chars') else 50
+        self._faster_whisper_model = config.get('faster_whisper_model', 'base')
+        self._faster_whisper_model_path = config.get('faster_whisper_model_path',
+                                                     self.get_data_path() / "faster-whisper-models")
+        self._huggingface_proxy = config.get('proxy', True)
+        self._auto_detect_language = config.get('auto_detect_language', False)
+        self._skip_chinese = config.get('skip_chinese', False)
+        self._max_segment_duration = float(config.get('max_segment_duration')) if config.get('max_segment_duration') else 8.0
+        self._max_segment_chars = int(config.get('max_segment_chars')) if config.get('max_segment_chars') else 50
         self._translate_zh = config.get('translate_zh', False)
         if self._translate_zh:
             openai_key = config.get('openai_key')
@@ -248,6 +293,15 @@ class AutoSubv3(_PluginBase):
                     force_generate=bool(task_dict.get("force_generate", False)),
                     source_subtitle_path=task_dict.get("source_subtitle_path", ""),
                     source_subtitle_lang=task_dict.get("source_subtitle_lang", ""),
+                    trigger=task_dict.get("trigger") or TriggerType.MANUAL.value,
+                    source_policy=task_dict.get("source_policy") or SourcePolicy.AUTO.value,
+                    resolved_source=task_dict.get("resolved_source", ""),
+                    source_asset_path=task_dict.get("source_asset_path", ""),
+                    source_lang=task_dict.get("source_lang", ""),
+                    output_path=task_dict.get("output_path", ""),
+                    output_variant=task_dict.get("output_variant", ""),
+                    overwrite_policy=task_dict.get("overwrite_policy") or OverwritePolicy.SKIP.value,
+                    rerun_of=task_dict.get("rerun_of", ""),
                     status=TaskStatus(task_dict["status"]),
                     complete_time=datetime.fromisoformat(task_dict["complete_time"])
                     if task_dict.get("complete_time") else None,
@@ -269,6 +323,15 @@ class AutoSubv3(_PluginBase):
             "force_generate": bool(task.force_generate),
             "source_subtitle_path": task.source_subtitle_path or "",
             "source_subtitle_lang": task.source_subtitle_lang or "",
+            "trigger": task.trigger or TriggerType.MANUAL.value,
+            "source_policy": task.source_policy or SourcePolicy.AUTO.value,
+            "resolved_source": task.resolved_source or "",
+            "source_asset_path": task.source_asset_path or "",
+            "source_lang": task.source_lang or "",
+            "output_path": task.output_path or "",
+            "output_variant": task.output_variant or "",
+            "overwrite_policy": task.overwrite_policy or OverwritePolicy.SKIP.value,
+            "rerun_of": task.rerun_of or "",
             "status": task.status.value,
             "complete_time": task.complete_time.isoformat() if task.complete_time else None,
             "error_message": task.error_message or "",
@@ -288,12 +351,65 @@ class AutoSubv3(_PluginBase):
         return str(value or "").strip()
 
     @staticmethod
+    def _enum_value(enum_cls: Any, value: Any, default: str) -> str:
+        text = str(value or "").strip()
+        try:
+            return enum_cls(text).value
+        except Exception:
+            return default
+
+    @classmethod
+    def _normalize_generation_mode(cls, value: Any) -> str:
+        return cls._enum_value(GenerationMode, value, GenerationMode.MONITOR.value)
+
+    @classmethod
+    def _normalize_trigger(cls, value: Any) -> str:
+        return cls._enum_value(TriggerType, value, TriggerType.MANUAL.value)
+
+    @classmethod
+    def _normalize_source_policy(cls, value: Any, default: str = SourcePolicy.AUTO.value) -> str:
+        return cls._enum_value(SourcePolicy, value, default)
+
+    @classmethod
+    def _normalize_overwrite_policy(cls, value: Any, default: str = OverwritePolicy.SKIP.value) -> str:
+        return cls._enum_value(OverwritePolicy, value, default)
+
+    @staticmethod
     def _source_label(source: TaskSource) -> str:
         return {
             TaskSource.MANUAL: "手动添加",
             TaskSource.EVENT: "入库触发",
             TaskSource.SUBTITLE_MANUAL_UPLOAD: "字幕匹配联动",
         }.get(source, getattr(source, "value", str(source)))
+
+    @staticmethod
+    def _source_policy_label(source_policy: Any) -> str:
+        return {
+            SourcePolicy.AUTO.value: "自动选择",
+            SourcePolicy.MATCHED_EXTERNAL.value: "字幕匹配外挂",
+            SourcePolicy.LOCAL_EXTERNAL.value: "本地外挂",
+            SourcePolicy.EMBEDDED.value: "视频内嵌字幕",
+            SourcePolicy.ASR.value: "音轨 ASR",
+            SourcePolicy.REUSE.value: "沿用原任务",
+        }.get(str(source_policy or ""), str(source_policy or ""))
+
+    @staticmethod
+    def _resolved_source_label(resolved_source: Any) -> str:
+        return {
+            ResolvedSource.AUTO.value: "自动选择",
+            ResolvedSource.MATCHED_EXTERNAL.value: "字幕匹配外挂",
+            ResolvedSource.LOCAL_EXTERNAL.value: "本地外挂",
+            ResolvedSource.EMBEDDED.value: "视频内嵌字幕",
+            ResolvedSource.ASR.value: "音轨 ASR",
+        }.get(str(resolved_source or ""), str(resolved_source or ""))
+
+    @staticmethod
+    def _generation_mode_label(value: Any) -> str:
+        return {
+            GenerationMode.FALLBACK.value: "后备模式",
+            GenerationMode.MONITOR.value: "主动监测模式",
+            GenerationMode.MIXED.value: "混合模式",
+        }.get(str(value or ""), str(value or ""))
 
     @staticmethod
     def _status_label(status: TaskStatus) -> str:
@@ -363,6 +479,19 @@ class AutoSubv3(_PluginBase):
             "source_subtitle_path": task.source_subtitle_path or "",
             "source_subtitle_name": os.path.basename(task.source_subtitle_path or ""),
             "source_subtitle_lang": task.source_subtitle_lang or "",
+            "trigger": task.trigger or TriggerType.MANUAL.value,
+            "source_policy": task.source_policy or SourcePolicy.AUTO.value,
+            "source_policy_label": self._source_policy_label(task.source_policy or SourcePolicy.AUTO.value),
+            "resolved_source": task.resolved_source or "",
+            "resolved_source_label": self._resolved_source_label(task.resolved_source),
+            "source_asset_path": task.source_asset_path or "",
+            "source_asset_name": os.path.basename(task.source_asset_path or ""),
+            "source_lang": task.source_lang or task.source_subtitle_lang or "",
+            "output_path": task.output_path or "",
+            "output_name": os.path.basename(task.output_path or ""),
+            "output_variant": task.output_variant or "",
+            "overwrite_policy": task.overwrite_policy or OverwritePolicy.SKIP.value,
+            "rerun_of": task.rerun_of or "",
             "status": status.value,
             "status_label": self._status_label(status),
             "message": message,
@@ -393,6 +522,8 @@ class AutoSubv3(_PluginBase):
             "queue_ready": bool(self._task_queue),
             "plugin_name": self.plugin_name,
             "plugin_version": self.plugin_version,
+            "generation_mode": self._generation_mode or GenerationMode.MONITOR.value,
+            "generation_mode_label": self._generation_mode_label(self._generation_mode or GenerationMode.MONITOR.value),
             "message": message,
             "counts": self._task_counts(),
             "updated_at": latest_time,
@@ -406,6 +537,9 @@ class AutoSubv3(_PluginBase):
         paths: List[str],
         source: str = TaskSource.MANUAL.value,
         subtitle_overrides: Optional[Dict[str, Dict[str, Any]]] = None,
+        trigger: str = TriggerType.MANUAL.value,
+        source_policy: str = SourcePolicy.AUTO.value,
+        overwrite_policy: str = OverwritePolicy.SKIP.value,
     ) -> Dict[str, Any]:
         if not self._running or not self._task_queue:
             raise RuntimeError(self._status_payload()["message"])
@@ -413,6 +547,21 @@ class AutoSubv3(_PluginBase):
             task_source = TaskSource(self._normalize_text(source) or TaskSource.MANUAL.value)
         except Exception:
             task_source = TaskSource.MANUAL
+        normalized_trigger = self._normalize_trigger(trigger)
+        normalized_policy = self._normalize_source_policy(source_policy)
+        if normalized_policy == SourcePolicy.REUSE.value:
+            normalized_policy = SourcePolicy.AUTO.value
+        normalized_overwrite = self._normalize_overwrite_policy(overwrite_policy)
+        if (
+            normalized_trigger == TriggerType.SUBTITLE_FALLBACK.value
+            and self._generation_mode == GenerationMode.MONITOR.value
+        ):
+            return {
+                "added": [],
+                "skipped": [{"reason": "AI 字幕生成当前为主动监测模式，已跳过字幕匹配自动兜底"}],
+                "failed": [],
+                "status": self._status_payload(),
+            }
 
         added: List[Dict[str, Any]] = []
         skipped: List[Dict[str, str]] = []
@@ -441,6 +590,15 @@ class AutoSubv3(_PluginBase):
                 override = {}
             source_subtitle_path = self._normalize_text(override.get("subtitle_path") or override.get("source_subtitle_path"))
             source_subtitle_lang = self._normalize_text(override.get("lang") or override.get("source_subtitle_lang") or "en")
+            item_policy = self._normalize_source_policy(override.get("source_policy"), normalized_policy)
+            if source_subtitle_path and item_policy == SourcePolicy.AUTO.value:
+                item_policy = SourcePolicy.MATCHED_EXTERNAL.value
+            if source_subtitle_path and item_policy not in (SourcePolicy.AUTO.value, SourcePolicy.MATCHED_EXTERNAL.value):
+                source_subtitle_path = ""
+                source_subtitle_lang = ""
+            if item_policy == SourcePolicy.MATCHED_EXTERNAL.value and not source_subtitle_path:
+                failed.append({"path": video_file, "reason": "指定字幕匹配外挂来源时必须提供字幕文件"})
+                continue
             if source_subtitle_path:
                 if not os.path.isabs(source_subtitle_path) or not os.path.isfile(source_subtitle_path):
                     failed.append({"path": video_file, "reason": "指定字幕文件不存在或不是绝对路径"})
@@ -455,6 +613,10 @@ class AutoSubv3(_PluginBase):
                 force_generate=force_generate,
                 source_subtitle_path=source_subtitle_path,
                 source_subtitle_lang=source_subtitle_lang,
+                trigger=normalized_trigger,
+                source_policy=item_policy,
+                overwrite_policy=self._normalize_overwrite_policy(override.get("overwrite_policy"), normalized_overwrite),
+                source_name=self._normalize_text(override.get("source_name")) or os.path.basename(source_subtitle_path),
             ):
                 item = {"path": video_file}
                 if source_subtitle_path:
@@ -493,6 +655,9 @@ class AutoSubv3(_PluginBase):
             paths,
             source=self._normalize_text(body.get("source")) or TaskSource.MANUAL.value,
             subtitle_overrides=subtitle_overrides,
+            trigger=self._normalize_text(body.get("trigger")) or TriggerType.MANUAL.value,
+            source_policy=self._normalize_text(body.get("source_policy")) or SourcePolicy.AUTO.value,
+            overwrite_policy=self._normalize_text(body.get("overwrite_policy")) or OverwritePolicy.SKIP.value,
         )
         return self._ok(
             result,
@@ -661,6 +826,104 @@ class AutoSubv3(_PluginBase):
             message=f"已删除 {len(result.get('deleted') or [])} 个 AI 字幕任务，跳过 {len(result.get('skipped') or [])} 个",
         )
 
+    def restart_tasks(
+        self,
+        task_ids: Optional[List[str]] = None,
+        source_policy: str = SourcePolicy.REUSE.value,
+        overwrite_policy: str = OverwritePolicy.BACKUP_REPLACE.value,
+    ) -> Dict[str, Any]:
+        filter_task_ids = {self._normalize_text(item) for item in (task_ids or []) if self._normalize_text(item)}
+        if not filter_task_ids:
+            return {
+                "added": [],
+                "skipped": [{"reason": "未提供要重新生成的任务"}],
+                "failed": [],
+                "status": self._status_payload(),
+            }
+        added: List[Dict[str, Any]] = []
+        skipped: List[Dict[str, str]] = []
+        failed: List[Dict[str, str]] = []
+        requested_policy = self._normalize_source_policy(source_policy, SourcePolicy.REUSE.value)
+        requested_overwrite = self._normalize_overwrite_policy(overwrite_policy, OverwritePolicy.BACKUP_REPLACE.value)
+        restartable_statuses = {
+            TaskStatus.COMPLETED,
+            TaskStatus.FAILED,
+            TaskStatus.CANCELLED,
+            TaskStatus.IGNORED,
+            TaskStatus.NO_AUDIO,
+        }
+
+        for task_id in filter_task_ids:
+            task = (self._tasks or {}).get(task_id)
+            if not task:
+                skipped.append({"task_id": task_id, "reason": "未找到任务"})
+                continue
+            if task.status not in restartable_statuses:
+                skipped.append({"task_id": task_id, "path": task.video_file, "reason": f"任务状态 {self._status_label(task.status)} 不能重新生成"})
+                continue
+            next_source_subtitle = task.source_asset_path or task.source_subtitle_path
+            next_policy = task.source_policy if requested_policy == SourcePolicy.REUSE.value else requested_policy
+            next_policy = self._normalize_source_policy(next_policy)
+            if requested_policy == SourcePolicy.REUSE.value and next_source_subtitle and next_policy == SourcePolicy.AUTO.value:
+                next_policy = SourcePolicy.MATCHED_EXTERNAL.value
+            if next_policy == SourcePolicy.MATCHED_EXTERNAL.value:
+                if not next_source_subtitle or not os.path.isfile(next_source_subtitle):
+                    failed.append({
+                        "task_id": task_id,
+                        "path": task.video_file,
+                        "reason": "原字幕匹配外挂源已不存在，请改选自动选择、视频内嵌字幕或音轨 ASR",
+                    })
+                    continue
+            elif next_policy != SourcePolicy.MATCHED_EXTERNAL.value:
+                next_source_subtitle = ""
+            force_generate = task.force_generate or task.source == TaskSource.SUBTITLE_MANUAL_UPLOAD
+            ok = self.add_task(
+                task.video_file,
+                task.source if isinstance(task.source, TaskSource) else TaskSource.MANUAL,
+                force_generate=force_generate,
+                source_subtitle_path=next_source_subtitle,
+                source_subtitle_lang=task.source_subtitle_lang or task.source_lang or "",
+                trigger=TriggerType.MANUAL.value,
+                source_policy=next_policy,
+                overwrite_policy=requested_overwrite,
+                rerun_of=task.task_id,
+                source_name=os.path.basename(next_source_subtitle or ""),
+            )
+            if ok:
+                added.append({"task_id": task_id, "path": task.video_file, "source_policy": next_policy})
+            else:
+                skipped.append({"task_id": task_id, "path": task.video_file, "reason": "任务已在队列中或正在处理"})
+        logger.info(
+            "[AutoSubv3] 重新生成任务 requested=%s added=%s skipped=%s failed=%s",
+            len(filter_task_ids),
+            len(added),
+            len(skipped),
+            len(failed),
+        )
+        return {
+            "added": added,
+            "skipped": skipped,
+            "failed": failed,
+            "status": self._status_payload(),
+        }
+
+    async def api_restart(self, request: Request) -> Dict[str, Any]:
+        if not self._running or not self._task_queue:
+            raise HTTPException(status_code=409, detail=self._status_payload()["message"])
+        body = await request.json()
+        task_ids = body.get("task_ids") or []
+        if isinstance(task_ids, str):
+            task_ids = [task_ids]
+        result = self.restart_tasks(
+            task_ids=task_ids if isinstance(task_ids, list) else [],
+            source_policy=self._normalize_text(body.get("source_policy")) or SourcePolicy.REUSE.value,
+            overwrite_policy=self._normalize_text(body.get("overwrite_policy")) or OverwritePolicy.BACKUP_REPLACE.value,
+        )
+        return self._ok(
+            result,
+            message=f"已重新提交 {len(result.get('added') or [])} 个 AI 字幕任务，跳过 {len(result.get('skipped') or [])} 个，失败 {len(result.get('failed') or [])} 个",
+        )
+
     def tasks_payload(self, paths: Optional[List[str]] = None, limit: int = 300) -> Dict[str, Any]:
         filter_paths = {self._normalize_text(item) for item in (paths or []) if self._normalize_text(item)}
         limit = min(max(limit, 1), 1000)
@@ -757,21 +1020,43 @@ class AutoSubv3(_PluginBase):
         force_generate: bool = False,
         source_subtitle_path: str = "",
         source_subtitle_lang: str = "",
+        trigger: str = TriggerType.MANUAL.value,
+        source_policy: str = SourcePolicy.AUTO.value,
+        overwrite_policy: str = OverwritePolicy.SKIP.value,
+        rerun_of: str = "",
+        source_name: str = "",
     ):
         """
         添加新任务到队列和任务列表中，若任务已存在则跳过。
         :param video_file: 视频文件路径
         :param source: 任务来源（手动/事件）
         """
+        task_id = str(uuid4())
+        normalized_policy = self._normalize_source_policy(source_policy)
+        if normalized_policy == SourcePolicy.REUSE.value:
+            normalized_policy = SourcePolicy.AUTO.value
+        if source_subtitle_path and normalized_policy == SourcePolicy.AUTO.value:
+            normalized_policy = SourcePolicy.MATCHED_EXTERNAL.value
         task = TaskItem(
-            task_id=str(uuid4()),
+            task_id=task_id,
             video_file=video_file,
             source=source,
             force_generate=force_generate,
             source_subtitle_path=source_subtitle_path,
             source_subtitle_lang=source_subtitle_lang,
+            trigger=self._normalize_trigger(trigger),
+            source_policy=normalized_policy,
+            overwrite_policy=self._normalize_overwrite_policy(overwrite_policy),
+            rerun_of=rerun_of,
             add_time=datetime.now()
         )
+        if source_subtitle_path:
+            try:
+                task.source_asset_path = self._copy_source_asset(task.task_id, source_subtitle_path, source_name)
+                task.source_subtitle_path = task.source_asset_path
+            except Exception as exc:
+                logger.error("复制 AI 字幕源资产失败: %s", exc)
+                return False
 
         if self.__is_duplicate_task(task.video_file):
             logger.info(f"任务已存在，跳过添加：{video_file}")
@@ -838,6 +1123,8 @@ class AutoSubv3(_PluginBase):
                     force_generate=task.force_generate,
                     source_subtitle_path=task.source_subtitle_path,
                     source_subtitle_lang=task.source_subtitle_lang,
+                    source_policy=task.source_policy,
+                    overwrite_policy=task.overwrite_policy,
                 )
                 if task.cancel_requested or task.status == TaskStatus.CANCELLED:
                     task.status = TaskStatus.CANCELLED
@@ -886,6 +1173,9 @@ class AutoSubv3(_PluginBase):
         if not self._monitor_paths:
             logger.info("未配置监控路径，不启动目录监控")
             return
+        if self._generation_mode == GenerationMode.FALLBACK.value:
+            logger.info("AI 字幕生成当前为后备模式，不启动主动目录监控")
+            return
 
         # 全量扫描（仅处理新增关闭时）
         if not self._process_new_only:
@@ -893,7 +1183,13 @@ class AutoSubv3(_PluginBase):
             for mon_path in self._monitor_paths:
                 if os.path.isdir(mon_path):
                     for video_file in self._get_library_files(mon_path):
-                        self.add_task(video_file, TaskSource.EVENT)
+                        self.add_task(
+                            video_file,
+                            TaskSource.EVENT,
+                            trigger=TriggerType.MANUAL.value,
+                            source_policy=SourcePolicy.AUTO.value,
+                            overwrite_policy=OverwritePolicy.SKIP.value,
+                        )
             logger.info("全量扫描完成")
 
         # 启动 watchdog 监控
@@ -918,8 +1214,17 @@ class AutoSubv3(_PluginBase):
         ext = os.path.splitext(file_path)[-1].lower()
         if ext not in settings.RMT_MEDIAEXT:
             return
+        if self._generation_mode == GenerationMode.FALLBACK.value:
+            logger.info("AI 字幕生成当前为后备模式，忽略主动监控新增文件：%s", file_path)
+            return
         with self._lock:
-            self.add_task(file_path, TaskSource.EVENT)
+            self.add_task(
+                file_path,
+                TaskSource.EVENT,
+                trigger=TriggerType.MANUAL.value,
+                source_policy=SourcePolicy.AUTO.value,
+                overwrite_policy=OverwritePolicy.SKIP.value,
+            )
 
     def _run_at_once(self, path_list: List[str]):
         # 立即执行一次：执行配置的媒体库目录，不受白名单限制
@@ -930,9 +1235,21 @@ class AutoSubv3(_PluginBase):
                 continue
             if os.path.isdir(path):
                 for video_file in self.__get_library_files(path):
-                    self.add_task(video_file, TaskSource.MANUAL)
+                    self.add_task(
+                        video_file,
+                        TaskSource.MANUAL,
+                        trigger=TriggerType.MANUAL.value,
+                        source_policy=SourcePolicy.AUTO.value,
+                        overwrite_policy=OverwritePolicy.SKIP.value,
+                    )
             elif os.path.splitext(path)[-1].lower() in settings.RMT_MEDIAEXT:
-                self.add_task(path, TaskSource.MANUAL)
+                self.add_task(
+                    path,
+                    TaskSource.MANUAL,
+                    trigger=TriggerType.MANUAL.value,
+                    source_policy=SourcePolicy.AUTO.value,
+                    overwrite_policy=OverwritePolicy.SKIP.value,
+                )
 
     def __check_asr(self):
         if not self._faster_whisper_model_path or not self._faster_whisper_model:
@@ -990,6 +1307,67 @@ class AutoSubv3(_PluginBase):
     def __translated_subtitle_path(cls, file_path: str, source_lang: Any = "", output_mode: str = "bilingual") -> str:
         return f"{file_path}.{cls.__subtitle_lang_suffix(source_lang, output_mode)}.ai.srt"
 
+    @staticmethod
+    def _variant_for_source(resolved_source: Any) -> str:
+        return {
+            ResolvedSource.ASR.value: "aiasr",
+            ResolvedSource.EMBEDDED.value: "aiembedded",
+            ResolvedSource.MATCHED_EXTERNAL.value: "aimatch",
+            ResolvedSource.LOCAL_EXTERNAL.value: "ailocal",
+        }.get(str(resolved_source or ""), "ai")
+
+    @classmethod
+    def __translated_subtitle_path_with_variant(
+        cls,
+        file_path: str,
+        source_lang: Any = "",
+        output_mode: str = "bilingual",
+        output_variant: str = "ai",
+    ) -> str:
+        variant = cls._normalize_text(output_variant) or "ai"
+        return f"{file_path}.{cls.__subtitle_lang_suffix(source_lang, output_mode)}.{variant}.srt"
+
+    def _prepare_output_path(
+        self,
+        file_path: str,
+        source_lang: Any,
+        output_mode: str,
+        resolved_source: str,
+        overwrite_policy: str,
+    ) -> Tuple[str, str]:
+        default_path = self.__translated_subtitle_path(file_path, source_lang, output_mode)
+        policy = self._normalize_overwrite_policy(overwrite_policy)
+        variant = "ai"
+        if policy == OverwritePolicy.NEW_VARIANT.value:
+            variant = self._variant_for_source(resolved_source)
+        return self.__translated_subtitle_path_with_variant(file_path, source_lang, output_mode, variant), variant
+
+    @staticmethod
+    def _backup_existing_file(path: str, suffix: str = ".mp-ai-bk") -> str:
+        if not path or not os.path.exists(path):
+            return ""
+        backup_path = f"{path}{suffix}"
+        if os.path.exists(backup_path):
+            return backup_path
+        shutil.copy2(path, backup_path)
+        return backup_path
+
+    def _copy_source_asset(self, task_id: str, source_path: str, source_name: str = "") -> str:
+        source = self._normalize_text(source_path)
+        if not source:
+            return ""
+        src = Path(source)
+        if not src.exists() or src.suffix.lower() != ".srt":
+            raise ValueError("指定字幕文件不存在或不是 SRT")
+        safe_name = self._normalize_text(source_name) or src.name
+        safe_name = re.sub(r"[\\/:*?\"<>|]+", "_", safe_name)
+        asset_dir = Path(self.get_data_path()) / "task_assets" / task_id
+        asset_dir.mkdir(parents=True, exist_ok=True)
+        dest = asset_dir / safe_name
+        if dest.resolve() != src.resolve():
+            shutil.copy2(src, dest)
+        return str(dest)
+
     def __process_autosub(
         self,
         video_file,
@@ -998,6 +1376,8 @@ class AutoSubv3(_PluginBase):
         force_generate: bool = False,
         source_subtitle_path: str = "",
         source_subtitle_lang: str = "",
+        source_policy: str = SourcePolicy.AUTO.value,
+        overwrite_policy: str = OverwritePolicy.SKIP.value,
     ) -> TaskStatus:
         if not video_file:
             logger.error(f"[Step 0] video_file 为空")
@@ -1044,7 +1424,14 @@ class AutoSubv3(_PluginBase):
                 self._enable_asr,
                 source_subtitle_path=source_subtitle_path,
                 source_subtitle_lang=source_subtitle_lang,
+                source_policy=source_policy,
             )
+            resolved_source = ResolvedSource.AUTO.value
+            if isinstance(gen_sub_path, tuple):
+                gen_sub_path, resolved_source = gen_sub_path
+            if self._current_processing_task:
+                self._current_processing_task.resolved_source = resolved_source or ""
+                self._current_processing_task.source_lang = lang or ""
             self._raise_if_task_cancelled()
             if not ret:
                 # 检查是否是无声音跳过（刚记录的）
@@ -1068,11 +1455,31 @@ class AutoSubv3(_PluginBase):
             if self._translate_zh:
                 # 翻译字幕（即使源语言是中文，也过LLM处理病句、繁转简、去空格）
                 logger.info(f"开始翻译字幕为中文 ...")
-                translated_subtitle = self.__translated_subtitle_path(file_path, lang, self._subtitle_output_mode)
+                translated_subtitle, output_variant = self._prepare_output_path(
+                    file_path,
+                    lang,
+                    self._subtitle_output_mode,
+                    resolved_source,
+                    overwrite_policy,
+                )
+                normalized_overwrite = self._normalize_overwrite_policy(overwrite_policy)
+                if os.path.exists(translated_subtitle):
+                    if normalized_overwrite == OverwritePolicy.SKIP.value:
+                        logger.info(f"目标字幕已存在，按覆盖策略跳过：{translated_subtitle}")
+                        if self._current_processing_task:
+                            self._current_processing_task.output_path = translated_subtitle
+                            self._current_processing_task.output_variant = output_variant
+                        return TaskStatus.IGNORED
+                    if normalized_overwrite == OverwritePolicy.BACKUP_REPLACE.value:
+                        backup_path = self._backup_existing_file(translated_subtitle)
+                        logger.info(f"覆盖前备份 AI 字幕：{backup_path}")
                 self.__translate_zh_subtitle(lang, gen_sub_path, translated_subtitle,
                                               output_mode=self._subtitle_output_mode)
                 self._raise_if_task_cancelled()
                 logger.info(f"翻译字幕完成：{os.path.basename(translated_subtitle)}")
+                if self._current_processing_task:
+                    self._current_processing_task.output_path = translated_subtitle
+                    self._current_processing_task.output_variant = output_variant
                 translated_to_zh = True
 
             end_time = time.time()
@@ -1243,6 +1650,7 @@ class AutoSubv3(_PluginBase):
         *,
         source_subtitle_path: str = "",
         source_subtitle_lang: str = "",
+        source_policy: str = SourcePolicy.AUTO.value,
     ):
         """
         生成字幕
@@ -1250,15 +1658,18 @@ class AutoSubv3(_PluginBase):
         :param subtitle_file: 字幕文件, 不包含后缀
         :return: 生成成功返回True，字幕语言,字幕路径，否则返回False, None, None
         """
+        policy = self._normalize_source_policy(source_policy)
+        if policy == SourcePolicy.REUSE.value:
+            policy = SourcePolicy.AUTO.value
         source_path = self._normalize_text(source_subtitle_path)
-        if source_path:
+        if source_path and policy in (SourcePolicy.AUTO.value, SourcePolicy.MATCHED_EXTERNAL.value):
             subtitle_path = Path(source_path)
             if not subtitle_path.exists() or subtitle_path.suffix.lower() != ".srt":
                 logger.error(f"[GenSub] 指定字幕不可用或不是 SRT：{source_path}")
                 return False, None, None
             lang = self._normalize_text(source_subtitle_lang) or "en"
             logger.info(f"[GenSub] 使用联动指定字幕：{subtitle_path.name} lang={lang}")
-            return True, lang, subtitle_path
+            return True, lang, (subtitle_path, ResolvedSource.MATCHED_EXTERNAL.value)
 
         # 获取文件元数据
         logger.info(f"[GenSub] 获取视频元数据：{video_file}")
@@ -1297,30 +1708,50 @@ class AutoSubv3(_PluginBase):
         if self._translate_preference == "origin_first":
             prefer_subtitle_langs = ['en', 'eng'] if audio_lang == 'auto' else [audio_lang,
                                                                                 iso639.to_iso639_1(audio_lang)]
-        # 获取外挂字幕
-        logger.info(f"[GenSub Step 3] 检查外挂字幕")
-        logger.info(f"使用 {prefer_subtitle_langs} 匹配已有外挂字幕文件 ...")
-        external_sub_exist, external_sub_lang, exist_sub_name = self.__external_subtitle_exists(video_file,
-                                                                                                prefer_subtitle_langs,
-                                                                                                only_srt=True,
-                                                                                                strict=strict)
-        # 获取内嵌字幕
-        logger.info(f"[GenSub Step 4] 检查内嵌字幕")
-        logger.info(f"使用 {prefer_subtitle_langs} 匹配内嵌字幕文件 ...")
-        inner_sub_exist, subtitle_index, inner_sub_lang, = self.__get_video_prefer_subtitle(video_meta,
-                                                                                            prefer_subtitle_langs,
-                                                                                            strict=strict)
 
-        # 优先返回符合语言要求的外部字幕
         def get_sub_path():
             video_dir, _ = os.path.split(video_file)
             return os.path.join(video_dir, exist_sub_name)
 
+        external_sub_exist, external_sub_lang, exist_sub_name = False, None, None
+        if policy in (SourcePolicy.AUTO.value, SourcePolicy.LOCAL_EXTERNAL.value):
+            logger.info(f"[GenSub Step 3] 检查外挂字幕")
+            logger.info(f"使用 {prefer_subtitle_langs} 匹配已有外挂字幕文件 ...")
+            external_sub_exist, external_sub_lang, exist_sub_name = self.__external_subtitle_exists(
+                video_file,
+                prefer_subtitle_langs,
+                only_srt=True,
+                strict=strict,
+            )
+            if policy == SourcePolicy.LOCAL_EXTERNAL.value:
+                if not external_sub_exist:
+                    logger.info("[GenSub] 已指定本地外挂字幕，但未找到可用 SRT")
+                    return False, None, None
+                logger.info(f"[GenSub] 使用本地外挂字幕：{exist_sub_name} lang={external_sub_lang}")
+                return True, iso639.to_iso639_1(external_sub_lang), (get_sub_path(), ResolvedSource.LOCAL_EXTERNAL.value)
+
+        inner_sub_exist, subtitle_index, inner_sub_lang = False, None, None
+        if policy in (SourcePolicy.AUTO.value, SourcePolicy.EMBEDDED.value):
+            logger.info(f"[GenSub Step 4] 检查内嵌字幕")
+            logger.info(f"使用 {prefer_subtitle_langs} 匹配内嵌字幕文件 ...")
+            inner_sub_exist, subtitle_index, inner_sub_lang, = self.__get_video_prefer_subtitle(
+                video_meta,
+                prefer_subtitle_langs,
+                strict=strict,
+            )
+            if policy == SourcePolicy.EMBEDDED.value and not inner_sub_exist:
+                logger.info("[GenSub] 已指定视频内嵌字幕，但未找到可用字幕轨")
+                return False, None, None
+
         extract_subtitle = False
-        if self._translate_preference == "english_only":
+        if policy == SourcePolicy.ASR.value:
+            logger.info("[GenSub] 已指定音轨 ASR，跳过外挂和内嵌字幕")
+        elif policy == SourcePolicy.EMBEDDED.value:
+            extract_subtitle = True
+        elif self._translate_preference == "english_only":
             if external_sub_exist:
                 logger.info(f"字幕源偏好：{self._translate_preference} 外挂字幕存在，字幕语言 {external_sub_lang}")
-                return True, iso639.to_iso639_1(external_sub_lang), get_sub_path()
+                return True, iso639.to_iso639_1(external_sub_lang), (get_sub_path(), ResolvedSource.LOCAL_EXTERNAL.value)
             elif inner_sub_exist:
                 logger.info(f"字幕源偏好：{self._translate_preference} 内嵌字幕存在，字幕语言 {inner_sub_lang}")
                 extract_subtitle = True
@@ -1329,13 +1760,13 @@ class AutoSubv3(_PluginBase):
         else:  # english_first/origin_first
             if external_sub_exist and external_sub_lang in prefer_subtitle_langs:
                 logger.info(f"字幕源偏好：{self._translate_preference} 外挂字幕存在，字幕语言 {external_sub_lang}")
-                return True, iso639.to_iso639_1(external_sub_lang), get_sub_path()
+                return True, iso639.to_iso639_1(external_sub_lang), (get_sub_path(), ResolvedSource.LOCAL_EXTERNAL.value)
             elif inner_sub_exist and inner_sub_lang in prefer_subtitle_langs:
                 logger.info(f"字幕源偏好：{self._translate_preference} 内嵌字幕存在，字幕语言 {inner_sub_lang}")
                 extract_subtitle = True
             elif external_sub_exist:
                 logger.info(f"字幕源偏好：{self._translate_preference} 外挂字幕存在，字幕语言 {external_sub_lang}")
-                return True, iso639.to_iso639_1(external_sub_lang), get_sub_path()
+                return True, iso639.to_iso639_1(external_sub_lang), (get_sub_path(), ResolvedSource.LOCAL_EXTERNAL.value)
             elif inner_sub_exist:
                 logger.info(f"字幕源偏好：{self._translate_preference} 内嵌字幕存在，字幕语言 {inner_sub_lang}")
                 extract_subtitle = True
@@ -1348,13 +1779,16 @@ class AutoSubv3(_PluginBase):
             extracted_sub_path = f"{subtitle_file}.{inner_sub_lang}.srt"
             Ffmpeg().extract_subtitle_from_video(video_file, extracted_sub_path, subtitle_index)
             logger.info(f"提取字幕完成：{extracted_sub_path}")
-            return True, inner_sub_lang, extracted_sub_path
+            return True, inner_sub_lang, (extracted_sub_path, ResolvedSource.EMBEDDED.value)
         # 使用asr音轨识别字幕
         if audio_lang != 'auto':
             audio_lang = iso639.to_iso639_1(audio_lang)
 
-        if not enable_asr:
+        if not enable_asr and policy != SourcePolicy.ASR.value:
             logger.info(f"未开启语音识别，且无已有字幕文件，跳过后续处理")
+            return False, None, None
+        if policy == SourcePolicy.ASR.value and not self.__check_asr():
+            logger.info("已指定音轨 ASR，但 ASR 依赖或 Whisper 配置不可用")
             return False, None, None
 
         # 清理异常退出的临时文件
@@ -1385,7 +1819,7 @@ class AutoSubv3(_PluginBase):
                 logger.info(f"复制字幕文件：{subtitle_file}.{lang}.srt")
                 # 删除临时文件
                 os.remove(f"{audio_file.name}.srt")
-                return ret, lang, Path(f"{subtitle_file}.{lang}.srt")
+                return ret, lang, (Path(f"{subtitle_file}.{lang}.srt"), ResolvedSource.ASR.value)
             elif ret is None:
                 # 无声音，跳过并记录
                 logger.info(f"视频无声音，跳过字幕生成：{video_file}")
@@ -2097,22 +2531,40 @@ class AutoSubv3(_PluginBase):
                         "content": [
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
+                                "props": {"cols": 12, "md": 4},
+                                "content": [
+                                    {
+                                        "component": "VSelect",
+                                        "props": {
+                                            "model": "generation_mode",
+                                            "label": "AI 字幕默认生成模式",
+                                            "items": [
+                                                {"title": "后备模式：只作为字幕匹配兜底", "value": "fallback"},
+                                                {"title": "主动监测模式：独立监控入库", "value": "monitor"},
+                                                {"title": "混合模式：监控与字幕匹配兜底都启用", "value": "mixed"},
+                                            ],
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 2},
                                 "content": [{"component": "VSwitch", "props": {"model": "process_new_only", "label": "仅处理新增视频", "hint": "关闭则处理路径下所有视频"}}],
                             },
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
+                                "props": {"cols": 12, "md": 2},
                                 "content": [{"component": "VSwitch", "props": {"model": "run_now", "label": "手动执行一次", "color": "secondary"}}],
                             },
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
+                                "props": {"cols": 12, "md": 2},
                                 "content": [{"component": "VSwitch", "props": {"model": "translate_zh", "label": "外语翻译成中文", "hint": "使用 OpenAI 兼容大模型翻译"}}],
                             },
                             {
                                 "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
+                                "props": {"cols": 12, "md": 2},
                                 "content": [{"component": "VSwitch", "props": {"model": "skip_chinese", "label": "中文视频不翻译", "hint": "Whisper 检测到中文时跳过翻译"}}],
                             },
                         ],
@@ -2322,6 +2774,7 @@ class AutoSubv3(_PluginBase):
             "clear_history": False,
             "send_notify": False,
             "listen_transfer_event": True,
+            "generation_mode": "monitor",
             "process_new_only": True,
             "path_whitelist": "",
             "run_now": False,
@@ -2386,6 +2839,13 @@ class AutoSubv3(_PluginBase):
                 "methods": ["POST"],
                 "auth": "bear",
                 "summary": "删除 AI 字幕任务记录",
+            },
+            {
+                "path": "/restart",
+                "endpoint": self.api_restart,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "重新生成 AI 字幕任务",
             },
         ]
 

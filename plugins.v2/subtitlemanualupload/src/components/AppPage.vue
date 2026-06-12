@@ -143,6 +143,7 @@ const selectedOnlineResultIds = ref([])
 const aiTaskDialog = ref(false)
 const aiTaskDialogTarget = ref(null)
 const aiTaskScopeTargets = ref([])
+const aiRestartSourcePolicy = ref('reuse')
 const aiStatusStripRef = ref(null)
 const aiTaskData = ref({
   status: null,
@@ -169,6 +170,13 @@ const onlineProviderItems = [
   { title: 'Zimuku', value: 'zimuku' },
   { title: '射手网(伪)', value: 'assrt' },
   { title: 'OpenSubtitles', value: 'opensubtitles' },
+]
+const aiRestartSourceOptions = [
+  { title: '沿用原任务来源', value: 'reuse' },
+  { title: '自动选择', value: 'auto' },
+  { title: '本地外挂字幕', value: 'local_external' },
+  { title: '视频内嵌字幕', value: 'embedded' },
+  { title: '音轨 ASR', value: 'asr' },
 ]
 
 const rarContainerInstallCommand = `docker exec -it moviepilot bash
@@ -1307,11 +1315,37 @@ function cancelDialogAiTasks() {
   cancelAiForTargets(scopeTargets)
 }
 
-function regenerateDialogAiTasks() {
+async function regenerateDialogAiTasks() {
   const scopeTargets = aiTaskDialogTarget.value
     ? [aiTaskDialogTarget.value]
     : (aiTaskScopeTargets.value.length ? aiTaskScopeTargets.value : visibleTargets.value)
-  submitAiForTargets(scopeTargets)
+  const usableTargets = scopeTargets.filter(item => !isLocked(item.id) && item.writable !== false && !isStreamTarget(item))
+  if (!usableTargets.length) {
+    message.value = '没有可重新生成 AI 字幕的目标：选中的集数可能都已锁定或是 STRM'
+    return
+  }
+  aiSubmitting.value = true
+  error.value = ''
+  message.value = ''
+  try {
+    const response = await props.api.post(`${pluginBase.value}/ai_restart`, {
+      target_ids: usableTargets.map(item => item.id),
+      locked_target_ids: lockedTargetPayload(),
+      source_policy: aiRestartSourcePolicy.value,
+      overwrite_policy: aiRestartSourcePolicy.value === 'reuse' ? 'backup_replace' : 'new_variant',
+    })
+    const data = unwrapResponse(response) || {}
+    if (data.tasks) {
+      aiTaskData.value = data.tasks
+    }
+    aiTaskScopeTargets.value = usableTargets
+    message.value = response?.message || '已重新提交 AI 字幕生成任务'
+    await loadAiTasks({ silent: true, targets: usableTargets })
+  } catch (err) {
+    error.value = errorMessage(err, '重新生成 AI 字幕任务失败')
+  } finally {
+    aiSubmitting.value = false
+  }
 }
 
 function openSingleAiGenerate(target) {
@@ -3096,6 +3130,16 @@ defineExpose({
             variant="tonal"
             :text="aiStatus.message || '请先安装并启用 AI字幕生成(联动版)'"
           />
+          <div v-if="aiAvailable && !aiDialogHasActiveTasks && (aiTaskDialogTarget || aiDialogTasks.length)" class="ai-restart-options">
+            <VSelect
+              v-model="aiRestartSourcePolicy"
+              :items="aiRestartSourceOptions"
+              label="重新生成来源"
+              density="comfortable"
+              hint="改选来源会写入来源变体后缀，如 .aiasr.srt 或 .aiembedded.srt"
+              persistent-hint
+            />
+          </div>
           <div v-if="aiDialogTasks.length" class="ai-task-list">
             <div
               v-for="task in aiDialogTasks"
@@ -3108,7 +3152,8 @@ defineExpose({
               </div>
               <div class="ai-task-main">
                 <strong>{{ task.target_label || task.video_name }}</strong>
-                <span>{{ task.source_subtitle_name ? `字幕源：${task.source_subtitle_name}` : task.video_name }}</span>
+                <span>{{ task.source_asset_name || task.source_subtitle_name ? `字幕源：${task.source_asset_name || task.source_subtitle_name}` : (task.resolved_source_label || task.source_policy_label || task.video_name) }}</span>
+                <span v-if="task.output_name">输出：{{ task.output_name }}</span>
                 <p>{{ aiStatusText(task) }}</p>
               </div>
               <div class="ai-task-time">
@@ -4495,6 +4540,10 @@ defineExpose({
 .ai-task-list {
   display: grid;
   gap: 10px;
+}
+
+.ai-restart-options {
+  margin-bottom: 14px;
 }
 
 .ai-task-row {

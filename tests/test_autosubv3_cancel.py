@@ -94,6 +94,8 @@ def load_plugin_module():
 def make_plugin(module):
     plugin = module.AutoSubv3.__new__(module.AutoSubv3)
     plugin._data = {}
+    plugin._data_path = tempfile.mkdtemp(prefix="autosubv3-test-")
+    plugin.get_data_path = lambda: plugin._data_path
     plugin._tasks = {}
     plugin._task_queue = queue.Queue()
     plugin._current_processing_task = None
@@ -260,9 +262,13 @@ def test_submit_tasks_accepts_source_subtitle_override(tmp_path):
     payload = plugin.tasks_payload(paths=[str(video)])
 
     assert result["added"][0]["source_subtitle_name"] == "online.fixed.srt"
-    assert task.source_subtitle_path == str(subtitle)
+    assert task.source_subtitle_path != str(subtitle)
+    assert Path(task.source_subtitle_path).name == "online.fixed.srt"
+    assert Path(task.source_subtitle_path).read_text(encoding="utf-8") == subtitle.read_text(encoding="utf-8")
+    assert task.source_asset_path == task.source_subtitle_path
     assert task.source_subtitle_lang == "en"
     assert payload["tasks"][0]["source_subtitle_name"] == "online.fixed.srt"
+    assert payload["tasks"][0]["source_asset_name"] == "online.fixed.srt"
 
 
 def test_generate_subtitle_uses_source_subtitle_override(tmp_path):
@@ -282,7 +288,188 @@ def test_generate_subtitle_uses_source_subtitle_override(tmp_path):
 
     assert ret is True
     assert lang == "en"
-    assert path == subtitle
+    source_path, resolved_source = path
+    assert source_path == subtitle
+    assert resolved_source == module.ResolvedSource.MATCHED_EXTERNAL.value
+
+
+def test_source_variant_suffixes_are_single_segment_for_player_compatibility(tmp_path):
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    base = str(tmp_path / "Levius.S01E01")
+
+    assert (
+        module.AutoSubv3._AutoSubv3__translated_subtitle_path_with_variant(base, "ja", "bilingual", "aiasr")
+        == f"{base}.chi&jp.aiasr.srt"
+    )
+    assert (
+        module.AutoSubv3._AutoSubv3__translated_subtitle_path_with_variant(base, "en", "bilingual", "aiembedded")
+        == f"{base}.chi&eng.aiembedded.srt"
+    )
+    assert (
+        module.AutoSubv3._AutoSubv3__translated_subtitle_path_with_variant(base, "ko", "bilingual", "aimatch")
+        == f"{base}.chi&kr.aimatch.srt"
+    )
+
+    default_path, default_variant = plugin._prepare_output_path(
+        base,
+        "ja",
+        "bilingual",
+        module.ResolvedSource.ASR.value,
+        module.OverwritePolicy.SKIP.value,
+    )
+    variant_path, variant = plugin._prepare_output_path(
+        base,
+        "ja",
+        "bilingual",
+        module.ResolvedSource.ASR.value,
+        module.OverwritePolicy.NEW_VARIANT.value,
+    )
+
+    assert default_path == f"{base}.chi&jp.ai.srt"
+    assert default_variant == "ai"
+    assert variant_path == f"{base}.chi&jp.aiasr.srt"
+    assert variant == "aiasr"
+
+
+def test_monitor_mode_skips_subtitle_fallback_tasks(tmp_path):
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._generation_mode = module.GenerationMode.MONITOR.value
+    video = tmp_path / "Movie.mkv"
+    video.write_bytes(b"video")
+
+    result = plugin.submit_tasks(
+        [str(video)],
+        source=module.TaskSource.SUBTITLE_MANUAL_UPLOAD.value,
+        trigger=module.TriggerType.SUBTITLE_FALLBACK.value,
+    )
+
+    assert result["added"] == []
+    assert result["failed"] == []
+    assert "主动监测模式" in result["skipped"][0]["reason"]
+    assert plugin._tasks == {}
+
+
+def test_fallback_mode_accepts_subtitle_fallback_tasks(tmp_path):
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._generation_mode = module.GenerationMode.FALLBACK.value
+    video = tmp_path / "Movie.mkv"
+    video.write_bytes(b"video")
+
+    result = plugin.submit_tasks(
+        [str(video)],
+        source=module.TaskSource.SUBTITLE_MANUAL_UPLOAD.value,
+        trigger=module.TriggerType.SUBTITLE_FALLBACK.value,
+    )
+
+    assert len(result["added"]) == 1
+    assert len(plugin._tasks) == 1
+
+
+def test_submit_tasks_treats_reuse_source_policy_as_auto(tmp_path):
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    video.write_bytes(b"video")
+
+    result = plugin.submit_tasks([str(video)], source_policy=module.SourcePolicy.REUSE.value)
+    task = next(iter(plugin._tasks.values()))
+
+    assert len(result["added"]) == 1
+    assert task.source_policy == module.SourcePolicy.AUTO.value
+
+
+def test_explicit_asr_source_policy_ignores_stale_subtitle_override(tmp_path):
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    subtitle = tmp_path / "stale.srt"
+    video.write_bytes(b"video")
+    subtitle.write_text("1\n00:00:01,000 --> 00:00:02,000\nWrong source\n", encoding="utf-8")
+
+    result = plugin.submit_tasks(
+        [str(video)],
+        subtitle_overrides={
+            str(video): {
+                "subtitle_path": str(subtitle),
+                "lang": "en",
+                "source_policy": "asr",
+            }
+        },
+    )
+    task = next(iter(plugin._tasks.values()))
+
+    assert len(result["added"]) == 1
+    assert task.source_policy == module.SourcePolicy.ASR.value
+    assert task.source_subtitle_path == ""
+    assert task.source_asset_path == ""
+
+
+def test_restart_completed_task_reuses_stable_matched_subtitle_asset(tmp_path):
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    subtitle = tmp_path / "online.fixed.srt"
+    video.write_bytes(b"video")
+    subtitle.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+
+    result = plugin.submit_tasks(
+        [str(video)],
+        source=module.TaskSource.SUBTITLE_MANUAL_UPLOAD.value,
+        subtitle_overrides={
+            str(video): {
+                "subtitle_path": str(subtitle),
+                "lang": "en",
+                "source_policy": "matched_external",
+                "overwrite_policy": "new_variant",
+            }
+        },
+    )
+    assert len(result["added"]) == 1
+    original = next(iter(plugin._tasks.values()))
+    plugin._task_queue.get_nowait()
+    original.status = module.TaskStatus.COMPLETED
+    original.complete_time = module.datetime.now()
+    original.resolved_source = module.ResolvedSource.MATCHED_EXTERNAL.value
+    original.source_lang = "en"
+
+    restart = plugin.restart_tasks([original.task_id])
+    rerun = [task for task in plugin._tasks.values() if task.rerun_of == original.task_id][0]
+
+    assert len(restart["added"]) == 1
+    assert rerun.source_policy == module.SourcePolicy.MATCHED_EXTERNAL.value
+    assert Path(rerun.source_subtitle_path).exists()
+    assert Path(rerun.source_subtitle_path).read_text(encoding="utf-8") == subtitle.read_text(encoding="utf-8")
+    assert rerun.overwrite_policy == module.OverwritePolicy.BACKUP_REPLACE.value
+
+
+def test_restart_reports_missing_matched_subtitle_source(tmp_path):
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    subtitle = tmp_path / "online.fixed.srt"
+    video.write_bytes(b"video")
+    subtitle.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+    assert plugin.add_task(
+        str(video),
+        module.TaskSource.SUBTITLE_MANUAL_UPLOAD,
+        force_generate=True,
+        source_subtitle_path=str(subtitle),
+        source_subtitle_lang="en",
+        source_policy=module.SourcePolicy.MATCHED_EXTERNAL.value,
+    )
+    task = next(iter(plugin._tasks.values()))
+    plugin._task_queue.get_nowait()
+    task.status = module.TaskStatus.COMPLETED
+    task.complete_time = module.datetime.now()
+    Path(task.source_asset_path).unlink()
+
+    result = plugin.restart_tasks([task.task_id])
+
+    assert result["added"] == []
+    assert "原字幕匹配外挂源已不存在" in result["failed"][0]["reason"]
 
 
 def test_chs_ai_subtitle_is_detected_as_existing_chinese_subtitle():

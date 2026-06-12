@@ -15,6 +15,7 @@ const defaultConfig = {
   clear_history: false,
   send_notify: false,
   listen_transfer_event: true,
+  generation_mode: 'monitor',
   process_new_only: true,
   path_whitelist: '',
   run_now: false,
@@ -64,6 +65,11 @@ const preferences = [
   { title: '英文优先', value: 'english_first' },
   { title: '原音优先', value: 'origin_first' },
 ]
+const generationModes = [
+  { title: '主动监测模式', value: 'monitor' },
+  { title: '后备模式', value: 'fallback' },
+  { title: '混合模式', value: 'mixed' },
+]
 
 watch(
   () => props.initialConfig,
@@ -102,21 +108,30 @@ function save() {
       <section class="config-section">
         <div class="section-title">基础设置</div>
         <VRow>
+          <VCol cols="12" md="6">
+            <VSelect
+              v-model="config.generation_mode"
+              :items="generationModes"
+              label="AI 字幕默认生成模式"
+              hint="后备模式只作为字幕匹配兜底；主动监测模式保持独立监控；混合模式两者都启用"
+              persistent-hint
+            />
+          </VCol>
           <VCol cols="12" md="3">
             <VSwitch v-model="config.enabled" label="启用插件" color="primary" hide-details />
           </VCol>
           <VCol cols="12" md="3">
             <VSwitch v-model="config.send_notify" label="发送通知" hide-details />
           </VCol>
+        </VRow>
+
+        <VRow>
           <VCol cols="12" md="3">
             <VSwitch v-model="config.clear_history" label="清理历史记录" hide-details />
           </VCol>
           <VCol cols="12" md="3">
             <VSwitch v-model="config.process_new_only" label="仅处理新增视频" hide-details />
           </VCol>
-        </VRow>
-
-        <VRow>
           <VCol cols="12" md="3">
             <VSwitch v-model="config.run_now" label="手动执行一次" color="secondary" hide-details />
           </VCol>

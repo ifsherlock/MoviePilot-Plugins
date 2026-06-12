@@ -81,7 +81,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/subtitle-match.png"
-    plugin_version = "0.1.64"
+    plugin_version = "0.1.65"
     plugin_author = "ifsherlock"
     author_url = "https://github.com/ifsherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -414,6 +414,13 @@ class SubtitleManualUpload(_PluginBase):
                 "methods": ["POST"],
                 "auth": "bear",
                 "summary": "取消 AI 字幕生成任务",
+            },
+            {
+                "path": "/ai_restart",
+                "endpoint": self.api_ai_restart,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "重新生成 AI 字幕任务",
             },
             {
                 "path": "/online_status",
@@ -4108,7 +4115,12 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
     ) -> Dict[str, Any]:
         target = target or self._target_from_entry(entry)
         try:
-            result = self._submit_autosub_for_entries([entry])
+            result = self._submit_autosub_for_entries(
+                [entry],
+                trigger="subtitle_fallback",
+                source_policy="auto",
+                overwrite_policy="skip",
+            )
         except HTTPException as exc:
             return {
                 "status": "failed",
@@ -5281,6 +5293,10 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             overrides[video_path] = {
                 "subtitle_path": str(fixed_path),
                 "lang": lang,
+                "source_policy": "matched_external",
+                "source_name": operation["upload_info"].get("source_name") or fixed_path.name,
+                "timeline_fixed": True,
+                "overwrite_policy": "new_variant",
             }
             fixed_results.append(
                 {
@@ -5340,7 +5356,13 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                 prepared_uploads=prepared_uploads,
                 allow_risky_offset=allow_risky_offset,
             )
-            ai_result = self._submit_autosub_for_entries(target_entries, subtitle_overrides=subtitle_overrides)
+            ai_result = self._submit_autosub_for_entries(
+                target_entries,
+                subtitle_overrides=subtitle_overrides,
+                trigger="manual",
+                source_policy="matched_external",
+                overwrite_policy="new_variant",
+            )
         except HTTPException:
             raise
         except CaptchaRequiredError as exc:
@@ -5384,6 +5406,10 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         self,
         target_entries: List[Dict[str, Any]],
         subtitle_overrides: Optional[Dict[str, Dict[str, str]]] = None,
+        *,
+        trigger: str = "manual",
+        source_policy: str = "auto",
+        overwrite_policy: str = "skip",
     ) -> Dict[str, Any]:
         stream_entries = [entry for entry in target_entries if self._is_stream_path(entry.get("path"))]
         submit_entries = [entry for entry in target_entries if not self._is_stream_path(entry.get("path"))]
@@ -5419,9 +5445,18 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     paths,
                     source="subtitle_manual_upload",
                     subtitle_overrides=subtitle_overrides,
+                    trigger=trigger,
+                    source_policy=source_policy,
+                    overwrite_policy=overwrite_policy,
                 )
             else:
-                result = plugin.submit_tasks(paths, source="subtitle_manual_upload")
+                result = plugin.submit_tasks(
+                    paths,
+                    source="subtitle_manual_upload",
+                    trigger=trigger,
+                    source_policy=source_policy,
+                    overwrite_policy=overwrite_policy,
+                )
         except RuntimeError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         except TypeError as exc:
@@ -5475,6 +5510,33 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             message=f"已取消 {len(result.get('cancelled') or [])} 个 AI 字幕任务，跳过 {len(result.get('skipped') or [])} 个",
         )
 
+    async def api_ai_restart(self, request: Request) -> Dict[str, Any]:
+        body = await request.json()
+        target_ids = self._target_ids_from_body(body)
+        locked_ids = self._locked_target_ids_from_body(body)
+        target_ids, locked_skipped = self._filter_unlocked_target_ids(target_ids, locked_ids)
+        if not target_ids:
+            if locked_skipped:
+                return self._ok(
+                    {"added": [], "skipped": locked_skipped, "failed": [], "targets": [], "tasks": {}},
+                    message=f"已跳过 {len(locked_skipped)} 个锁定目标，没有重新生成 AI 字幕任务",
+                )
+            raise HTTPException(status_code=400, detail="请先选择要重新生成 AI 字幕的本地视频")
+        target_entries = list(self._resolve_targets(target_ids).values())
+        if not target_entries:
+            raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
+        result = self._restart_autosub_for_entries(
+            target_entries,
+            source_policy=self._normalize_text(body.get("source_policy")) or "reuse",
+            overwrite_policy=self._normalize_text(body.get("overwrite_policy")) or "backup_replace",
+        )
+        if locked_skipped:
+            result["skipped"] = [*(result.get("skipped") or []), *locked_skipped]
+        return self._ok(
+            result,
+            message=f"已重新提交 {len(result.get('added') or [])} 个 AI 字幕任务，跳过 {len(result.get('skipped') or [])} 个，失败 {len(result.get('failed') or [])} 个",
+        )
+
     def _cancel_autosub_for_entries(self, target_entries: List[Dict[str, Any]]) -> Dict[str, Any]:
         plugin, reason = self._autosub_plugin()
         if not plugin:
@@ -5502,6 +5564,60 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             **result,
             "targets": [self._target_from_entry(entry) for entry in target_entries],
             "tasks": tasks,
+        }
+
+    def _restart_autosub_for_entries(
+        self,
+        target_entries: List[Dict[str, Any]],
+        *,
+        source_policy: str = "reuse",
+        overwrite_policy: str = "backup_replace",
+    ) -> Dict[str, Any]:
+        plugin, reason = self._autosub_plugin()
+        if not plugin:
+            raise HTTPException(status_code=409, detail=reason)
+        if not hasattr(plugin, "restart_tasks"):
+            raise HTTPException(status_code=409, detail="AI 字幕插件版本过旧，请更新到支持重新生成的联动版")
+        tasks_data = self._autosub_tasks_for_entries(target_entries)
+        task_ids = [
+            task.get("task_id")
+            for task in (tasks_data.get("tasks") or [])
+            if task.get("task_id") and not task.get("active")
+        ]
+        if not task_ids:
+            return {
+                "added": [],
+                "skipped": [{"reason": "当前范围没有可重新生成的已完成/失败/取消 AI 任务"}],
+                "failed": [],
+                "targets": [self._target_from_entry(entry) for entry in target_entries],
+                "tasks": tasks_data,
+            }
+        try:
+            result = plugin.restart_tasks(
+                task_ids=task_ids,
+                source_policy=source_policy,
+                overwrite_policy=overwrite_policy,
+            )
+        except RuntimeError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except Exception as exc:
+            logger.error("[SubtitleManualUpload] AI 字幕任务重新生成失败: %s", exc)
+            raise HTTPException(status_code=500, detail=f"AI 字幕任务重新生成失败: {exc}") from exc
+        refreshed_tasks = self._autosub_tasks_for_entries(target_entries)
+        logger.info(
+            "[SubtitleManualUpload] AI 字幕任务重新生成完成 targets=%s added=%s skipped=%s failed=%s",
+            len(target_entries),
+            len(result.get("added") or []),
+            len(result.get("skipped") or []),
+            len(result.get("failed") or []),
+        )
+        return {
+            **result,
+            "added": result.get("added") or [],
+            "skipped": result.get("skipped") or [],
+            "failed": result.get("failed") or [],
+            "targets": [self._target_from_entry(entry) for entry in target_entries],
+            "tasks": refreshed_tasks,
         }
 
     async def api_ai_tasks(self, request: Request) -> Dict[str, Any]:

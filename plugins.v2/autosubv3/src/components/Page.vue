@@ -24,6 +24,16 @@ const error = ref('')
 const message = ref('')
 const status = ref({})
 const tasks = ref([])
+const restartDialog = ref(false)
+const restartTargets = ref([])
+const restartSourcePolicy = ref('reuse')
+const restartSourceOptions = [
+  { title: '沿用原任务来源', value: 'reuse' },
+  { title: '自动选择', value: 'auto' },
+  { title: '本地外挂字幕', value: 'local_external' },
+  { title: '视频内嵌字幕', value: 'embedded' },
+  { title: '音轨 ASR', value: 'asr' },
+]
 
 const sortedTasks = computed(() => {
   const items = [...tasks.value]
@@ -107,27 +117,29 @@ async function cancelTasks(inputTasks) {
 async function restartTasks(inputTasks) {
   const picked = (inputTasks || []).filter(canRestartTask)
   if (!picked.length || operating.value) return
+  restartTargets.value = picked
+  restartSourcePolicy.value = 'reuse'
+  restartDialog.value = true
+}
+
+async function confirmRestartTasks() {
+  const picked = (restartTargets.value || []).filter(canRestartTask)
+  if (!picked.length || operating.value) return
   operating.value = true
   operation.value = 'restart'
   error.value = ''
   message.value = ''
   try {
-    const groups = picked.reduce((acc, task) => {
-      const source = task.source || 'manual'
-      acc[source] = acc[source] || []
-      acc[source].push(task.video_file)
-      return acc
-    }, {})
-    const responses = []
-    for (const [source, paths] of Object.entries(groups)) {
-      responses.push(await props.api.post(`${pluginBase.value}/submit`, { source, paths }))
-    }
-    message.value = responses.length === 1
-      ? responses[0]?.message || `已重新提交 ${picked.length} 个任务`
-      : `已按来源重新提交 ${picked.length} 个任务`
+    const response = await props.api.post(`${pluginBase.value}/restart`, {
+      task_ids: picked.map(task => task.task_id),
+      source_policy: restartSourcePolicy.value,
+      overwrite_policy: restartSourcePolicy.value === 'reuse' ? 'backup_replace' : 'new_variant',
+    })
+    message.value = response?.message || `已重新提交 ${picked.length} 个任务`
+    restartDialog.value = false
     await loadTasks()
   } catch (err) {
-    error.value = errorMessage(err, '重启 AI 字幕任务失败')
+    error.value = errorMessage(err, '重新生成 AI 字幕任务失败')
   } finally {
     operation.value = ''
     operating.value = false
@@ -183,7 +195,7 @@ function canCancelTask(task) {
 }
 
 function canRestartTask(task) {
-  return Boolean(task?.video_file && ['cancelled', 'failed', 'ignored', 'no_audio'].includes(task?.status))
+  return Boolean(task?.video_file && ['completed', 'cancelled', 'failed', 'ignored', 'no_audio'].includes(task?.status))
 }
 
 function canDeleteTask(task) {
@@ -214,6 +226,12 @@ function pathParts(path) {
   if (match) return [match[1], match[2]]
   if (text.length > 72) return [text.slice(0, 72), text.slice(72)]
   return [text]
+}
+
+function sourceText(task) {
+  const source = task?.resolved_source_label || task?.source_policy_label || task?.source_label || task?.source || ''
+  const asset = task?.source_asset_name || task?.source_subtitle_name || ''
+  return asset ? `${source} · ${asset}` : source
 }
 
 onMounted(loadTasks)
@@ -260,7 +278,7 @@ onMounted(loadTasks)
         :loading="operation === 'restart'"
         @click="restartTasks(restartableSelected)"
       >
-        批量重启
+        批量重新生成
       </VBtn>
       <VBtn
         color="error"
@@ -326,6 +344,8 @@ onMounted(loadTasks)
             </div>
             <div class="task-meta">
               <span>{{ task.source_label || task.source }}</span>
+              <span v-if="sourceText(task)">{{ sourceText(task) }}</span>
+              <span v-if="task.output_name">输出：{{ task.output_name }}</span>
               <span>{{ task.add_time || '-' }}</span>
               <span>{{ task.complete_time || '-' }}</span>
               <span v-if="task.message">{{ task.message }}</span>
@@ -348,7 +368,7 @@ onMounted(loadTasks)
               :disabled="!canRestartTask(task) || operating"
               @click="restartTasks([task])"
             >
-              重启
+              重新生成
             </VBtn>
             <VBtn
               size="small"
@@ -363,6 +383,41 @@ onMounted(loadTasks)
         </div>
       </div>
     </main>
+
+    <VDialog v-model="restartDialog" max-width="520">
+      <VCard rounded="lg">
+        <VCardTitle>重新生成 AI 字幕</VCardTitle>
+        <VCardText>
+          <VAlert
+            class="mb-4"
+            type="info"
+            variant="tonal"
+            density="compact"
+            :text="`将重新提交 ${restartTargets.length} 个任务；默认沿用原任务来源，并使用当前最新模型配置。`"
+          />
+          <VSelect
+            v-model="restartSourcePolicy"
+            :items="restartSourceOptions"
+            label="字幕来源"
+            hint="改选来源会写入来源变体后缀，如 .aiasr.srt 或 .aiembedded.srt"
+            persistent-hint
+          />
+        </VCardText>
+        <VCardActions>
+          <VSpacer />
+          <VBtn variant="text" @click="restartDialog = false">取消</VBtn>
+          <VBtn
+            color="primary"
+            variant="tonal"
+            :loading="operation === 'restart'"
+            :disabled="operating || !restartTargets.length"
+            @click="confirmRestartTasks"
+          >
+            重新生成
+          </VBtn>
+        </VCardActions>
+      </VCard>
+    </VDialog>
   </div>
 </template>
 
