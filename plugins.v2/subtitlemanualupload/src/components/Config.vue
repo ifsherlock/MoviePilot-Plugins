@@ -19,6 +19,10 @@ const localConfig = ref({
   auto_search_on_transfer: false,
   auto_skip_chinese_media_on_transfer: true,
   auto_transfer_subtitle_strategy: 'search_first',
+  timeline_max_offset_seconds: 120,
+  timeline_min_offset_seconds: 0.2,
+  timeline_vad_mode: 'webrtc',
+  timeline_allow_risky_offset: false,
   subhd_url: 'https://subhd.tv',
   zimuku_url: 'https://zmk.pw',
   assrt_url: 'https://2.assrt.net',
@@ -54,6 +58,11 @@ const autoStrategyItems = [
   { title: 'AI 优先，失败再搜索', value: 'ai_first' },
 ]
 
+const timelineVadItems = [
+  { title: 'WebRTC VAD（推荐）', value: 'webrtc' },
+  { title: 'RMS 能量阈值（降级）', value: 'rms' },
+]
+
 function normalizeProviders(value) {
   const allowed = ['subhd', 'zimuku', 'assrt', 'opensubtitles']
   const providers = Array.isArray(value) ? value.filter(item => allowed.includes(item)) : []
@@ -68,6 +77,11 @@ function normalizeRootUrl(value, fallback) {
 function normalizeZimukuRootUrl(value) {
   const normalized = normalizeRootUrl(value, 'https://zmk.pw')
   return normalized === 'https://zimuku.org' ? 'https://zmk.pw' : normalized
+}
+
+function normalizePositiveNumber(value, fallback) {
+  const number = Number(value)
+  return Number.isFinite(number) && number > 0 ? number : fallback
 }
 
 function normalizeConfig(input) {
@@ -95,6 +109,10 @@ function normalizeConfig(input) {
     auto_search_on_transfer: Boolean(input?.auto_search_on_transfer),
     auto_skip_chinese_media_on_transfer: input?.auto_skip_chinese_media_on_transfer !== false,
     auto_transfer_subtitle_strategy: autoStrategy,
+    timeline_max_offset_seconds: Math.min(300, Math.max(1, Math.round(normalizePositiveNumber(input?.timeline_max_offset_seconds, 120)))),
+    timeline_min_offset_seconds: normalizePositiveNumber(input?.timeline_min_offset_seconds, 0.2),
+    timeline_vad_mode: timelineVadItems.some(item => item.value === input?.timeline_vad_mode) ? input.timeline_vad_mode : 'webrtc',
+    timeline_allow_risky_offset: Boolean(input?.timeline_allow_risky_offset),
     subhd_url: normalizeRootUrl(input?.subhd_url, 'https://subhd.tv'),
     zimuku_url: normalizeZimukuRootUrl(input?.zimuku_url),
     assrt_url: normalizeRootUrl(input?.assrt_url, 'https://2.assrt.net'),
@@ -327,6 +345,57 @@ onMounted(() => {
             density="compact"
             text="OpenSubtitles 搜索需要 API Key；下载由插件使用用户名和密码后台登录换取 token。英文字幕结果可下载后提交给 AI 字幕生成翻译。"
           />
+
+          <VDivider class="my-5" />
+
+          <div class="config-section">
+            <div>
+              <div class="config-section-title">智能调轴</div>
+              <p>控制写入前可接受的全局偏移范围；超过 120 秒通常意味着错集、错版本或整季包映射错误。</p>
+            </div>
+          </div>
+
+          <div class="config-grid two-column">
+            <VTextField
+              v-model.number="localConfig.timeline_max_offset_seconds"
+              label="智能调轴最大偏移秒数"
+              type="number"
+              min="1"
+              max="300"
+              suffix="秒"
+              hint="默认 120；不建议超过 120 秒。超过 120 秒的手动操作会再次确认，自动入库不放行高风险结果。"
+              persistent-hint
+              variant="outlined"
+              density="comfortable"
+            />
+            <VTextField
+              v-model.number="localConfig.timeline_min_offset_seconds"
+              label="最小应用阈值"
+              type="number"
+              min="0.1"
+              step="0.1"
+              suffix="秒"
+              hint="低于该阈值时仅复制字幕，不做时间轴改写。"
+              persistent-hint
+              variant="outlined"
+              density="comfortable"
+            />
+            <VSelect
+              v-model="localConfig.timeline_vad_mode"
+              :items="timelineVadItems"
+              label="音频 VAD 模式"
+              variant="outlined"
+              density="comfortable"
+              hide-details
+            />
+            <VSwitch
+              v-model="localConfig.timeline_allow_risky_offset"
+              label="全局允许高风险偏移"
+              color="warning"
+              hint="不建议开启。开启后后端会允许 120 秒以上结果；手动操作仍会显示风险确认。"
+              persistent-hint
+            />
+          </div>
 
           <VDivider class="my-5" />
 

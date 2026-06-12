@@ -81,7 +81,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/subtitle-match.png"
-    plugin_version = "0.1.61"
+    plugin_version = "0.1.62"
     plugin_author = "ifsherlock"
     author_url = "https://github.com/ifsherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -533,8 +533,13 @@ class SubtitleManualUpload(_PluginBase):
                                         "props": {
                                             "model": "timeline_max_offset_seconds",
                                             "label": "智能调轴最大偏移秒数",
+                                            "type": "number",
                                             "placeholder": "120",
+                                            "min": 1,
+                                            "max": 300,
+                                            "suffix": "秒",
                                             "hint": "默认 120；不建议超过 120 秒，过大偏移通常意味着字幕错集或错版本。",
+                                            "persistentHint": True,
                                         },
                                     }
                                 ],

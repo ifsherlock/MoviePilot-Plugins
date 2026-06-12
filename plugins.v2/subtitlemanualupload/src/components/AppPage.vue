@@ -93,6 +93,8 @@ const matchHistoryPageSize = 20
 const matchHistoryTotal = ref(0)
 const matchHistoryHasMore = ref(false)
 const expandedHistoryIds = ref([])
+const expandedHistorySeasonKeys = ref([])
+const expandedHistoryTargetIds = ref([])
 const expandedDetailTargetIds = ref([])
 const selectedHistoryTargetIds = ref({})
 const timelineFixing = ref(false)
@@ -519,6 +521,37 @@ function toggleHistoryExpanded(item) {
   expandedHistoryIds.value = [...expandedHistoryIds.value, id]
 }
 
+function historySeasonKey(item, group) {
+  return `${item?.id || 'history'}:${group?.key || group?.season || 'all'}`
+}
+
+function historySeasonExpanded(item, group) {
+  return expandedHistorySeasonKeys.value.includes(historySeasonKey(item, group))
+}
+
+function toggleHistorySeasonExpanded(item, group) {
+  const key = historySeasonKey(item, group)
+  if (expandedHistorySeasonKeys.value.includes(key)) {
+    expandedHistorySeasonKeys.value = expandedHistorySeasonKeys.value.filter(value => value !== key)
+    return
+  }
+  expandedHistorySeasonKeys.value = [...expandedHistorySeasonKeys.value, key]
+}
+
+function historyTargetExpanded(target) {
+  return expandedHistoryTargetIds.value.includes(target?.id)
+}
+
+function toggleHistoryTargetExpanded(target) {
+  const id = target?.id
+  if (!id) return
+  if (expandedHistoryTargetIds.value.includes(id)) {
+    expandedHistoryTargetIds.value = expandedHistoryTargetIds.value.filter(value => value !== id)
+    return
+  }
+  expandedHistoryTargetIds.value = [...expandedHistoryTargetIds.value, id]
+}
+
 function historyDeletableTargets(item) {
   return (item?.targets || []).filter(target => target?.id && (target.subtitles || []).length)
 }
@@ -531,13 +564,6 @@ function historySelectedIds(item) {
 function historySelectedCount(item) {
   const selected = new Set(historySelectedIds(item))
   return historyDeletableTargets(item).filter(target => selected.has(target.id)).length
-}
-
-function allHistoryTargetsSelected(item) {
-  const targets = historyDeletableTargets(item)
-  if (!targets.length) return false
-  const selected = new Set(historySelectedIds(item))
-  return targets.every(target => selected.has(target.id))
 }
 
 function setHistorySelection(item, ids) {
@@ -560,20 +586,26 @@ function toggleHistoryTarget(item, targetId, checked) {
   setHistorySelection(item, Array.from(selected))
 }
 
-function toggleHistoryItemTargets(item) {
-  if (allHistoryTargetsSelected(item)) {
-    setHistorySelection(item, [])
-    return
-  }
-  setHistorySelection(item, historyDeletableTargets(item).map(target => target.id))
-}
-
 function historySeasonGroups(item) {
+  const targets = historyDeletableTargets(item)
+  if (!targets.length) return []
+  if (item?.media_type !== 'tv') {
+    return [
+      {
+        key: 'all',
+        season: 'all',
+        label: '全部',
+        targets,
+        subtitleCount: targets.reduce((sum, target) => sum + (target.subtitles || []).length, 0),
+      },
+    ]
+  }
   const groups = new Map()
-  historyDeletableTargets(item).forEach(target => {
+  targets.forEach(target => {
     const season = Number(target.season || 0)
     if (!groups.has(season)) {
       groups.set(season, {
+        key: `season-${season}`,
         season,
         label: seasonLabel(season),
         targets: [],
@@ -584,7 +616,47 @@ function historySeasonGroups(item) {
     group.targets.push(target)
     group.subtitleCount += (target.subtitles || []).length
   })
-  return Array.from(groups.values()).sort((a, b) => a.season - b.season)
+  const seasonGroups = Array.from(groups.values()).sort((a, b) => a.season - b.season)
+  return [
+    {
+      key: 'all',
+      season: 'all',
+      label: '全部季',
+      targets,
+      subtitleCount: targets.reduce((sum, target) => sum + (target.subtitles || []).length, 0),
+    },
+    ...seasonGroups,
+  ]
+}
+
+function historySeasonSelectedCount(item, group) {
+  const selected = new Set(historySelectedIds(item))
+  return (group?.targets || []).filter(target => selected.has(target.id)).length
+}
+
+function allHistorySeasonTargetsSelected(item, group) {
+  const targets = group?.targets || []
+  if (!targets.length) return false
+  return historySeasonSelectedCount(item, group) === targets.length
+}
+
+function historySeasonPartiallySelected(item, group) {
+  const count = historySeasonSelectedCount(item, group)
+  return count > 0 && count < (group?.targets || []).length
+}
+
+function toggleHistorySeasonTargets(item, group, checked) {
+  if (!item?.id || !group?.targets?.length) return
+  const selected = new Set(historySelectedIds(item))
+  ;(group.targets || []).forEach(target => {
+    if (!target?.id) return
+    if (checked) {
+      selected.add(target.id)
+    } else {
+      selected.delete(target.id)
+    }
+  })
+  setHistorySelection(item, Array.from(selected))
 }
 
 async function clearHistoryTargets(item, targetsToClear, label) {
@@ -616,16 +688,6 @@ function clearHistorySelectedSubtitles(item) {
   const selected = new Set(historySelectedIds(item))
   const targetsToClear = historyDeletableTargets(item).filter(target => selected.has(target.id))
   clearHistoryTargets(item, targetsToClear, '选中集数')
-}
-
-function clearHistorySeasonSubtitles(item, season) {
-  const targetsToClear = historyDeletableTargets(item).filter(target => Number(target.season || 0) === Number(season || 0))
-  clearHistoryTargets(item, targetsToClear, seasonLabel(season))
-}
-
-function clearHistoryAllSubtitles(item) {
-  const label = item?.media_type === 'tv' ? '全季' : '全部'
-  clearHistoryTargets(item, historyDeletableTargets(item), label)
 }
 
 function historyTimelineTargets(item) {
@@ -673,17 +735,6 @@ async function fixExistingTimeline(items, label = '选中字幕') {
 function fixHistorySelectedTimeline(item) {
   const targets = historySelectedTimelineTargets(item)
   fixExistingTimeline(targets.map(target => ({ target_id: target.id })), '选中集数')
-}
-
-function fixHistorySeasonTimeline(item, season) {
-  const targets = historyTimelineTargets(item).filter(target => Number(target.season || 0) === Number(season || 0))
-  fixExistingTimeline(targets.map(target => ({ target_id: target.id })), seasonLabel(season))
-}
-
-function fixHistoryAllTimeline(item) {
-  const label = item?.media_type === 'tv' ? '全季字幕' : '全部字幕'
-  const targets = historyTimelineTargets(item)
-  fixExistingTimeline(targets.map(target => ({ target_id: target.id })), label)
 }
 
 function fixHistorySubtitleTimeline(target, subtitle) {
@@ -2456,15 +2507,6 @@ defineExpose({
               <div class="history-bulk-actions">
                 <VBtn
                   size="small"
-                  variant="tonal"
-                  prepend-icon="mdi-checkbox-multiple-marked-outline"
-                  :disabled="!historyDeletableTargets(item).length || clearing"
-                  @click.stop="toggleHistoryItemTargets(item)"
-                >
-                  {{ allHistoryTargetsSelected(item) ? '取消勾选' : '勾选全部' }}
-                </VBtn>
-                <VBtn
-                  size="small"
                   color="error"
                   variant="tonal"
                   prepend-icon="mdi-delete-sweep"
@@ -2485,127 +2527,121 @@ defineExpose({
                 >
                   调轴选中
                 </VBtn>
-                <template v-if="item.media_type === 'tv'">
-                  <VBtn
-                    v-for="season in historySeasonGroups(item)"
-                    :key="`${item.id}-season-${season.season}`"
-                    size="small"
-                    color="error"
-                    variant="text"
-                    prepend-icon="mdi-calendar-remove"
-                    :disabled="clearing"
-                    @click.stop="clearHistorySeasonSubtitles(item, season.season)"
-                  >
-                    删{{ season.label }}
-                  </VBtn>
-                  <VBtn
-                    v-for="season in historySeasonGroups(item)"
-                    :key="`${item.id}-timeline-${season.season}`"
-                    size="small"
-                    color="warning"
-                    variant="text"
-                    prepend-icon="mdi-timeline-clock"
-                    :disabled="timelineFixing || !timelineAvailable"
-                    @click.stop="fixHistorySeasonTimeline(item, season.season)"
-                  >
-                    调{{ season.label }}
-                  </VBtn>
-                </template>
-                <VBtn
-                  size="small"
-                  color="error"
-                  variant="flat"
-                  prepend-icon="mdi-delete-alert"
-                  :disabled="!historyDeletableTargets(item).length || clearing"
-                  :loading="clearing"
-                  @click.stop="clearHistoryAllSubtitles(item)"
-                >
-                  {{ item.media_type === 'tv' ? '全季删除' : '删除全部' }}
-                </VBtn>
-                <VBtn
-                  size="small"
-                  color="warning"
-                  variant="flat"
-                  prepend-icon="mdi-timeline-check-outline"
-                  :disabled="!historyTimelineTargets(item).length || timelineFixing || !timelineAvailable"
-                  :loading="timelineFixing"
-                  @click.stop="fixHistoryAllTimeline(item)"
-                >
-                  {{ item.media_type === 'tv' ? '全季调轴' : '全部调轴' }}
-                </VBtn>
               </div>
             </div>
-            <div
-              v-for="target in item.targets"
-              :key="target.id"
-              class="history-row compact-row selectable"
-            >
-              <VCheckbox
-                :model-value="historySelectedIds(item).includes(target.id)"
-                density="compact"
-                hide-details
-                :disabled="!(target.subtitles || []).length || clearing"
-                @click.stop
-                @update:model-value="value => toggleHistoryTarget(item, target.id, value)"
-              />
-              <div class="history-main">
-                <div class="episode-title">{{ compactTargetName(target) }}</div>
-                <div class="episode-path">{{ target.relative_path }}</div>
-                <div v-if="target.timeline_task" class="history-status compact-status">
-                  <span>调轴：{{ timelineTaskText(target.timeline_task) }}</span>
-                  <span
-                    v-for="meta in timelineMetaItems(target.timeline_task.timeline)"
-                    :key="`${target.id}-${meta}`"
-                    class="timeline-meta"
+            <div class="history-season-tree">
+              <div
+                v-for="season in historySeasonGroups(item)"
+                :key="historySeasonKey(item, season)"
+                class="history-season-node"
+              >
+                <div class="history-season-row">
+                  <VCheckbox
+                    :model-value="allHistorySeasonTargetsSelected(item, season)"
+                    :indeterminate="historySeasonPartiallySelected(item, season)"
+                    density="compact"
+                    hide-details
+                    :disabled="!season.targets.length || clearing"
+                    @click.stop
+                    @update:model-value="value => toggleHistorySeasonTargets(item, season, value)"
+                  />
+                  <button
+                    type="button"
+                    class="history-season-toggle"
+                    @click.stop="toggleHistorySeasonExpanded(item, season)"
                   >
-                    {{ meta }}
-                  </span>
+                    <VIcon :icon="historySeasonExpanded(item, season) ? 'mdi-chevron-down' : 'mdi-chevron-right'" />
+                    <strong>{{ season.label }}</strong>
+                    <span>{{ season.targets.length }} 集 · {{ season.subtitleCount }} 个外挂字幕</span>
+                    <em v-if="historySeasonSelectedCount(item, season)">已选 {{ historySeasonSelectedCount(item, season) }}</em>
+                  </button>
                 </div>
-                <div class="subtitle-history-list compact-subtitles">
+                <div v-if="historySeasonExpanded(item, season)" class="history-episode-list">
                   <div
-                    v-for="subtitle in target.subtitles"
-                    :key="subtitle.path"
-                    class="subtitle-history-item"
+                    v-for="target in season.targets"
+                    :key="`${historySeasonKey(item, season)}-${target.id}`"
+                    class="history-episode-node"
                   >
-                    <div class="subtitle-history-copy">
-                      <strong>{{ subtitle.name }}</strong>
-                      <span>{{ formatBytes(subtitle.size) }} · {{ subtitle.modified_at || '未知时间' }}</span>
+                    <div class="history-episode-row">
+                      <VCheckbox
+                        :model-value="historySelectedIds(item).includes(target.id)"
+                        density="compact"
+                        hide-details
+                        :disabled="!(target.subtitles || []).length || clearing"
+                        @click.stop
+                        @update:model-value="value => toggleHistoryTarget(item, target.id, value)"
+                      />
+                      <button
+                        type="button"
+                        class="history-episode-toggle"
+                        @click.stop="toggleHistoryTargetExpanded(target)"
+                      >
+                        <VIcon :icon="historyTargetExpanded(target) ? 'mdi-chevron-down' : 'mdi-chevron-right'" />
+                        <span class="episode-title">{{ compactTargetName(target) }}</span>
+                        <small>{{ (target.subtitles || []).length }} 个外挂字幕</small>
+                      </button>
+                      <VBtn
+                        size="small"
+                        variant="tonal"
+                        prepend-icon="mdi-magnify"
+                        :disabled="isTargetActionDisabled(target)"
+                        @click.stop="openSingleOnlineSearch(target)"
+                      >
+                        重新搜索
+                      </VBtn>
                     </div>
-                    <div class="subtitle-history-actions">
-                      <VBtn
-                        size="small"
-                        variant="tonal"
-                        color="warning"
-                        :loading="timelineFixing"
-                        :disabled="timelineFixing || !timelineAvailable || isStreamTarget(target)"
-                        @click.stop="fixHistorySubtitleTimeline(target, subtitle)"
-                      >
-                        调轴
-                      </VBtn>
-                      <VBtn
-                        size="small"
-                        variant="tonal"
-                        color="error"
-                        :loading="clearing"
-                        @click.stop="deleteSubtitle(target, subtitle)"
-                      >
-                        删除
-                      </VBtn>
+                    <div v-if="historyTargetExpanded(target)" class="history-subtitle-children">
+                      <div class="episode-path">{{ target.relative_path }}</div>
+                      <div v-if="target.timeline_task" class="history-status compact-status">
+                        <span>调轴：{{ timelineTaskText(target.timeline_task) }}</span>
+                        <span
+                          v-for="meta in timelineMetaItems(target.timeline_task.timeline)"
+                          :key="`${target.id}-${meta}`"
+                          class="timeline-meta"
+                        >
+                          {{ meta }}
+                        </span>
+                      </div>
+                      <div class="subtitle-history-list compact-subtitles">
+                        <div
+                          v-for="subtitle in target.subtitles"
+                          :key="subtitle.path"
+                          class="subtitle-history-item"
+                        >
+                          <div class="subtitle-history-copy">
+                            <strong>{{ subtitle.name }}</strong>
+                            <span>{{ formatBytes(subtitle.size) }} · {{ subtitle.modified_at || '未知时间' }}</span>
+                          </div>
+                          <div class="subtitle-history-actions">
+                            <VBtn
+                              size="small"
+                              variant="tonal"
+                              color="warning"
+                              :loading="timelineFixing"
+                              :disabled="timelineFixing || !timelineAvailable || isStreamTarget(target)"
+                              @click.stop="fixHistorySubtitleTimeline(target, subtitle)"
+                            >
+                              调轴
+                            </VBtn>
+                            <VBtn
+                              size="small"
+                              variant="tonal"
+                              color="error"
+                              :loading="clearing"
+                              @click.stop="deleteSubtitle(target, subtitle)"
+                            >
+                              删除
+                            </VBtn>
+                          </div>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
               </div>
-              <div class="history-actions">
-                <VBtn
-                  size="small"
-                  variant="tonal"
-                  prepend-icon="mdi-magnify"
-                  :disabled="isTargetActionDisabled(target)"
-                  @click.stop="openSingleOnlineSearch(target)"
-                >
-                  重新搜索
-                </VBtn>
-              </div>
+            </div>
+            <div v-if="!historySeasonGroups(item).length" class="empty-state compact-empty">
+              暂无可管理的外挂字幕
             </div>
           </div>
         </div>
@@ -3888,6 +3924,84 @@ defineExpose({
   justify-content: flex-end;
 }
 
+.history-season-tree {
+  display: grid;
+  gap: 8px;
+}
+
+.history-season-node {
+  overflow: hidden;
+  border: 1px solid rgba(91, 109, 100, 0.13);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.62);
+}
+
+.history-season-row,
+.history-episode-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+  min-height: 46px;
+  padding: 6px 10px;
+}
+
+.history-season-toggle,
+.history-episode-toggle {
+  display: flex;
+  min-width: 0;
+  gap: 8px;
+  align-items: center;
+  border: 0;
+  background: transparent;
+  color: #30443f;
+  text-align: left;
+}
+
+.history-season-toggle strong,
+.history-episode-toggle .episode-title {
+  min-width: 0;
+  overflow: hidden;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.history-season-toggle span,
+.history-episode-toggle small {
+  flex: 0 0 auto;
+  color: #6f7f79;
+  font-size: 12px;
+}
+
+.history-season-toggle em {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 244, 218, 0.9);
+  color: #8a5f23;
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.history-episode-list {
+  display: grid;
+  gap: 6px;
+  padding: 0 10px 10px 42px;
+}
+
+.history-episode-node {
+  border-radius: 12px;
+  background: rgba(245, 241, 232, 0.52);
+}
+
+.history-subtitle-children {
+  display: grid;
+  gap: 8px;
+  padding: 0 10px 10px 42px;
+}
+
 .history-row.compact-row {
   border-radius: 16px;
   background: rgba(245, 241, 232, 0.58);
@@ -4944,6 +5058,26 @@ defineExpose({
 
   .history-row.selectable {
     grid-template-columns: 1fr;
+  }
+
+  .history-season-row,
+  .history-episode-row {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .history-episode-row > .v-btn {
+    grid-column: 2;
+    justify-self: start;
+  }
+
+  .history-episode-list,
+  .history-subtitle-children {
+    padding-left: 16px;
+  }
+
+  .history-season-toggle,
+  .history-episode-toggle {
+    flex-wrap: wrap;
   }
 
   .subtitle-history-item {
