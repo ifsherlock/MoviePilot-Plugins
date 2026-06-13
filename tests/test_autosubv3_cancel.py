@@ -403,7 +403,7 @@ def test_independent_monitor_is_blocked_when_subtitlemanualupload_auto_transfer_
     assert "接管" in status["message"]
 
 
-def test_online_source_only_blocks_independent_monitor_when_ai_link_enabled():
+def test_online_source_only_does_not_block_independent_monitor_when_ai_link_enabled():
     module = load_plugin_module()
     plugin = make_plugin(module)
     plugin._enabled = True
@@ -415,6 +415,32 @@ def test_online_source_only_blocks_independent_monitor_when_ai_link_enabled():
         _auto_search_on_transfer = True
         _ai_link_enabled = True
         _auto_transfer_subtitle_strategy = "online_source_only"
+
+        def get_state(self):
+            return True
+
+    module.PluginManager = lambda: types.SimpleNamespace(
+        running_plugins={"SubtitleManualUpload": FakeSubtitleManualUpload()}
+    )
+
+    status = plugin._status_payload()
+
+    assert status["independent_monitor_enabled"] is True
+    assert status["independent_monitor_blocked_reason"] == ""
+
+
+def test_ai_source_only_blocks_independent_monitor_when_ai_link_enabled():
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._enabled = True
+    plugin._running = True
+    plugin._task_queue = queue.Queue()
+    plugin._generation_mode = module.GenerationMode.MONITOR.value
+
+    class FakeSubtitleManualUpload:
+        _auto_search_on_transfer = True
+        _ai_link_enabled = True
+        _auto_transfer_subtitle_strategy = "ai_source_only"
 
         def get_state(self):
             return True

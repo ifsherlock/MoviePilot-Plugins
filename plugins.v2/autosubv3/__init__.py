@@ -151,7 +151,7 @@ class AutoSubv3(_PluginBase):
     # 主题色
     plugin_color = "#2C4F7E"
     # 插件版本
-    plugin_version = "3.5.52"
+    plugin_version = "3.5.53"
     # 插件作者
     plugin_author = "ifsherlock"
     # 作者主页
@@ -481,7 +481,9 @@ class AutoSubv3(_PluginBase):
         except Exception as exc:
             logger.warning("[AutoSubv3] 判断字幕匹配入库自动处理状态失败: %s", exc)
             return False
-        ai_takeover_strategies = {"online_then_ai_source", "online_source_only", "ai_source_only"}
+        # 只有会触发 AI 来源生成的字幕匹配策略才接管 AutoSubv3 独立监控；
+        # online_source_only 只负责在线字幕来源，应允许 AutoSubv3 独立监控并行工作。
+        ai_takeover_strategies = {"online_then_ai_source", "ai_source_only"}
         return enabled and auto_transfer and ai_link_enabled and strategy in ai_takeover_strategies
 
     def _queue_positions(self) -> Dict[str, int]:
