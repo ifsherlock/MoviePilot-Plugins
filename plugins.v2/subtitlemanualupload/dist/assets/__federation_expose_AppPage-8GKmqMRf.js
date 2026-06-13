@@ -425,6 +425,7 @@ const selectedOnlineResultIds = ref([]);
 const aiTaskDialog = ref(false);
 const aiTaskDialogTarget = ref(null);
 const aiTaskScopeTargets = ref([]);
+const aiTaskLoadToken = ref(0);
 const aiRestartSourcePolicy = ref('reuse');
 const aiRestartSubtitlePath = ref('');
 const aiSelectedTaskIds = ref([]);
@@ -617,6 +618,7 @@ const aiDialogSelectedRestartableTasks = computed(() => {
   const selected = new Set(aiSelectedTaskIds.value);
   return aiDialogRestartableTasks.value.filter(task => selected.has(task.task_id))
 });
+const aiDialogSelectedAllowedTasks = computed(() => aiDialogSelectedRestartableTasks.value.filter(isAiTaskAllowed));
 const aiDialogActionText = computed(() => (aiDialogHasExistingTasks.value ? '重新生成选中' : '生成'));
 const aiDialogSourceLabel = computed(() => (aiDialogHasExistingTasks.value ? '重新生成来源' : '生成来源'));
 const aiRestartSubtitleOptions = computed(() => {
@@ -1383,12 +1385,16 @@ async function loadAiTasks(options = {}) {
   const scopeTargets = Array.isArray(options.targets) && options.targets.length
     ? options.targets
     : currentAiTaskTargets();
+  const requestToken = options.requestToken || 0;
+  const requestTargetIds = scopeTargets.map(item => item.id).join('|');
   if (!scopeTargets.length) {
+    if (requestToken && requestToken !== aiTaskLoadToken.value) return
     aiTaskData.value = {
       ...aiTaskData.value,
       summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, ignored: 0, no_audio: 0, failed: 0, cancelled: 0 },
       tasks: [],
       task_by_target: {},
+      tasks_by_target: {},
     };
     stopAiPolling();
     return
@@ -1398,7 +1404,16 @@ async function loadAiTasks(options = {}) {
     const response = await props.api.post(`${pluginBase.value}/ai_tasks`, {
       target_ids: scopeTargets.map(item => item.id),
     });
+    if (requestToken && requestToken !== aiTaskLoadToken.value) return
+    if (requestToken) {
+      const currentTargetIds = currentAiTaskTargets().map(item => item.id).join('|');
+      if (currentTargetIds !== requestTargetIds) return
+    }
     aiTaskData.value = unwrapResponse(response) || aiTaskData.value;
+    aiSelectedTaskIds.value = aiSelectedTaskIds.value.filter(taskId => {
+      const task = (aiTaskData.value.tasks || []).find(item => item.task_id === taskId);
+      return task && isAiTaskAllowed(task)
+    });
     if (aiTaskData.value.status) {
       status.value = { ...status.value, ai_subtitle: aiTaskData.value.status };
     }
@@ -1506,6 +1521,17 @@ function aiTaskStatusClass(target) {
   return task ? `ai-${task.status}` : 'ai-idle'
 }
 
+function aiTaskIconForTask(task) {
+  if (!task) return 'mdi-robot-outline'
+  if (task.status === 'completed') return 'mdi-robot-happy-outline'
+  if (task.status === 'failed') return 'mdi-alert-circle-outline'
+  if (task.status === 'cancelled') return 'mdi-cancel'
+  if (task.status === 'no_audio') return 'mdi-volume-off'
+  if (task.status === 'ignored') return 'mdi-debug-step-over'
+  if (isAiTaskActive(task)) return 'mdi-progress-clock'
+  return 'mdi-robot-outline'
+}
+
 function aiStatusText(task) {
   if (!task) return '未提交'
   return task.message || task.status_label || task.status
@@ -1532,8 +1558,9 @@ function openAiTaskDialog(target = null) {
     ? (aiTaskForTarget(target) ? [aiTaskForTarget(target)] : [])
     : (aiTaskData.value.tasks || []).filter(task => scopeTargets.some(item => item.id === task.target_id));
   aiRestartSourcePolicy.value = existingTasks.length ? 'reuse' : 'auto';
-  loadAiTasks({ silent: true, targets: scopeTargets }).then(() => {
-    if (aiTaskDialog.value) {
+  const requestToken = ++aiTaskLoadToken.value;
+  loadAiTasks({ silent: true, targets: scopeTargets, requestToken }).then(() => {
+    if (aiTaskDialog.value && requestToken === aiTaskLoadToken.value) {
       aiRestartSourcePolicy.value = aiDialogHasExistingTasks.value ? 'reuse' : 'auto';
     }
   });
@@ -1633,8 +1660,7 @@ function cancelDialogAiTasks() {
 }
 
 async function regenerateDialogAiTasks() {
-  const selectedTaskIds = aiDialogSelectedRestartableTasks.value
-    .filter(isAiTaskAllowed)
+  const selectedTaskIds = aiDialogSelectedAllowedTasks.value
     .map(task => task.task_id);
   return regenerateAiTasksByIds(selectedTaskIds)
 }
@@ -3693,7 +3719,7 @@ return (_ctx, _cache) => {
                         variant: "tonal",
                         color: "warning",
                         "prepend-icon": "mdi-robot-happy-outline",
-                        disabled: aiDialogHasExistingTasks.value && !aiDialogSelectedRestartableTasks.value.length,
+                        disabled: aiDialogHasExistingTasks.value && !aiDialogSelectedAllowedTasks.value.length,
                         loading: aiSubmitting.value,
                         onClick: regenerateDialogAiTasks
                       }, {
@@ -3780,7 +3806,7 @@ return (_ctx, _cache) => {
                           }, null, 8, ["modelValue", "value", "disabled"]),
                           _createElementVNode("div", _hoisted_80, [
                             _createVNode(_component_VIcon, {
-                              icon: aiTaskIcon({ id: task.target_id })
+                              icon: aiTaskIconForTask(task)
                             }, null, 8, ["icon"])
                           ]),
                           _createElementVNode("div", _hoisted_81, [
@@ -4584,6 +4610,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-f53a1329"]]);
+const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-4b8c8305"]]);
 
 export { AppPage as default };

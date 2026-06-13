@@ -391,6 +391,97 @@ def test_write_operations_passes_allow_risky_offset_to_timeline_fixer(tmp_path):
     assert captured["kwargs"]["allow_risky_offset"] is True
 
 
+def test_write_operations_rejects_low_confidence_timeline_result(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    video = tmp_path / "Movie.mkv"
+    source = tmp_path / "subtitle.srt"
+    destination = tmp_path / "Movie.chi.srt"
+    video.write_text("video", encoding="utf-8")
+    source.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+
+    def fake_fix(video_path, subtitle_path, output_path, **kwargs):
+        output_path.write_bytes(subtitle_path.read_bytes())
+        return module.TimelineFixResult(
+            enabled=True,
+            applied=False,
+            reason="timeline alignment rejected",
+            base="audio:rms",
+            offset_seconds=-30.0,
+            scale_factor=1.0,
+            score=0.2,
+            confidence="low",
+            score_margin=0.0,
+            risk_flags=["rms_low_precision"],
+        )
+
+    module.fix_subtitle_timeline = fake_fix
+
+    try:
+        plugin._write_operations_to_disk(
+            session_dir=session_dir,
+            operations=[
+                {
+                    "upload_info": {"upload_id": "u1", "source_name": "subtitle.srt", "archive_name": ""},
+                    "target_entry": {"id": "t1", "path": str(video), "basename": "Movie", "storage": "local"},
+                    "video_path": video,
+                    "source_path": source,
+                    "language_suffix": "chi",
+                    "destination_name": destination.name,
+                    "destination_path": destination,
+                }
+            ],
+            fix_timeline=True,
+        )
+    except module.HTTPException as exc:
+        assert exc.status_code == 409
+        assert "智能调轴低可信" in exc.detail
+    else:
+        raise AssertionError("low confidence timeline result should block write")
+    assert not destination.exists()
+    assert plugin._timeline_task_for_target_id("t1")["status"] == "failed"
+
+
+def test_low_confidence_timeline_result_blocks_auto_write():
+    module, _, _ = load_plugin_module()
+
+    result = module.TimelineFixResult(
+        enabled=True,
+        applied=False,
+        reason="timeline alignment rejected",
+        base="audio:rms",
+        offset_seconds=-119.99,
+        scale_factor=1.0,
+        score=0.2,
+        confidence="low",
+        score_margin=0.0,
+        risk_flags=["weak_score_margin", "rms_low_precision"],
+    )
+
+    assert module.SubtitleManualUpload._timeline_result_blocks_auto_write(result) is True
+
+
+def test_offset_below_threshold_with_blocking_risk_still_blocks_auto_write():
+    module, _, _ = load_plugin_module()
+
+    result = module.TimelineFixResult(
+        enabled=True,
+        applied=False,
+        reason="offset below threshold",
+        base="audio:webrtc",
+        offset_seconds=0.1,
+        scale_factor=1.0,
+        score=0.2,
+        confidence="rejected",
+        score_margin=0.0,
+        risk_flags=["local_alignment_unstable"],
+    )
+
+    assert module.SubtitleManualUpload._timeline_result_blocks_auto_write(result) is True
+
+
 def test_target_payload_marks_strm_resources(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
@@ -693,6 +784,190 @@ def test_ai_restart_task_ids_for_locked_target_are_skipped(tmp_path):
     assert response["data"]["skipped"][0]["task_id"] == "locked-task"
 
 
+def test_ai_restart_explicit_task_ids_filtered_empty_does_not_fallback(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video1 = tmp_path / "Episode1.mkv"
+    video2 = tmp_path / "Episode2.mkv"
+    video1.write_text("video", encoding="utf-8")
+    video2.write_text("video", encoding="utf-8")
+    entry1 = {"id": "e1", "path": str(video1), "basename": "Episode1", "target_label": "E01", "storage": "local"}
+    called = {"restart": False}
+
+    class FakeAutoSub:
+        def _status_payload(self):
+            return {"available": True, "enabled": True}
+
+        def tasks_payload(self, **kwargs):
+            return {
+                "status": {"available": True},
+                "tasks": [
+                    {"task_id": "task-e1", "video_file": str(video1), "status": "completed", "active": False},
+                    {"task_id": "task-e2", "video_file": str(video2), "status": "completed", "active": False},
+                ],
+            }
+
+        def restart_tasks(self, **kwargs):
+            called["restart"] = True
+            return {"added": [], "skipped": [], "failed": []}
+
+    plugin._ai_link_enabled = True
+    plugin._autosub_plugin = lambda: (FakeAutoSub(), "")
+
+    result = plugin._restart_autosub_for_entries([entry1], task_ids=["task-e2"])
+
+    assert called["restart"] is False
+    assert result["added"] == []
+    assert result["skipped"][0]["task_id"] == "task-e2"
+    assert "不属于当前可操作目标" in result["skipped"][0]["reason"]
+
+
+def test_api_ai_restart_task_ids_with_empty_target_cache_does_not_query_global_tasks(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    called = {"tasks_payload": False, "restart": False}
+
+    class FakeAutoSub:
+        def _status_payload(self):
+            return {"available": True, "enabled": True}
+
+        def tasks_payload(self, **kwargs):
+            called["tasks_payload"] = True
+            return {"status": {"available": True}, "tasks": [{"task_id": "global-task", "video_file": str(tmp_path / "Locked.mkv")}]}
+
+        def restart_tasks(self, **kwargs):
+            called["restart"] = True
+            return {"added": [], "skipped": [], "failed": []}
+
+    plugin._ai_link_enabled = True
+    plugin._entry_map.clear()
+    plugin._autosub_plugin = lambda: (FakeAutoSub(), "")
+
+    response = asyncio.run(plugin.api_ai_restart(FakeRequest({"task_ids": ["global-task"]})))
+
+    assert response["success"] is True
+    assert called["tasks_payload"] is False
+    assert called["restart"] is False
+    assert response["data"]["skipped"][0]["task_id"] == "global-task"
+
+
+def test_api_ai_restart_all_requested_targets_locked_with_task_ids_does_not_fallback(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video1 = tmp_path / "Episode1.mkv"
+    video2 = tmp_path / "Episode2.mkv"
+    video1.write_text("video", encoding="utf-8")
+    video2.write_text("video", encoding="utf-8")
+    plugin._remember_targets(
+        [
+            {"id": "e1", "path": str(video1), "basename": "Episode1", "target_label": "E01", "storage": "local"},
+            {"id": "e2", "path": str(video2), "basename": "Episode2", "target_label": "E02", "storage": "local"},
+        ]
+    )
+    called = {"restart": False}
+
+    def fake_restart(entries, **kwargs):
+        called["restart"] = True
+        return {"added": [], "skipped": [], "failed": [], "tasks": {}}
+
+    plugin._restart_autosub_for_entries = fake_restart
+
+    response = asyncio.run(
+        plugin.api_ai_restart(
+            FakeRequest({"target_ids": ["e1"], "task_ids": ["task-e1"], "locked_target_ids": ["e1"]})
+        )
+    )
+
+    assert response["success"] is True
+    assert called["restart"] is False
+    skipped = response["data"]["skipped"]
+    assert any(item.get("target_id") == "e1" for item in skipped)
+    assert any(item.get("task_id") == "task-e1" for item in skipped)
+
+
+def test_api_ai_restart_mixed_unlocked_and_locked_task_ids(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video1 = tmp_path / "Episode1.mkv"
+    video2 = tmp_path / "Episode2.mkv"
+    video1.write_text("video", encoding="utf-8")
+    video2.write_text("video", encoding="utf-8")
+    entry1 = {"id": "e1", "path": str(video1), "basename": "Episode1", "target_label": "E01", "storage": "local"}
+    entry2 = {"id": "e2", "path": str(video2), "basename": "Episode2", "target_label": "E02", "storage": "local"}
+    plugin._remember_targets([entry1, entry2])
+    captured = {}
+
+    class FakeAutoSub:
+        def _status_payload(self):
+            return {"available": True, "enabled": True}
+
+        def tasks_payload(self, **kwargs):
+            return {
+                "status": {"available": True},
+                "tasks": [
+                    {"task_id": "task-e1", "video_file": str(video1), "status": "completed", "active": False},
+                    {"task_id": "task-e2", "video_file": str(video2), "status": "completed", "active": False},
+                ],
+            }
+
+        def restart_tasks(self, **kwargs):
+            captured.update(kwargs)
+            return {"added": [{"task_id": "task-e1"}], "skipped": [], "failed": []}
+
+    plugin._ai_link_enabled = True
+    plugin._autosub_plugin = lambda: (FakeAutoSub(), "")
+
+    response = asyncio.run(
+        plugin.api_ai_restart(
+            FakeRequest(
+                {
+                    "target_ids": ["e1", "e2"],
+                    "task_ids": ["task-e1", "task-e2"],
+                    "locked_target_ids": ["e2"],
+                }
+            )
+        )
+    )
+
+    assert response["success"] is True
+    assert captured["task_ids"] == ["task-e1"]
+    skipped = response["data"]["skipped"]
+    assert any(item.get("target_id") == "e2" for item in skipped)
+    assert any(item.get("task_id") == "task-e2" for item in skipped)
+
+
+def test_api_ai_restart_stale_target_ids_with_task_ids_returns_400(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    video.write_text("video", encoding="utf-8")
+    plugin._remember_targets([{"id": "valid", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}])
+
+    try:
+        asyncio.run(plugin.api_ai_restart(FakeRequest({"target_ids": ["missing"], "task_ids": ["task-1"]})))
+    except module.HTTPException as exc:
+        assert exc.status_code == 400
+        assert "目标视频已失效" in exc.detail
+    else:
+        raise AssertionError("stale target should be rejected even when task_ids are provided")
+
+
+def test_api_ai_restart_mixed_stale_target_ids_returns_400(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    video.write_text("video", encoding="utf-8")
+    plugin._remember_targets([{"id": "valid", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}])
+
+    try:
+        asyncio.run(plugin.api_ai_restart(FakeRequest({"target_ids": ["valid", "missing"], "task_ids": ["task-1"]})))
+    except module.HTTPException as exc:
+        assert exc.status_code == 400
+        assert "目标视频已失效" in exc.detail
+    else:
+        raise AssertionError("mixed stale target should be rejected")
+
+
 def test_ai_restart_rejects_external_subtitle_outside_current_target(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
@@ -709,6 +984,100 @@ def test_ai_restart_rejects_external_subtitle_outside_current_target(tmp_path):
         assert "当前集" in exc.detail
     else:
         raise AssertionError("should reject unrelated subtitle path")
+
+
+def test_ai_restart_matched_external_filters_explicit_task_ids_before_submit(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video1 = tmp_path / "Episode1.mkv"
+    video2 = tmp_path / "Episode2.mkv"
+    subtitle = tmp_path / "Episode1.eng.srt"
+    video1.write_text("video", encoding="utf-8")
+    video2.write_text("video", encoding="utf-8")
+    subtitle.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+    entry1 = {"id": "e1", "path": str(video1), "basename": "Episode1", "target_label": "E01", "storage": "local"}
+    called = {"submit": False}
+
+    class FakeAutoSub:
+        def _status_payload(self):
+            return {"available": True, "enabled": True}
+
+        def tasks_payload(self, **kwargs):
+            return {
+                "status": {"available": True},
+                "tasks": [
+                    {"task_id": "task-e1", "video_file": str(video1), "status": "completed", "active": False},
+                    {"task_id": "task-e2", "video_file": str(video2), "status": "completed", "active": False},
+                ],
+            }
+
+        def restart_tasks(self, **kwargs):
+            raise AssertionError("matched external path should submit, not restart")
+
+    def fake_submit(*args, **kwargs):
+        called["submit"] = True
+        return {"added": [], "skipped": [], "failed": [], "targets": [], "tasks": {}}
+
+    plugin._ai_link_enabled = True
+    plugin._autosub_plugin = lambda: (FakeAutoSub(), "")
+    plugin._submit_autosub_for_entries = fake_submit
+
+    result = plugin._restart_autosub_for_entries(
+        [entry1],
+        source_policy="matched_external",
+        source_subtitle_path=str(subtitle),
+        task_ids=["task-e2"],
+    )
+
+    assert called["submit"] is False
+    assert result["added"] == []
+    assert result["skipped"][0]["task_id"] == "task-e2"
+
+
+def test_ai_restart_matched_external_backup_replace_becomes_new_variant(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Episode1.mkv"
+    subtitle = tmp_path / "Episode1.eng.srt"
+    video.write_text("video", encoding="utf-8")
+    subtitle.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+    entry = {"id": "e1", "path": str(video), "basename": "Episode1", "target_label": "E01", "storage": "local"}
+    captured = {}
+
+    class FakeAutoSub:
+        def _status_payload(self):
+            return {"available": True, "enabled": True}
+
+        def tasks_payload(self, **kwargs):
+            return {
+                "status": {"available": True},
+                "tasks": [{"task_id": "task-e1", "video_file": str(video), "status": "completed", "active": False}],
+            }
+
+        def restart_tasks(self, **kwargs):
+            raise AssertionError("matched external path should submit, not restart")
+
+    def fake_submit(*args, **kwargs):
+        captured["submit_kwargs"] = kwargs
+        return {"added": [{"task_id": "new-task"}], "skipped": [], "failed": [], "targets": [], "tasks": {}}
+
+    plugin._ai_link_enabled = True
+    plugin._autosub_plugin = lambda: (FakeAutoSub(), "")
+    plugin._submit_autosub_for_entries = fake_submit
+
+    result = plugin._restart_autosub_for_entries(
+        [entry],
+        source_policy="matched_external",
+        overwrite_policy="backup_replace",
+        source_subtitle_path=str(subtitle),
+        source_subtitle_lang="eng",
+        task_ids=["task-e1"],
+    )
+
+    assert result["added"][0]["task_id"] == "new-task"
+    override = captured["submit_kwargs"]["subtitle_overrides"][str(video)]
+    assert override["overwrite_policy"] == "new_variant"
+    assert captured["submit_kwargs"]["overwrite_policy"] == "new_variant"
 
 
 def test_ai_tasks_empty_request_includes_tasks_by_target():
@@ -1170,6 +1539,100 @@ def test_online_ai_translate_downloads_fixes_and_does_not_create_preview(tmp_pat
     assert captured["submit_kwargs"]["overwrite_policy"] == "new_variant"
 
 
+def test_online_ai_translate_rejects_low_confidence_timeline_before_submit(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    setup_online_ai_translate(plugin, module, tmp_path)
+    called = {"submit": False}
+
+    def fake_submit(*args, **kwargs):
+        called["submit"] = True
+        return {}
+
+    def fake_fix(video_path, subtitle_path, output_path, **kwargs):
+        output_path.write_bytes(subtitle_path.read_bytes())
+        return module.TimelineFixResult(
+            enabled=True,
+            applied=False,
+            reason="timeline alignment rejected",
+            base="audio:webrtc",
+            offset_seconds=10.0,
+            scale_factor=1.0,
+            score=0.2,
+            confidence="rejected",
+            score_margin=0.0,
+            risk_flags=["local_alignment_unstable"],
+        )
+
+    plugin._submit_autosub_for_entries = fake_submit
+    module.fix_subtitle_timeline = fake_fix
+
+    try:
+        asyncio.run(
+            plugin.api_online_download_preview(
+                FakeRequest(
+                    {
+                        "target_ids": ["m1"],
+                        "submit_ai_translate": True,
+                        "results": [
+                            {
+                                "provider": "opensubtitles",
+                                "result_id": "r1",
+                                "language_category": "english",
+                                "title": "Movie English",
+                            }
+                        ],
+                    }
+                )
+            )
+        )
+    except module.HTTPException as exc:
+        assert exc.status_code == 409
+        assert "智能调轴低可信" in exc.detail
+    else:
+        raise AssertionError("low confidence timeline result should block AI submit")
+    assert called["submit"] is False
+
+
+def test_online_download_preview_submit_ai_rejects_mixed_stale_targets(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    setup_online_ai_translate(plugin, module, tmp_path)
+    called = {"submit": False}
+
+    def fake_submit(*args, **kwargs):
+        called["submit"] = True
+        return {}
+
+    plugin._submit_online_ai_translate = fake_submit
+
+    try:
+        asyncio.run(
+            plugin.api_online_download_preview(
+                FakeRequest(
+                    {
+                        "target_ids": ["m1", "missing"],
+                        "submit_ai_translate": True,
+                        "results": [
+                            {
+                                "provider": "opensubtitles",
+                                "result_id": "r1",
+                                "language_category": "english",
+                                "title": "Movie English",
+                            }
+                        ],
+                    }
+                )
+            )
+        )
+    except module.HTTPException as exc:
+        assert exc.status_code == 400
+        assert "目标视频已失效" in exc.detail
+    else:
+        raise AssertionError("mixed stale target should be rejected")
+    assert called["submit"] is False
+
+
 def test_online_ai_submit_endpoint_downloads_fixes_and_does_not_create_preview(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
@@ -1224,6 +1687,33 @@ def test_online_ai_submit_stale_target_returns_400_without_name_error():
         assert "目标视频已失效" in exc.detail
     else:
         raise AssertionError("stale target should be rejected")
+
+
+def test_online_ai_submit_mixed_stale_target_returns_400(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    video.write_text("video", encoding="utf-8")
+    plugin._remember_targets(
+        [{"id": "m1", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}]
+    )
+
+    try:
+        asyncio.run(
+            plugin.api_online_ai_submit(
+                FakeRequest(
+                    {
+                        "target_ids": ["m1", "missing"],
+                        "results": [{"provider": "opensubtitles", "result_id": "r1"}],
+                    }
+                )
+            )
+        )
+    except module.HTTPException as exc:
+        assert exc.status_code == 400
+        assert "目标视频已失效" in exc.detail
+    else:
+        raise AssertionError("mixed stale target should be rejected")
 
 
 def test_online_ai_submit_can_allow_risky_offset_after_manual_confirm(tmp_path):

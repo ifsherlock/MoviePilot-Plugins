@@ -13,7 +13,7 @@ class Ffmpeg:
             return False
 
         # 提取指定音频流
-        if audio_index:
+        if audio_index is not None:
             command = ['ffmpeg', "-hide_banner", "-loglevel", "warning", '-y', '-i', video_path,
                        '-map', f'0:a:{audio_index}',
                        '-acodec', 'pcm_s16le', '-ac', '1', '-ar', '16000', audio_path]
@@ -51,7 +51,7 @@ class Ffmpeg:
         if not video_path or not subtitle_path:
             return False
 
-        if subtitle_index:
+        if subtitle_index is not None:
             command = ['ffmpeg', "-hide_banner", "-loglevel", "warning", '-y', '-i', video_path,
                        '-map', f'0:s:{subtitle_index}',
                        subtitle_path]

@@ -481,7 +481,8 @@ class AutoSubv3(_PluginBase):
         except Exception as exc:
             logger.warning("[AutoSubv3] 判断字幕匹配入库自动处理状态失败: %s", exc)
             return False
-        return enabled and auto_transfer and ai_link_enabled and strategy in {"online_then_ai_source", "ai_source_only"}
+        ai_takeover_strategies = {"online_then_ai_source", "online_source_only", "ai_source_only"}
+        return enabled and auto_transfer and ai_link_enabled and strategy in ai_takeover_strategies
 
     def _queue_positions(self) -> Dict[str, int]:
         positions: Dict[str, int] = {}
@@ -1468,8 +1469,11 @@ class AutoSubv3(_PluginBase):
         logger.info(f"[Step 2] 检查是否已标记为无声音跳过")
         # 检查是否已标记为无声音跳过
         if self.is_video_skipped(video_file):
-            logger.info(f"[Step 2] 视频已标记为无声音跳过：{video_file}")
-            return TaskStatus.NO_AUDIO
+            if force_generate:
+                logger.info(f"[Step 2] 显式重新生成：忽略无声音历史跳过记录：{video_file}")
+            else:
+                logger.info(f"[Step 2] 视频已标记为无声音跳过：{video_file}")
+                return TaskStatus.NO_AUDIO
         logger.info(f"[Step 3] 开始正式处理")
         start_time = time.time()
         file_path, file_ext = os.path.splitext(video_file)
@@ -2034,7 +2038,7 @@ class AutoSubv3(_PluginBase):
         audio_index = None
         audio_stream = filter(lambda x: x.get('codec_type') == 'audio', video_meta.get('streams', []))
         for index, stream in enumerate(audio_stream):
-            if not audio_index:
+            if audio_index is None:
                 audio_index = index
                 audio_lang = stream.get('tags', {}).get('language', 'und')
             # 获取默认音轨

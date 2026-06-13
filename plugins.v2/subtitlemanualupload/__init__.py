@@ -3739,6 +3739,20 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                         status_code=500,
                         detail=f"智能调轴失败: {operation['upload_info'].get('source_name')} - {exc}",
                     ) from exc
+                if self._timeline_result_blocks_auto_write(timeline_result):
+                    self._set_timeline_task(
+                        operation,
+                        status="failed",
+                        message=f"智能调轴低可信，已拒绝写入: {self._timeline_rejection_message(timeline_result)}",
+                        timeline_result=timeline_result,
+                    )
+                    raise HTTPException(
+                        status_code=409,
+                        detail=(
+                            f"智能调轴低可信，已拒绝写入: {operation['upload_info'].get('source_name')} - "
+                            f"{self._timeline_rejection_message(timeline_result)}"
+                        ),
+                    )
                 operation["write_source_path"] = fixed_source_path
                 operation["timeline_result"] = timeline_result
                 self._set_timeline_task(
@@ -3816,6 +3830,47 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
 
     def _timeline_cache_dir(self) -> Path:
         return self.get_data_path() / "timeline_cache"
+
+    @staticmethod
+    def _timeline_result_blocks_auto_write(timeline_result: Optional[TimelineFixResult]) -> bool:
+        if not timeline_result or not timeline_result.enabled:
+            return False
+        if timeline_result.base == "strm":
+            return False
+        confidence = (timeline_result.confidence or "").lower()
+        risks = set(timeline_result.risk_flags or [])
+        if confidence in {"low", "rejected"} and not (timeline_result.applied and risks <= {"offset_over_120s"}):
+            return True
+        blocking = {
+            "low_score",
+            "weak_score_margin",
+            "ambiguous_peak",
+            "boundary_offset",
+            "unstable_subtitle_activity",
+            "audio_subtitle_activity_unstable",
+            "audio_base_activity_unstable",
+            "audio_scale_factor",
+            "unusual_scale_factor",
+            "rms_low_precision",
+            "offset_over_configured_max",
+            "local_alignment_unstable",
+        }
+        if risks & blocking:
+            return True
+        if timeline_result.reason == "offset below threshold":
+            return False
+        return False
+
+    @staticmethod
+    def _timeline_rejection_message(timeline_result: TimelineFixResult) -> str:
+        flags = ",".join(timeline_result.risk_flags or []) or "-"
+        return (
+            f"confidence={timeline_result.confidence or '-'} "
+            f"offset={timeline_result.offset_seconds:.3f}s "
+            f"score={timeline_result.score:.3f} "
+            f"margin={timeline_result.score_margin:.3f} "
+            f"risks={flags}"
+        )
 
     @classmethod
     def _subtitle_backup_path(cls, subtitle_path: Path) -> Path:
@@ -5170,7 +5225,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                 raise HTTPException(status_code=423, detail="选中的目标均已锁定，不能提交在线字幕 AI 翻译")
             raise HTTPException(status_code=400, detail="请先选择要生成 AI 字幕的本地视频")
         target_entries = list(self._resolve_targets(target_ids).values())
-        if not target_entries:
+        if not target_entries or len(target_entries) != len(set(target_ids)):
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
         selected_results = self._results_from_body(body)
         if not selected_results:
@@ -5332,6 +5387,20 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     status_code=500,
                     detail=f"在线字幕智能调轴失败: {operation['upload_info'].get('source_name')} - {exc}",
                 ) from exc
+            if self._timeline_result_blocks_auto_write(timeline_result):
+                self._set_timeline_task(
+                    operation,
+                    status="failed",
+                    message=f"在线字幕智能调轴低可信，已拒绝提交 AI: {self._timeline_rejection_message(timeline_result)}",
+                    timeline_result=timeline_result,
+                )
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        f"在线字幕智能调轴低可信，已拒绝提交 AI: {operation['upload_info'].get('source_name')} - "
+                        f"{self._timeline_rejection_message(timeline_result)}"
+                    ),
+                )
             self._set_timeline_task(
                 operation,
                 status="completed",
@@ -5563,6 +5632,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
     async def api_ai_restart(self, request: Request) -> Dict[str, Any]:
         body = await request.json()
         target_ids = self._target_ids_from_body(body)
+        requested_target_ids = list(target_ids)
         task_ids = body.get("task_ids") or []
         if isinstance(task_ids, str):
             task_ids = [task_ids]
@@ -5576,8 +5646,41 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     message=f"已跳过 {len(locked_skipped)} 个锁定目标，没有重新生成 AI 字幕任务",
                 )
             raise HTTPException(status_code=400, detail="请先选择要重新生成 AI 字幕的本地视频")
-        target_entries = list(self._resolve_targets(target_ids).values()) if target_ids else self._cached_unlocked_targets(locked_ids)
-        if not target_entries and not task_ids:
+        if target_ids:
+            target_entries = list(self._resolve_targets(target_ids).values())
+        elif requested_target_ids:
+            target_entries = []
+        else:
+            target_entries = self._cached_unlocked_targets(locked_ids)
+        if requested_target_ids and not target_ids and locked_skipped:
+            skipped = [
+                {"task_id": task_id, "reason": "任务不属于当前可操作目标或目标已锁定"}
+                for task_id in task_ids
+            ]
+            return self._ok(
+                {
+                    "added": [],
+                    "skipped": [*locked_skipped, *skipped],
+                    "failed": [],
+                    "targets": [],
+                    "tasks": {},
+                },
+                message=f"已跳过 {len(locked_skipped) + len(skipped)} 个锁定或不可操作的 AI 字幕任务",
+            )
+        if requested_target_ids and (not target_entries or len(target_entries) != len(set(target_ids))):
+            raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
+        if not target_entries:
+            if task_ids:
+                return self._ok(
+                    {
+                        "added": [],
+                        "skipped": [{"task_id": task_id, "reason": "任务不属于当前可操作目标或目标已锁定"} for task_id in task_ids],
+                        "failed": [],
+                        "targets": [],
+                        "tasks": {},
+                    },
+                    message=f"已跳过 {len(task_ids)} 个无法确认目标归属的 AI 字幕任务",
+                )
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
         result = self._restart_autosub_for_entries(
             target_entries,
@@ -5638,22 +5741,9 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             raise HTTPException(status_code=409, detail=reason)
         if not hasattr(plugin, "restart_tasks"):
             raise HTTPException(status_code=409, detail="AI 字幕插件版本过旧，请更新到支持重新生成的联动版")
-        if source_policy == "matched_external" and source_subtitle_path:
-            subtitle_overrides = self._selected_external_subtitle_override_for_entries(
-                target_entries,
-                source_subtitle_path=source_subtitle_path,
-                source_subtitle_lang=source_subtitle_lang,
-                overwrite_policy=overwrite_policy,
-            )
-            return self._submit_autosub_for_entries(
-                target_entries,
-                subtitle_overrides=subtitle_overrides,
-                trigger="manual",
-                source_policy="matched_external",
-                overwrite_policy=overwrite_policy,
-            )
         tasks_data = self._autosub_tasks_for_entries(target_entries)
         requested_task_ids = [self._normalize_text(item) for item in (task_ids or []) if self._normalize_text(item)]
+        explicit_task_ids = bool(requested_task_ids)
         ownership_skipped: List[Dict[str, str]] = []
         if requested_task_ids:
             requested_task_ids, ownership_skipped = self._filter_restart_task_ids_by_targets(
@@ -5661,11 +5751,39 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                 tasks_data,
                 target_entries,
             )
-        restart_task_ids = requested_task_ids or [
-            task.get("task_id")
-            for task in (tasks_data.get("tasks") or [])
-            if task.get("task_id") and not task.get("active")
-        ]
+        if source_policy == "matched_external" and source_subtitle_path:
+            effective_overwrite_policy = "new_variant" if overwrite_policy == "backup_replace" else overwrite_policy
+            if explicit_task_ids and not requested_task_ids:
+                return {
+                    "added": [],
+                    "skipped": ownership_skipped or [{"reason": "当前范围没有可重新生成的已完成/失败/取消 AI 任务"}],
+                    "failed": [],
+                    "targets": [self._target_from_entry(entry) for entry in target_entries],
+                    "tasks": tasks_data,
+                }
+            subtitle_overrides = self._selected_external_subtitle_override_for_entries(
+                target_entries,
+                source_subtitle_path=source_subtitle_path,
+                source_subtitle_lang=source_subtitle_lang,
+                overwrite_policy=effective_overwrite_policy,
+            )
+            result = self._submit_autosub_for_entries(
+                target_entries,
+                subtitle_overrides=subtitle_overrides,
+                trigger="manual",
+                source_policy="matched_external",
+                overwrite_policy=effective_overwrite_policy,
+            )
+            result["skipped"] = [*ownership_skipped, *(result.get("skipped") or [])]
+            return result
+        if explicit_task_ids:
+            restart_task_ids = requested_task_ids
+        else:
+            restart_task_ids = [
+                task.get("task_id")
+                for task in (tasks_data.get("tasks") or [])
+                if task.get("task_id") and not task.get("active")
+            ]
         if not restart_task_ids:
             return {
                 "added": [],
@@ -5713,6 +5831,8 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             for entry in target_entries
             if self._normalize_text(entry.get("path"))
         }
+        if not allowed_paths:
+            return [], [{"task_id": task_id, "reason": "任务不属于当前可操作目标或目标已锁定"} for task_id in task_ids]
         task_by_id = {
             self._normalize_text(task.get("task_id")): task
             for task in (tasks_data.get("tasks") or [])
@@ -5726,7 +5846,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                 skipped.append({"task_id": task_id, "reason": "任务不属于当前可操作目标或目标已锁定"})
                 continue
             video_file = self._normalize_text(task.get("video_file"))
-            if allowed_paths and video_file not in allowed_paths:
+            if video_file not in allowed_paths:
                 skipped.append({"task_id": task_id, "path": video_file, "reason": "任务不属于当前可操作目标"})
                 continue
             if task.get("active") or task.get("status") in {"pending", "in_progress"}:
@@ -5796,6 +5916,8 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             )
         target_entries = list(self._resolve_targets(target_ids).values())
         if not target_entries:
+            raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
+        if len(target_entries) != len(set(target_ids)):
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
         return self._ok(self._autosub_tasks_for_entries(target_entries))
 
@@ -6040,6 +6162,8 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             raise HTTPException(status_code=400, detail="请先选择要写入字幕的本地视频")
         target_entries = list(self._resolve_targets(target_ids).values())
         if not target_entries:
+            raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
+        if len(target_entries) != len(set(target_ids)):
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
         selected_results = self._results_from_body(body)
         if not selected_results:

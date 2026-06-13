@@ -24,9 +24,17 @@ HARD_MAX_OFFSET_SECONDS = 300
 MIN_SUBTITLE_EVENTS = 4
 MIN_CONFIDENT_SCORE = 0.02
 MIN_SCORE_MARGIN = 0.002
-TIMELINE_CACHE_VERSION = "v2-webrtc-202606"
+LOCAL_ALIGNMENT_MIN_EVENTS = 9
+LOCAL_ALIGNMENT_SEGMENTS = 3
+LOCAL_ALIGNMENT_MAX_SPREAD_SECONDS = 4.0
+LOCAL_ALIGNMENT_SEARCH_RADIUS_SECONDS = 12.0
+LOCAL_ALIGNMENT_MIN_SEGMENT_SCORE = 0.12
+LOCAL_ALIGNMENT_MIN_SEGMENT_ADVANTAGE = 0.05
+TIMELINE_CACHE_VERSION = "v4-local-consistency-202606"
 DEFAULT_CACHE_TTL_SECONDS = 30 * 24 * 60 * 60
 DEFAULT_CACHE_MAX_BYTES = 2 * 1024 * 1024 * 1024
+AUDIO_EXTRACTION_MIN_TIMEOUT_SECONDS = 180
+AUDIO_EXTRACTION_MAX_TIMEOUT_SECONDS = 3600
 TEXT_SUBTITLE_CODECS = {
     "ass",
     "mov_text",
@@ -175,6 +183,7 @@ def fix_subtitle_timeline(
     base_vad, base_name = _build_base_vad(np, pysubs2, video_path, cache_dir=cache_dir, vad_mode=vad_mode)
     if base_vad.size < SAMPLE_RATE:
         raise RuntimeError("not enough reference speech features")
+    base_active_ratio = float(np.mean(base_vad > 0))
 
     best = _calculate_best_alignment(
         np=np,
@@ -187,21 +196,46 @@ def fix_subtitle_timeline(
     offset_seconds = best["offset_samples"] / float(SAMPLE_RATE)
     scale_factor = best["scale_factor"]
     confidence, risk_flags = _alignment_confidence(
+        base_name=base_name,
         offset_seconds=offset_seconds,
         scale_factor=scale_factor,
         score=float(best.get("score", 0.0)),
         score_margin=float(best.get("score_margin", 0.0)),
+        peak_score_margin=float(best.get("peak_score_margin", 0.0)),
         active_ratio=float(best.get("active_ratio", 0.0)),
+        base_active_ratio=base_active_ratio,
         max_offset_seconds=max_offset_seconds,
     )
-    if confidence == "rejected" or (abs(offset_seconds) > RISKY_OFFSET_SECONDS and not allow_risky_offset):
-        reason = "timeline alignment rejected"
-        if abs(offset_seconds) > RISKY_OFFSET_SECONDS and not allow_risky_offset:
-            reason = "offset exceeds safe range"
-        raise RuntimeError(
-            f"{reason}: offset={offset_seconds:.3f}s score={float(best.get('score', 0.0)):.3f} "
-            f"margin={float(best.get('score_margin', 0.0)):.3f} risks={','.join(risk_flags) or '-'}"
+    risk_flags.extend(str(flag) for flag in best.get("risk_flags", []) if flag not in risk_flags)
+    if "local_alignment_unstable" in risk_flags:
+        confidence = "rejected"
+    if (abs(offset_seconds) > RISKY_OFFSET_SECONDS and not allow_risky_offset) and "offset_over_120s" not in risk_flags:
+        risk_flags.append("offset_over_120s")
+    auto_approved = _timeline_alignment_auto_approved(
+        confidence=confidence,
+        risk_flags=risk_flags,
+        offset_seconds=offset_seconds,
+        allow_risky_offset=allow_risky_offset,
+    )
+    if not auto_approved:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(subtitle_path, output_path)
+        reason = "offset exceeds safe range" if "offset_over_120s" in risk_flags and not allow_risky_offset else "timeline alignment rejected"
+        result = TimelineFixResult(
+            enabled=True,
+            applied=False,
+            reason=reason,
+            base=base_name,
+            offset_seconds=offset_seconds,
+            scale_factor=scale_factor,
+            score=best["score"],
+            confidence="rejected" if confidence == "rejected" else confidence,
+            score_margin=best.get("score_margin", 0.0),
+            active_ratio=best.get("active_ratio", 0.0),
+            risk_flags=risk_flags,
         )
+        _store_timeline_result_cache(cache_dir, result_cache_key, result) if cache_dir else None
+        return result
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
     if abs(offset_seconds) < min_offset_seconds and abs(scale_factor - 1.0) < 0.0001:
@@ -419,7 +453,7 @@ def _read_pcm_frames(video_path: Path, cache_dir: Optional[Path] = None) -> Tupl
         "s16le",
         "-",
     ]
-    result = subprocess.run(cmd, capture_output=True, timeout=180)
+    result = subprocess.run(cmd, capture_output=True, timeout=_audio_extraction_timeout_seconds(video_path))
     if result.returncode != 0:
         stderr = result.stderr.decode("utf-8", errors="ignore").strip()
         raise RuntimeError(f"ffmpeg audio extraction failed: {stderr or result.returncode}")
@@ -428,6 +462,39 @@ def _read_pcm_frames(video_path: Path, cache_dir: Optional[Path] = None) -> Tupl
         cache_path.write_bytes(result.stdout)
         _record_cache_entry(cache_path, kind="audio", source=str(video_path), metadata={"sample_rate": AUDIO_SAMPLE_RATE})
     return result.stdout, result.stderr.decode("utf-8", errors="ignore").strip()
+
+
+def _audio_extraction_timeout_seconds(video_path: Path) -> int:
+    duration = _probe_video_duration_seconds(video_path)
+    if duration <= 0:
+        return AUDIO_EXTRACTION_MIN_TIMEOUT_SECONDS
+    return max(
+        AUDIO_EXTRACTION_MIN_TIMEOUT_SECONDS,
+        min(AUDIO_EXTRACTION_MAX_TIMEOUT_SECONDS, int(duration * 0.15) + 180),
+    )
+
+
+def _probe_video_duration_seconds(video_path: Path) -> float:
+    cmd = [
+        "ffprobe",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration",
+        "-of",
+        "default=noprint_wrappers=1:nokey=1",
+        str(video_path),
+    ]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+    except Exception:
+        return 0.0
+    if result.returncode != 0:
+        return 0.0
+    try:
+        return max(0.0, float((result.stdout or "").strip()))
+    except Exception:
+        return 0.0
 
 
 def _build_webrtc_audio_vad(np: Any, video_path: Path, *, cache_dir: Optional[Path]) -> Any:
@@ -554,7 +621,7 @@ def _calculate_best_alignment(
         )
         if source_vad.size < SAMPLE_RATE:
             continue
-        offset_samples, raw_score = _fft_fit(
+        offset_samples, raw_score, raw_peak_margin = _fft_fit(
             np=np,
             ref_floats=base_vad,
             sub_floats=source_vad,
@@ -563,11 +630,13 @@ def _calculate_best_alignment(
         if abs(offset_samples) > max_offset_samples:
             continue
         normalized_score = raw_score / max(1.0, float(source_vad.size))
+        normalized_peak_margin = raw_peak_margin / max(1.0, float(source_vad.size))
         active_ratio = float(np.mean(source_vad > 0))
         candidates.append(
             {
                 "offset_samples": float(offset_samples),
                 "score": float(normalized_score),
+                "peak_score_margin": float(normalized_peak_margin),
                 "raw_score": float(raw_score),
                 "scale_factor": float(ratio),
                 "active_ratio": active_ratio,
@@ -579,39 +648,218 @@ def _calculate_best_alignment(
     best = dict(candidates[0])
     second_score = float(candidates[1]["score"]) if len(candidates) > 1 else 0.0
     best["score_margin"] = float(best["score"]) - second_score
+    best["risk_flags"] = _local_alignment_risk_flags(
+        np=np,
+        base_vad=base_vad,
+        source_events=source_events,
+        scale_factor=float(best["scale_factor"]),
+        offset_samples=int(best["offset_samples"]),
+        max_offset_samples=max_offset_samples,
+    )
     return best
+
+
+def _local_alignment_risk_flags(
+    *,
+    np: Any,
+    base_vad: Any,
+    source_events: Sequence[Tuple[int, int, str]],
+    scale_factor: float,
+    offset_samples: int,
+    max_offset_samples: int,
+) -> List[str]:
+    if len(source_events) < LOCAL_ALIGNMENT_MIN_EVENTS:
+        return []
+    segment_size = max(1, math.ceil(len(source_events) / LOCAL_ALIGNMENT_SEGMENTS))
+    local_offsets: List[int] = []
+    strong_conflicts = 0
+    for index in range(0, len(source_events), segment_size):
+        segment = source_events[index : index + segment_size]
+        if len(segment) < 3:
+            continue
+        local = _local_activity_match_near_global_offset(
+            np=np,
+            base_vad=base_vad,
+            segment_events=segment,
+            scale_factor=scale_factor,
+            offset_samples=offset_samples,
+            search_radius_samples=min(
+                max_offset_samples,
+                int(round(LOCAL_ALIGNMENT_SEARCH_RADIUS_SECONDS * SAMPLE_RATE)),
+            ),
+        )
+        if not local:
+            continue
+        expected_score = float(local["expected_score"])
+        best_score = float(local["best_score"])
+        if best_score < LOCAL_ALIGNMENT_MIN_SEGMENT_SCORE:
+            continue
+        local_offset = int(offset_samples) + int(local["best_delta"])
+        local_offsets.append(local_offset)
+        if (
+            abs(int(local["best_delta"])) / float(SAMPLE_RATE) > LOCAL_ALIGNMENT_MAX_SPREAD_SECONDS
+            and best_score - expected_score >= LOCAL_ALIGNMENT_MIN_SEGMENT_ADVANTAGE
+        ):
+            strong_conflicts += 1
+    if len(local_offsets) < 2:
+        return []
+    spread_seconds = (max(local_offsets) - min(local_offsets)) / float(SAMPLE_RATE)
+    max_delta_seconds = max(abs(int(local_offset) - int(offset_samples)) for local_offset in local_offsets) / float(SAMPLE_RATE)
+    if strong_conflicts >= 2 and (
+        spread_seconds > LOCAL_ALIGNMENT_MAX_SPREAD_SECONDS or max_delta_seconds > LOCAL_ALIGNMENT_MAX_SPREAD_SECONDS
+    ):
+        return ["local_alignment_unstable"]
+    return []
+
+
+def _local_activity_match_near_global_offset(
+    *,
+    np: Any,
+    base_vad: Any,
+    segment_events: Sequence[Tuple[int, int, str]],
+    scale_factor: float,
+    offset_samples: int,
+    search_radius_samples: int,
+) -> Optional[Dict[str, float]]:
+    scaled_events: List[Tuple[int, int]] = []
+    for start, end, _ in segment_events:
+        scaled_start = max(0, int(round(start * scale_factor / FRAME_DURATION_MS)))
+        scaled_end = max(scaled_start + 1, int(round(end * scale_factor / FRAME_DURATION_MS)))
+        scaled_events.append((scaled_start, scaled_end))
+    if not scaled_events:
+        return None
+    source_start = min(start for start, _ in scaled_events)
+    source_end = max(end for _, end in scaled_events)
+    source_len = max(1, source_end - source_start + 1)
+    source_active = np.zeros(source_len, dtype=np.float32)
+    for start, end in scaled_events:
+        local_start = max(0, start - source_start)
+        local_end = min(source_len, end - source_start + 1)
+        if local_end > local_start:
+            source_active[local_start:local_end] = 1.0
+    source_active_count = float(np.sum(source_active > 0))
+    if source_active_count < SAMPLE_RATE * 0.5:
+        return None
+
+    base_active = np.asarray(base_vad > 0, dtype=np.float32)
+    expected_start = int(source_start) + int(offset_samples)
+    window_start = expected_start - int(search_radius_samples)
+    window_end = expected_start + source_len + int(search_radius_samples)
+    ref_window = np.zeros(max(1, window_end - window_start), dtype=np.float32)
+    copy_start = max(0, window_start)
+    copy_end = min(base_active.size, window_end)
+    if copy_end > copy_start:
+        ref_start = copy_start - window_start
+        ref_window[ref_start : ref_start + (copy_end - copy_start)] = base_active[copy_start:copy_end]
+    if ref_window.size < source_active.size:
+        return None
+
+    scores = np.correlate(ref_window, source_active, mode="valid")
+    if scores.size == 0:
+        return None
+    expected_index = min(max(int(search_radius_samples), 0), scores.size - 1)
+    best_index = int(np.nanargmax(scores))
+    return {
+        "best_delta": float(best_index - expected_index),
+        "best_score": float(scores[best_index]) / source_active_count,
+        "expected_score": float(scores[expected_index]) / source_active_count,
+    }
 
 
 def _alignment_confidence(
     *,
+    base_name: str = "",
     offset_seconds: float,
     scale_factor: float,
     score: float,
     score_margin: float,
+    peak_score_margin: float = 1.0,
     active_ratio: float,
+    base_active_ratio: float = 0.0,
     max_offset_seconds: int,
 ) -> Tuple[str, List[str]]:
     risks: List[str] = []
     abs_offset = abs(float(offset_seconds))
+    base = str(base_name or "")
+    is_audio_base = base.startswith("audio:")
+    is_rms_base = base.startswith("audio:rms")
     if abs_offset > RISKY_OFFSET_SECONDS:
         risks.append("offset_over_120s")
     if abs_offset > max_offset_seconds:
         risks.append("offset_over_configured_max")
+    if abs_offset >= max(0.0, float(max_offset_seconds) - 1.0):
+        risks.append("boundary_offset")
     if score < MIN_CONFIDENT_SCORE:
         risks.append("low_score")
     if score_margin < MIN_SCORE_MARGIN:
         risks.append("weak_score_margin")
+    if peak_score_margin < MIN_SCORE_MARGIN:
+        risks.append("ambiguous_peak")
     if active_ratio <= 0.01 or active_ratio >= 0.95:
         risks.append("unstable_subtitle_activity")
+    if is_audio_base and (active_ratio <= 0.02 or active_ratio >= 0.85):
+        risks.append("audio_subtitle_activity_unstable")
+    if is_audio_base and (base_active_ratio <= 0.02 or base_active_ratio >= 0.85):
+        risks.append("audio_base_activity_unstable")
     if abs(float(scale_factor) - 1.0) > 0.08:
         risks.append("unusual_scale_factor")
-    if "offset_over_configured_max" in risks or "low_score" in risks:
+    if is_audio_base and abs(float(scale_factor) - 1.0) > 0.0001:
+        risks.append("audio_scale_factor")
+    if is_rms_base:
+        risks.append("rms_low_precision")
+    if (
+        "offset_over_configured_max" in risks
+        or "low_score" in risks
+        or "boundary_offset" in risks
+        or "ambiguous_peak" in risks
+        or "audio_base_activity_unstable" in risks
+        or "audio_subtitle_activity_unstable" in risks
+        or "audio_scale_factor" in risks
+    ):
         return "rejected", risks
-    if "offset_over_120s" in risks or "weak_score_margin" in risks or "unstable_subtitle_activity" in risks:
+    if (
+        "offset_over_120s" in risks
+        or "weak_score_margin" in risks
+        or "unstable_subtitle_activity" in risks
+        or "rms_low_precision" in risks
+    ):
         return "low", risks
     if abs(float(scale_factor) - 1.0) > 0.0001:
         return "medium", risks
     return "high", risks
+
+
+def _timeline_alignment_auto_approved(
+    *,
+    confidence: str,
+    risk_flags: Sequence[str],
+    offset_seconds: float,
+    allow_risky_offset: bool,
+) -> bool:
+    blocking_risks = {
+        "offset_over_configured_max",
+        "low_score",
+        "weak_score_margin",
+        "ambiguous_peak",
+        "boundary_offset",
+        "unstable_subtitle_activity",
+        "audio_subtitle_activity_unstable",
+        "audio_base_activity_unstable",
+        "audio_scale_factor",
+        "unusual_scale_factor",
+        "rms_low_precision",
+        "local_alignment_unstable",
+    }
+    risks = set(risk_flags or [])
+    if confidence == "rejected":
+        return False
+    if risks & blocking_risks:
+        return False
+    if confidence == "low" and not (allow_risky_offset and risks <= {"offset_over_120s"}):
+        return False
+    if abs(float(offset_seconds)) > RISKY_OFFSET_SECONDS and not allow_risky_offset:
+        return False
+    return True
 
 
 def _unique_float_values(values: Iterable[float]) -> List[float]:
@@ -642,7 +890,7 @@ def _subtitle_events_to_vad(
     return vad
 
 
-def _fft_fit(np: Any, ref_floats: Any, sub_floats: Any, max_offset_samples: int) -> Tuple[int, float]:
+def _fft_fit(np: Any, ref_floats: Any, sub_floats: Any, max_offset_samples: int) -> Tuple[int, float, float]:
     ref = np.asarray(ref_floats, dtype=np.float32)
     sub = np.asarray(sub_floats, dtype=np.float32)
     if ref.size == 0 or sub.size == 0:
@@ -669,7 +917,20 @@ def _fft_fit(np: Any, ref_floats: Any, sub_floats: Any, max_offset_samples: int)
     best_index = int(np.nanargmax(convolve))
     best_score = float(convolve[best_index])
     best_offset = int(convolve.size - 1 - best_index - sub.size)
-    return best_offset, best_score
+    second_score = _second_peak_score(np, convolve, best_index, suppress_radius=max(1, SAMPLE_RATE * 5))
+    return best_offset, best_score, float(best_score - second_score)
+
+
+def _second_peak_score(np: Any, values: Any, best_index: int, suppress_radius: int) -> float:
+    work = np.array(values, copy=True)
+    if work.size <= 1:
+        return float("-inf")
+    start = max(0, int(best_index) - int(suppress_radius))
+    end = min(work.size, int(best_index) + int(suppress_radius) + 1)
+    work[start:end] = -np.inf
+    if not np.isfinite(work).any():
+        return float("-inf")
+    return float(np.nanmax(work))
 
 
 def _offset_to_convolve_index(convolve_len: int, sub_len: int, offset: int) -> int:

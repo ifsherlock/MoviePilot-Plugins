@@ -403,7 +403,7 @@ def test_independent_monitor_is_blocked_when_subtitlemanualupload_auto_transfer_
     assert "接管" in status["message"]
 
 
-def test_online_source_only_does_not_block_independent_monitor():
+def test_online_source_only_blocks_independent_monitor_when_ai_link_enabled():
     module = load_plugin_module()
     plugin = make_plugin(module)
     plugin._enabled = True
@@ -414,6 +414,32 @@ def test_online_source_only_does_not_block_independent_monitor():
     class FakeSubtitleManualUpload:
         _auto_search_on_transfer = True
         _ai_link_enabled = True
+        _auto_transfer_subtitle_strategy = "online_source_only"
+
+        def get_state(self):
+            return True
+
+    module.PluginManager = lambda: types.SimpleNamespace(
+        running_plugins={"SubtitleManualUpload": FakeSubtitleManualUpload()}
+    )
+
+    status = plugin._status_payload()
+
+    assert status["independent_monitor_enabled"] is False
+    assert status["independent_monitor_blocked_reason"] == "字幕匹配入库自动处理已启用"
+
+
+def test_online_source_only_without_ai_link_does_not_block_independent_monitor():
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._enabled = True
+    plugin._running = True
+    plugin._task_queue = queue.Queue()
+    plugin._generation_mode = module.GenerationMode.MONITOR.value
+
+    class FakeSubtitleManualUpload:
+        _auto_search_on_transfer = True
+        _ai_link_enabled = False
         _auto_transfer_subtitle_strategy = "online_source_only"
 
         def get_state(self):
@@ -594,6 +620,101 @@ def test_reuse_backup_replace_writes_original_output_path_even_when_lang_changes
     assert Path(f"{output}.mp-ai-bk").read_text(encoding="utf-8") == "old subtitle"
     assert plugin._current_processing_task.output_path == str(output)
     assert plugin._current_processing_task.source_lang == "en"
+
+
+def test_force_generate_retries_video_marked_no_audio(tmp_path):
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    source_sub = tmp_path / "Movie.asr.srt"
+    video.write_bytes(b"video")
+    source_sub.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+    plugin.add_skipped_video(str(video))
+    called = {"generate": False}
+
+    def fake_generate(*args, **kwargs):
+        called["generate"] = True
+        return True, "en", (source_sub, module.ResolvedSource.ASR.value)
+
+    plugin._AutoSubv3__generate_subtitle = fake_generate
+    plugin._AutoSubv3__translate_zh_subtitle = lambda _lang, _src, dest, **_kwargs: Path(dest).write_text(
+        "new subtitle",
+        encoding="utf-8",
+    )
+    plugin._AutoSubv3__raise_if_task_cancelled = lambda: None
+    plugin.is_video_skip_chinese = lambda _path: False
+
+    status = plugin._AutoSubv3__process_autosub(
+        str(video),
+        force_generate=True,
+        source_policy=module.SourcePolicy.ASR.value,
+        overwrite_policy=module.OverwritePolicy.NEW_VARIANT.value,
+    )
+
+    assert status == module.TaskStatus.COMPLETED
+    assert called["generate"] is True
+    assert (tmp_path / "Movie.chi&eng.aiasr.srt").exists()
+
+
+def test_prefer_audio_keeps_first_audio_when_no_default_or_language_match():
+    module = load_plugin_module()
+
+    ok, audio_index, audio_lang = module.AutoSubv3._AutoSubv3__get_video_prefer_audio(
+        {
+            "streams": [
+                {"codec_type": "audio", "tags": {"language": "ja"}, "disposition": {}},
+                {"codec_type": "audio", "tags": {"language": "en"}, "disposition": {}},
+            ]
+        },
+        prefer_lang=["fr"],
+    )
+
+    assert ok is True
+    assert audio_index == 0
+    assert audio_lang == "ja"
+
+
+def test_prefer_audio_uses_requested_language_over_default():
+    module = load_plugin_module()
+
+    ok, audio_index, audio_lang = module.AutoSubv3._AutoSubv3__get_video_prefer_audio(
+        {
+            "streams": [
+                {"codec_type": "audio", "tags": {"language": "ja"}, "disposition": {"default": 1}},
+                {"codec_type": "audio", "tags": {"language": "en"}, "disposition": {}},
+            ]
+        },
+        prefer_lang=["en", "eng"],
+    )
+
+    assert ok is True
+    assert audio_index == 1
+    assert audio_lang == "en"
+
+
+def test_ffmpeg_extract_wav_maps_audio_stream_zero(monkeypatch):
+    root = Path(__file__).resolve().parents[1]
+    module_path = root / "plugins.v2" / "autosubv3" / "ffmpeg" / "__init__.py"
+    module_name = "autosubv3_ffmpeg_testpkg"
+    sys.modules.pop(module_name, None)
+    spec = importlib.util.spec_from_file_location(module_name, module_path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    captured = {}
+
+    class Result:
+        returncode = 0
+
+    def fake_run(command):
+        captured["command"] = command
+        return Result()
+
+    monkeypatch.setattr(module.subprocess, "run", fake_run)
+
+    assert module.Ffmpeg.extract_wav_from_video("Movie.mkv", "Movie.wav", audio_index=0) is True
+    assert "-map" in captured["command"]
+    assert "0:a:0" in captured["command"]
 
 
 def test_restart_reports_missing_matched_subtitle_source(tmp_path):
