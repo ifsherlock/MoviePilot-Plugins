@@ -6,6 +6,7 @@ import queue
 import sys
 import tempfile
 import types
+from datetime import timedelta
 from pathlib import Path
 
 
@@ -940,3 +941,37 @@ def test_chinese_subtitle_content_forces_chinese_only_output_mode():
 
     assert saved == ["这是简体中文字幕内容。"]
     assert plugin._subtitle_output_mode == "bilingual"
+
+
+def test_asr_merge_splits_long_word_segments_by_duration_and_punctuation():
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._max_segment_duration = 4
+    plugin._max_segment_chars = 80
+    module.etree.HTML = lambda _content: None
+
+    words = [
+        types.SimpleNamespace(index=1, start=timedelta(seconds=0), end=timedelta(seconds=0.6), content="Good"),
+        types.SimpleNamespace(index=2, start=timedelta(seconds=0.6), end=timedelta(seconds=1.1), content="evening"),
+        types.SimpleNamespace(index=3, start=timedelta(seconds=1.1), end=timedelta(seconds=1.5), content="and"),
+        types.SimpleNamespace(index=4, start=timedelta(seconds=1.5), end=timedelta(seconds=2.2), content="welcome"),
+        types.SimpleNamespace(index=5, start=timedelta(seconds=2.2), end=timedelta(seconds=2.7), content="to"),
+        types.SimpleNamespace(index=6, start=timedelta(seconds=2.7), end=timedelta(seconds=3.5), content="GC-1"),
+        types.SimpleNamespace(index=7, start=timedelta(seconds=3.5), end=timedelta(seconds=4.2), content="News"),
+        types.SimpleNamespace(index=8, start=timedelta(seconds=4.2), end=timedelta(seconds=4.8), content="live"),
+        types.SimpleNamespace(index=9, start=timedelta(seconds=4.8), end=timedelta(seconds=5.3), content="at"),
+        types.SimpleNamespace(index=10, start=timedelta(seconds=5.3), end=timedelta(seconds=5.8), content="8:00."),
+        types.SimpleNamespace(index=11, start=timedelta(seconds=5.8), end=timedelta(seconds=6.4), content="Our"),
+        types.SimpleNamespace(index=12, start=timedelta(seconds=6.4), end=timedelta(seconds=7.1), content="top"),
+        types.SimpleNamespace(index=13, start=timedelta(seconds=7.1), end=timedelta(seconds=7.8), content="story"),
+        types.SimpleNamespace(index=14, start=timedelta(seconds=7.8), end=timedelta(seconds=8.4), content="tonight,"),
+        types.SimpleNamespace(index=15, start=timedelta(seconds=8.4), end=timedelta(seconds=9.1), content="just-released"),
+    ]
+
+    merged = plugin._AutoSubv3__merge_srt(words)
+
+    assert [item.index for item in merged] == list(range(1, len(merged) + 1))
+    assert len(merged) >= 3
+    assert all((item.end - item.start).total_seconds() <= 4.7 for item in merged)
+    assert merged[0].content.endswith("GC-1")
+    assert merged[1].content == "News live at 8:00."

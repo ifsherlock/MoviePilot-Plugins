@@ -151,7 +151,7 @@ class AutoSubv3(_PluginBase):
     # 主题色
     plugin_color = "#2C4F7E"
     # 插件版本
-    plugin_version = "3.5.53"
+    plugin_version = "3.5.54"
     # 插件作者
     plugin_author = "ifsherlock"
     # 作者主页
@@ -1980,7 +1980,40 @@ class AutoSubv3(_PluginBase):
         subtitle_data = copy.deepcopy(subtitle_data)
         merged_subtitle = []
         sentence_end = True
-        end_tokens = ['.', '!', '?', '。', '！', '？', '。"', '！"', '？"', '."', '!"', '?"']
+        end_tokens = ('.', '!', '?', '。', '！', '？', '。"', '！"', '？"', '."', '!"', '?"')
+        soft_break_tokens = (',', ';', ':', '，', '；', '：', '、')
+
+        def text_len(value):
+            return len((value or "").replace(" ", ""))
+
+        def duration_seconds(item):
+            return (item.end - item.start).total_seconds()
+
+        def should_soft_break(item):
+            content = item.content.rstrip()
+            return (
+                content.endswith(soft_break_tokens)
+                and (duration_seconds(item) >= max_duration * 0.55 or text_len(content) >= max_chars * 0.65)
+            )
+
+        def append_or_extend(item):
+            nonlocal sentence_end
+            if not merged_subtitle or sentence_end:
+                merged_subtitle.append(item)
+                sentence_end = False
+                return
+
+            current = merged_subtitle[-1]
+            candidate_duration = (item.end - current.start).total_seconds()
+            candidate_chars = text_len(current.content) + text_len(item.content)
+            force_split = candidate_duration > max_duration or candidate_chars > max_chars
+            if force_split:
+                merged_subtitle.append(item)
+                sentence_end = False
+                return
+
+            current.content = f"{current.content} {item.content}".strip()
+            current.end = item.end
         for index, item in enumerate(subtitle_data):
             content = item.content.replace('\n', ' ').strip()
             parse = etree.HTML(content)
@@ -1995,34 +2028,22 @@ class AutoSubv3(_PluginBase):
                 sentence_end = True
                 continue
 
-            # 计算当前字幕时长（秒）
-            item_duration = (item.end - item.start).total_seconds()
+            append_or_extend(item)
 
-            if not merged_subtitle or sentence_end:
-                merged_subtitle.append(item)
-                sentence_end = False
-            else:
-                # 强制切分条件：当前内容 + 新内容超过字数限制，或者累计时长超过最大时长
-                existing_len = len(merged_subtitle[-1].content)
-                force_split = False
-                if existing_len + len(content) > max_chars:
-                    force_split = True
-                elif item_duration > max_duration:
-                    force_split = True
-                if force_split:
-                    merged_subtitle.append(item)
-                    sentence_end = False
-                else:
-                    merged_subtitle[-1].content = f"{merged_subtitle[-1].content} {content}"
-                    merged_subtitle[-1].end = item.end
-
-            if content.endswith(tuple(end_tokens)):
+            current = merged_subtitle[-1]
+            if content.endswith(end_tokens):
                 sentence_end = True
-            elif len(merged_subtitle[-1].content) > 80:
+            elif should_soft_break(current):
+                sentence_end = True
+            elif duration_seconds(current) >= max_duration:
+                sentence_end = True
+            elif text_len(current.content) >= max_chars:
                 sentence_end = True
             else:
                 sentence_end = False
 
+        for index, item in enumerate(merged_subtitle, 1):
+            item.index = index
         return merged_subtitle
 
     @staticmethod
