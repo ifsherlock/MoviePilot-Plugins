@@ -153,7 +153,16 @@ class OpenSubtitlesProvider(BaseSubtitleProvider):
                     match_detail=assessment["match_detail"],
                 )
             )
-        return _dedupe_results(results)[:30]
+        results = _dedupe_results(results)[:30]
+        logger.info(
+            "[SubtitleManualUpload] OpenSubtitles API 搜索完成 query=%s tmdb_id=%s imdb_id=%s results=%s raw=%s",
+            str(params.get("query") or ""),
+            str(params.get("tmdb_id") or ""),
+            str(params.get("imdb_id") or ""),
+            len(results),
+            len(rows),
+        )
+        return results
 
     def _search_param_plan(self, keywords: List[str], targets: List[Dict[str, Any]]) -> List[Tuple[Dict[str, Any], str]]:
         base = {

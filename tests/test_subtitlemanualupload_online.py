@@ -53,6 +53,22 @@ class FakeDirectDownloader:
         return "example.srt", b"1\n00:00:01,000 --> 00:00:02,000\nHi", url
 
 
+class CaptureLogger:
+    def __init__(self):
+        self.infos = []
+        self.warnings = []
+        self.errors = []
+
+    def info(self, *args, **kwargs):
+        self.infos.append(args)
+
+    def warning(self, *args, **kwargs):
+        self.warnings.append(args)
+
+    def error(self, *args, **kwargs):
+        self.errors.append(args)
+
+
 class FakeWebFetcher:
     use_proxy = False
 
@@ -128,6 +144,10 @@ def test_manual_providers_keep_subhd_zimuku_links_only():
 def test_opensubtitles_search_all_prefers_tmdb_then_title_then_imdb():
     module = load_online_module()
     provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key")
+    provider_module = sys.modules[provider.__class__.__module__]
+    original_logger = provider_module.logger
+    capture_logger = CaptureLogger()
+    provider_module.logger = capture_logger
     calls = []
 
     def fake_api_json(path, params, *, method="GET"):
@@ -150,26 +170,31 @@ def test_opensubtitles_search_all_prefers_tmdb_then_title_then_imdb():
 
     provider._api_json = fake_api_json
 
-    results = provider.search_all(
-        ["Example Show S01E02"],
-        [
-            {
-                "media_type": "tv",
-                "title": "Example Show",
-                "tmdb_id": 12345,
-                "imdb_id": "tt7654321",
-                "season": 1,
-                "episode": 2,
-            }
-        ],
-        "episode",
-    )
+    try:
+        results = provider.search_all(
+            ["Example Show S01E02"],
+            [
+                {
+                    "media_type": "tv",
+                    "title": "Example Show",
+                    "tmdb_id": 12345,
+                    "imdb_id": "tt7654321",
+                    "season": 1,
+                    "episode": 2,
+                }
+            ],
+            "episode",
+        )
+    finally:
+        provider_module.logger = original_logger
 
     assert ["tmdb_id" if "tmdb_id" in item else "query" if "query" in item else "imdb_id" for item in calls] == ["tmdb_id", "query"]
     assert calls[0]["tmdb_id"] == "12345"
     assert calls[1]["query"] == "Example Show S01E02"
     assert len(results) == 1
     assert "英文标题查询" in results[0].query_plan
+    assert any(args[1] == "" and args[2] == "12345" and args[3] == "" for args in capture_logger.infos)
+    assert any(args[1] == "Example Show S01E02" and args[2] == "" and args[3] == "" for args in capture_logger.infos)
 
 
 def test_opensubtitles_search_all_uses_imdb_last():
@@ -398,6 +423,10 @@ def test_assrt_provider_requires_api_key_for_auto_search():
 def test_assrt_provider_uses_official_api_when_key_exists():
     module = load_online_module()
     provider = module.AssrtProvider(FakeFetcher(), api_key="test-key")
+    provider_module = sys.modules[provider.__class__.__module__]
+    original_logger = provider_module.logger
+    capture_logger = CaptureLogger()
+    provider_module.logger = capture_logger
 
     def fake_api_json(path, params):
         assert path == "/v1/sub/search"
@@ -418,7 +447,10 @@ def test_assrt_provider_uses_official_api_when_key_exists():
 
     provider._api_json = fake_api_json
 
-    results = provider.search("Example Show S01E02", [{"season": 1, "episode": 2}], "episode")
+    try:
+        results = provider.search("Example Show S01E02", [{"season": 1, "episode": 2}], "episode")
+    finally:
+        provider_module.logger = original_logger
 
     assert len(results) == 1
     assert results[0].result_id == "602333"
@@ -427,6 +459,54 @@ def test_assrt_provider_uses_official_api_when_key_exists():
     assert results[0].download_url == "assrt-api:602333"
     assert results[0].language == "英文"
     assert results[0].note == "通过 ASSRT 官方 API 搜索"
+    assert results[0].identity_status == "strong"
+    assert any(args[1] == "Example Show S01E02" and args[2] == 1 for args in capture_logger.infos)
+
+
+def test_assrt_provider_filters_unrelated_api_results():
+    module = load_online_module()
+    provider = module.AssrtProvider(FakeFetcher(), api_key="test-key")
+
+    def fake_api_json(path, params):
+        assert path == "/v1/sub/search"
+        assert params["q"] == "The Last Cop S01"
+        return {
+            "status": 0,
+            "sub": {
+                "subs": [
+                    {
+                        "id": 700001,
+                        "native_name": "Friends 1-10季 中英字幕合集",
+                        "subtype": "Subrip(srt)",
+                        "lang": "chi",
+                    },
+                    {
+                        "id": 700002,
+                        "native_name": "The Last Cop S01 English subtitles",
+                        "subtype": "Subrip(srt)",
+                        "lang": "eng",
+                    },
+                ]
+            },
+        }
+
+    provider._api_json = fake_api_json
+
+    targets = [
+        {
+            "title": "最后的警察",
+            "en_title": "The Last Cop",
+            "original_title": "THE LAST COP/ラストコップ",
+            "media_type": "tv",
+            "season": 1,
+            "episode": 1,
+            "year": 2015,
+        }
+    ]
+    results = provider.search("The Last Cop S01", targets, "season")
+
+    assert [item.result_id for item in results] == ["700002"]
+    assert "Friends" not in results[0].title
 
 
 def test_assrt_provider_discards_mojibake_results():

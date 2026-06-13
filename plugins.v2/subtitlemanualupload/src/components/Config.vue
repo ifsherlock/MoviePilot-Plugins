@@ -19,6 +19,10 @@ const localConfig = ref({
   auto_search_on_transfer: false,
   auto_skip_chinese_media_on_transfer: true,
   auto_transfer_subtitle_strategy: 'online_then_ai_source',
+  auto_multi_subtitle_mode: 'best',
+  auto_subtitle_language_priority: ['bilingual', 'chi', 'cht', 'eng'],
+  auto_subtitle_format_priority: ['.ass', '.srt', '.ssa', '.vtt'],
+  auto_ass_to_srt_for_ai: true,
   timeline_max_offset_seconds: 120,
   timeline_min_offset_seconds: 0.2,
   timeline_vad_mode: 'webrtc',
@@ -55,6 +59,31 @@ const autoStrategyItems = [
   { title: '在线匹配优先，AI 来源兜底', value: 'online_then_ai_source' },
   { title: '只用在线匹配来源', value: 'online_source_only' },
   { title: '只用 AI 来源生成', value: 'ai_source_only' },
+]
+
+const autoMultiSubtitleModes = [
+  { title: '按偏好选择最佳', value: 'best' },
+  { title: '中文/双语全部入库', value: 'chinese_all' },
+  { title: '全部入库', value: 'all' },
+]
+
+const autoLanguageItems = [
+  { title: '双语', value: 'bilingual' },
+  { title: '简中', value: 'chi' },
+  { title: '繁中', value: 'cht' },
+  { title: '英文', value: 'eng' },
+  { title: '日文', value: 'jpn' },
+  { title: '韩文', value: 'kor' },
+]
+
+const autoFormatItems = [
+  { title: 'ASS', value: '.ass' },
+  { title: 'SRT', value: '.srt' },
+  { title: 'SSA', value: '.ssa' },
+  { title: 'VTT', value: '.vtt' },
+  { title: 'WebVTT', value: '.webvtt' },
+  { title: 'SBV', value: '.sbv' },
+  { title: 'SUB', value: '.sub' },
 ]
 
 const timelineVadItems = [
@@ -96,6 +125,21 @@ function normalizeAutoStrategy(value) {
     : 'online_then_ai_source'
 }
 
+function normalizeList(value, allowed, fallback) {
+  const raw = Array.isArray(value) ? value : String(value || '').split(/[\s,，/|]+/)
+  const result = []
+  raw.forEach(item => {
+    const normalized = String(item || '').trim().toLowerCase()
+    if (allowed.includes(normalized) && !result.includes(normalized)) {
+      result.push(normalized)
+    }
+  })
+  fallback.forEach(item => {
+    if (!result.includes(item)) result.push(item)
+  })
+  return result
+}
+
 function normalizeConfig(input) {
   const assrtApiKey = String(input?.assrt_api_key || '').trim()
   const opensubtitlesApiKey = String(input?.opensubtitles_api_key || '').trim()
@@ -119,6 +163,20 @@ function normalizeConfig(input) {
     auto_search_on_transfer: Boolean(input?.auto_search_on_transfer),
     auto_skip_chinese_media_on_transfer: input?.auto_skip_chinese_media_on_transfer !== false,
     auto_transfer_subtitle_strategy: autoStrategy,
+    auto_multi_subtitle_mode: autoMultiSubtitleModes.some(item => item.value === input?.auto_multi_subtitle_mode)
+      ? input.auto_multi_subtitle_mode
+      : 'best',
+    auto_subtitle_language_priority: normalizeList(
+      input?.auto_subtitle_language_priority,
+      autoLanguageItems.map(item => item.value),
+      ['bilingual', 'chi', 'cht', 'eng'],
+    ),
+    auto_subtitle_format_priority: normalizeList(
+      input?.auto_subtitle_format_priority,
+      autoFormatItems.map(item => item.value),
+      ['.ass', '.srt', '.ssa', '.vtt'],
+    ),
+    auto_ass_to_srt_for_ai: input?.auto_ass_to_srt_for_ai !== false,
     timeline_max_offset_seconds: Math.min(300, Math.max(1, Math.round(normalizePositiveNumber(input?.timeline_max_offset_seconds, 120)))),
     timeline_min_offset_seconds: normalizePositiveNumber(input?.timeline_min_offset_seconds, 0.2),
     timeline_vad_mode: timelineVadItems.some(item => item.value === input?.timeline_vad_mode) ? input.timeline_vad_mode : 'webrtc',
@@ -223,6 +281,42 @@ onMounted(() => {
               label="入库后字幕处理策略"
               variant="outlined"
               density="comfortable"
+              hide-details
+            />
+            <VSelect
+              v-model="localConfig.auto_multi_subtitle_mode"
+              :items="autoMultiSubtitleModes"
+              label="自动多字幕处理"
+              variant="outlined"
+              density="comfortable"
+              hide-details
+            />
+            <VSelect
+              v-model="localConfig.auto_subtitle_language_priority"
+              :items="autoLanguageItems"
+              label="语言优先级"
+              variant="outlined"
+              density="comfortable"
+              multiple
+              chips
+              hint="默认：双语、简中、繁中、英文"
+              persistent-hint
+            />
+            <VSelect
+              v-model="localConfig.auto_subtitle_format_priority"
+              :items="autoFormatItems"
+              label="格式优先级"
+              variant="outlined"
+              density="comfortable"
+              multiple
+              chips
+              hint="默认：ASS、SRT、SSA、VTT"
+              persistent-hint
+            />
+            <VSwitch
+              v-model="localConfig.auto_ass_to_srt_for_ai"
+              label="英文 ASS 转临时 SRT 后提交 AI"
+              color="info"
               hide-details
             />
           </div>

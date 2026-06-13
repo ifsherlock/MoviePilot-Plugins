@@ -102,6 +102,10 @@ def make_plugin(module):
     plugin._ai_link_enabled = False
     plugin._auto_skip_chinese_media_on_transfer = True
     plugin._auto_transfer_subtitle_strategy = "online_then_ai_source"
+    plugin._auto_multi_subtitle_mode = "best"
+    plugin._auto_subtitle_language_priority = ["bilingual", "chi", "cht", "eng"]
+    plugin._auto_subtitle_format_priority = [".ass", ".srt", ".ssa", ".vtt", ".webvtt", ".sbv", ".sub"]
+    plugin._auto_ass_to_srt_for_ai = True
     plugin._auto_search_min_score = 20
     plugin._online_provider_ids = ["assrt"]
     plugin._online_rate_records = {}
@@ -2370,6 +2374,27 @@ def test_auto_transfer_legacy_strategy_aliases_are_migrated():
     assert module.SubtitleManualUpload._normalize_auto_transfer_subtitle_strategy("ai_first") == "ai_source_only"
 
 
+def test_auto_subtitle_preference_config_normalizes_legacy_strings(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin.update_config = lambda config: None
+
+    plugin.init_plugin(
+        {
+            "auto_multi_subtitle_mode": "chinese",
+            "auto_subtitle_language_priority": "英文,双语,坏值",
+            "auto_subtitle_format_priority": "srt,ass,xxx",
+            "auto_ass_to_srt_for_ai": False,
+        }
+    )
+
+    assert plugin._auto_multi_subtitle_mode == "chinese_all"
+    assert plugin._auto_subtitle_language_priority[:4] == ["eng", "bilingual", "chi", "cht"]
+    assert plugin._auto_subtitle_format_priority[:4] == [".srt", ".ass", ".ssa", ".vtt"]
+    assert ".sbv" in plugin._auto_subtitle_format_priority
+    assert plugin._auto_ass_to_srt_for_ai is False
+
+
 def test_auto_transfer_existing_subtitle_skips_all_strategies(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
@@ -2444,7 +2469,6 @@ def test_auto_search_write_uses_best_api_candidate_when_multiple_results(tmp_pat
             "ext": ".srt",
         }
     ]
-    plugin._build_write_operations = lambda *args, **kwargs: [{"ok": True}]
     plugin._write_operations_to_disk = lambda **kwargs: ([{"output_name": "Movie.chi.srt"}], 0, 0)
     plugin._auto_submit_ai_for_entry = lambda *args, **kwargs: (_ for _ in ()).throw(
         AssertionError("Chinese subtitle should not trigger AI")
@@ -2455,6 +2479,87 @@ def test_auto_search_write_uses_best_api_candidate_when_multiple_results(tmp_pat
     assert result["status"] == "written"
     assert result["candidate_count"] == 2
     assert service.downloaded[0]["result_id"] == "os-1"
+
+
+def test_auto_search_write_falls_back_when_best_download_has_no_subtitle(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._online_provider_ids = ["assrt", "opensubtitles"]
+    entry = make_auto_entry(tmp_path, filename="Movie.mkv")
+    subtitle = tmp_path / "Movie.chi.srt"
+    subtitle.write_text("1\n00:00:01,000 --> 00:00:02,000\n你好\n", encoding="utf-8")
+
+    class FakeAutoService:
+        def __init__(self):
+            self.downloaded_ids = []
+
+        def search(self, **kwargs):
+            return {
+                "results": [
+                    {
+                        "provider": "opensubtitles",
+                        "result_id": "os-link",
+                        "title": "Movie Netdisk Link",
+                        "score": 95,
+                        "downloadable": True,
+                        "language_category": "chinese",
+                    },
+                    {
+                        "provider": "assrt",
+                        "result_id": "assrt-sub",
+                        "title": "Movie Chinese Subtitle",
+                        "score": 90,
+                        "downloadable": True,
+                        "language_category": "chinese",
+                    },
+                ]
+            }
+
+        def download(self, selected):
+            result = selected[0]
+            self.downloaded_ids.append(result["result_id"])
+            if result["result_id"] == "os-link":
+                return [
+                    {
+                        "provider": result["provider"],
+                        "source_name": "download-url.txt",
+                        "content": b"https://example.invalid/pan-link",
+                        "result": result,
+                    }
+                ]
+            return [
+                {
+                    "provider": result["provider"],
+                    "source_name": "Movie.chi.srt",
+                    "content": subtitle.read_bytes(),
+                    "result": result,
+                }
+            ]
+
+    service = FakeAutoService()
+    plugin._online_service = lambda: service
+    plugin._auto_search_keywords_for_entry = lambda item, target: ["Movie 2024"]
+
+    def fake_extract(source_name, content, session_dir):
+        if source_name.endswith(".txt"):
+            return []
+        return [
+            {
+                "upload_id": "u1",
+                "source_name": source_name,
+                "stored_path": str(subtitle),
+                "ext": ".srt",
+            }
+        ]
+
+    plugin._extract_subtitle_files = fake_extract
+    plugin._write_operations_to_disk = lambda **kwargs: ([{"output_name": "Movie.chi.srt"}], 0, 0)
+
+    result = plugin._auto_search_write_subtitle(entry)
+
+    assert result["status"] == "written"
+    assert result["result"] == "Movie Chinese Subtitle"
+    assert service.downloaded_ids == ["os-link", "assrt-sub"]
 
 
 def test_auto_search_write_chinese_subtitle_enables_timeline_fix(tmp_path):
@@ -2500,8 +2605,6 @@ def test_auto_search_write_chinese_subtitle_enables_timeline_fix(tmp_path):
             "ext": ".srt",
         }
     ]
-    plugin._build_write_operations = lambda *args, **kwargs: [{"ok": True}]
-
     def fake_write(**kwargs):
         observed["fix_timeline"] = kwargs.get("fix_timeline")
         return [{"output_name": "Movie.chi.srt"}], 1, 0
@@ -2588,6 +2691,239 @@ def test_auto_search_write_foreign_srt_submits_ai_without_writing(tmp_path):
     assert captured["submit_kwargs"]["source_policy"] == "matched_external"
     assert captured["submit_kwargs"]["overwrite_policy"] == "new_variant"
     assert result["fixed_subtitles"][0]["autosub_lang"] == "en"
+
+
+def test_auto_search_write_prefers_chinese_ass_from_multi_subtitle_package(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    entry = make_auto_entry(tmp_path, filename="Movie.mkv")
+    files = {}
+    for name, text in {
+        "Movie.chi.srt": "1\n00:00:01,000 --> 00:00:02,000\n你好\n",
+        "Movie.chi.ass": "[Script Info]\n[V4+ Styles]\n[Events]\nDialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,你好\n",
+        "Movie.eng.srt": "1\n00:00:01,000 --> 00:00:02,000\nHello\n",
+    }.items():
+        path = tmp_path / name
+        path.write_text(text, encoding="utf-8")
+        files[name] = path
+
+    class FakeAutoService:
+        def search(self, **kwargs):
+            return {"results": [{"provider": "opensubtitles", "result_id": "os-1", "title": "Movie pack", "score": 90, "downloadable": True}]}
+
+        def download(self, selected):
+            return [{"provider": "opensubtitles", "source_name": "Movie.zip", "content": b"zip", "result": selected[0]}]
+
+    plugin._online_service = lambda: FakeAutoService()
+    plugin._auto_search_keywords_for_entry = lambda item, target: ["Movie 2024"]
+    plugin._extract_subtitle_files = lambda source_name, content, session_dir: [
+        {"upload_id": name, "source_name": name, "stored_path": str(path), "ext": path.suffix.lower()}
+        for name, path in files.items()
+    ]
+    captured = {}
+
+    def fake_write(**kwargs):
+        captured["operations"] = kwargs["operations"]
+        return [{"output_name": operation["destination_name"]} for operation in kwargs["operations"]], 1, 0
+
+    plugin._write_operations_to_disk = fake_write
+    plugin._submit_autosub_for_entries = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("Chinese best match should not trigger AI")
+    )
+
+    result = plugin._auto_search_write_subtitle(entry)
+
+    assert result["status"] == "written"
+    assert [operation["upload_info"]["source_name"] for operation in captured["operations"]] == ["Movie.chi.ass"]
+    assert result["written"][0]["output_name"] == "Movie.chi.ass"
+
+
+def test_auto_write_chinese_all_keeps_chinese_and_bilingual_variants(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._auto_multi_subtitle_mode = "chinese_all"
+    entry = make_auto_entry(tmp_path, filename="Movie.mkv")
+    prepared_uploads = []
+    for name, text in {
+        "Movie.chi.ass": "[Script Info]\n[V4+ Styles]\n[Events]\nDialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,你好\n",
+        "Movie.cht.srt": "1\n00:00:01,000 --> 00:00:02,000\n你好\n",
+        "Movie.chi.eng.srt": "1\n00:00:01,000 --> 00:00:02,000\n你好\nHello\n",
+        "Movie.eng.srt": "1\n00:00:01,000 --> 00:00:02,000\nHello\n",
+    }.items():
+        path = tmp_path / name
+        path.write_text(text, encoding="utf-8")
+        prepared_uploads.append({"upload_id": name, "source_name": name, "stored_path": str(path), "ext": path.suffix.lower()})
+
+    captured = {}
+
+    def fake_write(**kwargs):
+        captured["operations"] = kwargs["operations"]
+        return [{"output_name": operation["destination_name"]} for operation in kwargs["operations"]], 1, 0
+
+    plugin._write_operations_to_disk = fake_write
+    plugin._submit_autosub_for_entries = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("Chinese-all mode should ignore foreign-only subtitles when Chinese variants exist")
+    )
+
+    result = plugin._auto_write_prepared_uploads_for_entries(
+        target_entries=[entry],
+        prepared_uploads=prepared_uploads,
+        session_dir=tmp_path,
+        selected_result={"provider": "opensubtitles", "title": "Movie pack"},
+    )
+
+    assert result["status"] == "written"
+    assert [operation["upload_info"]["source_name"] for operation in captured["operations"]] == [
+        "Movie.chi.eng.srt",
+        "Movie.chi.ass",
+        "Movie.cht.srt",
+    ]
+
+
+def test_auto_select_all_keeps_all_language_and_format_variants(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._auto_multi_subtitle_mode = "all"
+    entry = make_auto_entry(tmp_path, filename="Movie.mkv")
+    prepared_uploads = []
+    for name, text in {
+        "Movie.chi.ass": "[Script Info]\n[V4+ Styles]\n[Events]\nDialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,你好\n",
+        "Movie.cht.srt": "1\n00:00:01,000 --> 00:00:02,000\n你好\n",
+        "Movie.eng.ass": "[Script Info]\n[V4+ Styles]\n[Events]\nDialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,Hello\n",
+        "Movie.eng.srt": "1\n00:00:01,000 --> 00:00:02,000\nHello\n",
+    }.items():
+        path = tmp_path / name
+        path.write_text(text, encoding="utf-8")
+        prepared_uploads.append({"upload_id": name, "source_name": name, "stored_path": str(path), "ext": path.suffix.lower()})
+
+    selected = plugin._select_auto_subtitle_items(prepared_uploads, [plugin._target_from_entry(entry)])
+
+    assert [item["source_name"] for item in selected] == [
+        "Movie.chi.ass",
+        "Movie.cht.srt",
+        "Movie.eng.ass",
+        "Movie.eng.srt",
+    ]
+
+
+def test_online_ai_converts_foreign_ass_to_temporary_srt(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    entry = make_auto_entry(tmp_path, filename="Movie.mkv")
+    source = tmp_path / "Movie.eng.ass"
+    source.write_text("[Script Info]\n[V4+ Styles]\n[Events]\nDialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,Hello\n", encoding="utf-8")
+
+    class FakeSubs:
+        def save(self, output_path, format_=""):
+            assert format_ == "srt"
+            Path(output_path).write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+
+    plugin._load_pysubs2_file = lambda path: FakeSubs()
+
+    def fake_timeline(video_path, subtitle_path, output_path, allow_risky_offset=False):
+        assert Path(subtitle_path).suffix.lower() == ".srt"
+        Path(output_path).write_text(Path(subtitle_path).read_text(encoding="utf-8"), encoding="utf-8")
+        return module.TimelineFixResult(
+            enabled=True,
+            applied=False,
+            reason="offset below threshold",
+            base="test",
+            offset_seconds=0.0,
+            scale_factor=1.0,
+            score=1.0,
+        )
+
+    plugin._run_timeline_fix = fake_timeline
+
+    overrides, fixed = plugin._prepare_online_ai_subtitle_overrides(
+        session_dir=tmp_path,
+        target_entries=[entry],
+        prepared_uploads=[{"upload_id": "u1", "source_name": source.name, "stored_path": str(source), "ext": ".ass"}],
+    )
+
+    assert set(overrides) == {entry["path"]}
+    assert overrides[entry["path"]]["subtitle_path"].endswith(".srt")
+    assert fixed[0]["source_name"].endswith(".srt")
+    assert fixed[0]["autosub_lang"] == "en"
+
+
+def test_auto_write_foreign_ai_skip_is_not_counted_as_completed(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    entry = make_auto_entry(tmp_path, filename="Movie.mkv")
+    subtitle = tmp_path / "Movie.eng.srt"
+    subtitle.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+    prepared_uploads = [
+        {
+            "upload_id": "u1",
+            "source_name": subtitle.name,
+            "stored_path": str(subtitle),
+            "ext": ".srt",
+        }
+    ]
+    plugin._prepare_online_ai_subtitle_overrides = lambda **kwargs: (
+        {entry["path"]: {"subtitle_path": str(subtitle), "lang": "en"}},
+        [{"target_id": entry["id"], "subtitle_path": str(subtitle), "autosub_lang": "en"}],
+    )
+    plugin._submit_autosub_for_entries = lambda *args, **kwargs: {
+        "added": [],
+        "skipped": [{"path": entry["path"], "reason": "任务已存在"}],
+        "failed": [],
+        "tasks": {"task_by_target": {}},
+    }
+
+    result = plugin._auto_write_prepared_uploads_for_entries(
+        target_entries=[entry],
+        prepared_uploads=prepared_uploads,
+        session_dir=tmp_path,
+        selected_result={"provider": "opensubtitles", "title": "Movie English"},
+    )
+
+    assert result["status"] == "skipped"
+    assert result["ai_count"] == 0
+    assert result["completed_count"] == 0
+    assert result["ai_by_target"] == {}
+    assert "AI 字幕任务未新增" in result["reason"]
+
+
+def test_online_ai_falls_back_to_srt_when_foreign_ass_conversion_fails(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    entry = make_auto_entry(tmp_path, filename="Movie.mkv")
+    ass_source = tmp_path / "Movie.eng.ass"
+    srt_source = tmp_path / "Movie.eng.srt"
+    ass_source.write_text("[Script Info]\n[V4+ Styles]\n[Events]\nDialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,Hello\n", encoding="utf-8")
+    srt_source.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+    plugin._load_pysubs2_file = lambda path: (_ for _ in ()).throw(RuntimeError("bad ass"))
+    observed = {}
+
+    def fake_timeline(video_path, subtitle_path, output_path, allow_risky_offset=False):
+        observed["subtitle_path"] = subtitle_path
+        Path(output_path).write_text(Path(subtitle_path).read_text(encoding="utf-8"), encoding="utf-8")
+        return module.TimelineFixResult(
+            enabled=True,
+            applied=False,
+            reason="offset below threshold",
+            base="test",
+            offset_seconds=0.0,
+            scale_factor=1.0,
+            score=1.0,
+        )
+
+    plugin._run_timeline_fix = fake_timeline
+
+    overrides, fixed = plugin._prepare_online_ai_subtitle_overrides(
+        session_dir=tmp_path,
+        target_entries=[entry],
+        prepared_uploads=[
+            {"upload_id": "ass", "source_name": ass_source.name, "stored_path": str(ass_source), "ext": ".ass"},
+            {"upload_id": "srt", "source_name": srt_source.name, "stored_path": str(srt_source), "ext": ".srt"},
+        ],
+    )
+
+    assert Path(observed["subtitle_path"]) == srt_source
+    assert set(overrides) == {entry["path"]}
+    assert fixed[0]["source_name"] == "Movie.eng.srt"
 
 
 def test_auto_search_providers_use_only_unattended_api_sources():

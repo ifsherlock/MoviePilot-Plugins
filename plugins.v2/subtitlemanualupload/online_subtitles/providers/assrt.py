@@ -47,10 +47,11 @@ class AssrtProvider(BaseSubtitleProvider):
         return super().download({**result, "download_url": download_url, "page_url": page_url}, captcha_code=captcha_code)
 
     def _search_api(self, keyword: str, targets: List[Dict[str, Any]]) -> List[OnlineSubtitleResult]:
+        query = str(keyword or "").strip()
         payload = self._api_json(
             "/v1/sub/search",
             {
-                "q": keyword,
+                "q": query,
                 "cnt": "15",
                 "pos": "0",
                 "is_file": "1",
@@ -77,6 +78,15 @@ class AssrtProvider(BaseSubtitleProvider):
             language_text = " ".join([title, str(item.get("lang") or ""), str(item.get("desc") or "")])
             language_label = _guess_language_label(language_text)
             season, episode = _episode_from_text(title) or (0, 0)
+            assessment = _assess_result_match(title=title, keyword=keyword, targets=targets)
+            target_media_type = next((str(target.get("media_type") or "") for target in targets or [] if target.get("media_type")), "")
+            if assessment["identity_status"] == "failed" and target_media_type == "tv":
+                logger.info(
+                    "[SubtitleManualUpload] 丢弃 ASSRT 不匹配字幕结果 id=%s reason=%s",
+                    sid,
+                    assessment["reject_reason"],
+                )
+                continue
             results.append(
                 OnlineSubtitleResult(
                     provider=self.provider_id,
@@ -90,13 +100,25 @@ class AssrtProvider(BaseSubtitleProvider):
                     format=_guess_subtitle_format(" ".join([title, str(item.get("subtype") or ""), str(item.get("filename") or "")])),
                     season=season,
                     episode=episode,
-                    score=_score_result(title, keyword, targets) + 8,
+                    score=assessment["score"] + 8,
                     source=self.display_name,
                     note="通过 ASSRT 官方 API 搜索",
                     downloadable=True,
+                    relevance_status=assessment["relevance_status"],
+                    region_bucket=_region_bucket({}, targets),
+                    query_plan=_query_plan_for_keyword(keyword, targets)["label"],
+                    identity_status=assessment["identity_status"],
+                    reject_reason=assessment["reject_reason"],
+                    match_detail=assessment["match_detail"],
                 )
-            )
-        return _dedupe_results(results)[:30]
+        )
+        results = _dedupe_results(results)[:30]
+        logger.info(
+            "[SubtitleManualUpload] ASSRT API 搜索完成 query=%s results=%s",
+            query,
+            len(results),
+        )
+        return results
 
     def _detail_url(self, subtitle_id: str) -> str:
         sid = str(subtitle_id or "").strip()

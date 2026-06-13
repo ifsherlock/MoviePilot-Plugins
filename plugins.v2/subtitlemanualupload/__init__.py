@@ -163,6 +163,9 @@ class SubtitleManualUpload(_PluginBase):
     _rar_python_package = "rarfile"
     _rar_dependency_modes = {"none", "container_install", "mapped_binary"}
     _auto_transfer_subtitle_strategies = {"online_then_ai_source", "online_source_only", "ai_source_only"}
+    _auto_multi_subtitle_modes = {"best", "chinese_all", "all"}
+    _default_auto_language_priority = ["bilingual", "chi", "cht", "eng"]
+    _default_auto_format_priority = [".ass", ".srt", ".ssa", ".vtt"]
     _auto_transfer_subtitle_strategy_aliases = {
         "search_first": "online_then_ai_source",
         "search_only": "online_source_only",
@@ -252,6 +255,16 @@ class SubtitleManualUpload(_PluginBase):
         self._auto_transfer_subtitle_strategy = self._normalize_auto_transfer_subtitle_strategy(
             config.get("auto_transfer_subtitle_strategy")
         )
+        self._auto_multi_subtitle_mode = self._normalize_auto_multi_subtitle_mode(
+            config.get("auto_multi_subtitle_mode")
+        )
+        self._auto_subtitle_language_priority = self._normalize_auto_language_priority(
+            config.get("auto_subtitle_language_priority")
+        )
+        self._auto_subtitle_format_priority = self._normalize_auto_format_priority(
+            config.get("auto_subtitle_format_priority")
+        )
+        self._auto_ass_to_srt_for_ai = bool(config.get("auto_ass_to_srt_for_ai", True))
         self._timeline_max_offset_seconds = self._normalize_timeline_max_offset(config.get("timeline_max_offset_seconds"))
         self._timeline_min_offset_seconds = self._normalize_timeline_min_offset(config.get("timeline_min_offset_seconds"))
         self._timeline_vad_mode = self._normalize_timeline_vad_mode(config.get("timeline_vad_mode"))
@@ -275,6 +288,10 @@ class SubtitleManualUpload(_PluginBase):
         type(self)._auto_search_on_transfer = self._auto_search_on_transfer
         type(self)._auto_skip_chinese_media_on_transfer = self._auto_skip_chinese_media_on_transfer
         type(self)._auto_transfer_subtitle_strategy = self._auto_transfer_subtitle_strategy
+        type(self)._auto_multi_subtitle_mode = self._auto_multi_subtitle_mode
+        type(self)._auto_subtitle_language_priority = self._auto_subtitle_language_priority
+        type(self)._auto_subtitle_format_priority = self._auto_subtitle_format_priority
+        type(self)._auto_ass_to_srt_for_ai = self._auto_ass_to_srt_for_ai
         type(self)._timeline_max_offset_seconds = self._timeline_max_offset_seconds
         type(self)._timeline_min_offset_seconds = self._timeline_min_offset_seconds
         type(self)._timeline_vad_mode = self._timeline_vad_mode
@@ -624,6 +641,69 @@ class SubtitleManualUpload(_PluginBase):
                                     }
                                 ],
                             },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [
+                                    {
+                                        "component": "VSelect",
+                                        "props": {
+                                            "model": "auto_multi_subtitle_mode",
+                                            "label": "自动多字幕处理",
+                                            "items": [
+                                                {"title": "按偏好选择最佳", "value": "best"},
+                                                {"title": "中文/双语全部入库", "value": "chinese_all"},
+                                                {"title": "全部入库", "value": "all"},
+                                            ],
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [
+                                    {
+                                        "component": "VTextField",
+                                        "props": {
+                                            "model": "auto_subtitle_language_priority",
+                                            "label": "语言优先级",
+                                            "placeholder": "bilingual,chi,cht,eng",
+                                            "hint": "默认：双语, 简中, 繁中, 英文",
+                                            "persistentHint": True,
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [
+                                    {
+                                        "component": "VTextField",
+                                        "props": {
+                                            "model": "auto_subtitle_format_priority",
+                                            "label": "格式优先级",
+                                            "placeholder": "ass,srt,ssa,vtt",
+                                            "hint": "默认：ASS, SRT, SSA, VTT",
+                                            "persistentHint": True,
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                "component": "VCol",
+                                "props": {"cols": 12, "md": 4},
+                                "content": [
+                                    {
+                                        "component": "VSwitch",
+                                        "props": {
+                                            "model": "auto_ass_to_srt_for_ai",
+                                            "label": "英文 ASS 转临时 SRT 后提交 AI",
+                                        },
+                                    }
+                                ],
+                            },
                         ],
                     },
                     {
@@ -880,6 +960,10 @@ class SubtitleManualUpload(_PluginBase):
             "auto_search_on_transfer": False,
             "auto_skip_chinese_media_on_transfer": True,
             "auto_transfer_subtitle_strategy": "online_then_ai_source",
+            "auto_multi_subtitle_mode": "best",
+            "auto_subtitle_language_priority": list(self._default_auto_language_priority),
+            "auto_subtitle_format_priority": list(self._default_auto_format_priority),
+            "auto_ass_to_srt_for_ai": True,
             "timeline_max_offset_seconds": 120,
             "timeline_min_offset_seconds": 0.2,
             "timeline_vad_mode": "webrtc",
@@ -969,6 +1053,10 @@ class SubtitleManualUpload(_PluginBase):
                 "opensubtitles_username": self._opensubtitles_username,
                 "opensubtitles_password": self._opensubtitles_password,
                 "ai_link_enabled": self._ai_link_enabled,
+                "auto_multi_subtitle_mode": self._auto_multi_subtitle_mode,
+                "auto_subtitle_language_priority": list(self._auto_subtitle_language_priority),
+                "auto_subtitle_format_priority": list(self._auto_subtitle_format_priority),
+                "auto_ass_to_srt_for_ai": self._auto_ass_to_srt_for_ai,
             }
         )
 
@@ -1003,6 +1091,88 @@ class SubtitleManualUpload(_PluginBase):
     def _normalize_timeline_vad_mode(cls, value: Any) -> str:
         mode = cls._normalize_text(value).lower()
         return mode if mode in {"webrtc", "rms"} else "webrtc"
+
+    @classmethod
+    def _normalize_auto_multi_subtitle_mode(cls, value: Any) -> str:
+        mode = cls._normalize_text(value).lower()
+        aliases = {
+            "preferred": "best",
+            "prefer": "best",
+            "best_only": "best",
+            "chinese": "chinese_all",
+            "chinese_and_bilingual": "chinese_all",
+            "all_chinese": "chinese_all",
+            "everything": "all",
+        }
+        mode = aliases.get(mode, mode)
+        return mode if mode in cls._auto_multi_subtitle_modes else "best"
+
+    @classmethod
+    def _normalize_auto_language_key(cls, value: Any) -> str:
+        text = cls._normalize_text(value).lower()
+        aliases = {
+            "双语": "bilingual",
+            "bilingual": "bilingual",
+            "chi&eng": "bilingual",
+            "chi&jp": "bilingual",
+            "chi&kr": "bilingual",
+            "简中": "chi",
+            "简体": "chi",
+            "中文": "chi",
+            "zh": "chi",
+            "chs": "chi",
+            "chi": "chi",
+            "繁中": "cht",
+            "繁体": "cht",
+            "zh-tw": "cht",
+            "cht": "cht",
+            "英文": "eng",
+            "英语": "eng",
+            "en": "eng",
+            "eng": "eng",
+        }
+        return aliases.get(text, cls._normalize_language_suffix(text))
+
+    @classmethod
+    def _normalize_auto_language_priority(cls, value: Any) -> List[str]:
+        raw_items = value
+        if isinstance(raw_items, str):
+            raw_items = re.split(r"[\s,，/|]+", raw_items)
+        if not isinstance(raw_items, list):
+            raw_items = []
+        result: List[str] = []
+        for item in raw_items:
+            key = cls._normalize_auto_language_key(item)
+            if key and key != "und" and key not in result:
+                result.append(key)
+        for item in cls._default_auto_language_priority:
+            if item not in result:
+                result.append(item)
+        return result
+
+    @classmethod
+    def _normalize_auto_format_priority(cls, value: Any) -> List[str]:
+        raw_items = value
+        if isinstance(raw_items, str):
+            raw_items = re.split(r"[\s,，/|]+", raw_items)
+        if not isinstance(raw_items, list):
+            raw_items = []
+        result: List[str] = []
+        for item in raw_items:
+            ext = cls._normalize_text(item).lower()
+            if not ext:
+                continue
+            if not ext.startswith("."):
+                ext = f".{ext}"
+            if ext in cls._subtitle_exts and ext not in result:
+                result.append(ext)
+        for item in cls._default_auto_format_priority:
+            if item not in result:
+                result.append(item)
+        for item in sorted(cls._subtitle_exts):
+            if item not in result:
+                result.append(item)
+        return result
 
     @staticmethod
     def _normalize_text(value: Any) -> str:
@@ -4039,130 +4209,120 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                 "search_results": len(search_result.get("results") or []),
             }
 
-        selected = candidates[0]
-        session_id = self._hash_text(f"auto|{datetime.now().isoformat()}|{entry.get('id')}")[:16]
-        session_dir = self._get_session_root() / session_id
-        session_dir.mkdir(parents=True, exist_ok=True)
-        try:
-            downloads = service.download([selected])
-            prepared_uploads: List[Dict[str, Any]] = []
-            for downloaded in downloads:
-                result = downloaded.get("result") or {}
-                source_name = self._normalize_online_download_name(
-                    downloaded.get("source_name", ""),
-                    downloaded.get("content") or b"",
-                    result,
-                )
-                extracted = self._extract_subtitle_files(
-                    source_name,
-                    downloaded.get("content") or b"",
-                    session_dir,
-                )
-                for item in extracted:
-                    item["online_source"] = downloaded.get("provider")
-                    item["online_title"] = result.get("title", "")
-                    if not item.get("archive_name") and source_name != item.get("source_name"):
-                        item["archive_name"] = source_name
-                prepared_uploads.extend(extracted)
-            if len(prepared_uploads) != 1:
-                return {
-                    "status": "skipped",
-                    "reason": f"下载包解析出 {len(prepared_uploads)} 个字幕，需人工确认",
-                    "target": target.get("label"),
-                }
-
-            prepared = prepared_uploads[0]
-            raw_bytes = Path(prepared["stored_path"]).read_bytes()
-            language_profile = self._detect_language_profile(prepared["source_name"], raw_bytes)
-            item = {
-                "upload_id": prepared["upload_id"],
-                "target_id": entry["id"],
-                "ext": prepared["ext"],
-                "language_suffix": language_profile["suffix"],
-            }
-            language_suffix = item.get("language_suffix")
-            is_foreign_subtitle = not self._is_chinese_language_suffix(language_suffix)
-            if is_foreign_subtitle and prepared.get("ext") != ".srt":
-                return {
-                    "status": "skipped",
-                    "reason": "自动入库外语字幕仅支持 SRT 调轴后提交 AI 翻译，已跳过非 SRT 字幕",
-                    "target": target.get("label"),
-                    "result": selected.get("title"),
-                    "candidate_count": len(candidates),
-                    "search_results": len(search_result.get("results") or []),
-                }
-            if is_foreign_subtitle:
-                subtitle_overrides, fixed_subtitles = self._prepare_online_ai_subtitle_overrides(
-                    session_dir=session_dir,
+        last_reason = ""
+        for selected in candidates[:5]:
+            session_id = self._hash_text(f"auto|{datetime.now().isoformat()}|{entry.get('id')}")[:16]
+            session_dir = self._get_session_root() / session_id
+            session_dir.mkdir(parents=True, exist_ok=True)
+            try:
+                downloads = service.download([selected])
+                prepared_uploads: List[Dict[str, Any]] = []
+                for downloaded in downloads:
+                    result = downloaded.get("result") or {}
+                    source_name = self._normalize_online_download_name(
+                        downloaded.get("source_name", ""),
+                        downloaded.get("content") or b"",
+                        result,
+                    )
+                    try:
+                        extracted = self._extract_subtitle_files(
+                            source_name,
+                            downloaded.get("content") or b"",
+                            session_dir,
+                        )
+                    except ValueError as exc:
+                        last_reason = f"下载包解析失败: {self._normalize_text(exc)}"
+                        logger.warning(
+                            "[SubtitleManualUpload] 自动字幕候选解析失败 target=%s provider=%s result=%s error=%s",
+                            target.get("label"),
+                            selected.get("provider"),
+                            selected.get("title"),
+                            exc,
+                        )
+                        continue
+                    if not extracted:
+                        last_reason = "下载包未解析到字幕文件"
+                        logger.info(
+                            "[SubtitleManualUpload] 自动字幕候选无字幕文件，尝试下一结果 target=%s provider=%s result=%s",
+                            target.get("label"),
+                            selected.get("provider"),
+                            selected.get("title"),
+                        )
+                        continue
+                    for item in extracted:
+                        item["online_source"] = downloaded.get("provider")
+                        item["online_title"] = result.get("title", "")
+                        if not item.get("archive_name") and source_name != item.get("source_name"):
+                            item["archive_name"] = source_name
+                    prepared_uploads.extend(extracted)
+                if not prepared_uploads:
+                    continue
+                write_result = self._auto_write_prepared_uploads_for_entries(
                     target_entries=[entry],
                     prepared_uploads=prepared_uploads,
+                    session_dir=session_dir,
+                    selected_result=selected,
                 )
-                ai_submit = self._submit_autosub_for_entries(
-                    [entry],
-                    subtitle_overrides=subtitle_overrides,
-                    trigger="subtitle_fallback",
-                    source_policy="matched_external",
-                    overwrite_policy="new_variant",
+                if write_result.get("status") == "written":
+                    ai_count = self._safe_int(write_result.get("ai_count"), 0)
+                    written_count = self._safe_int(write_result.get("written_count"), 0)
+                    if ai_count and not written_count:
+                        ai_submit = write_result.get("ai_translate") or {}
+                        ai_result = {
+                            "status": "ai_submitted" if ai_submit.get("added") else "skipped",
+                            "reason": "自动入库外语字幕已智能调轴后提交 AI 翻译",
+                            "target": target.get("label"),
+                            "ai": {
+                                "added": len(ai_submit.get("added") or []),
+                                "skipped": len(ai_submit.get("skipped") or []),
+                                "failed": len(ai_submit.get("failed") or []),
+                            },
+                            "tasks": ai_submit.get("tasks"),
+                        }
+                        return {
+                            "status": ai_result["status"],
+                            "target": target.get("label"),
+                            "result": selected.get("title"),
+                            "fixed_subtitles": write_result.get("fixed_subtitles") or [],
+                            "candidate_count": len(candidates),
+                            "search_results": len(search_result.get("results") or []),
+                            "ai": ai_result,
+                        }
+                    return {
+                        "status": "written",
+                        "target": target.get("label"),
+                        "result": selected.get("title"),
+                        "written": write_result.get("written") or [],
+                        "written_by_target": write_result.get("written_by_target") or {},
+                        "ai_by_target": write_result.get("ai_by_target") or {},
+                        "ai_translate": write_result.get("ai_translate"),
+                        "fixed_subtitles": write_result.get("fixed_subtitles") or [],
+                        "written_count": written_count,
+                        "ai_count": ai_count,
+                        "simplified_count": write_result.get("simplified_count", 0),
+                        "candidate_count": len(candidates),
+                        "search_results": len(search_result.get("results") or []),
+                    }
+                last_reason = write_result.get("reason") or "下载包字幕未按偏好匹配"
+            except Exception as exc:
+                last_reason = f"自动下载在线字幕失败: {self._normalize_text(exc)}"
+                logger.warning(
+                    "[SubtitleManualUpload] %s target=%s provider=%s result=%s",
+                    last_reason,
+                    target.get("label"),
+                    selected.get("provider"),
+                    selected.get("title"),
                 )
-                ai_result = {
-                    "status": "ai_submitted" if ai_submit.get("added") else "skipped",
-                    "reason": "自动入库外语字幕已智能调轴后提交 AI 翻译",
-                    "target": target.get("label"),
-                    "ai": {
-                        "added": len(ai_submit.get("added") or []),
-                        "skipped": len(ai_submit.get("skipped") or []),
-                        "failed": len(ai_submit.get("failed") or []),
-                    },
-                    "tasks": ai_submit.get("tasks"),
-                }
-                return {
-                    "status": ai_result["status"],
-                    "target": target.get("label"),
-                    "result": selected.get("title"),
-                    "fixed_subtitles": fixed_subtitles,
-                    "candidate_count": len(candidates),
-                    "search_results": len(search_result.get("results") or []),
-                    "ai": ai_result,
-                }
+            finally:
+                shutil.rmtree(session_dir, ignore_errors=True)
 
-            operations = self._build_write_operations(
-                [item],
-                {prepared["upload_id"]: prepared},
-                {entry["id"]: entry},
-            )
-            written, _, simplified_count = self._write_operations_to_disk(
-                session_dir=session_dir,
-                operations=operations,
-                fix_timeline=True,
-            )
-            return {
-                "status": "written",
-                "target": target.get("label"),
-                "result": selected.get("title"),
-                "written": written,
-                "simplified_count": simplified_count,
-                "candidate_count": len(candidates),
-                "search_results": len(search_result.get("results") or []),
-            }
-        except Exception as exc:
-            message = f"自动下载最佳在线字幕失败: {self._normalize_text(exc)}"
-            logger.warning(
-                "[SubtitleManualUpload] %s target=%s provider=%s result=%s",
-                message,
-                target.get("label"),
-                selected.get("provider"),
-                selected.get("title"),
-            )
-            return {
-                "status": "skipped",
-                "reason": message,
-                "target": target.get("label"),
-                "result": selected.get("title"),
-                "candidate_count": len(candidates),
-                "search_results": len(search_result.get("results") or []),
-            }
-        finally:
-            shutil.rmtree(session_dir, ignore_errors=True)
+        return {
+            "status": "skipped",
+            "reason": last_reason or "高置信结果未解析到可用字幕文件",
+            "target": target.get("label"),
+            "candidate_count": len(candidates),
+            "search_results": len(search_result.get("results") or []),
+        }
 
     def _auto_search_and_write_entry(self, entry: Dict[str, Any]) -> Dict[str, Any]:
         target = self._target_from_entry(entry)
@@ -4331,6 +4491,78 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         self._auto_fill_missing_targets(items, targets)
         return items
 
+    @classmethod
+    def _auto_language_bucket(cls, suffix: Any) -> str:
+        parts = [item for item in cls._normalize_language_suffix(suffix).split("&") if item]
+        if any(item in {"chi", "cht"} for item in parts) and any(item not in {"chi", "cht"} for item in parts):
+            return "bilingual"
+        if "chi" in parts:
+            return "chi"
+        if "cht" in parts:
+            return "cht"
+        if any(item in {"eng", "en"} for item in parts):
+            return "eng"
+        return parts[0] if parts else "und"
+
+    def _auto_subtitle_sort_key(self, item: Dict[str, Any]) -> Tuple[int, int, int, str]:
+        language_bucket = self._auto_language_bucket(item.get("language_suffix"))
+        language_priority = list(getattr(self, "_auto_subtitle_language_priority", None) or self._default_auto_language_priority)
+        format_priority = list(getattr(self, "_auto_subtitle_format_priority", None) or self._default_auto_format_priority)
+        try:
+            language_rank = language_priority.index(language_bucket)
+        except ValueError:
+            language_rank = len(language_priority)
+        ext = self._normalize_text(item.get("ext")).lower()
+        try:
+            format_rank = format_priority.index(ext)
+        except ValueError:
+            format_rank = len(format_priority)
+        bilingual_bonus = 0 if language_bucket == "bilingual" else 1
+        return (language_rank, format_rank, bilingual_bonus, self._normalize_text(item.get("source_name")).lower())
+
+    def _select_auto_subtitle_items(
+        self,
+        prepared_uploads: List[Dict[str, Any]],
+        targets: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        items = self._auto_prepared_items_for_targets(prepared_uploads, targets)
+        if not items:
+            return []
+
+        mode = self._normalize_auto_multi_subtitle_mode(getattr(self, "_auto_multi_subtitle_mode", "best"))
+        target_lookup = {item.get("id"): item for item in targets if item.get("id")}
+        grouped: Dict[str, List[Dict[str, Any]]] = {}
+        for item in items:
+            target_id = self._normalize_text(item.get("target_id"))
+            if not target_id:
+                continue
+            grouped.setdefault(target_id, []).append(item)
+
+        selected: List[Dict[str, Any]] = []
+        for target_id, group in grouped.items():
+            sorted_group = sorted(group, key=self._auto_subtitle_sort_key)
+            chinese_group = [item for item in sorted_group if self._is_chinese_language_suffix(item.get("language_suffix"))]
+            foreign_group = [item for item in sorted_group if not self._is_chinese_language_suffix(item.get("language_suffix"))]
+            if mode == "all":
+                chosen = [*chinese_group, *foreign_group]
+            elif mode == "chinese_all":
+                chosen = chinese_group or sorted_group[:1]
+            else:
+                chosen = sorted_group[:1]
+
+            seen_destinations = set()
+            target = target_lookup.get(target_id)
+            for item in chosen:
+                if target:
+                    destination_key = self._build_destination_name(target, item)
+                else:
+                    destination_key = f"{target_id}|{item.get('source_name')}"
+                if destination_key in seen_destinations:
+                    continue
+                seen_destinations.add(destination_key)
+                selected.append(item)
+        return selected
+
     def _auto_write_prepared_uploads_for_entries(
         self,
         *,
@@ -4342,15 +4574,12 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         targets = [self._target_from_entry(entry) for entry in target_entries]
         target_entry_map = {self._normalize_text(entry.get("id")): entry for entry in target_entries}
         upload_map = {item["upload_id"]: item for item in prepared_uploads if item.get("upload_id")}
-        items = self._auto_prepared_items_for_targets(prepared_uploads, targets)
-        chosen_items: List[Dict[str, Any]] = []
-        used_targets = set()
-        for item in items:
-            target_id = self._normalize_text(item.get("target_id"))
-            if not target_id or target_id in used_targets or target_id not in target_entry_map:
-                continue
-            chosen_items.append(item)
-            used_targets.add(target_id)
+        chosen_items = [
+            item
+            for item in self._select_auto_subtitle_items(prepared_uploads, targets)
+            if self._normalize_text(item.get("target_id")) in target_entry_map
+        ]
+        used_targets = {self._normalize_text(item.get("target_id")) for item in chosen_items}
         if not chosen_items:
             return {
                 "status": "skipped",
@@ -4404,16 +4633,32 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             written_by_target[target_id] = written_item
         ai_by_target: Dict[str, Dict[str, Any]] = {}
         if ai_submit_result:
+            path_to_target_id = {
+                self._normalize_text(entry.get("path")): target_id
+                for target_id, entry in target_entry_map.items()
+                if self._normalize_text(entry.get("path"))
+            }
+            added_target_ids = {
+                path_to_target_id.get(self._normalize_text(item.get("path")))
+                for item in ai_submit_result.get("added") or []
+                if isinstance(item, dict)
+            }
+            added_target_ids.discard(None)
             for fixed_item in fixed_subtitles:
                 target_id = self._normalize_text(fixed_item.get("target_id"))
-                if target_id:
+                if target_id and target_id in added_target_ids:
                     ai_by_target[target_id] = fixed_item
 
         total_completed = len(written_by_target) + len(ai_by_target)
         coverage_complete = not missing_target_ids and total_completed >= len(target_entry_map)
+        ai_failed_count = len((ai_submit_result or {}).get("failed") or [])
+        ai_skipped_count = len((ai_submit_result or {}).get("skipped") or [])
+        reason = "" if coverage_complete else f"整季包覆盖 {total_completed}/{len(target_entry_map)} 集"
+        if not ai_by_target and (ai_failed_count or ai_skipped_count):
+            reason = f"AI 字幕任务未新增，跳过 {ai_skipped_count} 个，失败 {ai_failed_count} 个"
         return {
             "status": "written" if total_completed else "skipped",
-            "reason": "" if coverage_complete else f"整季包覆盖 {total_completed}/{len(target_entry_map)} 集",
+            "reason": reason,
             "result": (selected_result or {}).get("title"),
             "provider": (selected_result or {}).get("provider"),
             "written": written,
@@ -5325,6 +5570,91 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         self._auto_fill_missing_targets(items, targets)
         return items
 
+    @classmethod
+    def _load_pysubs2_file(cls, path: Path):
+        try:
+            import pysubs2
+        except Exception as exc:
+            raise RuntimeError("pysubs2 未安装，无法转换 ASS/SSA 字幕") from exc
+        errors: List[str] = []
+        for kwargs in (
+            {},
+            {"encoding": "utf-8-sig"},
+            {"encoding": "utf-16"},
+            {"encoding": "gb18030"},
+            {"encoding": "big5"},
+        ):
+            try:
+                return pysubs2.load(str(path), **kwargs)
+            except Exception as exc:
+                errors.append(str(exc))
+        raise RuntimeError(errors[-1] if errors else f"字幕解析失败: {path.name}")
+
+    def _convert_ass_to_ai_srt(
+        self,
+        *,
+        session_dir: Path,
+        prepared: Dict[str, Any],
+    ) -> Optional[Dict[str, Any]]:
+        ext = self._normalize_text(prepared.get("ext")).lower()
+        if ext not in {".ass", ".ssa"} or not getattr(self, "_auto_ass_to_srt_for_ai", True):
+            return None
+        source_path = Path(self._normalize_text(prepared.get("stored_path")))
+        if not source_path.is_file():
+            return None
+        try:
+            raw_bytes = source_path.read_bytes()
+        except Exception:
+            raw_bytes = b""
+        profile = self._detect_language_profile(prepared.get("source_name", ""), raw_bytes)
+        if self._is_chinese_language_suffix(profile.get("suffix")):
+            return None
+        output_dir = session_dir / "ai_srt_sources"
+        output_dir.mkdir(parents=True, exist_ok=True)
+        upload_id = f"{prepared.get('upload_id')}-srt"
+        output_path = output_dir / f"{upload_id}.srt"
+        try:
+            subtitles = self._load_pysubs2_file(source_path)
+            subtitles.save(str(output_path), format_="srt")
+        except Exception as exc:
+            logger.warning(
+                "[SubtitleManualUpload] ASS/SSA 转 AI 临时 SRT 失败 source=%s error=%s",
+                prepared.get("source_name"),
+                exc,
+            )
+            return None
+        logger.info(
+            "[SubtitleManualUpload] ASS/SSA 已转为 AI 临时 SRT source=%s output=%s",
+            prepared.get("source_name"),
+            output_path.name,
+        )
+        return {
+            **prepared,
+            "upload_id": upload_id,
+            "source_name": f"{Path(prepared.get('source_name') or source_path.name).stem}.srt",
+            "stored_path": str(output_path),
+            "ext": ".srt",
+            "original_source_name": prepared.get("source_name", ""),
+            "converted_from_ext": ext,
+        }
+
+    def _ai_ready_prepared_uploads(
+        self,
+        *,
+        session_dir: Path,
+        prepared_uploads: List[Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        ready: List[Dict[str, Any]] = []
+        for prepared in prepared_uploads:
+            ext = self._normalize_text(prepared.get("ext")).lower()
+            if ext == ".srt":
+                ready.append(prepared)
+                continue
+            converted = self._convert_ass_to_ai_srt(session_dir=session_dir, prepared=prepared)
+            if converted:
+                ready.append(converted)
+        return ready
+
     def _prepare_online_ai_subtitle_overrides(
         self,
         *,
@@ -5334,17 +5664,29 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         allow_risky_offset: bool = False,
     ) -> Tuple[Dict[str, Dict[str, str]], List[Dict[str, Any]]]:
         targets = [self._target_from_entry(item) for item in target_entries]
-        candidate_items = self._online_ai_candidate_items(prepared_uploads=prepared_uploads, targets=targets)
+        ai_ready_uploads = self._ai_ready_prepared_uploads(session_dir=session_dir, prepared_uploads=prepared_uploads)
+        candidate_items = self._online_ai_candidate_items(prepared_uploads=ai_ready_uploads, targets=targets)
         if not candidate_items:
             raise HTTPException(status_code=400, detail="没有解析到可用于 AI 翻译的外语 SRT 字幕")
 
         target_entry_map = {self._normalize_text(entry.get("id")): entry for entry in target_entries}
-        upload_map = {item["upload_id"]: item for item in prepared_uploads}
+        upload_map = {item["upload_id"]: item for item in ai_ready_uploads}
+        converted_source_keys = {
+            (
+                self._normalize_text(item.get("target_id")),
+                self._normalize_text(item.get("source_name")),
+            )
+            for item in candidate_items
+            if item.get("converted_from_ext")
+        }
         chosen_items: List[Dict[str, Any]] = []
         used_targets = set()
-        for item in candidate_items:
+        for item in sorted(candidate_items, key=self._auto_subtitle_sort_key):
             target_id = self._normalize_text(item.get("target_id"))
             if not target_id or target_id in used_targets or target_id not in target_entry_map:
+                continue
+            source_name = self._normalize_text(item.get("source_name"))
+            if item.get("ext") == ".srt" and (target_id, source_name) in converted_source_keys:
                 continue
             chosen_items.append(item)
             used_targets.add(target_id)
