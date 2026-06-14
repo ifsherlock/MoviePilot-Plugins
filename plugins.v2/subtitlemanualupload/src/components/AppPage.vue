@@ -3640,10 +3640,10 @@ defineExpose({
             @dragover="handleDragOver"
             @dragleave="handleDragLeave"
           >
-            <div class="dropzone-icon">SRT / ASS / ZIP / RAR</div>
+            <div class="dropzone-icon">SRT / ASS / ZIP / RAR / 7Z</div>
             <div class="dropzone-title">把字幕或压缩包拖到这里</div>
             <div class="dropzone-text">
-              支持字幕文件、ZIP、RAR；RAR 需容器内解压器支持。
+              支持字幕文件、ZIP、RAR、7Z；RAR/7Z 需容器内解压器支持。
             </div>
             <VBtn
               color="primary"
@@ -3659,7 +3659,7 @@ defineExpose({
               class="hidden-input"
               type="file"
               multiple
-              accept=".srt,.ass,.ssa,.sbv,.sub,.vtt,.webvtt,.zip,.rar"
+              accept=".srt,.ass,.ssa,.sbv,.sub,.vtt,.webvtt,.zip,.rar,.7z"
               @change="onPickFiles"
             >
           </div>

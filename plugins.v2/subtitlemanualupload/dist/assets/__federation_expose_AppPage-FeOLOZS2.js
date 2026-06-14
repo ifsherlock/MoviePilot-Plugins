@@ -4331,9 +4331,9 @@ return (_ctx, _cache) => {
                       onDragover: handleDragOver,
                       onDragleave: handleDragLeave
                     }, [
-                      _cache[74] || (_cache[74] = _createElementVNode("div", { class: "dropzone-icon" }, "SRT / ASS / ZIP / RAR", -1)),
+                      _cache[74] || (_cache[74] = _createElementVNode("div", { class: "dropzone-icon" }, "SRT / ASS / ZIP / RAR / 7Z", -1)),
                       _cache[75] || (_cache[75] = _createElementVNode("div", { class: "dropzone-title" }, "把字幕或压缩包拖到这里", -1)),
-                      _cache[76] || (_cache[76] = _createElementVNode("div", { class: "dropzone-text" }, " 支持字幕文件、ZIP、RAR；RAR 需容器内解压器支持。 ", -1)),
+                      _cache[76] || (_cache[76] = _createElementVNode("div", { class: "dropzone-text" }, " 支持字幕文件、ZIP、RAR、7Z；RAR/7Z 需容器内解压器支持。 ", -1)),
                       _createVNode(_component_VBtn, {
                         color: "primary",
                         variant: "flat",
@@ -4352,7 +4352,7 @@ return (_ctx, _cache) => {
                         class: "hidden-input",
                         type: "file",
                         multiple: "",
-                        accept: ".srt,.ass,.ssa,.sbv,.sub,.vtt,.webvtt,.zip,.rar",
+                        accept: ".srt,.ass,.ssa,.sbv,.sub,.vtt,.webvtt,.zip,.rar,.7z",
                         onChange: onPickFiles
                       }, null, 544)
                     ], 34))
@@ -4610,6 +4610,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-4b8c8305"]]);
+const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-2d448e61"]]);
 
 export { AppPage as default };

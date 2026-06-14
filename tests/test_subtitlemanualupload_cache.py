@@ -274,6 +274,54 @@ def test_online_download_name_prefers_archive_magic_over_filename_suffix():
     assert zip_named_unknown == "subtitle.zip"
 
 
+def test_online_download_name_detects_7z_magic():
+    module, _, _ = load_plugin_module()
+    cls = module.SubtitleManualUpload
+
+    assert cls._normalize_online_download_name(
+        "download.bin",
+        b"7z\xbc\xaf\x27\x1c" + b"payload",
+        {"title": "Jack Reacher"},
+    ) == "download.7z"
+
+
+def test_extract_7z_subtitle_files_with_external_tool(tmp_path):
+    module, _, _ = load_plugin_module()
+    cls = module.SubtitleManualUpload
+    original_sevenzip_tool = cls._sevenzip_tool
+    original_run_archive_command = cls._run_archive_command
+    cls._sevenzip_tool = classmethod(lambda inner_cls: "7z")
+
+    def fake_run_archive_command(inner_cls, args, timeout=120):
+        command = args[1]
+        if command == "l":
+            return (
+                "Path = sample.7z\n"
+                "Path = 说明.txt\n"
+                "Path = Jack.Reacher.2012.chs&eng.ass\n"
+                "Path = Jack.Reacher.2012.eng.ass\n"
+            ).encode()
+        if command == "x":
+            member = args[-1]
+            return f"[Script Info]\n; {member}\nDialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,你好".encode()
+        raise AssertionError(args)
+
+    cls._run_archive_command = classmethod(fake_run_archive_command)
+
+    try:
+        extracted = cls._extract_subtitle_files("sample.7z", b"7z\xbc\xaf\x27\x1c" + b"payload", tmp_path)
+    finally:
+        cls._sevenzip_tool = original_sevenzip_tool
+        cls._run_archive_command = original_run_archive_command
+
+    assert [item["source_name"] for item in extracted] == [
+        "Jack.Reacher.2012.chs&eng.ass",
+        "Jack.Reacher.2012.eng.ass",
+    ]
+    assert all(Path(item["stored_path"]).exists() for item in extracted)
+    assert all(item["archive_name"] == "sample.7z" for item in extracted)
+
+
 def test_language_suffix_supports_bilingual_codes():
     module, _, _ = load_plugin_module()
     cls = module.SubtitleManualUpload

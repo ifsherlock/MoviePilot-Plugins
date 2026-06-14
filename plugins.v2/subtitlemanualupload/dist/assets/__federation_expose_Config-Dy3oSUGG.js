@@ -1,7 +1,7 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 
-const {createElementVNode:_createElementVNode,resolveComponent:_resolveComponent,createVNode:_createVNode,withCtx:_withCtx,openBlock:_openBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,createElementBlock:_createElementBlock} = await importShared('vue');
+const {createElementVNode:_createElementVNode,resolveComponent:_resolveComponent,createVNode:_createVNode,withCtx:_withCtx,openBlock:_openBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,createTextVNode:_createTextVNode,renderList:_renderList,Fragment:_Fragment,createElementBlock:_createElementBlock,toDisplayString:_toDisplayString} = await importShared('vue');
 
 
 const _hoisted_1 = { class: "subtitlemanualupload-config" };
@@ -9,11 +9,38 @@ const _hoisted_2 = { class: "config-shell" };
 const _hoisted_3 = { class: "config-grid" };
 const _hoisted_4 = { class: "config-grid two-column" };
 const _hoisted_5 = { class: "config-grid two-column" };
-const _hoisted_6 = { class: "config-grid" };
+const _hoisted_6 = { class: "config-section" };
+const _hoisted_7 = { class: "config-grid" };
+const _hoisted_8 = { class: "rar-help-list" };
+const _hoisted_9 = { class: "rar-help-row-head" };
+const _hoisted_10 = { class: "rar-help-row-title" };
+const _hoisted_11 = { class: "rar-help-step" };
+const _hoisted_12 = { class: "command-block" };
 
 const {onMounted,ref} = await importShared('vue');
 
 
+const rarContainerInstallCommand = `docker exec -it moviepilot bash
+apt-get update
+apt-get install -y p7zip-full unrar-free`;
+const rarStaticInstallCommand = `curl -fsSLo /tmp/mp-7zz.sh \\
+  https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/plugins.v2/subtitlemanualupload/scripts/install-static-7zz.sh
+sudo bash /tmp/mp-7zz.sh
+
+# 脚本默认优先使用清华/中科大 Gentoo distfiles 镜像下载 7zz。
+# 如果自动检测不准，可直接指定 MoviePilot 宿主机映射目录：
+sudo env MP_HOST_ROOT=/volume1/docker/moviepilot bash /tmp/mp-7zz.sh
+
+# 如果需要指定下载源，可覆盖 DOWNLOAD_URL：
+sudo env DOWNLOAD_URL=https://example.com/7zz.tar.xz bash /tmp/mp-7zz.sh
+
+# 按脚本输出的实际路径添加到 MoviePilot volumes：
+volumes:
+  - /volume1/docker/moviepilot/tools/7zz:/usr/local/bin/7z:ro
+
+# 重建或重启 MoviePilot 容器后验证：
+docker exec moviepilot which 7z
+docker exec moviepilot 7z i`;
 
 const _sfc_main = {
   __name: 'Config',
@@ -30,6 +57,9 @@ const props = __props;
 
 const emit = __emit;
 const configError = ref('');
+const rarHelpDialog = ref(false);
+const copyMessage = ref('');
+const copyError = ref('');
 const localConfig = ref({
   enabled: false,
   show_sidebar_nav: true,
@@ -110,6 +140,36 @@ const timelineVadItems = [
   { title: 'WebRTC VAD（推荐）', value: 'webrtc' },
   { title: 'RMS 能量阈值（降级）', value: 'rms' },
 ];
+
+const rarHelpItems = [
+  {
+    badge: '方案一',
+    title: '容器内临时安装',
+    description: '适合临时测试，容器重建后可能失效。',
+    button: '复制命令',
+    copyLabel: '容器安装命令',
+    command: rarContainerInstallCommand,
+  },
+  {
+    badge: '方案二',
+    title: '静态 7zz 下载并映射',
+    description: '推荐长期使用。脚本默认优先使用清华/中科大镜像下载，会检测或提示输入 MoviePilot 宿主机目录，并设置 0755 执行权限。',
+    button: '复制方案',
+    copyLabel: '静态 7zz 安装映射方案',
+    command: rarStaticInstallCommand,
+  },
+];
+
+async function copyHelpText(text, label) {
+  copyMessage.value = '';
+  copyError.value = '';
+  try {
+    await navigator.clipboard.writeText(text);
+    copyMessage.value = `${label}已复制`;
+  } catch (error) {
+    copyError.value = `复制失败，请手动选择命令文本。${error?.message || ''}`.trim();
+  }
+}
 
 function normalizeProviders(value) {
   const allowed = ['subhd', 'zimuku', 'assrt', 'opensubtitles'];
@@ -244,6 +304,8 @@ return (_ctx, _cache) => {
   const _component_VTextField = _resolveComponent("VTextField");
   const _component_VCardText = _resolveComponent("VCardText");
   const _component_VCard = _resolveComponent("VCard");
+  const _component_VCardTitle = _resolveComponent("VCardTitle");
+  const _component_VDialog = _resolveComponent("VDialog");
 
   return (_openBlock(), _createElementBlock("div", _hoisted_1, [
     _createVNode(_component_VToolbar, {
@@ -251,7 +313,7 @@ return (_ctx, _cache) => {
       color: "transparent"
     }, {
       default: _withCtx(() => [
-        _cache[30] || (_cache[30] = _createElementVNode("div", { class: "text-h6 ms-3" }, "字幕匹配配置", -1)),
+        _cache[33] || (_cache[33] = _createElementVNode("div", { class: "text-h6 ms-3" }, "字幕匹配配置", -1)),
         _createVNode(_component_VSpacer),
         _createVNode(_component_VBtn, {
           icon: "mdi-content-save",
@@ -287,7 +349,7 @@ return (_ctx, _cache) => {
                     text: configError.value
                   }, null, 8, ["text"]))
                 : _createCommentVNode("", true),
-              _cache[31] || (_cache[31] = _createElementVNode("div", { class: "config-section" }, [
+              _cache[36] || (_cache[36] = _createElementVNode("div", { class: "config-section" }, [
                 _createElementVNode("div", { class: "config-section-title" }, "基础设置")
               ], -1)),
               _createElementVNode("div", _hoisted_3, [
@@ -384,7 +446,7 @@ return (_ctx, _cache) => {
                 }, null, 8, ["modelValue"])
               ]),
               _createVNode(_component_VDivider, { class: "my-5" }),
-              _cache[32] || (_cache[32] = _createElementVNode("div", { class: "config-section" }, [
+              _cache[37] || (_cache[37] = _createElementVNode("div", { class: "config-section" }, [
                 _createElementVNode("div", null, [
                   _createElementVNode("div", { class: "config-section-title" }, "在线字幕搜索"),
                   _createElementVNode("p", null, "自动搜索支持 SubHD、Zimuku、射手网(伪) 和 OpenSubtitles；站点波动时仍可使用右侧手动搜索跳转。")
@@ -521,7 +583,7 @@ return (_ctx, _cache) => {
                 text: "OpenSubtitles 搜索需要 API Key；下载由插件使用用户名和密码后台登录换取 token。英文字幕结果可下载后提交给 AI 字幕生成翻译。"
               }),
               _createVNode(_component_VDivider, { class: "my-5" }),
-              _cache[33] || (_cache[33] = _createElementVNode("div", { class: "config-section" }, [
+              _cache[38] || (_cache[38] = _createElementVNode("div", { class: "config-section" }, [
                 _createElementVNode("div", null, [
                   _createElementVNode("div", { class: "config-section-title" }, "智能调轴"),
                   _createElementVNode("p", null, "控制写入前可接受的全局偏移范围；超过 120 秒通常意味着错集、错版本或整季包映射错误。")
@@ -575,13 +637,27 @@ return (_ctx, _cache) => {
                 }, null, 8, ["modelValue"])
               ]),
               _createVNode(_component_VDivider, { class: "my-5" }),
-              _cache[34] || (_cache[34] = _createElementVNode("div", { class: "config-section" }, [
-                _createElementVNode("div", { class: "config-section-title" }, "RAR 解压器")
-              ], -1)),
               _createElementVNode("div", _hoisted_6, [
+                _cache[35] || (_cache[35] = _createElementVNode("div", null, [
+                  _createElementVNode("div", { class: "config-section-title" }, "RAR / 7Z 解压器"),
+                  _createElementVNode("p", null, "RAR 和 7Z 都依赖容器内可执行解压器；宿主机静态 7zz 映射更适合长期使用。")
+                ], -1)),
+                _createVNode(_component_VBtn, {
+                  color: "primary",
+                  variant: "tonal",
+                  "prepend-icon": "mdi-tools",
+                  onClick: _cache[28] || (_cache[28] = $event => (rarHelpDialog.value = true))
+                }, {
+                  default: _withCtx(() => [...(_cache[34] || (_cache[34] = [
+                    _createTextVNode(" 查看安装教程 ", -1)
+                  ]))]),
+                  _: 1
+                })
+              ]),
+              _createElementVNode("div", _hoisted_7, [
                 _createVNode(_component_VSelect, {
                   modelValue: localConfig.value.rar_dependency_mode,
-                  "onUpdate:modelValue": _cache[28] || (_cache[28] = $event => ((localConfig.value.rar_dependency_mode) = $event)),
+                  "onUpdate:modelValue": _cache[29] || (_cache[29] = $event => ((localConfig.value.rar_dependency_mode) = $event)),
                   items: rarDependencyModes,
                   label: "RAR 解压器处理方式",
                   variant: "outlined",
@@ -590,7 +666,7 @@ return (_ctx, _cache) => {
                 }, null, 8, ["modelValue"]),
                 _createVNode(_component_VTextField, {
                   modelValue: localConfig.value.rar_tool_path,
-                  "onUpdate:modelValue": _cache[29] || (_cache[29] = $event => ((localConfig.value.rar_tool_path) = $event)),
+                  "onUpdate:modelValue": _cache[30] || (_cache[30] = $event => ((localConfig.value.rar_tool_path) = $event)),
                   label: "容器内映射路径",
                   placeholder: "/usr/local/bin/7z",
                   variant: "outlined",
@@ -602,7 +678,7 @@ return (_ctx, _cache) => {
                 class: "mt-4",
                 type: "info",
                 variant: "tonal",
-                text: "RAR 自动安装只适合临时测试；长期建议在宿主机把静态 7zz 放到 MoviePilot 部署目录的 tools/7zz，并映射为容器内 /usr/local/bin/7z。插件不会主动重启 Docker 容器。"
+                text: "自动安装只适合临时测试；长期建议在宿主机把静态 7zz 放到 MoviePilot 部署目录的 tools/7zz，并映射为容器内 /usr/local/bin/7z。插件不会主动重启 Docker 容器。"
               })
             ]),
             _: 1
@@ -610,12 +686,128 @@ return (_ctx, _cache) => {
         ]),
         _: 1
       })
-    ])
+    ]),
+    _createVNode(_component_VDialog, {
+      modelValue: rarHelpDialog.value,
+      "onUpdate:modelValue": _cache[32] || (_cache[32] = $event => ((rarHelpDialog).value = $event)),
+      "max-width": "820"
+    }, {
+      default: _withCtx(() => [
+        _createVNode(_component_VCard, {
+          class: "rar-help-dialog",
+          rounded: "xl"
+        }, {
+          default: _withCtx(() => [
+            _createVNode(_component_VCardTitle, { class: "dialog-title" }, {
+              default: _withCtx(() => [
+                _cache[39] || (_cache[39] = _createElementVNode("span", null, "RAR / 7Z 解压器说明", -1)),
+                _createVNode(_component_VBtn, {
+                  icon: "mdi-close",
+                  variant: "text",
+                  onClick: _cache[31] || (_cache[31] = $event => (rarHelpDialog.value = false))
+                })
+              ]),
+              _: 1
+            }),
+            _createVNode(_component_VDivider),
+            _createVNode(_component_VCardText, null, {
+              default: _withCtx(() => [
+                _cache[40] || (_cache[40] = _createElementVNode("div", { class: "rar-help-summary" }, [
+                  _createElementVNode("p", null, [
+                    _createElementVNode("strong", null, "说明："),
+                    _createElementVNode("code", null, "rarfile"),
+                    _createTextVNode(" 只是 Python 调用封装，不是独立解压器。")
+                  ]),
+                  _createElementVNode("p", null, [
+                    _createElementVNode("strong", null, "要求："),
+                    _createTextVNode("MoviePilot 容器内需要能执行 "),
+                    _createElementVNode("code", null, "unrar"),
+                    _createTextVNode("、"),
+                    _createElementVNode("code", null, "7z"),
+                    _createTextVNode("、"),
+                    _createElementVNode("code", null, "7za"),
+                    _createTextVNode("、"),
+                    _createElementVNode("code", null, "7zz"),
+                    _createTextVNode(" 或 "),
+                    _createElementVNode("code", null, "bsdtar"),
+                    _createTextVNode("。")
+                  ]),
+                  _createElementVNode("p", null, [
+                    _createElementVNode("strong", null, "方案："),
+                    _createTextVNode("临时测试可在容器内安装；长期使用推荐通过国内镜像下载宿主机静态 "),
+                    _createElementVNode("code", null, "7zz"),
+                    _createTextVNode("，设置执行权限后映射到容器内 "),
+                    _createElementVNode("code", null, "/usr/local/bin/7z"),
+                    _createTextVNode("。")
+                  ])
+                ], -1)),
+                _createElementVNode("div", _hoisted_8, [
+                  (_openBlock(), _createElementBlock(_Fragment, null, _renderList(rarHelpItems, (item) => {
+                    return _createElementVNode("section", {
+                      key: item.title,
+                      class: "rar-help-row"
+                    }, [
+                      _createElementVNode("div", _hoisted_9, [
+                        _createElementVNode("div", _hoisted_10, [
+                          _createElementVNode("span", _hoisted_11, _toDisplayString(item.badge), 1),
+                          _createElementVNode("strong", null, _toDisplayString(item.title), 1)
+                        ]),
+                        _createVNode(_component_VBtn, {
+                          color: "primary",
+                          variant: "flat",
+                          size: "small",
+                          onClick: $event => (copyHelpText(item.command, item.copyLabel))
+                        }, {
+                          default: _withCtx(() => [
+                            _createTextVNode(_toDisplayString(item.button), 1)
+                          ]),
+                          _: 2
+                        }, 1032, ["onClick"])
+                      ]),
+                      _createElementVNode("p", null, _toDisplayString(item.description), 1),
+                      _createElementVNode("div", _hoisted_12, [
+                        _createElementVNode("pre", null, _toDisplayString(item.command), 1)
+                      ])
+                    ])
+                  }), 64))
+                ]),
+                (copyMessage.value)
+                  ? (_openBlock(), _createBlock(_component_VAlert, {
+                      key: 0,
+                      class: "mt-4",
+                      type: "success",
+                      variant: "tonal",
+                      text: copyMessage.value
+                    }, null, 8, ["text"]))
+                  : (copyError.value)
+                    ? (_openBlock(), _createBlock(_component_VAlert, {
+                        key: 1,
+                        class: "mt-4",
+                        type: "warning",
+                        variant: "tonal",
+                        text: copyError.value
+                      }, null, 8, ["text"]))
+                    : _createCommentVNode("", true),
+                _createVNode(_component_VAlert, {
+                  class: "mt-4",
+                  type: "info",
+                  variant: "tonal",
+                  text: "插件不会主动重启 Docker 容器。映射文件后需要按你的部署方式重建或重启 MoviePilot 容器；安装或映射完成后，刷新插件状态即可重新检测。"
+                })
+              ]),
+              _: 1
+            })
+          ]),
+          _: 1
+        })
+      ]),
+      _: 1
+    }, 8, ["modelValue"])
   ]))
 }
 }
 
 };
-const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-3dac1085"]]);
+const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-cee4039b"]]);
 
 export { Config as default };

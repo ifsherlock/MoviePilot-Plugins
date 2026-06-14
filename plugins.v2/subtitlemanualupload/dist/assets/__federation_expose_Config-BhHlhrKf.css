@@ -1,0 +1,130 @@
+
+.config-shell[data-v-cee4039b] {
+  padding: 20px;
+}
+.config-card[data-v-cee4039b] {
+  border: 1px solid rgba(127, 151, 185, 0.18);
+  background: rgba(255, 255, 255, 0.82);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 18px 50px rgba(30, 63, 108, 0.08);
+}
+.config-grid[data-v-cee4039b] {
+  display: grid;
+  gap: 16px;
+}
+.config-grid.two-column[data-v-cee4039b] {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.config-section[data-v-cee4039b] {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+}
+.config-section-title[data-v-cee4039b] {
+  color: #24362f;
+  font-size: 15px;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+.config-section p[data-v-cee4039b] {
+  margin: 4px 0 0;
+  color: #687873;
+  font-size: 12px;
+}
+.config-switch-line[data-v-cee4039b] {
+  min-height: 48px;
+}
+.dialog-title[data-v-cee4039b] {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.rar-help-dialog[data-v-cee4039b] {
+  background: #fffaf2;
+}
+.rar-help-summary[data-v-cee4039b] {
+  display: grid;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid rgba(91, 109, 100, 0.12);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.64);
+  color: #52635d;
+  line-height: 1.7;
+}
+.rar-help-summary p[data-v-cee4039b] {
+  margin: 0;
+}
+.rar-help-summary code[data-v-cee4039b] {
+  padding: 1px 5px;
+  border-radius: 6px;
+  background: #efe6d8;
+}
+.rar-help-list[data-v-cee4039b] {
+  display: grid;
+  gap: 12px;
+  margin-top: 16px;
+}
+.rar-help-row[data-v-cee4039b] {
+  display: grid;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid rgba(91, 109, 100, 0.14);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.74);
+}
+.rar-help-row-head[data-v-cee4039b] {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  justify-content: space-between;
+}
+.rar-help-row-title[data-v-cee4039b] {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+.rar-help-step[data-v-cee4039b] {
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: #efe6d8;
+  color: #8a6b3f;
+  font-size: 12px;
+  font-weight: 900;
+}
+.command-block[data-v-cee4039b] {
+  min-width: 0;
+}
+.command-block pre[data-v-cee4039b] {
+  padding: 10px;
+  margin: 0;
+  overflow-x: auto;
+  border-radius: 12px;
+  background: #2f443d;
+  color: #fff6e8;
+  font-size: 12px;
+  line-height: 1.5;
+}
+.rar-help-row p[data-v-cee4039b] {
+  margin: 0;
+  color: #687873;
+  font-size: 12px;
+  line-height: 1.6;
+}
+@media (max-width: 760px) {
+.config-grid.two-column[data-v-cee4039b] {
+    grid-template-columns: 1fr;
+}
+.config-section[data-v-cee4039b] {
+    align-items: stretch;
+    flex-direction: column;
+}
+.rar-help-row-head[data-v-cee4039b] {
+    align-items: stretch;
+    flex-direction: column;
+}
+}

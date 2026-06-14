@@ -81,7 +81,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/subtitle-match.png"
-    plugin_version = "0.1.67"
+    plugin_version = "0.1.68"
     plugin_author = "ifsherlock"
     author_url = "https://github.com/ifsherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -161,9 +161,11 @@ class SubtitleManualUpload(_PluginBase):
     _tmdb_detail_cache: Dict[str, Dict[str, Any]] = {}
 
     _subtitle_exts = {".ass", ".srt", ".ssa", ".sbv", ".sub", ".vtt", ".webvtt"}
-    _archive_exts = {".zip", ".rar"}
+    _archive_exts = {".zip", ".rar", ".7z"}
     _rar_exts = {".rar"}
+    _sevenzip_exts = {".7z"}
     _rar_tools = ("unrar", "bsdtar", "7z", "7za", "7zz")
+    _sevenzip_tools = ("7z", "7za", "7zz", "bsdtar")
     _rar_python_package = "rarfile"
     _rar_dependency_modes = {"none", "container_install", "mapped_binary"}
     _auto_transfer_subtitle_strategies = {"online_then_ai_source", "online_source_only", "ai_source_only"}
@@ -3658,6 +3660,19 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         return ""
 
     @classmethod
+    def _sevenzip_tool(cls) -> str:
+        configured = cls._normalize_text(getattr(cls, "_rar_tool_path", ""))
+        if configured:
+            configured_path = Path(configured)
+            if cls._is_executable_file(configured_path) and configured_path.name.lower() in {"7z", "7za", "7zz"}:
+                return str(configured_path)
+        for tool in cls._sevenzip_tools:
+            found = shutil.which(tool)
+            if found:
+                return found
+        return ""
+
+    @classmethod
     def _rar_python_available(cls) -> bool:
         return importlib.util.find_spec(cls._rar_python_package) is not None
 
@@ -3781,6 +3796,28 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             package_note = f"已声明 Python 依赖 {cls._rar_python_package}，但 RAR 内容解压仍需要外部解压程序"
             raise ValueError(f"{package_note}；请在容器安装 unrar、bsdtar、7z、7za 或映射静态 7zz")
 
+        return cls._extract_command_archive_subtitle_files(source_name, archive_path, session_dir, tool_path)
+
+    @classmethod
+    def _extract_7z_subtitle_files(
+        cls,
+        source_name: str,
+        archive_path: Path,
+        session_dir: Path,
+    ) -> List[Dict[str, Any]]:
+        tool_path = cls._sevenzip_tool()
+        if not tool_path:
+            raise ValueError("7z 压缩包解压需要容器内可执行 7z、7za、7zz、bsdtar，或映射宿主机静态 7zz")
+        return cls._extract_command_archive_subtitle_files(source_name, archive_path, session_dir, tool_path)
+
+    @classmethod
+    def _extract_command_archive_subtitle_files(
+        cls,
+        source_name: str,
+        archive_path: Path,
+        session_dir: Path,
+        tool_path: str,
+    ) -> List[Dict[str, Any]]:
         prepared: List[Dict[str, Any]] = []
         members = cls._list_rar_members(archive_path, tool_path)
         for member in members:
@@ -3840,6 +3877,8 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         archive_path.write_bytes(raw_bytes)
         if ext in cls._rar_exts:
             return cls._extract_rar_subtitle_files(source_name, archive_path, session_dir)
+        if ext in cls._sevenzip_exts:
+            return cls._extract_7z_subtitle_files(source_name, archive_path, session_dir)
 
         try:
             with zipfile.ZipFile(archive_path) as archive:
@@ -5306,6 +5345,8 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             return ".zip"
         if head.startswith(b"Rar!\x1a\x07"):
             return ".rar"
+        if head.startswith(b"7z\xbc\xaf\x27\x1c"):
+            return ".7z"
         return ""
 
     def _build_preview_response_from_uploads(
