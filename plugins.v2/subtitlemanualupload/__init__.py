@@ -109,6 +109,10 @@ class SubtitleManualUpload(_PluginBase):
     _auto_transfer_tasks: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
     _auto_transfer_worker: Optional[threading.Thread] = None
     _auto_season_package_cache: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
+    _embedded_subtitle_probe_cache: "OrderedDict[str, List[Dict[str, Any]]]" = OrderedDict()
+    _embedded_subtitle_probe_cache_max_size = 500
+    _embedded_subtitle_text_codecs = {"subrip", "srt", "ass", "ssa", "webvtt", "mov_text", "text"}
+    _embedded_subtitle_image_codecs = {"hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "xsub", "dvb_teletext", "eia_608"}
     _assrt_api_key = ""
     _assrt_api_url = "https://api.assrt.net"
     _opensubtitles_api_key = ""
@@ -3441,6 +3445,185 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         subtitles.sort(key=lambda item: item.get("name", ""))
         return subtitles
 
+    @classmethod
+    def _embedded_subtitle_tracks_for_target(cls, target_entry: Dict[str, Any]) -> List[Dict[str, Any]]:
+        storage = cls._normalize_text(target_entry.get("storage")) or "local"
+        path_text = cls._normalize_text(target_entry.get("path"))
+        if storage != "local" or not path_text or cls._is_stream_path(path_text):
+            return []
+
+        video_path = Path(path_text)
+        if not video_path.is_file():
+            return []
+
+        cache_key = cls._embedded_subtitle_probe_cache_key(video_path)
+        if cache_key:
+            cached = cls._embedded_subtitle_probe_cache.get(cache_key)
+            if cached is not None:
+                cls._embedded_subtitle_probe_cache.move_to_end(cache_key)
+                return [dict(item) for item in cached]
+
+        try:
+            completed = subprocess.run(
+                [
+                    "ffprobe",
+                    "-v",
+                    "error",
+                    "-select_streams",
+                    "s",
+                    "-show_entries",
+                    "stream=index,codec_name,disposition:stream_tags=language,title",
+                    "-of",
+                    "json",
+                    str(video_path),
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                check=True,
+                timeout=8,
+            )
+            payload = json.loads(completed.stdout or "{}")
+        except FileNotFoundError:
+            logger.warning("[SubtitleManualUpload] ffprobe 不可用，无法检查内嵌字幕 video=%s", video_path.name)
+            return []
+        except subprocess.TimeoutExpired:
+            logger.warning("[SubtitleManualUpload] 检查内嵌字幕超时 video=%s", video_path.name)
+            return []
+        except Exception as exc:
+            logger.warning("[SubtitleManualUpload] 检查内嵌字幕失败 video=%s error=%s", video_path.name, exc)
+            return []
+
+        tracks: List[Dict[str, Any]] = []
+        for stream in payload.get("streams") or []:
+            if not isinstance(stream, dict):
+                continue
+            disposition = stream.get("disposition") if isinstance(stream.get("disposition"), dict) else {}
+            if disposition.get("forced"):
+                continue
+            tags = stream.get("tags") if isinstance(stream.get("tags"), dict) else {}
+            codec = cls._normalize_text(stream.get("codec_name")).lower()
+            language = cls._normalize_text(tags.get("language"))
+            title = cls._normalize_text(tags.get("title"))
+            usable = cls._embedded_subtitle_track_is_usable(codec, title, disposition)
+            if not usable:
+                suffix = "und"
+            else:
+                suffix = cls._embedded_subtitle_language_suffix(language, title)
+                if suffix == "und":
+                    sampled_suffix = cls._embedded_subtitle_sample_language_suffix(
+                        video_path,
+                        stream.get("index"),
+                        codec,
+                    )
+                    if cls._is_chinese_language_suffix(sampled_suffix):
+                        suffix = sampled_suffix
+            is_chinese = usable and cls._is_chinese_language_suffix(suffix)
+            tracks.append(
+                {
+                    "index": stream.get("index"),
+                    "codec": codec,
+                    "language": language,
+                    "title": title,
+                    "language_suffix": suffix,
+                    "is_chinese": is_chinese,
+                }
+            )
+        if cache_key:
+            cls._embedded_subtitle_probe_cache[cache_key] = [dict(item) for item in tracks]
+            cls._embedded_subtitle_probe_cache.move_to_end(cache_key)
+            while len(cls._embedded_subtitle_probe_cache) > cls._embedded_subtitle_probe_cache_max_size:
+                cls._embedded_subtitle_probe_cache.popitem(last=False)
+        return tracks
+
+    @classmethod
+    def _embedded_subtitle_language_suffix(cls, language: Any, title: Any = "") -> str:
+        language_text = cls._normalize_text(language).strip().lower()
+        title_text = cls._normalize_text(title).strip().lower()
+        normalized_language = cls._normalize_language_suffix(language_text)
+        if normalized_language.startswith("zh-hans"):
+            return "chi"
+        if normalized_language.startswith("zh-hant"):
+            return "cht"
+        if re.search(r"繁中|繁体|繁體|traditional|zh[-_ ]?hant|zh[-_ ]?tw", language_text):
+            return "cht"
+        if re.search(r"简中|简体|簡體|simplified|zh[-_ ]?hans|zh[-_ ]?cn", language_text):
+            return "chi"
+        if re.search(r"chinese|mandarin|cantonese|中文|汉语|漢語|普通话|普通話|粤语|粵語", language_text):
+            return "chi"
+        if normalized_language != "und":
+            return normalized_language
+        if not title_text:
+            return "und"
+        if re.search(r"繁中|繁体|繁體|traditional|zh[-_ ]?hant|zh[-_ ]?tw", title_text):
+            return "cht"
+        if re.search(r"简中|简体|簡體|simplified|zh[-_ ]?hans|zh[-_ ]?cn", title_text):
+            return "chi"
+        if re.search(r"中文字幕|中字|中文|汉语|漢語|普通话|普通話", title_text):
+            return "chi"
+        return "und"
+
+    @classmethod
+    def _embedded_subtitle_probe_cache_key(cls, video_path: Path) -> str:
+        try:
+            stat = video_path.stat()
+        except Exception:
+            return ""
+        return f"{video_path}|{stat.st_size}|{stat.st_mtime_ns}"
+
+    @classmethod
+    def _embedded_subtitle_track_is_usable(cls, codec: Any, title: Any = "", disposition: Optional[Dict[str, Any]] = None) -> bool:
+        codec_text = cls._normalize_text(codec).lower()
+        if codec_text in cls._embedded_subtitle_image_codecs:
+            return False
+        disposition = disposition if isinstance(disposition, dict) else {}
+        if disposition.get("forced") or disposition.get("comment"):
+            return False
+        title_text = cls._normalize_text(title).strip().lower()
+        if not title_text:
+            return True
+        return not bool(
+            re.search(
+                r"forced|signs?|songs?|commentary|comment|sdh|closed captions?|"
+                r"特效|歌词|注释|旁白|强制|強制",
+                title_text,
+            )
+        )
+
+    @classmethod
+    def _embedded_subtitle_sample_language_suffix(cls, video_path: Path, stream_index: Any, codec_name: Any) -> str:
+        codec = cls._normalize_text(codec_name).lower()
+        if codec not in cls._embedded_subtitle_text_codecs:
+            return "und"
+        index = cls._safe_int(stream_index, -1)
+        if index < 0:
+            return "und"
+        try:
+            completed = subprocess.run(
+                [
+                    "ffmpeg",
+                    "-v",
+                    "error",
+                    "-nostdin",
+                    "-i",
+                    str(video_path),
+                    "-map",
+                    f"0:{index}",
+                    "-f",
+                    "srt",
+                    "-",
+                ],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                check=True,
+                timeout=8,
+            )
+        except Exception:
+            return "und"
+        if not completed.stdout:
+            return "und"
+        return cls._detect_language_profile(f"embedded.{codec}.srt", completed.stdout[:20000]).get("suffix", "und")
+
     def _remove_ext_marks(self, video_path: Path) -> None:
         for sub_file in video_path.parent.iterdir():
             if not sub_file.is_file():
@@ -3818,6 +4001,33 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
     @classmethod
     def _is_chinese_language_suffix(cls, suffix: Any) -> bool:
         return any(part in {"chi", "cht"} for part in cls._normalize_language_suffix(suffix).split("&"))
+
+    @classmethod
+    def _target_has_chinese_subtitle(cls, target: Dict[str, Any]) -> bool:
+        subtitles = target.get("subtitles") or []
+        if any(
+            cls._is_chinese_language_suffix((item or {}).get("language_suffix") or (item or {}).get("language"))
+            for item in subtitles
+            if isinstance(item, dict)
+        ):
+            return True
+        embedded_subtitles = target.get("embedded_subtitles") or []
+        return any(
+            bool((item or {}).get("is_chinese"))
+            or cls._is_chinese_language_suffix((item or {}).get("language_suffix") or (item or {}).get("language"))
+            for item in embedded_subtitles
+            if isinstance(item, dict)
+        )
+
+    def _auto_target_has_chinese_subtitle(self, entry: Dict[str, Any], target: Dict[str, Any]) -> bool:
+        if self._target_has_chinese_subtitle(target):
+            return True
+        embedded_subtitles = self._embedded_subtitle_tracks_for_target(entry)
+        if embedded_subtitles:
+            target["has_embedded_subtitle"] = True
+            target["embedded_subtitle_count"] = len(embedded_subtitles)
+            target["embedded_subtitles"] = embedded_subtitles
+        return self._target_has_chinese_subtitle(target)
 
     def _maybe_convert_operation_to_simplified(self, operation: Dict[str, Any], output_dir: Path) -> None:
         operation["simplified_result"] = {"enabled": False, "converted": False}
@@ -4326,8 +4536,13 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
 
     def _auto_search_and_write_entry(self, entry: Dict[str, Any]) -> Dict[str, Any]:
         target = self._target_from_entry(entry)
+        if self._auto_target_has_chinese_subtitle(entry, target):
+            return {"status": "skipped", "reason": "目标已有中文字幕", "target": target.get("label")}
         if target.get("has_subtitle"):
-            return {"status": "skipped", "reason": "目标已有外挂字幕", "target": target.get("label")}
+            logger.info(
+                "[SubtitleManualUpload] 目标已有外挂字幕但未确认中文，继续自动匹配/AI target=%s",
+                target.get("label"),
+            )
         return self._auto_search_write_subtitle(entry, target)
 
     def _call_auto_search_write_subtitle(
@@ -4423,8 +4638,13 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         strategy = self._normalize_auto_transfer_subtitle_strategy(self._auto_transfer_subtitle_strategy)
         base = {"strategy": strategy, "target": target.get("label")}
 
+        if self._auto_target_has_chinese_subtitle(entry, target):
+            return {**base, "status": "skipped", "reason": "目标已有中文字幕"}
         if target.get("has_subtitle"):
-            return {**base, "status": "skipped", "reason": "目标已有外挂字幕"}
+            logger.info(
+                "[SubtitleManualUpload] 目标已有外挂字幕但未确认中文，继续自动匹配/AI target=%s",
+                target.get("label"),
+            )
 
         if self._auto_skip_chinese_media_on_transfer:
             is_chinese, evidence = self._is_chinese_transfer_media(entry)
@@ -4906,16 +5126,10 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             key = self._auto_task_result_key(entry)
             target = self._target_from_entry(entry)
             base = {"strategy": strategy, "target": target.get("label")}
+            if self._auto_target_has_chinese_subtitle(entry, target):
+                results[key] = {**base, "status": "skipped", "reason": "目标已有中文字幕"}
+                continue
             if target.get("has_subtitle"):
-                subtitles = target.get("subtitles") or []
-                has_chinese_subtitle = any(
-                    self._is_chinese_language_suffix((item or {}).get("language_suffix") or (item or {}).get("language"))
-                    for item in subtitles
-                    if isinstance(item, dict)
-                )
-                if has_chinese_subtitle:
-                    results[key] = {**base, "status": "skipped", "reason": "目标已有中文字幕"}
-                    continue
                 logger.info(
                     "[SubtitleManualUpload] 目标已有外挂字幕但未确认中文，继续自动匹配/AI target=%s",
                     target.get("label"),

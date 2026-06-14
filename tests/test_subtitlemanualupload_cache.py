@@ -90,6 +90,7 @@ def make_plugin(module):
     plugin._auto_transfer_tasks = module.OrderedDict()
     plugin._auto_transfer_worker = None
     plugin._auto_season_package_cache = module.OrderedDict()
+    module.SubtitleManualUpload._embedded_subtitle_probe_cache = module.OrderedDict()
     plugin._cache_refreshing = False
     plugin._cache_ttl_seconds = 1800
     plugin._cache_max_entries = 10
@@ -2258,6 +2259,235 @@ def test_auto_transfer_skips_chinese_media_by_tmdb_language(tmp_path):
     assert "中文资源自动跳过" in result["reason"]
 
 
+def test_auto_transfer_skips_before_search_when_video_has_embedded_chinese_subtitle(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    entry = make_auto_entry(tmp_path, title="Anime", media_type="tv", season=4, episode=14)
+    plugin._auto_skip_chinese_media_on_transfer = False
+    original_run = module.subprocess.run
+    module.subprocess.run = lambda *args, **kwargs: types.SimpleNamespace(
+        stdout='{"streams":[{"index":2,"codec_name":"subrip","tags":{"language":"chi","title":"Chinese Simplified"}}]}'
+    )
+    plugin._auto_search_write_subtitle = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("Embedded Chinese subtitle should skip online search")
+    )
+    plugin._auto_submit_ai_for_entry = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("Embedded Chinese subtitle should skip AI")
+    )
+
+    try:
+        result = plugin._auto_process_transfer_entry(entry)
+    finally:
+        module.subprocess.run = original_run
+
+    assert result["status"] == "skipped"
+    assert result["reason"] == "目标已有中文字幕"
+
+
+def test_auto_transfer_ai_source_only_skips_embedded_chinese_before_ai(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    entry = make_auto_entry(tmp_path, title="Anime", media_type="tv", season=4, episode=14)
+    plugin._auto_skip_chinese_media_on_transfer = False
+    plugin._auto_transfer_subtitle_strategy = "ai_source_only"
+    original_run = module.subprocess.run
+    module.subprocess.run = lambda *args, **kwargs: types.SimpleNamespace(
+        stdout='{"streams":[{"index":2,"codec_name":"subrip","tags":{"language":"zho"}}]}'
+    )
+    plugin._auto_submit_ai_for_entry = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("Embedded Chinese subtitle should skip ai_source_only")
+    )
+
+    try:
+        result = plugin._auto_process_transfer_entry(entry)
+    finally:
+        module.subprocess.run = original_run
+
+    assert result["status"] == "skipped"
+    assert result["reason"] == "目标已有中文字幕"
+
+
+def test_auto_transfer_samples_unknown_embedded_text_subtitle_content(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    entry = make_auto_entry(tmp_path, title="Anime", media_type="tv", season=4, episode=14)
+    plugin._auto_skip_chinese_media_on_transfer = False
+    original_run = module.subprocess.run
+
+    def fake_run(args, *run_args, **run_kwargs):
+        if args[0] == "ffprobe":
+            return types.SimpleNamespace(
+                stdout='{"streams":[{"index":2,"codec_name":"subrip","tags":{"language":"und"}}]}'
+            )
+        return types.SimpleNamespace(
+            stdout=("1\n00:00:01,000 --> 00:00:02,000\n这是一段中文字幕内容，用来确认未知语言内嵌字幕不会漏判。\n" * 25).encode()
+        )
+
+    module.subprocess.run = fake_run
+    plugin._auto_search_write_subtitle = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("Sampled Chinese subtitle should skip online search")
+    )
+    plugin._auto_submit_ai_for_entry = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("Sampled Chinese subtitle should skip AI")
+    )
+
+    try:
+        result = plugin._auto_process_transfer_entry(entry)
+    finally:
+        module.subprocess.run = original_run
+
+    assert result["status"] == "skipped"
+    assert result["reason"] == "目标已有中文字幕"
+
+
+def test_auto_transfer_embedded_english_subtitle_still_searches(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    entry = make_auto_entry(tmp_path, title="Anime", media_type="tv", season=4, episode=14)
+    plugin._auto_skip_chinese_media_on_transfer = False
+    original_run = module.subprocess.run
+    module.subprocess.run = lambda *args, **kwargs: types.SimpleNamespace(
+        stdout='{"streams":[{"index":4,"codec_name":"ass","tags":{"language":"eng","title":"English subtitles for Chinese dialogue"}}]}'
+    )
+    plugin._auto_search_write_subtitle = lambda item, target, **kwargs: {
+        "status": "written",
+        "target": target.get("label"),
+        "result": "online chinese subtitle",
+    }
+    plugin._auto_submit_ai_for_entry = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("Written online subtitle should not trigger AI")
+    )
+
+    try:
+        result = plugin._auto_process_transfer_entry(entry)
+    finally:
+        module.subprocess.run = original_run
+
+    assert result["status"] == "written"
+    assert result["result"] == "online chinese subtitle"
+
+
+def test_auto_transfer_embedded_regional_chinese_language_tag_skips(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    entry = make_auto_entry(tmp_path, title="Anime", media_type="tv", season=4, episode=14)
+    plugin._auto_skip_chinese_media_on_transfer = False
+    original_run = module.subprocess.run
+    module.subprocess.run = lambda *args, **kwargs: types.SimpleNamespace(
+        stdout='{"streams":[{"index":2,"codec_name":"ass","tags":{"language":"zh-Hans-CN"}}]}'
+    )
+    plugin._auto_search_write_subtitle = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("Regional Chinese language tag should skip online search")
+    )
+
+    try:
+        result = plugin._auto_process_transfer_entry(entry)
+    finally:
+        module.subprocess.run = original_run
+
+    assert result["status"] == "skipped"
+    assert result["reason"] == "目标已有中文字幕"
+
+
+def test_auto_transfer_embedded_chinese_pgs_does_not_skip_online_search(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    entry = make_auto_entry(tmp_path, title="Anime", media_type="tv", season=4, episode=14)
+    plugin._auto_skip_chinese_media_on_transfer = False
+    original_run = module.subprocess.run
+    module.subprocess.run = lambda *args, **kwargs: types.SimpleNamespace(
+        stdout='{"streams":[{"index":5,"codec_name":"hdmv_pgs_subtitle","tags":{"language":"chi","title":"Chinese"}}]}'
+    )
+    plugin._auto_search_write_subtitle = lambda item, target, **kwargs: {
+        "status": "written",
+        "target": target.get("label"),
+        "result": "online chinese subtitle",
+    }
+
+    try:
+        result = plugin._auto_process_transfer_entry(entry)
+    finally:
+        module.subprocess.run = original_run
+
+    assert result["status"] == "written"
+    assert result["result"] == "online chinese subtitle"
+
+
+def test_auto_transfer_embedded_chinese_signs_does_not_skip_online_search(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    entry = make_auto_entry(tmp_path, title="Anime", media_type="tv", season=4, episode=14)
+    plugin._auto_skip_chinese_media_on_transfer = False
+    original_run = module.subprocess.run
+    module.subprocess.run = lambda *args, **kwargs: types.SimpleNamespace(
+        stdout='{"streams":[{"index":2,"codec_name":"ass","tags":{"language":"chi","title":"Chinese Signs/Songs"}}]}'
+    )
+    plugin._auto_search_write_subtitle = lambda item, target, **kwargs: {
+        "status": "written",
+        "target": target.get("label"),
+        "result": "online chinese subtitle",
+    }
+
+    try:
+        result = plugin._auto_process_transfer_entry(entry)
+    finally:
+        module.subprocess.run = original_run
+
+    assert result["status"] == "written"
+    assert result["result"] == "online chinese subtitle"
+
+
+def test_auto_transfer_group_skips_embedded_chinese_target_before_season_search(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._auto_skip_chinese_media_on_transfer = False
+    entries = [
+        make_auto_entry(tmp_path, filename="Show.S01E01.mkv", id="e1", media_key="tv-key", media_type="tv", title="Show", season=1, episode=1),
+        make_auto_entry(tmp_path, filename="Show.S01E02.mkv", id="e2", media_key="tv-key", media_type="tv", title="Show", season=1, episode=2),
+    ]
+    original_run = module.subprocess.run
+
+    def fake_run(args, *run_args, **run_kwargs):
+        video_path = str(args[-1])
+        if video_path.endswith("Show.S01E01.mkv"):
+            return types.SimpleNamespace(
+                stdout='{"streams":[{"index":2,"codec_name":"subrip","tags":{"language":"zho","title":"Chinese Simplified"}}]}'
+            )
+        return types.SimpleNamespace(stdout='{"streams":[]}')
+
+    module.subprocess.run = fake_run
+    cache_ids = []
+    season_ids = []
+
+    def fake_cache(items):
+        cache_ids.extend(item["id"] for item in items)
+        return {"status": "skipped", "written_by_target": {}}
+
+    def fake_season(items, task_ids=None):
+        season_ids.extend(item["id"] for item in items)
+        return {
+            "status": "skipped",
+            "written_by_target": {},
+            "ai_by_target": {},
+        }
+
+    plugin._auto_write_from_season_cache = fake_cache
+    plugin._auto_search_write_season_package = fake_season
+    searched = []
+    plugin._auto_search_write_subtitle = lambda entry, target, **kwargs: searched.append(entry["id"]) or {"status": "skipped", "target": target.get("label")}
+
+    try:
+        results = plugin._auto_process_transfer_group(entries, task_ids=["t1", "t2"])
+    finally:
+        module.subprocess.run = original_run
+
+    assert results["e1"]["status"] == "skipped"
+    assert results["e1"]["reason"] == "目标已有中文字幕"
+    assert cache_ids == ["e2"]
+    assert season_ids == ["e2"]
+    assert searched == ["e2"]
+
+
 def test_auto_transfer_chinese_title_is_not_skip_evidence_without_tmdb_match(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
@@ -2395,7 +2625,7 @@ def test_auto_subtitle_preference_config_normalizes_legacy_strings(tmp_path):
     assert plugin._auto_ass_to_srt_for_ai is False
 
 
-def test_auto_transfer_existing_subtitle_skips_all_strategies(tmp_path):
+def test_auto_transfer_existing_chinese_subtitle_skips_all_strategies(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
     entry = make_auto_entry(tmp_path, filename="Movie.mkv")
@@ -2410,7 +2640,33 @@ def test_auto_transfer_existing_subtitle_skips_all_strategies(tmp_path):
     result = plugin._auto_process_transfer_entry(entry)
 
     assert result["status"] == "skipped"
-    assert result["reason"] == "目标已有外挂字幕"
+    assert result["reason"] == "目标已有中文字幕"
+
+
+def test_auto_transfer_existing_non_chinese_subtitle_still_searches(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    entry = make_auto_entry(tmp_path, filename="Movie.mkv")
+    (tmp_path / "Movie.eng.srt").write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+    plugin._auto_skip_chinese_media_on_transfer = False
+    original_run = module.subprocess.run
+    module.subprocess.run = lambda *args, **kwargs: types.SimpleNamespace(stdout='{"streams":[]}')
+    plugin._auto_search_write_subtitle = lambda item, target, **kwargs: {
+        "status": "written",
+        "target": target.get("label"),
+        "result": "online chinese subtitle",
+    }
+    plugin._auto_submit_ai_for_entry = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("Written online subtitle should not trigger AI")
+    )
+
+    try:
+        result = plugin._auto_process_transfer_entry(entry)
+    finally:
+        module.subprocess.run = original_run
+
+    assert result["status"] == "written"
+    assert result["result"] == "online chinese subtitle"
 
 
 def test_auto_search_write_uses_best_api_candidate_when_multiple_results(tmp_path):
