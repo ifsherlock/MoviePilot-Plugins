@@ -2,6 +2,12 @@
 
 面向 MoviePilot V2 的个人插件仓库，目前主要维护字幕匹配、AI 字幕生成和 Emby 媒体库封面生成。
 
+## 展示图
+
+![插件界面](images/plugin-preview.svg)
+
+![字幕批量搜索](images/subtitle-batch-search.png)
+
 ## 开发初衷
 
 这个仓库主要想把 MoviePilot 里的字幕处理做成一条顺手的链路：本地媒体库、在线字幕、手动上传、智能匹配、调轴、AI 翻译都能接起来。
