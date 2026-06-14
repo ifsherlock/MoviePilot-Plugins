@@ -83,7 +83,7 @@ https://github.com/ifsherlock/MoviePilot-Plugins
 
 ## 致谢
 
-本仓库基于 MoviePilot 插件机制开发，README 排版参考 [KoWming/MoviePilot-Plugins](https://github.com/KoWming/MoviePilot-Plugins)。
+本仓库基于 MoviePilot 插件机制开发。
 
 参考项目和源代码：
 
@@ -92,6 +92,7 @@ https://github.com/ifsherlock/MoviePilot-Plugins
 - [ChineseSubFinder](https://github.com/ChineseSubFinder/ChineseSubFinder)
 - [allanpk716/chinesesubfinder](https://github.com/allanpk716/chinesesubfinder)
 - [HappyQuQu/jellyfin-library-poster](https://github.com/HappyQuQu/jellyfin-library-poster)
+- Emby媒体库封面生成插件原库：[justzerock/MoviePilot-Plugins](https://github.com/justzerock/MoviePilot-Plugins)
 
 主要依赖库：
 
