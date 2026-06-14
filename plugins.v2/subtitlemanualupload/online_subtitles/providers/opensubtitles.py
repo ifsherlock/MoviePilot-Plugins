@@ -89,6 +89,8 @@ class OpenSubtitlesProvider(BaseSubtitleProvider):
             if not isinstance(row, dict):
                 continue
             attrs = row.get("attributes") if isinstance(row.get("attributes"), dict) else {}
+            if _opensubtitles_metadata_conflicts(attrs, targets):
+                continue
             files = attrs.get("files") if isinstance(attrs.get("files"), list) else []
             file_info = next((item for item in files if isinstance(item, dict) and item.get("file_id")), None)
             if not file_info:

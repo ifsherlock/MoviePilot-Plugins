@@ -121,6 +121,13 @@ GENERIC_TITLE_ALIAS_CODES = {
     "zh-hant",
     "zh-tw",
 }
+AMBIGUOUS_SINGLE_TITLE_TOKENS = {
+    "zero",
+    "life",
+    "world",
+    "another",
+    "starting",
+}
 
 
 @dataclass
@@ -943,7 +950,7 @@ def _identity_priority(item: OnlineSubtitleResult) -> int:
 
 def _target_year_from_targets(targets: List[Dict[str, Any]]) -> int:
     for target in targets or []:
-        for field in ["basename", "filename", "path", "title", "year"]:
+        for field in ["year", "title", "basename", "filename", "path"]:
             years = _extract_years(str(target.get(field) or ""))
             if years:
                 return years[0]
@@ -1115,6 +1122,68 @@ def _years_from_file_info(file_info: Dict[str, Any]) -> List[int]:
     return sorted(set(years))
 
 
+def _opensubtitles_metadata_conflicts(attrs: Dict[str, Any], targets: List[Dict[str, Any]]) -> bool:
+    target_tmdb_ids = {
+        str(target.get("tmdb_id") or "").strip()
+        for target in targets or []
+        if str(target.get("tmdb_id") or "").strip()
+    }
+    target_imdb_ids = {
+        _normalize_imdb_tt(target.get("imdb_id"))
+        for target in targets or []
+        if _normalize_imdb_tt(target.get("imdb_id"))
+    }
+    result_tmdb_ids: set[str] = set()
+    result_imdb_ids: set[str] = set()
+
+    def collect(value: Any) -> None:
+        if isinstance(value, dict):
+            for key, item in value.items():
+                key_lower = str(key or "").lower()
+                if key_lower in {"tmdb_id", "feature_tmdb_id"}:
+                    text = str(item or "").strip()
+                    if text and text not in {"0", "None", "null"}:
+                        result_tmdb_ids.add(text)
+                    continue
+                if key_lower in {"imdb_id", "feature_imdb_id"}:
+                    imdb = _normalize_imdb_tt(item)
+                    if imdb:
+                        result_imdb_ids.add(imdb)
+                    continue
+                collect(item)
+        elif isinstance(value, list):
+            for item in value:
+                collect(item)
+
+    collect(attrs or {})
+    return bool(
+        (target_tmdb_ids and result_tmdb_ids and target_tmdb_ids.isdisjoint(result_tmdb_ids))
+        or (target_imdb_ids and result_imdb_ids and target_imdb_ids.isdisjoint(result_imdb_ids))
+    )
+
+
+def _safe_opensubtitles_title_identity(
+    attrs: Dict[str, Any],
+    file_info: Dict[str, Any],
+    targets: List[Dict[str, Any]],
+) -> bool:
+    feature = attrs.get("feature_details") if isinstance(attrs.get("feature_details"), dict) else {}
+    values = [
+        attrs.get("release"),
+        attrs.get("movie_name"),
+        feature.get("title"),
+        feature.get("movie_name"),
+        file_info.get("file_name"),
+    ]
+    haystacks = [str(value or "") for value in values if str(value or "").strip()]
+    for alias in _title_aliases({}, targets):
+        if _is_ambiguous_single_title_alias(alias):
+            continue
+        if any(_strong_title_matches(alias, haystack) for haystack in haystacks):
+            return True
+    return False
+
+
 def _extract_years(value: str) -> List[int]:
     current_year = datetime.now().year + 1
     years = []
@@ -1242,18 +1311,18 @@ def _assess_result_match(
         episode_ok = True
 
     media_type = next((str(target.get("media_type") or "") for target in targets or [] if target.get("media_type")), "")
-    tv_identity_with_episode = (
-        media_type == "tv"
-        and episode_ok
-        and (series_matched or title_matched or metadata_matched or file_title_matched)
-    )
-    if tv_identity_with_episode and reject_reason and reject_reason == year_reject_reason:
-        reject_reason = ""
     if media_type == "tv" and not series_matched and not metadata_matched:
         title_matched = False
         reject_reason = reject_reason or "剧名身份不匹配"
     if media_type == "tv" and episode_required and not episode_ok:
         reject_reason = reject_reason or "季集不匹配"
+    safe_tv_title_identity = (
+        media_type == "tv"
+        and year_reject_reason
+        and _safe_opensubtitles_title_identity(attrs, file_info, targets)
+    )
+    if safe_tv_title_identity and reject_reason == year_reject_reason:
+        reject_reason = ""
 
     if _guess_language_label(title):
         score += 6
@@ -1265,7 +1334,7 @@ def _assess_result_match(
         not target_year
         or not result_years
         or target_year in result_years
-        or tv_identity_with_episode
+        or safe_tv_title_identity
     )
     if reject_reason:
         identity_status = "failed"
@@ -1375,6 +1444,15 @@ def _strong_title_matches(needle: str, haystack: str) -> bool:
         return False
     matched = sum(1 for part in parts if re.search(rf"(?<![a-z0-9]){re.escape(part)}(?![a-z0-9])", clean_haystack.lower()))
     return matched == len(parts) if len(parts) <= 2 else matched >= max(2, len(parts) - 1)
+
+
+def _is_ambiguous_single_title_alias(value: Any) -> bool:
+    parts = [
+        part
+        for part in re.split(r"\s+", _normalize_title_for_match(value).lower())
+        if len(part) >= 3 and not re.fullmatch(r"(?:19\d{2}|20\d{2}|s\d{1,2}e\d{1,3}|s\d{1,2})", part)
+    ]
+    return len(parts) == 1 and parts[0] in AMBIGUOUS_SINGLE_TITLE_TOKENS
 
 
 def _normalize_title_for_match(value: Any) -> str:

@@ -773,6 +773,334 @@ def test_opensubtitles_allows_tv_year_conflict_with_series_identity_and_episode(
     assert results[0].identity_status == "strong"
 
 
+def test_opensubtitles_rejects_short_rezero_alias_match_for_unrelated_2005_show():
+    module = load_online_module()
+    provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key")
+
+    def fake_api_json(path, params, *, method="GET"):
+        return {
+            "data": [
+                {
+                    "attributes": {
+                        "language": "en",
+                        "release": "Zero.no.Tsukaima.S01E01.2005",
+                        "feature_details": {
+                            "feature_type": "Tvshow",
+                            "year": 2005,
+                            "title": "Zero no Tsukaima",
+                        },
+                        "files": [{"file_id": 2005, "file_name": "Zero.no.Tsukaima.S01E01.2005.en.srt"}],
+                    }
+                }
+            ]
+        }
+
+    provider._api_json = fake_api_json
+
+    results = provider.search_all(
+        ["Re:ZERO -Starting Life in Another World- S01"],
+        [
+            {
+                "media_type": "tv",
+                "title": "Re：从零开始的异世界生活",
+                "en_title": "Re:ZERO -Starting Life in Another World-",
+                "tmdb_aliases": ["Re:Zero"],
+                "tmdb_id": 65942,
+                "season": 1,
+                "episode": 1,
+                "year": "2016",
+            }
+        ],
+        "season",
+    )
+
+    assert results == []
+
+
+def test_opensubtitles_filters_real_rezero_tmdb_dirty_payload_from_nas():
+    module = load_online_module()
+    provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key")
+    payload_rows = [
+        {
+            "id": "2132252",
+            "attributes": {
+                "language": "en",
+                "release": "American.Dad.S03E05.PDTV.XviD-XOR",
+                "feature_details": {
+                    "feature_type": "Episode",
+                    "year": 2007,
+                    "title": "Dungeons and Wagons",
+                    "tmdb_id": 65942,
+                    "imdb_id": 1102388,
+                },
+                "season_number": 3,
+                "episode_number": 5,
+                "upload_date": "2008-02-26T09:57:23Z",
+                "files": [{"file_id": 2213465, "file_name": "american.dad.s03e05.pdtv.xvid-xor"}],
+            },
+        },
+        {
+            "id": "7055631",
+            "attributes": {
+                "language": "en",
+                "release": "American Dad S03E05 Haylias.DVDRip.NonHI.cc.en.20FOX",
+                "feature_details": {
+                    "feature_type": "Episode",
+                    "year": 2007,
+                    "title": "Dungeons and Wagons",
+                    "tmdb_id": 65942,
+                    "imdb_id": 1102388,
+                },
+                "season_number": 3,
+                "episode_number": 5,
+                "upload_date": "2023-01-20T17:35:16Z",
+                "files": [{"file_id": 7993667, "file_name": "American Dad S03E05 Haylias.DVDRip.NonHI.cc.en.20FOX"}],
+            },
+        },
+        {
+            "id": "7055608",
+            "attributes": {
+                "language": "en",
+                "release": "American Dad S03E05 Haylias.DVDRip.HI.cc.en.20FOX",
+                "feature_details": {
+                    "feature_type": "Episode",
+                    "year": 2007,
+                    "title": "Dungeons and Wagons",
+                    "tmdb_id": 65942,
+                    "imdb_id": 1102388,
+                },
+                "season_number": 3,
+                "episode_number": 5,
+                "upload_date": "2023-01-20T17:32:42Z",
+                "files": [{"file_id": 7993636, "file_name": "American Dad S03E05 Haylias.DVDRip.HI.cc.en.20FOX"}],
+            },
+        },
+        {
+            "id": "7383876",
+            "attributes": {
+                "language": "en",
+                "release": "American Dad. - S03E05 - Haylias",
+                "feature_details": {
+                    "feature_type": "Episode",
+                    "year": 2007,
+                    "title": "Dungeons and Wagons",
+                    "tmdb_id": 65942,
+                    "imdb_id": 1102388,
+                },
+                "season_number": 3,
+                "episode_number": 5,
+                "upload_date": "2023-09-16T22:53:56Z",
+                "files": [{"file_id": 8317865, "file_name": "American Dad. - S03E05 - Haylias.eng"}],
+            },
+        },
+        {
+            "id": "6871177",
+            "attributes": {
+                "language": "ko",
+                "release": "[Moozzi2] Re Zero Kara Hajimeru Isekai Seikatsu - OVA [ Memory Snow ] (BD 1920x1080 x.264 FLACx2)",
+                "feature_details": {
+                    "feature_type": "Tvshow",
+                    "year": 2016,
+                    "title": "Re:ZERO -Starting Life in Another World-",
+                    "tmdb_id": 65942,
+                    "imdb_id": 5607616,
+                },
+                "upload_date": "2019-07-03T15:37:14Z",
+                "files": [{"file_id": 7831489, "file_name": "Moozzi2. Re Zero Kara Hajimeru Isekai Seikatsu - OVA . Memory Snow . (BD 1920x1080 x.264 FLACx2)"}],
+            },
+        },
+        {
+            "id": "6871181",
+            "attributes": {
+                "language": "ko",
+                "release": "[Ohys-Raws] Re Zero kara Hajimeru Isekai Seikatsu 2nd Season - 11 (AT-X 1920x1080 x264 AAC)",
+                "feature_details": {
+                    "feature_type": "Tvshow",
+                    "year": 2016,
+                    "title": "Re:ZERO -Starting Life in Another World-",
+                    "tmdb_id": 65942,
+                    "imdb_id": 5607616,
+                },
+                "upload_date": "2020-09-19T10:02:14Z",
+                "files": [{"file_id": 7831492, "file_name": "[Ohys-Raws] Re Zero kara Hajimeru Isekai Seikatsu 2nd Season - 11 (AT-X 1920x1080 x264 AAC)"}],
+            },
+        },
+        {
+            "id": "9975685",
+            "attributes": {
+                "language": "ko",
+                "release": "American Dad! - S03E05 - Dungeons And Wagons",
+                "feature_details": {
+                    "feature_type": "Episode",
+                    "year": 2007,
+                    "title": "Dungeons and Wagons",
+                    "tmdb_id": 65942,
+                    "imdb_id": 1102388,
+                },
+                "season_number": 3,
+                "episode_number": 5,
+                "upload_date": "2024-07-10T16:24:48Z",
+                "files": [{"file_id": 10884507, "file_name": "American Dad. - S03E05 - Dungeons And Wagons"}],
+            },
+        },
+    ]
+
+    def fake_api_json(path, params, *, method="GET"):
+        return {"data": payload_rows}
+
+    provider._api_json = fake_api_json
+
+    targets = [
+        {
+            "media_type": "tv",
+            "title": "Re：从零开始的异世界生活",
+            "en_title": "Re:ZERO -Starting Life in Another World-",
+            "original_title": "Re:ゼロから始める異世界生活",
+            "tmdb_aliases": ["Re:Zero", "Re Zero Kara Hajimeru Isekai Seikatsu"],
+            "tmdb_id": 65942,
+            "season": season,
+            "episode": episode,
+            "year": "2016",
+        }
+        for season in range(1, 5)
+        for episode in range(1, 14)
+    ]
+    results = provider.search_all(["Re:ZERO -Starting Life in Another World- S01"], targets, "season")
+
+    assert results == []
+
+
+def test_opensubtitles_rejects_conflicting_tmdb_metadata_even_when_title_matches():
+    module = load_online_module()
+    provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key")
+
+    def fake_api_json(path, params, *, method="GET"):
+        return {
+            "data": [
+                {
+                    "attributes": {
+                        "language": "en",
+                        "release": "Re.ZERO.Starting.Life.in.Another.World.S01E01",
+                        "feature_details": {
+                            "feature_type": "Tvshow",
+                            "year": 2016,
+                            "title": "Re:ZERO -Starting Life in Another World-",
+                            "tmdb_id": 999999,
+                        },
+                        "files": [{"file_id": 99, "file_name": "Re.ZERO.Starting.Life.in.Another.World.S01E01.en.srt"}],
+                    }
+                }
+            ]
+        }
+
+    provider._api_json = fake_api_json
+
+    results = provider.search_all(
+        ["Re:ZERO -Starting Life in Another World- S01"],
+        [
+            {
+                "media_type": "tv",
+                "title": "Re：从零开始的异世界生活",
+                "en_title": "Re:ZERO -Starting Life in Another World-",
+                "tmdb_id": 65942,
+                "season": 1,
+                "episode": 1,
+                "year": "2016",
+            }
+        ],
+        "season",
+    )
+
+    assert results == []
+
+
+def test_opensubtitles_rejects_flat_feature_tmdb_conflict():
+    module = load_online_module()
+    provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key")
+
+    def fake_api_json(path, params, *, method="GET"):
+        return {
+            "data": [
+                {
+                    "attributes": {
+                        "language": "en",
+                        "release": "Re.ZERO.Starting.Life.in.Another.World.S01E01",
+                        "feature_tmdb_id": 999999,
+                        "feature_imdb_id": 5607616,
+                        "feature_details": {
+                            "feature_type": "Tvshow",
+                            "year": 2016,
+                            "title": "Re:ZERO -Starting Life in Another World-",
+                        },
+                        "files": [{"file_id": 100, "file_name": "Re.ZERO.Starting.Life.in.Another.World.S01E01.en.srt"}],
+                    }
+                }
+            ]
+        }
+
+    provider._api_json = fake_api_json
+
+    results = provider.search_all(
+        ["Re:ZERO -Starting Life in Another World- S01"],
+        [
+            {
+                "media_type": "tv",
+                "title": "Re：从零开始的异世界生活",
+                "en_title": "Re:ZERO -Starting Life in Another World-",
+                "tmdb_id": 65942,
+                "season": 1,
+                "episode": 1,
+                "year": "2016",
+            }
+        ],
+        "season",
+    )
+
+    assert results == []
+
+
+def test_opensubtitles_keeps_single_word_title_match():
+    module = load_online_module()
+    provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key")
+
+    def fake_api_json(path, params, *, method="GET"):
+        return {
+            "data": [
+                {
+                    "attributes": {
+                        "language": "en",
+                        "release": "Life.S01E01.1080p.WEB",
+                        "feature_details": {
+                            "feature_type": "Tvshow",
+                            "year": 2020,
+                            "title": "Life",
+                        },
+                        "files": [{"file_id": 101, "file_name": "Life.S01E01.en.srt"}],
+                    }
+                }
+            ]
+        }
+
+    provider._api_json = fake_api_json
+
+    results = provider.search(
+        "Life S01E01",
+        [
+            {
+                "media_type": "tv",
+                "title": "Life",
+                "en_title": "Life",
+                "season": 1,
+                "episode": 1,
+                "year": "2020",
+            }
+        ],
+        "episode",
+    )
+
+    assert [item.result_id for item in results] == ["101"]
+
+
 def test_opensubtitles_filters_filename_year_and_upload_year_conflicts():
     module = load_online_module()
     provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key")
