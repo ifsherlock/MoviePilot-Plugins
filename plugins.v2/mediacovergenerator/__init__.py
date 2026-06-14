@@ -55,7 +55,7 @@ class MediaCoverGenerator(_PluginBase):
     # 插件图标
     plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/emby.png"
     # 插件版本
-    plugin_version = "0.9.10"
+    plugin_version = "0.9.11"
     # 插件作者
     plugin_author = "ifsherlock"
     # 作者主页
