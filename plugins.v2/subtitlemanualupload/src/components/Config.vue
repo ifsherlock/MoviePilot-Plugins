@@ -22,6 +22,7 @@ const localConfig = ref({
   auto_search_on_transfer: false,
   auto_skip_chinese_media_on_transfer: true,
   auto_transfer_subtitle_strategy: 'online_then_ai_source',
+  trust_transfer_history_paths: false,
   auto_multi_subtitle_mode: 'best',
   auto_subtitle_language_priority: ['bilingual', 'chi', 'cht', 'eng'],
   auto_subtitle_format_priority: ['.ass', '.srt', '.ssa', '.vtt'],
@@ -217,6 +218,7 @@ function normalizeConfig(input) {
     auto_search_on_transfer: Boolean(input?.auto_search_on_transfer),
     auto_skip_chinese_media_on_transfer: input?.auto_skip_chinese_media_on_transfer !== false,
     auto_transfer_subtitle_strategy: autoStrategy,
+    trust_transfer_history_paths: Boolean(input?.trust_transfer_history_paths),
     auto_multi_subtitle_mode: autoMultiSubtitleModes.some(item => item.value === input?.auto_multi_subtitle_mode)
       ? input.auto_multi_subtitle_mode
       : 'best',
@@ -328,6 +330,13 @@ onMounted(() => {
               label="入库自动处理跳过中文资源"
               color="success"
               hide-details
+            />
+            <VSwitch
+              v-model="localConfig.trust_transfer_history_paths"
+              label="信任整理历史路径"
+              color="warning"
+              hint="CD2、网盘挂载、SMB 等慢路径可开启，刷新资源清单时不逐条访问文件。"
+              persistent-hint
             />
             <VSelect
               v-model="localConfig.auto_transfer_subtitle_strategy"

@@ -81,7 +81,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/subtitle-match.png"
-    plugin_version = "0.1.68"
+    plugin_version = "0.1.69"
     plugin_author = "ifsherlock"
     author_url = "https://github.com/ifsherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -125,6 +125,7 @@ class SubtitleManualUpload(_PluginBase):
     _auto_skip_chinese_media_on_transfer = True
     _auto_transfer_subtitle_strategy = "online_then_ai_source"
     _auto_search_min_score = 20
+    _trust_transfer_history_paths = False
     _timeline_max_offset_seconds = 120
     _timeline_min_offset_seconds = 0.2
     _timeline_vad_mode = "webrtc"
@@ -144,6 +145,9 @@ class SubtitleManualUpload(_PluginBase):
     _entry_map: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
     _media_index_cache: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
     _cache_refreshing = False
+    _cache_refresh_started_at = ""
+    _cache_refresh_completed_at = ""
+    _cache_refresh_error = ""
     _local_entries_cache: Dict[str, Any] = {
         "loaded_at": None,
         "entries": [],
@@ -261,6 +265,7 @@ class SubtitleManualUpload(_PluginBase):
         self._auto_transfer_subtitle_strategy = self._normalize_auto_transfer_subtitle_strategy(
             config.get("auto_transfer_subtitle_strategy")
         )
+        self._trust_transfer_history_paths = bool(config.get("trust_transfer_history_paths", False))
         self._auto_multi_subtitle_mode = self._normalize_auto_multi_subtitle_mode(
             config.get("auto_multi_subtitle_mode")
         )
@@ -294,6 +299,7 @@ class SubtitleManualUpload(_PluginBase):
         type(self)._auto_search_on_transfer = self._auto_search_on_transfer
         type(self)._auto_skip_chinese_media_on_transfer = self._auto_skip_chinese_media_on_transfer
         type(self)._auto_transfer_subtitle_strategy = self._auto_transfer_subtitle_strategy
+        type(self)._trust_transfer_history_paths = self._trust_transfer_history_paths
         type(self)._auto_multi_subtitle_mode = self._auto_multi_subtitle_mode
         type(self)._auto_subtitle_language_priority = self._auto_subtitle_language_priority
         type(self)._auto_subtitle_format_priority = self._auto_subtitle_format_priority
@@ -312,6 +318,9 @@ class SubtitleManualUpload(_PluginBase):
         self._auto_transfer_worker = None
         self._auto_season_package_cache = OrderedDict()
         self._cache_refreshing = False
+        self._cache_refresh_started_at = ""
+        self._cache_refresh_completed_at = ""
+        self._cache_refresh_error = ""
         self._local_entries_cache = {"loaded_at": None, "entries": [], "media_count": 0, "persisted": False}
         self._restore_persisted_local_cache()
         self._restore_persisted_match_history_cache()
@@ -649,6 +658,21 @@ class SubtitleManualUpload(_PluginBase):
                             },
                             {
                                 "component": "VCol",
+                                "props": {"cols": 12, "md": 6},
+                                "content": [
+                                    {
+                                        "component": "VSwitch",
+                                        "props": {
+                                            "model": "trust_transfer_history_paths",
+                                            "label": "信任整理历史路径",
+                                            "hint": "CD2、网盘挂载、SMB 等慢路径可开启，刷新资源清单时不逐条访问文件。",
+                                            "persistentHint": True,
+                                        },
+                                    }
+                                ],
+                            },
+                            {
+                                "component": "VCol",
                                 "props": {"cols": 12, "md": 4},
                                 "content": [
                                     {
@@ -966,6 +990,7 @@ class SubtitleManualUpload(_PluginBase):
             "auto_search_on_transfer": False,
             "auto_skip_chinese_media_on_transfer": True,
             "auto_transfer_subtitle_strategy": "online_then_ai_source",
+            "trust_transfer_history_paths": False,
             "auto_multi_subtitle_mode": "best",
             "auto_subtitle_language_priority": list(self._default_auto_language_priority),
             "auto_subtitle_format_priority": list(self._default_auto_format_priority),
@@ -1039,6 +1064,7 @@ class SubtitleManualUpload(_PluginBase):
                 "auto_search_on_transfer": self._auto_search_on_transfer,
                 "auto_skip_chinese_media_on_transfer": self._auto_skip_chinese_media_on_transfer,
                 "auto_transfer_subtitle_strategy": self._auto_transfer_subtitle_strategy,
+                "trust_transfer_history_paths": self._trust_transfer_history_paths,
                 "timeline_max_offset_seconds": self._timeline_max_offset_seconds,
                 "timeline_min_offset_seconds": self._timeline_min_offset_seconds,
                 "timeline_vad_mode": self._timeline_vad_mode,
@@ -1317,6 +1343,8 @@ class SubtitleManualUpload(_PluginBase):
         path = cls._normalize_text(entry.get("path"))
         if not path:
             return False
+        if getattr(cls, "_trust_transfer_history_paths", False):
+            return True
         try:
             return Path(path).is_file()
         except Exception:
@@ -2023,6 +2051,8 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         allowed_exts.update(cls._stream_exts)
         if suffix and allowed_exts and suffix not in allowed_exts:
             return False
+        if getattr(cls, "_trust_transfer_history_paths", False):
+            return True
         try:
             return Path(path).is_file()
         except Exception:
@@ -2501,11 +2531,17 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         if self._cache_refreshing:
             return
         self._cache_refreshing = True
+        self._cache_refresh_started_at = datetime.now().isoformat(timespec="seconds")
+        self._cache_refresh_completed_at = ""
+        self._cache_refresh_error = ""
 
         def worker():
             try:
                 self._load_local_entries(force=True)
+                self._cache_refresh_completed_at = datetime.now().isoformat(timespec="seconds")
+                self._cache_refresh_error = ""
             except Exception as exc:
+                self._cache_refresh_error = str(exc)
                 logger.warning("[SubtitleManualUpload] 后台刷新本地资源缓存失败: %s", exc)
             finally:
                 self._cache_refreshing = False
@@ -2597,6 +2633,10 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             "persisted": bool(cache.get("persisted")),
             "stale": stale,
             "refreshing": bool(self._cache_refreshing),
+            "refresh_started_at": self._cache_refresh_started_at,
+            "refresh_completed_at": self._cache_refresh_completed_at,
+            "refresh_error": self._cache_refresh_error,
+            "trust_transfer_history_paths": bool(self._trust_transfer_history_paths),
             "ttl_seconds": self._cache_ttl_seconds,
             "expires_in": expires_in,
             "updated_at": loaded_at.isoformat(timespec="seconds") if loaded_at else "",
@@ -3398,6 +3438,8 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         storage = cls._normalize_text(target_entry.get("storage")) or "local"
         if storage != "local":
             return []
+        if getattr(cls, "_trust_transfer_history_paths", False):
+            return []
 
         video_path_raw = cls._normalize_text(target_entry.get("path"))
         if not video_path_raw:
@@ -3452,6 +3494,8 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         storage = cls._normalize_text(target_entry.get("storage")) or "local"
         path_text = cls._normalize_text(target_entry.get("path"))
         if storage != "local" or not path_text or cls._is_stream_path(path_text):
+            return []
+        if getattr(cls, "_trust_transfer_history_paths", False):
             return []
 
         video_path = Path(path_text)
@@ -5468,14 +5512,21 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         )
 
     def api_refresh_index(self) -> Dict[str, Any]:
-        entries = self._refresh_local_cache()
+        self._start_background_cache_refresh()
         cache_status = self._cache_status()
+        has_cache = bool((self._local_entries_cache or {}).get("entries"))
+        message = "媒体库资源清单已在后台刷新"
+        if has_cache:
+            message += "，当前页面先使用已有缓存"
+        else:
+            message += "，首次刷新完成前列表可能暂时为空"
         return self._ok(
             {
                 "realtime": False,
+                "background": True,
                 "index": cache_status,
             },
-            message=f"已刷新媒体库资源清单：{cache_status['media_count']} 个媒体，{len(entries)} 个本地视频目标",
+            message=message,
         )
 
     def _existing_timeline_operations(

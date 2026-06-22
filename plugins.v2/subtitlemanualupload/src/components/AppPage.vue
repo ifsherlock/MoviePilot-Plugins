@@ -164,6 +164,7 @@ let aiTaskTimer = null
 let timelineTaskTimer = null
 let historyTimelineTimer = null
 let autoQueueTimer = null
+let indexRefreshTimer = null
 let onlineSearchSeq = 0
 let onlineDownloadSeq = 0
 const ONLINE_PROVIDER_TIMEOUT_MS = 25000
@@ -1522,6 +1523,58 @@ async function loadStatus() {
   }
 }
 
+function stopIndexRefreshPolling() {
+  if (indexRefreshTimer) {
+    clearTimeout(indexRefreshTimer)
+    indexRefreshTimer = null
+  }
+}
+
+function scheduleIndexRefreshPolling() {
+  stopIndexRefreshPolling()
+  if (!status.value?.index?.refreshing) {
+    refreshing.value = false
+    return
+  }
+  refreshing.value = true
+  indexRefreshTimer = setTimeout(async () => {
+    await pollIndexRefresh()
+  }, 3000)
+}
+
+async function pollIndexRefresh() {
+  try {
+    const response = await props.api.get(`${pluginBase.value}/status`)
+    const nextStatus = unwrapResponse(response) || status.value
+    const wasRefreshing = Boolean(status.value?.index?.refreshing)
+    status.value = nextStatus
+    if (nextStatus.ai_subtitle) {
+      aiTaskData.value = { ...aiTaskData.value, status: nextStatus.ai_subtitle }
+    }
+    if (nextStatus.index?.refresh_error) {
+      error.value = nextStatus.index.refresh_error
+      refreshing.value = false
+      return
+    }
+    if (wasRefreshing && !nextStatus.index?.refreshing) {
+      refreshing.value = false
+      if (selectedMedia.value) {
+        await loadTargets(selectedMedia.value, selectedSeason.value || 'all')
+      } else if (rootTab.value === 'history') {
+        await loadMatchHistory()
+      } else {
+        await runSearch()
+      }
+      message.value = '媒体库资源清单刷新完成'
+      return
+    }
+    scheduleIndexRefreshPolling()
+  } catch (err) {
+    refreshing.value = false
+    error.value = errorMessage(err, '刷新媒体库清单状态失败')
+  }
+}
+
 function stopAutoQueuePolling() {
   if (autoQueueTimer) {
     clearTimeout(autoQueueTimer)
@@ -1593,7 +1646,9 @@ async function refreshIndex() {
     if (data.index) {
       status.value = { ...status.value, index: data.index }
     }
-    if (selectedMedia.value) {
+    if (data.index?.refreshing) {
+      scheduleIndexRefreshPolling()
+    } else if (selectedMedia.value) {
       await loadTargets(selectedMedia.value, selectedSeason.value || 'all')
     } else if (rootTab.value === 'history') {
       await loadMatchHistory()
@@ -1603,8 +1658,11 @@ async function refreshIndex() {
     message.value = response?.message || '已刷新媒体库资源清单'
   } catch (err) {
     error.value = errorMessage(err, '刷新媒体库清单失败')
-  } finally {
     refreshing.value = false
+  } finally {
+    if (!status.value?.index?.refreshing) {
+      refreshing.value = false
+    }
   }
 }
 
@@ -2450,6 +2508,7 @@ onBeforeUnmount(() => {
   stopTimelinePolling()
   stopHistoryTimelinePolling()
   stopAutoQueuePolling()
+  stopIndexRefreshPolling()
 })
 
 defineExpose({
