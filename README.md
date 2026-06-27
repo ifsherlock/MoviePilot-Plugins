@@ -17,7 +17,7 @@
 
 | 插件 | 目录 | 版本 | 主要功能 |
 | --- | --- | --- | --- |
-| 字幕匹配 | `plugins.v2/subtitlemanualupload` | 0.1.67 | 字幕搜索、下载、上传、匹配、改名、调轴、入库自动处理 |
+| 字幕匹配 | `plugins.v2/subtitlemanualupload` | 0.1.70 | 字幕搜索、下载、上传、匹配、改名、调轴、入库自动处理 |
 | AI字幕生成(联动版) | `plugins.v2/autosubv3` | 3.5.54 | 音轨识别、字幕提取、AI 翻译、任务队列、联动字幕匹配 |
 | Emby媒体库封面生成 | `plugins.v2/mediacovergenerator` | 0.9.10 | 生成 Emby/Jellyfin 媒体库静态或动态封面 |
 
