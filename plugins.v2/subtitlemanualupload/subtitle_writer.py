@@ -161,6 +161,23 @@ class SubtitleWriter:
         self._timeline_fix_func = timeline_fix_func
         self._convert_subtitle_file_to_simplified = convert_subtitle_file_to_simplified
 
+    def build_write_operations(
+        self,
+        items: List[Dict[str, Any]],
+        upload_map: Dict[str, Dict[str, Any]],
+        target_entries: Dict[str, Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        owner = self._owner
+        return build_write_operations(
+            items,
+            upload_map,
+            target_entries,
+            normalize_text=owner._normalize_text,
+            normalize_language_suffix=owner._normalize_language_suffix,
+            build_destination_name_func=owner._build_destination_name,
+            http_exception=self._http_exception,
+        )
+
     def maybe_convert_operation_to_simplified(self, operation: Dict[str, Any], output_dir: Path) -> None:
         owner = self._owner
         operation["simplified_result"] = {"enabled": False, "converted": False}
@@ -325,6 +342,71 @@ class SubtitleWriter:
         )
         owner._invalidate_match_history_cache()
         return written_results, fixed_count, simplified_count
+
+    def apply_upload_session(
+        self,
+        *,
+        session_id: str,
+        items: List[Dict[str, Any]],
+        locked_skipped: List[Dict[str, str]],
+        fix_timeline: bool = False,
+        allow_risky_offset: bool = False,
+    ) -> Tuple[Dict[str, Any], str]:
+        owner = self._owner
+        session_dir, session_payload = owner._load_session(session_id)
+        upload_map = {
+            item["upload_id"]: item
+            for item in session_payload.get("uploads", [])
+            if item.get("upload_id")
+        }
+        target_entries = {
+            item["id"]: item
+            for item in session_payload.get("targets", [])
+            if item.get("id")
+        }
+        if not target_entries:
+            self._logger.warning("[SubtitleManualUpload] 写入失败：会话目标为空 session=%s", session_id)
+            raise self._http_exception(status_code=400, detail="目标视频已失效，请重新搜索媒体并上传")
+
+        self._logger.info(
+            "[SubtitleManualUpload] 开始写入字幕 session=%s items=%s targets=%s fix_timeline=%s",
+            session_id,
+            len(items),
+            len(target_entries),
+            fix_timeline,
+        )
+        operations = self.build_write_operations(items, upload_map, target_entries)
+        written_results, fixed_count, simplified_count = self.write_operations_to_disk(
+            session_dir=session_dir,
+            operations=operations,
+            fix_timeline=fix_timeline,
+            allow_risky_offset=allow_risky_offset,
+        )
+
+        shutil.rmtree(session_dir, ignore_errors=True)
+
+        message = f"已写入 {len(written_results)} 个字幕文件"
+        if fix_timeline:
+            message += f"，智能调轴 {fixed_count} 个"
+        if owner._traditional_to_simplified:
+            message += f"，繁转简 {simplified_count} 个"
+
+        self._logger.info(
+            "[SubtitleManualUpload] 字幕写入完成 session=%s count=%s fix_timeline=%s fixed=%s",
+            session_id,
+            len(written_results),
+            fix_timeline,
+            fixed_count,
+        )
+
+        return (
+            {
+                "count": len(written_results),
+                "written": written_results,
+                "skipped": locked_skipped,
+            },
+            message,
+        )
 
     def run_timeline_fix(
         self,

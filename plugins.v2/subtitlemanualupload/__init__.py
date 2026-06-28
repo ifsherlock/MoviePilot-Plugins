@@ -4837,60 +4837,15 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                 message="没有写入字幕，锁定项已跳过",
             )
 
-        session_dir, session_payload = self._load_session(session_id)
-        upload_map = {
-            item["upload_id"]: item
-            for item in session_payload.get("uploads", [])
-            if item.get("upload_id")
-        }
-        target_entries = {
-            item["id"]: item
-            for item in session_payload.get("targets", [])
-            if item.get("id")
-        }
-        if not target_entries:
-            logger.warning("[SubtitleManualUpload] 写入失败：会话目标为空 session=%s", session_id)
-            raise HTTPException(status_code=400, detail="目标视频已失效，请重新搜索媒体并上传")
-
-        logger.info(
-            "[SubtitleManualUpload] 开始写入字幕 session=%s items=%s targets=%s fix_timeline=%s",
-            session_id,
-            len(items),
-            len(target_entries),
-            fix_timeline,
-        )
-        operations = self._build_write_operations(items, upload_map, target_entries)
-        written_results, fixed_count, simplified_count = self._write_operations_to_disk(
-            session_dir=session_dir,
-            operations=operations,
+        payload, message = self._subtitle_writer().apply_upload_session(
+            session_id=session_id,
+            items=items,
+            locked_skipped=locked_skipped,
             fix_timeline=fix_timeline,
             allow_risky_offset=allow_risky_offset,
         )
 
-        shutil.rmtree(session_dir, ignore_errors=True)
-
-        message = f"已写入 {len(written_results)} 个字幕文件"
-        if fix_timeline:
-            message += f"，智能调轴 {fixed_count} 个"
-        if self._traditional_to_simplified:
-            message += f"，繁转简 {simplified_count} 个"
-
-        logger.info(
-            "[SubtitleManualUpload] 字幕写入完成 session=%s count=%s fix_timeline=%s fixed=%s",
-            session_id,
-            len(written_results),
-            fix_timeline,
-            fixed_count,
-        )
-
-        return self._ok(
-            {
-                "count": len(written_results),
-                "written": written_results,
-                "skipped": locked_skipped,
-            },
-            message=message,
-        )
+        return self._ok(payload, message=message)
 
     async def api_clear_subtitles(self, request: Request) -> Dict[str, Any]:
         body = await request.json()

@@ -546,6 +546,85 @@ def test_prepare_upload_uses_upload_session_service(tmp_path):
     module.shutil.rmtree(session_dir, ignore_errors=True)
 
 
+def test_api_apply_upload_uses_subtitle_writer_and_forwards_risky_offset(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    source = tmp_path / "Upload.srt"
+    destination = tmp_path / "Movie.chi.srt"
+    video.write_text("video", encoding="utf-8")
+    source.write_text("1\n00:00:01,000 --> 00:00:02,000\n你好\n", encoding="utf-8")
+    target = {
+        "id": "m1",
+        "path": str(video),
+        "basename": "Movie",
+        "filename": "Movie.mkv",
+        "target_label": "Movie",
+        "storage": "local",
+    }
+    plugin._write_session(
+        "apply-writer",
+        {
+            "uploads": [
+                {
+                    "upload_id": "u1",
+                    "source_name": source.name,
+                    "archive_name": "",
+                    "stored_path": str(source),
+                    "ext": ".srt",
+                }
+            ],
+            "targets": [target],
+        },
+    )
+    plugin._write_operations_to_disk = lambda **kwargs: (_ for _ in ()).throw(
+        AssertionError("api_apply_upload should call SubtitleWriter directly")
+    )
+    captured = {}
+
+    def fake_fix(video_path, subtitle_path, output_path, **kwargs):
+        captured["kwargs"] = kwargs
+        output_path.write_bytes(subtitle_path.read_bytes())
+        return module.TimelineFixResult(
+            enabled=True,
+            applied=True,
+            reason="timeline adjusted",
+            base="audio:webrtc",
+            offset_seconds=121.0,
+            scale_factor=1.0,
+            score=0.9,
+            confidence="high",
+        )
+
+    module.fix_subtitle_timeline = fake_fix
+
+    response = asyncio.run(
+        plugin.api_apply_upload(
+            FakeRequest(
+                {
+                    "session_id": "apply-writer",
+                    "items": [
+                        {
+                            "upload_id": "u1",
+                            "target_id": "m1",
+                            "ext": ".srt",
+                            "language_suffix": "chi",
+                        }
+                    ],
+                    "fix_timeline": True,
+                    "allow_risky_offset": True,
+                }
+            )
+        )
+    )
+
+    assert response["success"] is True
+    assert response["data"]["count"] == 1
+    assert destination.exists()
+    assert "智能调轴 1 个" in response["message"]
+    assert captured["kwargs"]["allow_risky_offset"] is True
+
+
 def test_online_download_preview_uses_upload_session_service(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
