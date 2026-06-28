@@ -4,7 +4,9 @@ import re
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from .online_subtitle import (
+    DEFAULT_ASSRT_API_URL,
     DEFAULT_ENGINE,
+    DEFAULT_OPENSUBTITLES_API_URL,
     DEFAULT_PROVIDER_ROOTS,
     normalize_online_engine,
     normalize_provider_roots,
@@ -18,9 +20,6 @@ from .subtitle_language import (
 
 
 DEFAULT_RAR_TOOL_PATH = "/usr/local/bin/7z"
-DEFAULT_ASSRT_API_URL = "https://api.assrt.net"
-DEFAULT_OPENSUBTITLES_API_URL = "https://api.opensubtitles.com/api/v1"
-
 DEFAULT_ONLINE_PROVIDER_IDS = ["assrt", "opensubtitles"]
 AVAILABLE_ONLINE_PROVIDER_IDS = ["subhd", "zimuku", "assrt", "opensubtitles"]
 MANUAL_ONLINE_PROVIDER_IDS = ["subhd", "zimuku", "assrt", "opensubtitles"]
