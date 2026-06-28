@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import asyncio
+import io
 import importlib.util
 import re
 import sys
 import types
+import zipfile
 from pathlib import Path
+
+import pytest
 
 
 def load_plugin_module():
@@ -307,6 +311,164 @@ def test_upload_session_write_and_load_round_trips_payload(tmp_path):
         assert loaded == payload
     finally:
         module.shutil.rmtree(session_dir, ignore_errors=True)
+
+
+def _zip_payload(entries):
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED) as archive:
+        for name, content in entries:
+            archive.writestr(name, content)
+    return buffer.getvalue()
+
+
+def _limited_upload_session_service(module, tmp_path, **limit_overrides):
+    upload_session = plugin_submodule(module, "upload_session")
+    cls = module.SubtitleManualUpload
+    limits = upload_session.ArchiveResourceLimits(**limit_overrides)
+    return upload_session.UploadSessionService(
+        data_path=tmp_path,
+        subtitle_exts=cls._subtitle_exts,
+        archive_exts=cls._archive_exts,
+        rar_exts=cls._rar_exts,
+        sevenzip_exts=cls._sevenzip_exts,
+        default_session_hours=cls._default_session_hours,
+        hash_text=cls._hash_text,
+        extract_rar_subtitle_files=lambda *args, **kwargs: [],
+        extract_7z_subtitle_files=lambda *args, **kwargs: [],
+        resource_limits=limits,
+    )
+
+
+def test_upload_content_size_limit_rejects_single_subtitle(tmp_path):
+    module, _, _ = load_plugin_module()
+    service = _limited_upload_session_service(module, tmp_path, max_content_bytes=3)
+
+    with pytest.raises(ValueError, match="上传内容大小超过限制"):
+        service.extract_subtitle_files("movie.srt", b"1234", tmp_path)
+
+
+def test_archive_member_count_limit_rejects_zip(tmp_path):
+    module, _, _ = load_plugin_module()
+    service = _limited_upload_session_service(
+        module,
+        tmp_path,
+        max_content_bytes=1_000_000,
+        max_archive_members=2,
+    )
+    payload = _zip_payload([("a.txt", b""), ("b.txt", b""), ("c.txt", b"")])
+
+    with pytest.raises(ValueError, match="成员数量超过限制"):
+        service.extract_subtitle_files("many.zip", payload, tmp_path)
+
+
+def test_archive_member_size_limit_rejects_zip_subtitle(tmp_path):
+    module, _, _ = load_plugin_module()
+    service = _limited_upload_session_service(
+        module,
+        tmp_path,
+        max_content_bytes=1_000_000,
+        max_archive_member_bytes=3,
+    )
+    payload = _zip_payload([("movie.srt", b"1234")])
+
+    with pytest.raises(ValueError, match="单文件大小超过限制"):
+        service.extract_subtitle_files("sample.zip", payload, tmp_path)
+
+
+def test_archive_total_size_limit_rejects_zip_subtitles(tmp_path):
+    module, _, _ = load_plugin_module()
+    service = _limited_upload_session_service(
+        module,
+        tmp_path,
+        max_content_bytes=1_000_000,
+        max_archive_member_bytes=100,
+        max_archive_total_bytes=5,
+    )
+    payload = _zip_payload([("a.srt", b"123"), ("b.srt", b"456")])
+
+    with pytest.raises(ValueError, match="总解压大小超过限制"):
+        service.extract_subtitle_files("sample.zip", payload, tmp_path)
+
+
+def test_archive_subtitle_count_limit_rejects_zip_subtitles(tmp_path):
+    module, _, _ = load_plugin_module()
+    service = _limited_upload_session_service(
+        module,
+        tmp_path,
+        max_content_bytes=1_000_000,
+        max_archive_member_bytes=100,
+        max_archive_total_bytes=100,
+        max_subtitle_files=1,
+    )
+    payload = _zip_payload([("a.srt", b"1"), ("b.srt", b"2")])
+
+    with pytest.raises(ValueError, match="字幕文件数量超过限制"):
+        service.extract_subtitle_files("sample.zip", payload, tmp_path)
+
+
+def test_rarfile_resource_limit_error_does_not_fallback(tmp_path):
+    module, _, _ = load_plugin_module()
+    upload_session = plugin_submodule(module, "upload_session")
+    fallback_called = False
+
+    class FakeMember:
+        filename = "movie.srt"
+        file_size = 4
+
+        def isdir(self):
+            return False
+
+    class FakeArchive:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback):
+            return False
+
+        def infolist(self):
+            return [FakeMember()]
+
+        def read(self, member):
+            return b"1234"
+
+    class FakeRarfileModule:
+        @staticmethod
+        def RarFile(path):
+            return FakeArchive()
+
+    def extract_with_rarfile(source_name, archive_path, session_dir, **kwargs):
+        return upload_session.extract_rar_subtitle_files_with_rarfile(
+            source_name,
+            archive_path,
+            session_dir,
+            rarfile_module_factory=lambda: FakeRarfileModule,
+            rar_python_package="rarfile",
+            subtitle_exts={".srt"},
+            hash_text=module.SubtitleManualUpload._hash_text,
+            **kwargs,
+        )
+
+    def fallback_extract(*args, **kwargs):
+        nonlocal fallback_called
+        fallback_called = True
+        return []
+
+    limits = upload_session.ArchiveResourceLimits(max_archive_member_bytes=3)
+
+    with pytest.raises(upload_session.ArchiveResourceLimitError, match="单文件大小超过限制"):
+        upload_session.extract_rar_subtitle_files(
+            "sample.rar",
+            tmp_path / "sample.rar",
+            tmp_path,
+            rar_python_available_func=lambda: True,
+            extract_with_rarfile=extract_with_rarfile,
+            rar_tool_func=lambda: "7z",
+            extract_command_archive_subtitle_files_func=fallback_extract,
+            rar_python_package="rarfile",
+            resource_limits=limits,
+        )
+
+    assert not fallback_called
 
 
 def test_extract_7z_subtitle_files_with_external_tool(tmp_path):

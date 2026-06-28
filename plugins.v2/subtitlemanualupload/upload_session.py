@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import zipfile
+from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
@@ -16,9 +17,91 @@ from fastapi import HTTPException
 
 HashText = Callable[[str], str]
 DecodePreviewBytes = Callable[[bytes], str]
-ArchiveExtractor = Callable[[str, Path, Path], List[Dict[str, Any]]]
+ArchiveExtractor = Callable[..., List[Dict[str, Any]]]
 NormalizeText = Callable[[Any], str]
 WarningLogger = Callable[..., None]
+
+MAX_UPLOAD_CONTENT_BYTES = 50 * 1024 * 1024
+MAX_ARCHIVE_MEMBERS = 512
+MAX_ARCHIVE_MEMBER_BYTES = 20 * 1024 * 1024
+MAX_ARCHIVE_TOTAL_BYTES = 80 * 1024 * 1024
+MAX_SUBTITLE_FILES = 100
+
+
+@dataclass(frozen=True)
+class ArchiveResourceLimits:
+    max_content_bytes: int = MAX_UPLOAD_CONTENT_BYTES
+    max_archive_members: int = MAX_ARCHIVE_MEMBERS
+    max_archive_member_bytes: int = MAX_ARCHIVE_MEMBER_BYTES
+    max_archive_total_bytes: int = MAX_ARCHIVE_TOTAL_BYTES
+    max_subtitle_files: int = MAX_SUBTITLE_FILES
+
+
+DEFAULT_ARCHIVE_RESOURCE_LIMITS = ArchiveResourceLimits()
+
+
+class ArchiveResourceLimitError(ValueError):
+    """Raised when uploaded content or extracted archive data exceeds policy limits."""
+
+
+def _size_label(size: int) -> str:
+    return f"{size} bytes"
+
+
+def validate_upload_content_size(
+    source_name: str,
+    content_size: int,
+    limits: ArchiveResourceLimits = DEFAULT_ARCHIVE_RESOURCE_LIMITS,
+) -> None:
+    if content_size > limits.max_content_bytes:
+        name = source_name or "上传内容"
+        raise ArchiveResourceLimitError(
+            f"上传内容大小超过限制: {name} "
+            f"{_size_label(content_size)} > {_size_label(limits.max_content_bytes)}"
+        )
+
+
+class ArchiveResourceGuard:
+    def __init__(
+        self,
+        source_name: str,
+        limits: ArchiveResourceLimits = DEFAULT_ARCHIVE_RESOURCE_LIMITS,
+    ) -> None:
+        self._source_name = source_name or "压缩包"
+        self._limits = limits
+        self._member_count = 0
+        self._subtitle_count = 0
+        self._total_size = 0
+
+    def count_member(self, member_name: str) -> None:
+        self._member_count += 1
+        if self._member_count > self._limits.max_archive_members:
+            raise ArchiveResourceLimitError(
+                f"压缩包成员数量超过限制: {self._source_name} "
+                f"{self._member_count} > {self._limits.max_archive_members}"
+            )
+
+    def check_member_size(self, member_name: str, member_size: int) -> None:
+        if member_size > self._limits.max_archive_member_bytes:
+            raise ArchiveResourceLimitError(
+                f"压缩包单文件大小超过限制: {member_name or self._source_name} "
+                f"{_size_label(member_size)} > {_size_label(self._limits.max_archive_member_bytes)}"
+            )
+
+    def accept_subtitle(self, member_name: str, member_size: int) -> None:
+        self.check_member_size(member_name, member_size)
+        self._subtitle_count += 1
+        if self._subtitle_count > self._limits.max_subtitle_files:
+            raise ArchiveResourceLimitError(
+                f"压缩包字幕文件数量超过限制: {self._source_name} "
+                f"{self._subtitle_count} > {self._limits.max_subtitle_files}"
+            )
+        self._total_size += member_size
+        if self._total_size > self._limits.max_archive_total_bytes:
+            raise ArchiveResourceLimitError(
+                f"压缩包总解压大小超过限制: {self._source_name} "
+                f"{_size_label(self._total_size)} > {_size_label(self._limits.max_archive_total_bytes)}"
+            )
 
 
 def archive_suffix_from_content(content: bytes) -> str:
@@ -164,6 +247,7 @@ def extract_rar_subtitle_files_with_rarfile(
     rar_python_package: str,
     subtitle_exts: Iterable[str],
     hash_text: HashText,
+    resource_limits: ArchiveResourceLimits = DEFAULT_ARCHIVE_RESOURCE_LIMITS,
 ) -> List[Dict[str, Any]]:
     rarfile = rarfile_module_factory()
     if not rarfile:
@@ -171,9 +255,11 @@ def extract_rar_subtitle_files_with_rarfile(
 
     prepared: List[Dict[str, Any]] = []
     subtitle_ext_set = set(subtitle_exts)
+    guard = ArchiveResourceGuard(source_name, resource_limits)
     try:
         with rarfile.RarFile(str(archive_path)) as archive:
             for member in archive.infolist():
+                guard.count_member(member.filename)
                 if member.isdir():
                     continue
                 member_name = re.split(r"[\\/]", member.filename)[-1]
@@ -182,7 +268,11 @@ def extract_rar_subtitle_files_with_rarfile(
                 member_ext = Path(member_name).suffix.lower()
                 if member_ext not in subtitle_ext_set:
                     continue
+                member_size = int(getattr(member, "file_size", 0) or 0)
+                if member_size:
+                    guard.check_member_size(member_name, member_size)
                 member_bytes = archive.read(member)
+                guard.accept_subtitle(member_name, len(member_bytes))
                 upload_id = hash_text(
                     f"{source_name}|{member.filename}|{len(member_bytes)}|{datetime.now().timestamp()}"
                 )
@@ -197,6 +287,8 @@ def extract_rar_subtitle_files_with_rarfile(
                         "ext": member_ext,
                     }
                 )
+    except ArchiveResourceLimitError:
+        raise
     except Exception as exc:
         raise ValueError(str(exc)) from exc
     return prepared
@@ -208,15 +300,23 @@ def extract_rar_subtitle_files(
     session_dir: Path,
     *,
     rar_python_available_func: Callable[[], bool],
-    extract_with_rarfile: Callable[[str, Path, Path], List[Dict[str, Any]]],
+    extract_with_rarfile: Callable[..., List[Dict[str, Any]]],
     rar_tool_func: Callable[[], str],
-    extract_command_archive_subtitle_files_func: Callable[[str, Path, Path, str], List[Dict[str, Any]]],
+    extract_command_archive_subtitle_files_func: Callable[..., List[Dict[str, Any]]],
     rar_python_package: str,
     logger_warning: Optional[WarningLogger] = None,
+    resource_limits: ArchiveResourceLimits = DEFAULT_ARCHIVE_RESOURCE_LIMITS,
 ) -> List[Dict[str, Any]]:
     if rar_python_available_func():
         try:
-            return extract_with_rarfile(source_name, archive_path, session_dir)
+            return extract_with_rarfile(
+                source_name,
+                archive_path,
+                session_dir,
+                resource_limits=resource_limits,
+            )
+        except ArchiveResourceLimitError:
+            raise
         except ValueError as exc:
             if logger_warning:
                 logger_warning(
@@ -230,7 +330,13 @@ def extract_rar_subtitle_files(
         package_note = f"已声明 Python 依赖 {rar_python_package}，但 RAR 内容解压仍需要外部解压程序"
         raise ValueError(f"{package_note}；请在容器安装 unrar、bsdtar、7z、7za 或映射静态 7zz")
 
-    return extract_command_archive_subtitle_files_func(source_name, archive_path, session_dir, tool_path)
+    return extract_command_archive_subtitle_files_func(
+        source_name,
+        archive_path,
+        session_dir,
+        tool_path,
+        resource_limits=resource_limits,
+    )
 
 
 def extract_7z_subtitle_files(
@@ -239,12 +345,19 @@ def extract_7z_subtitle_files(
     session_dir: Path,
     *,
     sevenzip_tool_func: Callable[[], str],
-    extract_command_archive_subtitle_files_func: Callable[[str, Path, Path, str], List[Dict[str, Any]]],
+    extract_command_archive_subtitle_files_func: Callable[..., List[Dict[str, Any]]],
+    resource_limits: ArchiveResourceLimits = DEFAULT_ARCHIVE_RESOURCE_LIMITS,
 ) -> List[Dict[str, Any]]:
     tool_path = sevenzip_tool_func()
     if not tool_path:
         raise ValueError("7z 压缩包解压需要容器内可执行 7z、7za、7zz、bsdtar，或映射宿主机静态 7zz")
-    return extract_command_archive_subtitle_files_func(source_name, archive_path, session_dir, tool_path)
+    return extract_command_archive_subtitle_files_func(
+        source_name,
+        archive_path,
+        session_dir,
+        tool_path,
+        resource_limits=resource_limits,
+    )
 
 
 def extract_command_archive_subtitle_files(
@@ -257,11 +370,14 @@ def extract_command_archive_subtitle_files(
     hash_text: HashText,
     list_members: Callable[[Path, str], List[str]],
     read_member: Callable[[Path, str, str], bytes],
+    resource_limits: ArchiveResourceLimits = DEFAULT_ARCHIVE_RESOURCE_LIMITS,
 ) -> List[Dict[str, Any]]:
     prepared: List[Dict[str, Any]] = []
     subtitle_ext_set = set(subtitle_exts)
+    guard = ArchiveResourceGuard(source_name, resource_limits)
     members = list_members(archive_path, tool_path)
     for member in members:
+        guard.count_member(member)
         member_name = re.split(r"[\\/]", member)[-1]
         if not member_name or member_name.startswith("."):
             continue
@@ -269,6 +385,7 @@ def extract_command_archive_subtitle_files(
         if member_ext not in subtitle_ext_set:
             continue
         member_bytes = read_member(archive_path, member, tool_path)
+        guard.accept_subtitle(member_name, len(member_bytes))
         upload_id = hash_text(f"{source_name}|{member}|{len(member_bytes)}|{datetime.now().timestamp()}")
         stored_path = session_dir / f"{upload_id}{member_ext}"
         stored_path.write_bytes(member_bytes)
@@ -331,6 +448,7 @@ class UploadSessionService:
         extract_rar_subtitle_files: ArchiveExtractor,
         extract_7z_subtitle_files: ArchiveExtractor,
         logger_warning: Optional[WarningLogger] = None,
+        resource_limits: ArchiveResourceLimits = DEFAULT_ARCHIVE_RESOURCE_LIMITS,
     ) -> None:
         self._data_path = Path(data_path)
         self._subtitle_exts = set(subtitle_exts)
@@ -342,6 +460,7 @@ class UploadSessionService:
         self._extract_rar_subtitle_files = extract_rar_subtitle_files
         self._extract_7z_subtitle_files = extract_7z_subtitle_files
         self._logger_warning = logger_warning
+        self._resource_limits = resource_limits
 
     def get_session_root(self) -> Path:
         root = self._data_path / "sessions"
@@ -370,6 +489,7 @@ class UploadSessionService:
         source_name = Path(upload_name or "").name
         ext = Path(source_name).suffix.lower()
         prepared: List[Dict[str, Any]] = []
+        validate_upload_content_size(source_name, len(raw_bytes), self._resource_limits)
 
         if ext in self._subtitle_exts:
             upload_id = self._hash_text(f"{source_name}|{len(raw_bytes)}|{datetime.now().timestamp()}")
@@ -392,13 +512,25 @@ class UploadSessionService:
         archive_path = session_dir / source_name
         archive_path.write_bytes(raw_bytes)
         if ext in self._rar_exts:
-            return self._extract_rar_subtitle_files(source_name, archive_path, session_dir)
+            return self._extract_rar_subtitle_files(
+                source_name,
+                archive_path,
+                session_dir,
+                resource_limits=self._resource_limits,
+            )
         if ext in self._sevenzip_exts:
-            return self._extract_7z_subtitle_files(source_name, archive_path, session_dir)
+            return self._extract_7z_subtitle_files(
+                source_name,
+                archive_path,
+                session_dir,
+                resource_limits=self._resource_limits,
+            )
 
         try:
             with zipfile.ZipFile(archive_path) as archive:
+                guard = ArchiveResourceGuard(source_name, self._resource_limits)
                 for member in archive.infolist():
+                    guard.count_member(member.filename)
                     if member.is_dir():
                         continue
                     member_name = Path(member.filename).name
@@ -407,7 +539,9 @@ class UploadSessionService:
                     member_ext = Path(member_name).suffix.lower()
                     if member_ext not in self._subtitle_exts:
                         continue
+                    guard.check_member_size(member_name, int(member.file_size or 0))
                     member_bytes = archive.read(member)
+                    guard.accept_subtitle(member_name, len(member_bytes))
                     upload_id = self._hash_text(
                         f"{source_name}|{member.filename}|{len(member_bytes)}|{datetime.now().timestamp()}"
                     )

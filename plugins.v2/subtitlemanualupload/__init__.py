@@ -110,6 +110,8 @@ from .subtitle_language import (
 from .timeline_fixer import TimelineFixResult, check_timeline_fixer_dependencies, fix_subtitle_timeline
 from .tongwen import convert_subtitle_file_to_simplified
 from .upload_session import (
+    DEFAULT_ARCHIVE_RESOURCE_LIMITS,
+    ArchiveResourceLimits,
     UploadSessionService,
     archive_suffix_from_content as upload_archive_suffix_from_content,
     extract_7z_subtitle_files as upload_extract_7z_subtitle_files,
@@ -2975,6 +2977,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         source_name: str,
         archive_path: Path,
         session_dir: Path,
+        resource_limits: ArchiveResourceLimits = DEFAULT_ARCHIVE_RESOURCE_LIMITS,
     ) -> List[Dict[str, Any]]:
         return upload_extract_rar_subtitle_files_with_rarfile(
             source_name,
@@ -2984,6 +2987,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             rar_python_package=cls._rar_python_package,
             subtitle_exts=cls._subtitle_exts,
             hash_text=cls._hash_text,
+            resource_limits=resource_limits,
         )
 
     @classmethod
@@ -2992,6 +2996,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         source_name: str,
         archive_path: Path,
         session_dir: Path,
+        resource_limits: ArchiveResourceLimits = DEFAULT_ARCHIVE_RESOURCE_LIMITS,
     ) -> List[Dict[str, Any]]:
         return upload_extract_rar_subtitle_files(
             source_name,
@@ -3003,6 +3008,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             extract_command_archive_subtitle_files_func=cls._extract_command_archive_subtitle_files,
             rar_python_package=cls._rar_python_package,
             logger_warning=logger.warning,
+            resource_limits=resource_limits,
         )
 
     @classmethod
@@ -3011,6 +3017,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         source_name: str,
         archive_path: Path,
         session_dir: Path,
+        resource_limits: ArchiveResourceLimits = DEFAULT_ARCHIVE_RESOURCE_LIMITS,
     ) -> List[Dict[str, Any]]:
         return upload_extract_7z_subtitle_files(
             source_name,
@@ -3018,6 +3025,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             session_dir,
             sevenzip_tool_func=cls._sevenzip_tool,
             extract_command_archive_subtitle_files_func=cls._extract_command_archive_subtitle_files,
+            resource_limits=resource_limits,
         )
 
     @classmethod
@@ -3027,6 +3035,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         archive_path: Path,
         session_dir: Path,
         tool_path: str,
+        resource_limits: ArchiveResourceLimits = DEFAULT_ARCHIVE_RESOURCE_LIMITS,
     ) -> List[Dict[str, Any]]:
         return upload_extract_command_archive_subtitle_files(
             source_name,
@@ -3037,6 +3046,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             hash_text=cls._hash_text,
             list_members=cls._list_rar_members,
             read_member=cls._read_rar_member,
+            resource_limits=resource_limits,
         )
 
     @classmethod
