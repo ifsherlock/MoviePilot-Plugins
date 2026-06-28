@@ -1473,7 +1473,7 @@ def test_ai_tasks_empty_request_includes_tasks_by_target():
     assert response["data"]["tasks_by_target"] == {}
 
 
-def test_delete_single_subtitle_only_allows_target_subtitles(tmp_path):
+def test_api_delete_subtitle_only_allows_target_subtitles(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
     video = tmp_path / "Movie.mkv"
@@ -1494,7 +1494,7 @@ def test_delete_single_subtitle_only_allows_target_subtitles(tmp_path):
     assert unrelated.exists()
 
 
-def test_delete_single_subtitle_rejects_locked_target(tmp_path):
+def test_api_delete_subtitle_rejects_locked_target(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
     video = tmp_path / "Movie.mkv"
@@ -1517,6 +1517,57 @@ def test_delete_single_subtitle_rejects_locked_target(tmp_path):
         raise AssertionError("locked target should reject subtitle deletion")
 
     assert subtitle.exists()
+
+
+def test_clear_subtitles_skips_locked_targets_and_uses_enumerated_subtitles(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video1 = tmp_path / "Movie1.mkv"
+    video2 = tmp_path / "Movie2.mkv"
+    sub1 = tmp_path / "Movie1.chi.srt"
+    sub2 = tmp_path / "Movie2.chi.srt"
+    unrelated = tmp_path / "Other.chi.srt"
+    for path in [video1, video2, sub1, sub2, unrelated]:
+        path.write_text("data", encoding="utf-8")
+    entries = [
+        {"id": "t1", "path": str(video1), "basename": "Movie1", "target_label": "Movie1", "storage": "local"},
+        {"id": "t2", "path": str(video2), "basename": "Movie2", "target_label": "Movie2", "storage": "local"},
+    ]
+    plugin._remember_targets(entries)
+
+    response = asyncio.run(
+        plugin.api_clear_subtitles(FakeRequest({"target_ids": ["t1", "t2"], "locked_target_ids": ["t2"]}))
+    )
+
+    assert response["success"] is True
+    assert response["data"]["count"] == 1
+    assert not sub1.exists()
+    assert sub2.exists()
+    assert unrelated.exists()
+    assert response["data"]["failed"][0]["target_id"] == "t2"
+
+
+def test_restore_subtitle_backup_missing_returns_404(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    subtitle = tmp_path / "Movie.chi.srt"
+    video.write_text("video", encoding="utf-8")
+    subtitle.write_text("subtitle", encoding="utf-8")
+    entry = {"id": "t1", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}
+    plugin._remember_targets([entry])
+
+    try:
+        asyncio.run(
+            plugin.api_restore_subtitle_backup(
+                FakeRequest({"target_id": "t1", "subtitle_path": str(subtitle)})
+            )
+        )
+    except module.HTTPException as exc:
+        assert exc.status_code == 404
+        assert "没有找到调轴前备份" in exc.detail
+    else:
+        raise AssertionError("missing subtitle backup should return 404")
 
 
 def test_search_media_candidates_returns_total_with_page_slice(tmp_path):

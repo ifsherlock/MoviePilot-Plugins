@@ -5059,66 +5059,20 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             )
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新搜索媒体并选择季度/文件")
 
-        deleted: List[Dict[str, Any]] = []
-        failed: List[Dict[str, str]] = [*locked_skipped]
-        visited_paths = set()
-        for target_id in target_ids:
-            clean_target_id = self._normalize_text(target_id)
-            target_entry = target_entries.get(clean_target_id)
-            if not target_entry:
-                failed.append({"target_id": clean_target_id, "reason": "目标视频已失效"})
-                continue
-            if self._normalize_text(target_entry.get("storage")) not in {"", "local"}:
-                failed.append({"target_id": clean_target_id, "reason": "当前仅支持清空本地媒体文件的外挂字幕"})
-                continue
-
-            target_label = self._target_from_entry(target_entry).get("label")
-            for subtitle in self._subtitle_files_for_target(target_entry):
-                subtitle_path = Path(subtitle["path"])
-                path_key = str(subtitle_path)
-                if path_key in visited_paths:
-                    continue
-                visited_paths.add(path_key)
-                try:
-                    subtitle_path.unlink()
-                    deleted.append(
-                        {
-                            "target_id": clean_target_id,
-                            "target_label": target_label,
-                            "name": subtitle_path.name,
-                            "path": path_key,
-                        }
-                    )
-                except Exception as exc:
-                    logger.error(
-                        "[SubtitleManualUpload] 删除外挂字幕失败 target=%s subtitle=%s error=%s",
-                        clean_target_id[:8],
-                        subtitle_path.name,
-                        exc,
-                    )
-                    failed.append({"target_id": clean_target_id, "reason": f"{subtitle_path.name}: {exc}"})
+        payload, message = self._subtitle_writer().clear_subtitles(
+            target_ids,
+            target_entries,
+            locked_skipped,
+        )
 
         logger.info(
             "[SubtitleManualUpload] 清空外挂字幕完成 targets=%s deleted=%s failed=%s",
             len(target_ids),
-            len(deleted),
-            len(failed),
+            len(payload.get("deleted") or []),
+            len(payload.get("failed") or []),
         )
 
-        message = f"已删除 {len(deleted)} 个外挂字幕"
-        if failed:
-            message += f"，{len(failed)} 个目标处理失败"
-        if deleted:
-            self._invalidate_match_history_cache()
-
-        return self._ok(
-            {
-                "count": len(deleted),
-                "deleted": deleted,
-                "failed": failed,
-            },
-            message=message,
-        )
+        return self._ok(payload, message=message)
 
     async def api_delete_subtitle(self, request: Request) -> Dict[str, Any]:
         body = await request.json()
@@ -5135,52 +5089,20 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         target_entry = target_entries.get(target_id)
         if not target_entry:
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新搜索媒体并选择季度/文件")
-        if self._normalize_text(target_entry.get("storage")) not in {"", "local"}:
-            raise HTTPException(status_code=400, detail="当前仅支持删除本地媒体文件的外挂字幕")
 
-        allowed_subtitles = self._subtitle_files_for_target(target_entry)
-        target_path: Optional[Path] = None
-        for subtitle in allowed_subtitles:
-            subtitle_path = Path(subtitle["path"])
-            if subtitle_path_raw and str(subtitle_path) == subtitle_path_raw:
-                target_path = subtitle_path
-                break
-            if subtitle_name and subtitle_path.name == subtitle_name:
-                target_path = subtitle_path
-                break
-        if not target_path:
-            raise HTTPException(status_code=400, detail="字幕不属于当前目标或已经被删除")
-
-        try:
-            target_path.unlink()
-        except FileNotFoundError:
-            raise HTTPException(status_code=404, detail="字幕文件已经不存在") from None
-        except Exception as exc:
-            logger.error(
-                "[SubtitleManualUpload] 删除单个外挂字幕失败 target=%s subtitle=%s error=%s",
-                target_id[:8],
-                target_path.name,
-                exc,
-            )
-            raise HTTPException(status_code=500, detail=f"删除字幕失败: {exc}") from exc
+        payload, message = self._subtitle_writer().delete_subtitle(
+            target_id=target_id,
+            target_entry=target_entry,
+            subtitle_path_raw=subtitle_path_raw,
+            subtitle_name=subtitle_name,
+        )
 
         logger.info(
             "[SubtitleManualUpload] 删除单个外挂字幕完成 target=%s subtitle=%s",
             target_id[:8],
-            target_path.name,
+            (payload.get("deleted") or {}).get("name"),
         )
-        self._invalidate_match_history_cache()
-        return self._ok(
-            {
-                "deleted": {
-                    "target_id": target_id,
-                    "target_label": self._target_from_entry(target_entry).get("label"),
-                    "name": target_path.name,
-                    "path": str(target_path),
-                },
-            },
-            message=f"已删除外挂字幕：{target_path.name}",
-        )
+        return self._ok(payload, message=message)
 
     async def api_restore_subtitle_backup(self, request: Request) -> Dict[str, Any]:
         body = await request.json()
@@ -5197,49 +5119,11 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         target_entry = target_entries.get(target_id)
         if not target_entry:
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新搜索媒体并选择季度/文件")
-        if self._normalize_text(target_entry.get("storage")) not in {"", "local"}:
-            raise HTTPException(status_code=400, detail="当前仅支持恢复本地媒体文件的外挂字幕")
 
-        allowed_subtitles = self._subtitle_files_for_target(target_entry)
-        target_path: Optional[Path] = None
-        for subtitle in allowed_subtitles:
-            subtitle_path = Path(subtitle["path"])
-            if subtitle_path_raw and str(subtitle_path) == subtitle_path_raw:
-                target_path = subtitle_path
-                break
-            if subtitle_name and subtitle_path.name == subtitle_name:
-                target_path = subtitle_path
-                break
-        if not target_path:
-            raise HTTPException(status_code=400, detail="字幕不属于当前目标或已经被删除")
-
-        backup_path = self._subtitle_backup_path(target_path)
-        if not backup_path.exists():
-            raise HTTPException(status_code=404, detail="没有找到调轴前备份")
-        temp_path = target_path.with_name(f"{target_path.name}.mp-restore")
-        try:
-            shutil.copyfile(backup_path, temp_path)
-            temp_path.replace(target_path)
-        except Exception as exc:
-            temp_path.unlink(missing_ok=True)
-            logger.error(
-                "[SubtitleManualUpload] 恢复字幕备份失败 target=%s subtitle=%s error=%s",
-                target_id[:8],
-                target_path.name,
-                exc,
-            )
-            raise HTTPException(status_code=500, detail=f"恢复字幕备份失败: {exc}") from exc
-
-        self._invalidate_match_history_cache()
-        return self._ok(
-            {
-                "restored": {
-                    "target_id": target_id,
-                    "target_label": self._target_from_entry(target_entry).get("label"),
-                    "name": target_path.name,
-                    "path": str(target_path),
-                    "backup_path": str(backup_path),
-                },
-            },
-            message=f"已恢复调轴前字幕：{target_path.name}",
+        payload, message = self._subtitle_writer().restore_subtitle_backup(
+            target_id=target_id,
+            target_entry=target_entry,
+            subtitle_path_raw=subtitle_path_raw,
+            subtitle_name=subtitle_name,
         )
+        return self._ok(payload, message=message)

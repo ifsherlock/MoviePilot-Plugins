@@ -462,3 +462,164 @@ class SubtitleWriter:
         finally:
             shutil.rmtree(session_dir, ignore_errors=True)
             owner._invalidate_match_history_cache()
+
+    def clear_subtitles(
+        self,
+        target_ids: List[str],
+        target_entries: Dict[str, Dict[str, Any]],
+        locked_skipped: List[Dict[str, str]],
+    ) -> Tuple[Dict[str, Any], str]:
+        owner = self._owner
+        deleted: List[Dict[str, Any]] = []
+        failed: List[Dict[str, str]] = [*locked_skipped]
+        visited_paths = set()
+        for target_id in target_ids:
+            clean_target_id = owner._normalize_text(target_id)
+            target_entry = target_entries.get(clean_target_id)
+            if not target_entry:
+                failed.append({"target_id": clean_target_id, "reason": "目标视频已失效"})
+                continue
+            if owner._normalize_text(target_entry.get("storage")) not in {"", "local"}:
+                failed.append({"target_id": clean_target_id, "reason": "当前仅支持清空本地媒体文件的外挂字幕"})
+                continue
+
+            target_label = owner._target_from_entry(target_entry).get("label")
+            for subtitle in owner._subtitle_files_for_target(target_entry):
+                subtitle_path = Path(subtitle["path"])
+                path_key = str(subtitle_path)
+                if path_key in visited_paths:
+                    continue
+                visited_paths.add(path_key)
+                try:
+                    subtitle_path.unlink()
+                    deleted.append(
+                        {
+                            "target_id": clean_target_id,
+                            "target_label": target_label,
+                            "name": subtitle_path.name,
+                            "path": path_key,
+                        }
+                    )
+                except Exception as exc:
+                    self._logger.error(
+                        "[SubtitleManualUpload] 删除外挂字幕失败 target=%s subtitle=%s error=%s",
+                        clean_target_id[:8],
+                        subtitle_path.name,
+                        exc,
+                    )
+                    failed.append({"target_id": clean_target_id, "reason": f"{subtitle_path.name}: {exc}"})
+
+        message = f"已删除 {len(deleted)} 个外挂字幕"
+        if failed:
+            message += f"，{len(failed)} 个目标处理失败"
+        if deleted:
+            owner._invalidate_match_history_cache()
+        return {"count": len(deleted), "deleted": deleted, "failed": failed}, message
+
+    def delete_subtitle(
+        self,
+        *,
+        target_id: str,
+        target_entry: Dict[str, Any],
+        subtitle_path_raw: str = "",
+        subtitle_name: str = "",
+    ) -> Tuple[Dict[str, Any], str]:
+        owner = self._owner
+        if owner._normalize_text(target_entry.get("storage")) not in {"", "local"}:
+            raise self._http_exception(status_code=400, detail="当前仅支持删除本地媒体文件的外挂字幕")
+
+        target_path = self._subtitle_path_from_target(
+            target_entry,
+            subtitle_path_raw=subtitle_path_raw,
+            subtitle_name=subtitle_name,
+        )
+        try:
+            target_path.unlink()
+        except FileNotFoundError:
+            raise self._http_exception(status_code=404, detail="字幕文件已经不存在") from None
+        except Exception as exc:
+            self._logger.error(
+                "[SubtitleManualUpload] 删除单个外挂字幕失败 target=%s subtitle=%s error=%s",
+                target_id[:8],
+                target_path.name,
+                exc,
+            )
+            raise self._http_exception(status_code=500, detail=f"删除字幕失败: {exc}") from exc
+
+        owner._invalidate_match_history_cache()
+        return (
+            {
+                "deleted": {
+                    "target_id": target_id,
+                    "target_label": owner._target_from_entry(target_entry).get("label"),
+                    "name": target_path.name,
+                    "path": str(target_path),
+                },
+            },
+            f"已删除外挂字幕：{target_path.name}",
+        )
+
+    def restore_subtitle_backup(
+        self,
+        *,
+        target_id: str,
+        target_entry: Dict[str, Any],
+        subtitle_path_raw: str = "",
+        subtitle_name: str = "",
+    ) -> Tuple[Dict[str, Any], str]:
+        owner = self._owner
+        if owner._normalize_text(target_entry.get("storage")) not in {"", "local"}:
+            raise self._http_exception(status_code=400, detail="当前仅支持恢复本地媒体文件的外挂字幕")
+
+        target_path = self._subtitle_path_from_target(
+            target_entry,
+            subtitle_path_raw=subtitle_path_raw,
+            subtitle_name=subtitle_name,
+        )
+        backup_path = subtitle_backup_path(target_path)
+        if not backup_path.exists():
+            raise self._http_exception(status_code=404, detail="没有找到调轴前备份")
+        temp_path = target_path.with_name(f"{target_path.name}.mp-restore")
+        try:
+            shutil.copyfile(backup_path, temp_path)
+            temp_path.replace(target_path)
+        except Exception as exc:
+            temp_path.unlink(missing_ok=True)
+            self._logger.error(
+                "[SubtitleManualUpload] 恢复字幕备份失败 target=%s subtitle=%s error=%s",
+                target_id[:8],
+                target_path.name,
+                exc,
+            )
+            raise self._http_exception(status_code=500, detail=f"恢复字幕备份失败: {exc}") from exc
+
+        owner._invalidate_match_history_cache()
+        return (
+            {
+                "restored": {
+                    "target_id": target_id,
+                    "target_label": owner._target_from_entry(target_entry).get("label"),
+                    "name": target_path.name,
+                    "path": str(target_path),
+                    "backup_path": str(backup_path),
+                },
+            },
+            f"已恢复调轴前字幕：{target_path.name}",
+        )
+
+    def _subtitle_path_from_target(
+        self,
+        target_entry: Dict[str, Any],
+        *,
+        subtitle_path_raw: str = "",
+        subtitle_name: str = "",
+    ) -> Path:
+        owner = self._owner
+        allowed_subtitles = owner._subtitle_files_for_target(target_entry)
+        for subtitle in allowed_subtitles:
+            subtitle_path = Path(subtitle["path"])
+            if subtitle_path_raw and str(subtitle_path) == subtitle_path_raw:
+                return subtitle_path
+            if subtitle_name and subtitle_path.name == subtitle_name:
+                return subtitle_path
+        raise self._http_exception(status_code=400, detail="字幕不属于当前目标或已经被删除")
