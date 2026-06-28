@@ -108,6 +108,7 @@ from .subtitle_language import (
     normalize_auto_language_priority,
     normalize_language_suffix,
 )
+from .autosub_bridge import AutoSubBridge, autosub_task_summary as bridge_autosub_task_summary
 from .subtitle_history import SubtitleHistory
 from .subtitle_writer import (
     SubtitleWriter,
@@ -1241,6 +1242,14 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             logger=logger,
         )
 
+    def _autosub_bridge(self) -> AutoSubBridge:
+        return AutoSubBridge(
+            self,
+            plugin_manager=PluginManager,
+            http_exception=HTTPException,
+            logger=logger,
+        )
+
     def _target_resolver(self) -> MediaTargetResolver:
         return MediaTargetResolver(
             settings_obj=settings,
@@ -1529,157 +1538,17 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         return self._local_media_catalog().cache_status()
 
     def _autosub_plugin(self) -> Tuple[Any, str]:
-        if not self._ai_link_enabled:
-            return None, "字幕匹配未启用 AI 字幕联动"
-        if PluginManager is None:
-            return None, "MoviePilot 插件管理器不可用"
-        try:
-            running_plugins = PluginManager().running_plugins or {}
-        except Exception as exc:
-            logger.warning("[SubtitleManualUpload] 读取运行中插件失败: %s", exc)
-            return None, "读取运行中插件失败"
-        plugin = running_plugins.get("AutoSubv3") or running_plugins.get("autosubv3")
-        if not plugin:
-            for candidate in running_plugins.values():
-                if candidate.__class__.__name__ == "AutoSubv3":
-                    plugin = candidate
-                    break
-        if not plugin:
-            return None, "请先安装并启用 AI字幕生成(联动版)"
-        return plugin, ""
+        return self._autosub_bridge().autosub_plugin()
 
     def _autosub_status(self) -> Dict[str, Any]:
-        status = {
-            "enabled": bool(self._ai_link_enabled),
-            "installed": False,
-            "available": False,
-            "running": False,
-            "queue_ready": False,
-            "plugin_name": "AI字幕生成(联动版)",
-            "plugin_version": "",
-            "message": "请先安装并启用 AI字幕生成(联动版)",
-            "counts": {},
-            "updated_at": "",
-        }
-        if not self._ai_link_enabled:
-            status["message"] = "AI 字幕联动已关闭"
-            return status
-        plugin, reason = self._autosub_plugin()
-        if not plugin:
-            status["message"] = reason
-            return status
-        try:
-            if hasattr(plugin, "_status_payload"):
-                plugin_status = plugin._status_payload()
-            else:
-                running = bool(plugin.get_state()) if hasattr(plugin, "get_state") else False
-                plugin_status = {
-                    "available": running,
-                    "running": running,
-                    "queue_ready": running,
-                    "plugin_name": getattr(plugin, "plugin_name", "AI字幕生成(联动版)"),
-                    "plugin_version": getattr(plugin, "plugin_version", ""),
-                    "message": "可提交 AI 字幕生成任务" if running else "AI 字幕插件未运行",
-                    "counts": {},
-                    "updated_at": "",
-                }
-        except Exception as exc:
-            logger.warning("[SubtitleManualUpload] 读取 AI 字幕插件状态失败: %s", exc)
-            status["installed"] = True
-            status["message"] = "读取 AI 字幕插件状态失败"
-            return status
-        status.update(plugin_status)
-        status["enabled"] = bool(self._ai_link_enabled)
-        status["installed"] = True
-        status["available"] = bool(plugin_status.get("available")) and bool(self._ai_link_enabled)
-        return status
+        return self._autosub_bridge().autosub_status()
 
     @staticmethod
     def _autosub_task_summary(tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
-        counts = {
-            "pending": 0,
-            "in_progress": 0,
-            "completed": 0,
-            "ignored": 0,
-            "no_audio": 0,
-            "failed": 0,
-            "cancelled": 0,
-            "active": 0,
-            "total": len(tasks),
-        }
-        for task in tasks:
-            status = task.get("status")
-            if status in counts:
-                counts[status] += 1
-            if task.get("active") or status in {"pending", "in_progress"}:
-                counts["active"] += 1
-        return counts
+        return bridge_autosub_task_summary(tasks)
 
     def _autosub_tasks_for_entries(self, target_entries: List[Dict[str, Any]]) -> Dict[str, Any]:
-        status = self._autosub_status()
-        paths = [self._normalize_text(entry.get("path")) for entry in target_entries if self._normalize_text(entry.get("path"))]
-        task_by_target: Dict[str, Any] = {}
-        tasks_by_target: Dict[str, List[Dict[str, Any]]] = {}
-        if not status.get("available"):
-            return {
-                "status": status,
-                "summary": self._autosub_task_summary([]),
-                "tasks": [],
-                "task_by_target": task_by_target,
-                "tasks_by_target": tasks_by_target,
-            }
-        plugin, reason = self._autosub_plugin()
-        if not plugin or not hasattr(plugin, "tasks_payload"):
-            status["available"] = False
-            status["message"] = reason or "AI 字幕插件版本过旧，请更新到联动版"
-            return {
-                "status": status,
-                "summary": self._autosub_task_summary([]),
-                "tasks": [],
-                "task_by_target": task_by_target,
-                "tasks_by_target": tasks_by_target,
-            }
-        try:
-            payload = plugin.tasks_payload(paths=paths, limit=max(300, len(paths) * 20))
-        except Exception as exc:
-            logger.warning("[SubtitleManualUpload] 读取 AI 字幕任务失败: %s", exc)
-            status["available"] = False
-            status["message"] = "读取 AI 字幕任务失败"
-            return {
-                "status": status,
-                "summary": self._autosub_task_summary([]),
-                "tasks": [],
-                "task_by_target": task_by_target,
-                "tasks_by_target": tasks_by_target,
-            }
-        status = {**status, **(payload.get("status") or {})}
-        tasks_by_path: Dict[str, List[Dict[str, Any]]] = {}
-        for task in payload.get("tasks") or []:
-            path = self._normalize_text(task.get("video_file"))
-            if path:
-                tasks_by_path.setdefault(path, []).append(task)
-
-        tasks: List[Dict[str, Any]] = []
-        for entry in target_entries:
-            target_id = self._normalize_text(entry.get("id"))
-            path = self._normalize_text(entry.get("path"))
-            target_label = entry.get("target_label") or entry.get("filename") or Path(path).name
-            target_tasks = []
-            for raw_task in tasks_by_path.get(path) or []:
-                task = dict(raw_task)
-                task["target_id"] = target_id
-                task["target_label"] = target_label
-                target_tasks.append(task)
-                tasks.append(task)
-            tasks_by_target[target_id] = target_tasks
-            task_by_target[target_id] = target_tasks[0] if target_tasks else None
-        return {
-            "status": status,
-            "summary": self._autosub_task_summary(tasks),
-            "tasks": tasks,
-            "task_by_target": task_by_target,
-            "tasks_by_target": tasks_by_target,
-        }
+        return self._autosub_bridge().autosub_tasks_for_entries(target_entries)
 
     @classmethod
     def _entry_matches_keyword(cls, entry: Dict[str, Any], keyword: str) -> bool:
@@ -4014,81 +3883,13 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         source_policy: str = "auto",
         overwrite_policy: str = "skip",
     ) -> Dict[str, Any]:
-        stream_entries = [entry for entry in target_entries if self._is_stream_path(entry.get("path"))]
-        submit_entries = [entry for entry in target_entries if not self._is_stream_path(entry.get("path"))]
-        paths = [self._normalize_text(entry.get("path")) for entry in submit_entries if self._normalize_text(entry.get("path"))]
-        if not paths and not stream_entries:
-            raise HTTPException(status_code=400, detail="没有可提交 AI 字幕生成的本地视频")
-        skipped_streams = [
-            {
-                "path": self._normalize_text(entry.get("path")),
-                "reason": "STRM 资源暂不支持 AI 生成字幕",
-            }
-            for entry in stream_entries
-        ]
-        if not paths:
-            tasks = self._autosub_tasks_for_entries(target_entries)
-            return {
-                "added": [],
-                "skipped": skipped_streams,
-                "failed": [],
-                "targets": [self._target_from_entry(entry) for entry in target_entries],
-                "tasks": tasks,
-            }
-
-        plugin, reason = self._autosub_plugin()
-        if not plugin:
-            raise HTTPException(status_code=409, detail=reason)
-        if not hasattr(plugin, "submit_tasks"):
-            raise HTTPException(status_code=409, detail="AI 字幕插件版本过旧，请更新到联动版")
-
-        try:
-            if subtitle_overrides:
-                result = plugin.submit_tasks(
-                    paths,
-                    source="subtitle_manual_upload",
-                    subtitle_overrides=subtitle_overrides,
-                    trigger=trigger,
-                    source_policy=source_policy,
-                    overwrite_policy=overwrite_policy,
-                )
-            else:
-                result = plugin.submit_tasks(
-                    paths,
-                    source="subtitle_manual_upload",
-                    trigger=trigger,
-                    source_policy=source_policy,
-                    overwrite_policy=overwrite_policy,
-                )
-        except RuntimeError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-        except TypeError as exc:
-            if subtitle_overrides:
-                raise HTTPException(status_code=409, detail="AI 字幕插件版本过旧，请更新到支持在线字幕输入的联动版") from exc
-            raise
-        except Exception as exc:
-            logger.error("[SubtitleManualUpload] AI 字幕任务提交失败: %s", exc)
-            raise HTTPException(status_code=500, detail=f"AI 字幕任务提交失败: {exc}") from exc
-
-        tasks = self._autosub_tasks_for_entries(target_entries)
-        result = {
-            **result,
-            "added": result.get("added") or [],
-            "skipped": [*(result.get("skipped") or []), *skipped_streams],
-            "failed": result.get("failed") or [],
-        }
-        logger.info(
-            "[SubtitleManualUpload] AI 字幕任务提交完成 targets=%s added=%s skipped=%s failed=%s",
-            len(target_entries),
-            len(result.get("added") or []),
-            len(result.get("skipped") or []),
-            len(result.get("failed") or []),
+        return self._autosub_bridge().submit_autosub_for_entries(
+            target_entries,
+            subtitle_overrides=subtitle_overrides,
+            trigger=trigger,
+            source_policy=source_policy,
+            overwrite_policy=overwrite_policy,
         )
-        return {
-            **result,
-            "targets": [self._target_from_entry(entry) for entry in target_entries],
-            "tasks": tasks,
-        }
 
     async def api_ai_cancel(self, request: Request) -> Dict[str, Any]:
         body = await request.json()
@@ -4182,33 +3983,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         )
 
     def _cancel_autosub_for_entries(self, target_entries: List[Dict[str, Any]]) -> Dict[str, Any]:
-        plugin, reason = self._autosub_plugin()
-        if not plugin:
-            raise HTTPException(status_code=409, detail=reason)
-        if not hasattr(plugin, "cancel_tasks"):
-            raise HTTPException(status_code=409, detail="AI 字幕插件版本过旧，请更新到支持取消任务的联动版")
-
-        paths = [self._normalize_text(entry.get("path")) for entry in target_entries if self._normalize_text(entry.get("path"))]
-        try:
-            result = plugin.cancel_tasks(paths=paths)
-        except RuntimeError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-        except Exception as exc:
-            logger.error("[SubtitleManualUpload] AI 字幕任务取消失败: %s", exc)
-            raise HTTPException(status_code=500, detail=f"AI 字幕任务取消失败: {exc}") from exc
-
-        tasks = self._autosub_tasks_for_entries(target_entries)
-        logger.info(
-            "[SubtitleManualUpload] AI 字幕任务取消完成 targets=%s cancelled=%s skipped=%s",
-            len(target_entries),
-            len(result.get("cancelled") or []),
-            len(result.get("skipped") or []),
-        )
-        return {
-            **result,
-            "targets": [self._target_from_entry(entry) for entry in target_entries],
-            "tasks": tasks,
-        }
+        return self._autosub_bridge().cancel_autosub_for_entries(target_entries)
 
     def _restart_autosub_for_entries(
         self,
@@ -4220,89 +3995,14 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         source_subtitle_lang: str = "",
         task_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
-        plugin, reason = self._autosub_plugin()
-        if not plugin:
-            raise HTTPException(status_code=409, detail=reason)
-        if not hasattr(plugin, "restart_tasks"):
-            raise HTTPException(status_code=409, detail="AI 字幕插件版本过旧，请更新到支持重新生成的联动版")
-        tasks_data = self._autosub_tasks_for_entries(target_entries)
-        requested_task_ids = [self._normalize_text(item) for item in (task_ids or []) if self._normalize_text(item)]
-        explicit_task_ids = bool(requested_task_ids)
-        ownership_skipped: List[Dict[str, str]] = []
-        if requested_task_ids:
-            requested_task_ids, ownership_skipped = self._filter_restart_task_ids_by_targets(
-                requested_task_ids,
-                tasks_data,
-                target_entries,
-            )
-        if source_policy == "matched_external" and source_subtitle_path:
-            effective_overwrite_policy = "new_variant" if overwrite_policy == "backup_replace" else overwrite_policy
-            if explicit_task_ids and not requested_task_ids:
-                return {
-                    "added": [],
-                    "skipped": ownership_skipped or [{"reason": "当前范围没有可重新生成的已完成/失败/取消 AI 任务"}],
-                    "failed": [],
-                    "targets": [self._target_from_entry(entry) for entry in target_entries],
-                    "tasks": tasks_data,
-                }
-            subtitle_overrides = self._selected_external_subtitle_override_for_entries(
-                target_entries,
-                source_subtitle_path=source_subtitle_path,
-                source_subtitle_lang=source_subtitle_lang,
-                overwrite_policy=effective_overwrite_policy,
-            )
-            result = self._submit_autosub_for_entries(
-                target_entries,
-                subtitle_overrides=subtitle_overrides,
-                trigger="manual",
-                source_policy="matched_external",
-                overwrite_policy=effective_overwrite_policy,
-            )
-            result["skipped"] = [*ownership_skipped, *(result.get("skipped") or [])]
-            return result
-        if explicit_task_ids:
-            restart_task_ids = requested_task_ids
-        else:
-            restart_task_ids = [
-                task.get("task_id")
-                for task in (tasks_data.get("tasks") or [])
-                if task.get("task_id") and not task.get("active")
-            ]
-        if not restart_task_ids:
-            return {
-                "added": [],
-                "skipped": ownership_skipped or [{"reason": "当前范围没有可重新生成的已完成/失败/取消 AI 任务"}],
-                "failed": [],
-                "targets": [self._target_from_entry(entry) for entry in target_entries],
-                "tasks": tasks_data,
-            }
-        try:
-            result = plugin.restart_tasks(
-                task_ids=restart_task_ids,
-                source_policy=source_policy,
-                overwrite_policy=overwrite_policy,
-            )
-        except RuntimeError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
-        except Exception as exc:
-            logger.error("[SubtitleManualUpload] AI 字幕任务重新生成失败: %s", exc)
-            raise HTTPException(status_code=500, detail=f"AI 字幕任务重新生成失败: {exc}") from exc
-        refreshed_tasks = self._autosub_tasks_for_entries(target_entries)
-        logger.info(
-            "[SubtitleManualUpload] AI 字幕任务重新生成完成 targets=%s added=%s skipped=%s failed=%s",
-            len(target_entries),
-            len(result.get("added") or []),
-            len(result.get("skipped") or []),
-            len(result.get("failed") or []),
+        return self._autosub_bridge().restart_autosub_for_entries(
+            target_entries,
+            source_policy=source_policy,
+            overwrite_policy=overwrite_policy,
+            source_subtitle_path=source_subtitle_path,
+            source_subtitle_lang=source_subtitle_lang,
+            task_ids=task_ids,
         )
-        return {
-            **result,
-            "added": result.get("added") or [],
-            "skipped": [*ownership_skipped, *(result.get("skipped") or [])],
-            "failed": result.get("failed") or [],
-            "targets": [self._target_from_entry(entry) for entry in target_entries],
-            "tasks": refreshed_tasks,
-        }
 
     def _filter_restart_task_ids_by_targets(
         self,
@@ -4310,34 +4010,11 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         tasks_data: Dict[str, Any],
         target_entries: List[Dict[str, Any]],
     ) -> Tuple[List[str], List[Dict[str, str]]]:
-        allowed_paths = {
-            self._normalize_text(entry.get("path"))
-            for entry in target_entries
-            if self._normalize_text(entry.get("path"))
-        }
-        if not allowed_paths:
-            return [], [{"task_id": task_id, "reason": "任务不属于当前可操作目标或目标已锁定"} for task_id in task_ids]
-        task_by_id = {
-            self._normalize_text(task.get("task_id")): task
-            for task in (tasks_data.get("tasks") or [])
-            if self._normalize_text(task.get("task_id"))
-        }
-        allowed: List[str] = []
-        skipped: List[Dict[str, str]] = []
-        for task_id in task_ids:
-            task = task_by_id.get(task_id)
-            if not task:
-                skipped.append({"task_id": task_id, "reason": "任务不属于当前可操作目标或目标已锁定"})
-                continue
-            video_file = self._normalize_text(task.get("video_file"))
-            if video_file not in allowed_paths:
-                skipped.append({"task_id": task_id, "path": video_file, "reason": "任务不属于当前可操作目标"})
-                continue
-            if task.get("active") or task.get("status") in {"pending", "in_progress"}:
-                skipped.append({"task_id": task_id, "path": video_file, "reason": "任务正在处理，不能重新生成"})
-                continue
-            allowed.append(task_id)
-        return allowed, skipped
+        return self._autosub_bridge().filter_restart_task_ids_by_targets(
+            task_ids,
+            tasks_data,
+            target_entries,
+        )
 
     def _selected_external_subtitle_override_for_entries(
         self,
@@ -4347,43 +4024,12 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         source_subtitle_lang: str = "",
         overwrite_policy: str = "new_variant",
     ) -> Dict[str, Dict[str, Any]]:
-        if len(target_entries) != 1:
-            raise HTTPException(status_code=400, detail="选中外挂字幕重新生成一次只能选择单个目标")
-        entry = target_entries[0]
-        video_path = self._normalize_text(entry.get("path"))
-        candidate = Path(self._normalize_text(source_subtitle_path))
-        if not video_path or not candidate.exists() or candidate.suffix.lower() != ".srt":
-            raise HTTPException(status_code=400, detail="请选择当前集已有的 SRT 外挂字幕")
-        try:
-            candidate_resolved = str(candidate.resolve())
-        except Exception:
-            candidate_resolved = str(candidate)
-        allowed_paths = set()
-        for subtitle in self._subtitle_files_for_target(entry):
-            if self._normalize_text(subtitle.get("ext")).lower() != ".srt":
-                continue
-            try:
-                allowed_paths.add(str(Path(self._normalize_text(subtitle.get("path"))).resolve()))
-            except Exception:
-                allowed_paths.add(self._normalize_text(subtitle.get("path")))
-        if candidate_resolved not in allowed_paths:
-            raise HTTPException(status_code=400, detail="请选择当前集已有的外挂 SRT 字幕")
-        try:
-            raw_bytes = candidate.read_bytes()
-        except Exception:
-            raw_bytes = b""
-        profile = self._detect_language_profile(candidate.name, raw_bytes)
-        lang = source_subtitle_lang or self._autosub_lang_from_suffix(profile.get("suffix"))
-        return {
-            video_path: {
-                "subtitle_path": str(candidate),
-                "lang": lang,
-                "source_policy": "matched_external",
-                "source_name": candidate.name,
-                "timeline_fixed": False,
-                "overwrite_policy": overwrite_policy,
-            }
-        }
+        return self._autosub_bridge().selected_external_subtitle_override_for_entries(
+            target_entries,
+            source_subtitle_path=source_subtitle_path,
+            source_subtitle_lang=source_subtitle_lang,
+            overwrite_policy=overwrite_policy,
+        )
 
     async def api_ai_tasks(self, request: Request) -> Dict[str, Any]:
         body = await request.json()
