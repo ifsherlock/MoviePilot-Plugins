@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import importlib.util
 import json
+import os
 import re
 import shutil
+import subprocess
 import zipfile
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -27,6 +30,258 @@ def archive_suffix_from_content(content: bytes) -> str:
     if head.startswith(b"7z\xbc\xaf\x27\x1c"):
         return ".7z"
     return ""
+
+
+def is_executable_file(path: Path) -> bool:
+    try:
+        return path.is_file() and os.access(path, os.X_OK)
+    except Exception:
+        return False
+
+
+def find_rar_tool(
+    *,
+    configured_tool_path: Any,
+    normalize_text: NormalizeText,
+    rar_tools: Iterable[str],
+) -> str:
+    configured = normalize_text(configured_tool_path)
+    if configured:
+        configured_path = Path(configured)
+        if is_executable_file(configured_path):
+            return str(configured_path)
+    for tool in rar_tools:
+        found = shutil.which(tool)
+        if found:
+            return found
+    return ""
+
+
+def find_sevenzip_tool(
+    *,
+    configured_tool_path: Any,
+    normalize_text: NormalizeText,
+    sevenzip_tools: Iterable[str],
+) -> str:
+    configured = normalize_text(configured_tool_path)
+    if configured:
+        configured_path = Path(configured)
+        if (
+            is_executable_file(configured_path)
+            and configured_path.name.lower() in {"7z", "7za", "7zz"}
+        ):
+            return str(configured_path)
+    for tool in sevenzip_tools:
+        found = shutil.which(tool)
+        if found:
+            return found
+    return ""
+
+
+def rar_python_available(rar_python_package: str) -> bool:
+    return importlib.util.find_spec(rar_python_package) is not None
+
+
+def rarfile_module(rar_python_package: str) -> Any:
+    try:
+        return __import__(rar_python_package)
+    except Exception:
+        return None
+
+
+def run_archive_command(
+    args: List[str],
+    *,
+    decode_preview_bytes: DecodePreviewBytes,
+    timeout: int = 120,
+) -> bytes:
+    try:
+        completed = subprocess.run(
+            args,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+            timeout=timeout,
+        )
+        return completed.stdout
+    except subprocess.CalledProcessError as exc:
+        stderr = decode_preview_bytes(exc.stderr or b"").strip()
+        raise ValueError(f"压缩包解压失败: {stderr or exc}") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise ValueError("压缩包解压超时") from exc
+
+
+def list_rar_members(
+    archive_path: Path,
+    tool_path: str,
+    *,
+    decode_preview_bytes: DecodePreviewBytes,
+    run_command: Callable[..., bytes],
+) -> List[str]:
+    tool_name = Path(tool_path).name.lower()
+    if tool_name == "unrar":
+        output = run_command([tool_path, "lb", str(archive_path)])
+        return [line.strip() for line in decode_preview_bytes(output).splitlines() if line.strip()]
+    if tool_name == "bsdtar":
+        output = run_command([tool_path, "-tf", str(archive_path)])
+        return [line.strip() for line in decode_preview_bytes(output).splitlines() if line.strip()]
+    if tool_name in {"7z", "7za", "7zz"}:
+        output = run_command([tool_path, "l", "-slt", str(archive_path)])
+        members = []
+        for line in decode_preview_bytes(output).splitlines():
+            if not line.startswith("Path = "):
+                continue
+            member = line.removeprefix("Path = ").strip()
+            if member and member != str(archive_path):
+                members.append(member)
+        return members
+    return []
+
+
+def read_rar_member(
+    archive_path: Path,
+    member: str,
+    tool_path: str,
+    *,
+    run_command: Callable[..., bytes],
+) -> bytes:
+    tool_name = Path(tool_path).name.lower()
+    if tool_name == "unrar":
+        return run_command([tool_path, "p", "-inul", str(archive_path), member])
+    if tool_name == "bsdtar":
+        return run_command([tool_path, "-xOf", str(archive_path), member])
+    if tool_name in {"7z", "7za", "7zz"}:
+        return run_command([tool_path, "x", "-so", str(archive_path), member])
+    raise ValueError("当前容器缺少可用的 RAR 解压工具")
+
+
+def extract_rar_subtitle_files_with_rarfile(
+    source_name: str,
+    archive_path: Path,
+    session_dir: Path,
+    *,
+    rarfile_module_factory: Callable[[], Any],
+    rar_python_package: str,
+    subtitle_exts: Iterable[str],
+    hash_text: HashText,
+) -> List[Dict[str, Any]]:
+    rarfile = rarfile_module_factory()
+    if not rarfile:
+        raise ValueError(f"未安装 Python 依赖 {rar_python_package}")
+
+    prepared: List[Dict[str, Any]] = []
+    subtitle_ext_set = set(subtitle_exts)
+    try:
+        with rarfile.RarFile(str(archive_path)) as archive:
+            for member in archive.infolist():
+                if member.isdir():
+                    continue
+                member_name = re.split(r"[\\/]", member.filename)[-1]
+                if not member_name or member_name.startswith("."):
+                    continue
+                member_ext = Path(member_name).suffix.lower()
+                if member_ext not in subtitle_ext_set:
+                    continue
+                member_bytes = archive.read(member)
+                upload_id = hash_text(
+                    f"{source_name}|{member.filename}|{len(member_bytes)}|{datetime.now().timestamp()}"
+                )
+                stored_path = session_dir / f"{upload_id}{member_ext}"
+                stored_path.write_bytes(member_bytes)
+                prepared.append(
+                    {
+                        "upload_id": upload_id,
+                        "source_name": member_name,
+                        "archive_name": source_name,
+                        "stored_path": str(stored_path),
+                        "ext": member_ext,
+                    }
+                )
+    except Exception as exc:
+        raise ValueError(str(exc)) from exc
+    return prepared
+
+
+def extract_rar_subtitle_files(
+    source_name: str,
+    archive_path: Path,
+    session_dir: Path,
+    *,
+    rar_python_available_func: Callable[[], bool],
+    extract_with_rarfile: Callable[[str, Path, Path], List[Dict[str, Any]]],
+    rar_tool_func: Callable[[], str],
+    extract_command_archive_subtitle_files_func: Callable[[str, Path, Path, str], List[Dict[str, Any]]],
+    rar_python_package: str,
+    logger_warning: Optional[WarningLogger] = None,
+) -> List[Dict[str, Any]]:
+    if rar_python_available_func():
+        try:
+            return extract_with_rarfile(source_name, archive_path, session_dir)
+        except ValueError as exc:
+            if logger_warning:
+                logger_warning(
+                    "[SubtitleManualUpload] rarfile 解析 RAR 失败，将尝试外部命令回退 archive=%s error=%s",
+                    source_name,
+                    exc,
+                )
+
+    tool_path = rar_tool_func()
+    if not tool_path:
+        package_note = f"已声明 Python 依赖 {rar_python_package}，但 RAR 内容解压仍需要外部解压程序"
+        raise ValueError(f"{package_note}；请在容器安装 unrar、bsdtar、7z、7za 或映射静态 7zz")
+
+    return extract_command_archive_subtitle_files_func(source_name, archive_path, session_dir, tool_path)
+
+
+def extract_7z_subtitle_files(
+    source_name: str,
+    archive_path: Path,
+    session_dir: Path,
+    *,
+    sevenzip_tool_func: Callable[[], str],
+    extract_command_archive_subtitle_files_func: Callable[[str, Path, Path, str], List[Dict[str, Any]]],
+) -> List[Dict[str, Any]]:
+    tool_path = sevenzip_tool_func()
+    if not tool_path:
+        raise ValueError("7z 压缩包解压需要容器内可执行 7z、7za、7zz、bsdtar，或映射宿主机静态 7zz")
+    return extract_command_archive_subtitle_files_func(source_name, archive_path, session_dir, tool_path)
+
+
+def extract_command_archive_subtitle_files(
+    source_name: str,
+    archive_path: Path,
+    session_dir: Path,
+    tool_path: str,
+    *,
+    subtitle_exts: Iterable[str],
+    hash_text: HashText,
+    list_members: Callable[[Path, str], List[str]],
+    read_member: Callable[[Path, str, str], bytes],
+) -> List[Dict[str, Any]]:
+    prepared: List[Dict[str, Any]] = []
+    subtitle_ext_set = set(subtitle_exts)
+    members = list_members(archive_path, tool_path)
+    for member in members:
+        member_name = re.split(r"[\\/]", member)[-1]
+        if not member_name or member_name.startswith("."):
+            continue
+        member_ext = Path(member_name).suffix.lower()
+        if member_ext not in subtitle_ext_set:
+            continue
+        member_bytes = read_member(archive_path, member, tool_path)
+        upload_id = hash_text(f"{source_name}|{member}|{len(member_bytes)}|{datetime.now().timestamp()}")
+        stored_path = session_dir / f"{upload_id}{member_ext}"
+        stored_path.write_bytes(member_bytes)
+        prepared.append(
+            {
+                "upload_id": upload_id,
+                "source_name": member_name,
+                "archive_name": source_name,
+                "stored_path": str(stored_path),
+                "ext": member_ext,
+            }
+        )
+    return prepared
 
 
 def normalize_online_download_name(

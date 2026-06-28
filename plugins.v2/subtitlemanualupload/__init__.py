@@ -1,9 +1,7 @@
 from __future__ import annotations
 
 import hashlib
-import importlib.util
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -114,7 +112,19 @@ from .tongwen import convert_subtitle_file_to_simplified
 from .upload_session import (
     UploadSessionService,
     archive_suffix_from_content as upload_archive_suffix_from_content,
+    extract_7z_subtitle_files as upload_extract_7z_subtitle_files,
+    extract_command_archive_subtitle_files as upload_extract_command_archive_subtitle_files,
+    extract_rar_subtitle_files as upload_extract_rar_subtitle_files,
+    extract_rar_subtitle_files_with_rarfile as upload_extract_rar_subtitle_files_with_rarfile,
+    find_rar_tool as upload_find_rar_tool,
+    find_sevenzip_tool as upload_find_sevenzip_tool,
+    is_executable_file as upload_is_executable_file,
+    list_rar_members as upload_list_rar_members,
     normalize_online_download_name as normalize_upload_download_name,
+    rar_python_available as upload_rar_python_available,
+    rarfile_module as upload_rarfile_module,
+    read_rar_member as upload_read_rar_member,
+    run_archive_command as upload_run_archive_command,
 )
 
 
@@ -1079,10 +1089,7 @@ class SubtitleManualUpload(_PluginBase):
 
     @staticmethod
     def _is_executable_file(path: Path) -> bool:
-        try:
-            return path.is_file() and os.access(path, os.X_OK)
-        except Exception:
-            return False
+        return upload_is_executable_file(path)
 
     def _set_rar_dependency_status(self, state: str, message: str) -> None:
         self._rar_dependency_status = {
@@ -2918,89 +2925,49 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
 
     @classmethod
     def _rar_tool(cls) -> str:
-        configured = cls._normalize_text(getattr(cls, "_rar_tool_path", ""))
-        if configured:
-            configured_path = Path(configured)
-            if cls._is_executable_file(configured_path):
-                return str(configured_path)
-        for tool in cls._rar_tools:
-            found = shutil.which(tool)
-            if found:
-                return found
-        return ""
+        return upload_find_rar_tool(
+            configured_tool_path=getattr(cls, "_rar_tool_path", ""),
+            normalize_text=cls._normalize_text,
+            rar_tools=cls._rar_tools,
+        )
 
     @classmethod
     def _sevenzip_tool(cls) -> str:
-        configured = cls._normalize_text(getattr(cls, "_rar_tool_path", ""))
-        if configured:
-            configured_path = Path(configured)
-            if cls._is_executable_file(configured_path) and configured_path.name.lower() in {"7z", "7za", "7zz"}:
-                return str(configured_path)
-        for tool in cls._sevenzip_tools:
-            found = shutil.which(tool)
-            if found:
-                return found
-        return ""
+        return upload_find_sevenzip_tool(
+            configured_tool_path=getattr(cls, "_rar_tool_path", ""),
+            normalize_text=cls._normalize_text,
+            sevenzip_tools=cls._sevenzip_tools,
+        )
 
     @classmethod
     def _rar_python_available(cls) -> bool:
-        return importlib.util.find_spec(cls._rar_python_package) is not None
+        return upload_rar_python_available(cls._rar_python_package)
 
     @classmethod
     def _rarfile_module(cls) -> Any:
-        try:
-            return __import__(cls._rar_python_package)
-        except Exception:
-            return None
+        return upload_rarfile_module(cls._rar_python_package)
 
     @classmethod
     def _run_archive_command(cls, args: List[str], timeout: int = 120) -> bytes:
-        try:
-            completed = subprocess.run(
-                args,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                check=True,
-                timeout=timeout,
-            )
-            return completed.stdout
-        except subprocess.CalledProcessError as exc:
-            stderr = cls._decode_preview_bytes(exc.stderr or b"").strip()
-            raise ValueError(f"压缩包解压失败: {stderr or exc}") from exc
-        except subprocess.TimeoutExpired as exc:
-            raise ValueError("压缩包解压超时") from exc
+        return upload_run_archive_command(args, decode_preview_bytes=cls._decode_preview_bytes, timeout=timeout)
 
     @classmethod
     def _list_rar_members(cls, archive_path: Path, tool_path: str) -> List[str]:
-        tool_name = Path(tool_path).name.lower()
-        if tool_name == "unrar":
-            output = cls._run_archive_command([tool_path, "lb", str(archive_path)])
-            return [line.strip() for line in cls._decode_preview_bytes(output).splitlines() if line.strip()]
-        if tool_name == "bsdtar":
-            output = cls._run_archive_command([tool_path, "-tf", str(archive_path)])
-            return [line.strip() for line in cls._decode_preview_bytes(output).splitlines() if line.strip()]
-        if tool_name in {"7z", "7za", "7zz"}:
-            output = cls._run_archive_command([tool_path, "l", "-slt", str(archive_path)])
-            members = []
-            for line in cls._decode_preview_bytes(output).splitlines():
-                if not line.startswith("Path = "):
-                    continue
-                member = line.removeprefix("Path = ").strip()
-                if member and member != str(archive_path):
-                    members.append(member)
-            return members
-        return []
+        return upload_list_rar_members(
+            archive_path,
+            tool_path,
+            decode_preview_bytes=cls._decode_preview_bytes,
+            run_command=cls._run_archive_command,
+        )
 
     @classmethod
     def _read_rar_member(cls, archive_path: Path, member: str, tool_path: str) -> bytes:
-        tool_name = Path(tool_path).name.lower()
-        if tool_name == "unrar":
-            return cls._run_archive_command([tool_path, "p", "-inul", str(archive_path), member])
-        if tool_name == "bsdtar":
-            return cls._run_archive_command([tool_path, "-xOf", str(archive_path), member])
-        if tool_name in {"7z", "7za", "7zz"}:
-            return cls._run_archive_command([tool_path, "x", "-so", str(archive_path), member])
-        raise ValueError("当前容器缺少可用的 RAR 解压工具")
+        return upload_read_rar_member(
+            archive_path,
+            member,
+            tool_path,
+            run_command=cls._run_archive_command,
+        )
 
     @classmethod
     def _extract_rar_subtitle_files_with_rarfile(
@@ -3009,40 +2976,15 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         archive_path: Path,
         session_dir: Path,
     ) -> List[Dict[str, Any]]:
-        rarfile_module = cls._rarfile_module()
-        if not rarfile_module:
-            raise ValueError(f"未安装 Python 依赖 {cls._rar_python_package}")
-
-        prepared: List[Dict[str, Any]] = []
-        try:
-            with rarfile_module.RarFile(str(archive_path)) as archive:
-                for member in archive.infolist():
-                    if member.isdir():
-                        continue
-                    member_name = re.split(r"[\\/]", member.filename)[-1]
-                    if not member_name or member_name.startswith("."):
-                        continue
-                    member_ext = Path(member_name).suffix.lower()
-                    if member_ext not in cls._subtitle_exts:
-                        continue
-                    member_bytes = archive.read(member)
-                    upload_id = cls._hash_text(
-                        f"{source_name}|{member.filename}|{len(member_bytes)}|{datetime.now().timestamp()}"
-                    )
-                    stored_path = session_dir / f"{upload_id}{member_ext}"
-                    stored_path.write_bytes(member_bytes)
-                    prepared.append(
-                        {
-                            "upload_id": upload_id,
-                            "source_name": member_name,
-                            "archive_name": source_name,
-                            "stored_path": str(stored_path),
-                            "ext": member_ext,
-                        }
-                    )
-        except Exception as exc:
-            raise ValueError(str(exc)) from exc
-        return prepared
+        return upload_extract_rar_subtitle_files_with_rarfile(
+            source_name,
+            archive_path,
+            session_dir,
+            rarfile_module_factory=cls._rarfile_module,
+            rar_python_package=cls._rar_python_package,
+            subtitle_exts=cls._subtitle_exts,
+            hash_text=cls._hash_text,
+        )
 
     @classmethod
     def _extract_rar_subtitle_files(
@@ -3051,22 +2993,17 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         archive_path: Path,
         session_dir: Path,
     ) -> List[Dict[str, Any]]:
-        if cls._rar_python_available():
-            try:
-                return cls._extract_rar_subtitle_files_with_rarfile(source_name, archive_path, session_dir)
-            except ValueError as exc:
-                logger.warning(
-                    "[SubtitleManualUpload] rarfile 解析 RAR 失败，将尝试外部命令回退 archive=%s error=%s",
-                    source_name,
-                    exc,
-                )
-
-        tool_path = cls._rar_tool()
-        if not tool_path:
-            package_note = f"已声明 Python 依赖 {cls._rar_python_package}，但 RAR 内容解压仍需要外部解压程序"
-            raise ValueError(f"{package_note}；请在容器安装 unrar、bsdtar、7z、7za 或映射静态 7zz")
-
-        return cls._extract_command_archive_subtitle_files(source_name, archive_path, session_dir, tool_path)
+        return upload_extract_rar_subtitle_files(
+            source_name,
+            archive_path,
+            session_dir,
+            rar_python_available_func=cls._rar_python_available,
+            extract_with_rarfile=cls._extract_rar_subtitle_files_with_rarfile,
+            rar_tool_func=cls._rar_tool,
+            extract_command_archive_subtitle_files_func=cls._extract_command_archive_subtitle_files,
+            rar_python_package=cls._rar_python_package,
+            logger_warning=logger.warning,
+        )
 
     @classmethod
     def _extract_7z_subtitle_files(
@@ -3075,10 +3012,13 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         archive_path: Path,
         session_dir: Path,
     ) -> List[Dict[str, Any]]:
-        tool_path = cls._sevenzip_tool()
-        if not tool_path:
-            raise ValueError("7z 压缩包解压需要容器内可执行 7z、7za、7zz、bsdtar，或映射宿主机静态 7zz")
-        return cls._extract_command_archive_subtitle_files(source_name, archive_path, session_dir, tool_path)
+        return upload_extract_7z_subtitle_files(
+            source_name,
+            archive_path,
+            session_dir,
+            sevenzip_tool_func=cls._sevenzip_tool,
+            extract_command_archive_subtitle_files_func=cls._extract_command_archive_subtitle_files,
+        )
 
     @classmethod
     def _extract_command_archive_subtitle_files(
@@ -3088,31 +3028,16 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         session_dir: Path,
         tool_path: str,
     ) -> List[Dict[str, Any]]:
-        prepared: List[Dict[str, Any]] = []
-        members = cls._list_rar_members(archive_path, tool_path)
-        for member in members:
-            member_name = re.split(r"[\\/]", member)[-1]
-            if not member_name or member_name.startswith("."):
-                continue
-            member_ext = Path(member_name).suffix.lower()
-            if member_ext not in cls._subtitle_exts:
-                continue
-            member_bytes = cls._read_rar_member(archive_path, member, tool_path)
-            upload_id = cls._hash_text(
-                f"{source_name}|{member}|{len(member_bytes)}|{datetime.now().timestamp()}"
-            )
-            stored_path = session_dir / f"{upload_id}{member_ext}"
-            stored_path.write_bytes(member_bytes)
-            prepared.append(
-                {
-                    "upload_id": upload_id,
-                    "source_name": member_name,
-                    "archive_name": source_name,
-                    "stored_path": str(stored_path),
-                    "ext": member_ext,
-                }
-            )
-        return prepared
+        return upload_extract_command_archive_subtitle_files(
+            source_name,
+            archive_path,
+            session_dir,
+            tool_path,
+            subtitle_exts=cls._subtitle_exts,
+            hash_text=cls._hash_text,
+            list_members=cls._list_rar_members,
+            read_member=cls._read_rar_member,
+        )
 
     @classmethod
     def _extract_subtitle_files(
