@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import importlib.util
+import re
 import sys
 import types
 from pathlib import Path
@@ -120,6 +121,10 @@ def make_plugin(module):
         if cache_file.exists():
             cache_file.unlink()
     return plugin
+
+
+def plugin_submodule(module, name):
+    return sys.modules[f"{module.__name__}.{name}"]
 
 
 class FakeRequest:
@@ -324,17 +329,21 @@ def test_extract_7z_subtitle_files_with_external_tool(tmp_path):
 
 def test_language_suffix_supports_bilingual_codes():
     module, _, _ = load_plugin_module()
+    language = plugin_submodule(module, "subtitle_language")
     cls = module.SubtitleManualUpload
 
-    assert cls._normalize_language_suffix("chi&eng") == "chi&eng"
+    assert language.normalize_language_suffix("chi&eng") == "chi&eng"
+    assert language.normalize_language_suffix("zh/en") == "chi&eng"
+    assert language.normalize_language_suffix("chi+jpn") == "chi&jp"
+    assert language.normalize_language_suffix("chi,kor") == "chi&kr"
+    assert language.is_chinese_language_suffix("chi&eng") is True
     assert cls._normalize_language_suffix("zh/en") == "chi&eng"
-    assert cls._normalize_language_suffix("chi+jpn") == "chi&jp"
-    assert cls._normalize_language_suffix("chi,kor") == "chi&kr"
     assert cls._is_chinese_language_suffix("chi&eng") is True
 
 
 def test_detect_language_profile_marks_bilingual_subtitles():
     module, _, _ = load_plugin_module()
+    language = plugin_submodule(module, "subtitle_language")
     cls = module.SubtitleManualUpload
 
     chinese = "这是中文字幕文本" * 30
@@ -342,18 +351,21 @@ def test_detect_language_profile_marks_bilingual_subtitles():
     japanese = "これは日本語字幕です" * 30
     korean = "이것은 한국어 자막입니다" * 30
 
+    assert language.detect_language_profile("movie.zh.en.srt", f"{chinese}{english}".encode(), cls._subtitle_exts)["suffix"] == "chi&eng"
+    assert language.detect_language_profile("movie.srt", f"{chinese}{japanese}".encode(), cls._subtitle_exts)["suffix"] == "chi&jp"
+    assert language.detect_language_profile("movie.srt", f"{chinese}{korean}".encode(), cls._subtitle_exts)["suffix"] == "chi&kr"
     assert cls._detect_language_profile("movie.zh.en.srt", f"{chinese}{english}".encode())["suffix"] == "chi&eng"
-    assert cls._detect_language_profile("movie.srt", f"{chinese}{japanese}".encode())["suffix"] == "chi&jp"
-    assert cls._detect_language_profile("movie.srt", f"{chinese}{korean}".encode())["suffix"] == "chi&kr"
 
 
 def test_detect_language_profile_prefers_suffix_token_before_subtitle_extension():
     module, _, _ = load_plugin_module()
+    language = plugin_submodule(module, "subtitle_language")
     cls = module.SubtitleManualUpload
 
     name = "Jack.Reacher.Never.Go.Back.2016.1080p.KORSUB.HDRip.x264.AAC2.0-STUTTERSHIT.eng.srt"
+    assert language.detect_language_profile(name, b"", cls._subtitle_exts)["suffix"] == "eng"
+    assert language.detect_language_profile("Example.Movie.2024.zh.en.ass", b"", cls._subtitle_exts)["suffix"] == "chi&eng"
     assert cls._detect_language_profile(name, b"")["suffix"] == "eng"
-    assert cls._detect_language_profile("Example.Movie.2024.zh.en.ass", b"")["suffix"] == "chi&eng"
 
 
 def test_strm_target_skips_timeline_fixing(tmp_path):
@@ -2645,32 +2657,67 @@ def test_auto_transfer_legacy_ai_first_maps_to_ai_source_only(tmp_path):
 
 def test_auto_transfer_legacy_strategy_aliases_are_migrated():
     module, _, _ = load_plugin_module()
+    config_schema = plugin_submodule(module, "config_schema")
+    aliases = {
+        "search_first": "online_then_ai_source",
+        "search_only": "online_source_only",
+        "ai_only": "ai_source_only",
+        "ai_first": "ai_source_only",
+    }
 
-    assert module.SubtitleManualUpload._normalize_auto_transfer_subtitle_strategy("search_first") == "online_then_ai_source"
-    assert module.SubtitleManualUpload._normalize_auto_transfer_subtitle_strategy("search_only") == "online_source_only"
-    assert module.SubtitleManualUpload._normalize_auto_transfer_subtitle_strategy("ai_only") == "ai_source_only"
+    for legacy, expected in aliases.items():
+        assert config_schema.normalize_auto_transfer_subtitle_strategy(legacy) == expected
     assert module.SubtitleManualUpload._normalize_auto_transfer_subtitle_strategy("ai_first") == "ai_source_only"
 
 
 def test_auto_subtitle_preference_config_normalizes_legacy_strings(tmp_path):
     module, _, _ = load_plugin_module()
+    config_schema = plugin_submodule(module, "config_schema")
     plugin = make_plugin(module)
     plugin.update_config = lambda config: None
+    raw_config = {
+        "auto_multi_subtitle_mode": "chinese",
+        "auto_subtitle_language_priority": "英文,双语,坏值",
+        "auto_subtitle_format_priority": "srt,ass,xxx",
+        "auto_ass_to_srt_for_ai": False,
+    }
 
-    plugin.init_plugin(
-        {
-            "auto_multi_subtitle_mode": "chinese",
-            "auto_subtitle_language_priority": "英文,双语,坏值",
-            "auto_subtitle_format_priority": "srt,ass,xxx",
-            "auto_ass_to_srt_for_ai": False,
-        }
-    )
+    normalized = config_schema.normalize_plugin_config(raw_config, subtitle_exts=module.SubtitleManualUpload._subtitle_exts)
+    assert normalized["auto_multi_subtitle_mode"] == "chinese_all"
+    assert normalized["auto_subtitle_language_priority"][:4] == ["eng", "bilingual", "chi", "cht"]
+    assert normalized["auto_subtitle_format_priority"][:4] == [".srt", ".ass", ".ssa", ".vtt"]
+    assert ".sbv" in normalized["auto_subtitle_format_priority"]
+    assert normalized["auto_ass_to_srt_for_ai"] is False
+
+    plugin.init_plugin(raw_config)
 
     assert plugin._auto_multi_subtitle_mode == "chinese_all"
     assert plugin._auto_subtitle_language_priority[:4] == ["eng", "bilingual", "chi", "cht"]
     assert plugin._auto_subtitle_format_priority[:4] == [".srt", ".ass", ".ssa", ".vtt"]
     assert ".sbv" in plugin._auto_subtitle_format_priority
     assert plugin._auto_ass_to_srt_for_ai is False
+
+
+def test_config_schema_default_config_covers_config_vue_bound_fields():
+    module, _, _ = load_plugin_module()
+    config_schema = plugin_submodule(module, "config_schema")
+    plugin = module.SubtitleManualUpload.__new__(module.SubtitleManualUpload)
+    _, default_config = plugin.get_form()
+    vue_text = (Path(module.__file__).parent / "src" / "components" / "Config.vue").read_text(encoding="utf-8")
+    bound_fields = sorted(set(re.findall(r"localConfig\.(?!value\b)([A-Za-z0-9_]+)", vue_text)))
+
+    assert bound_fields
+    assert not [field for field in bound_fields if field not in config_schema.DEFAULT_CONFIG]
+    assert not [field for field in bound_fields if field not in default_config]
+    for field in bound_fields:
+        assert default_config[field] == config_schema.DEFAULT_CONFIG[field]
+
+    assert "online_providers: ['assrt', 'opensubtitles']" in vue_text
+    assert "auto_subtitle_language_priority: ['bilingual', 'chi', 'cht', 'eng']" in vue_text
+    assert "auto_subtitle_format_priority: ['.ass', '.srt', '.ssa', '.vtt']" in vue_text
+    assert "timeline_max_offset_seconds: 120" in vue_text
+    assert "rar_dependency_mode: 'none'" in vue_text
+    assert "opensubtitles_api_url: 'https://api.opensubtitles.com/api/v1'" in vue_text
 
 
 def test_auto_transfer_existing_chinese_subtitle_skips_all_strategies(tmp_path):
