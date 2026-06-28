@@ -94,6 +94,7 @@ def make_plugin(module):
     plugin._media_index_cache = module.OrderedDict()
     plugin._auto_transfer_tasks = module.OrderedDict()
     plugin._auto_transfer_worker = None
+    plugin._auto_transfer_stopping = False
     plugin._auto_season_package_cache = module.OrderedDict()
     module.SubtitleManualUpload._embedded_subtitle_probe_cache = module.OrderedDict()
     plugin._cache_refreshing = False
@@ -2641,6 +2642,30 @@ def test_auto_transfer_queue_enqueues_tv_season_tasks_without_starting_immediate
     assert skipped == 0
     assert snapshot["summary"]["pending"] == 2
     assert len({task["group_key"] for task in snapshot["tasks"]}) == 1
+
+
+def test_auto_transfer_queue_stop_service_marks_pending_queue_stopped(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._ensure_transfer_auto_worker = lambda: None
+    entry = make_auto_entry(tmp_path, filename="Movie.mkv")
+
+    queued, skipped = plugin._enqueue_transfer_auto_entries([entry])
+    assert queued == 1
+    assert skipped == 0
+
+    plugin.stop_service()
+    snapshot = plugin._auto_transfer_queue_snapshot()
+
+    assert plugin._auto_transfer_stopping is True
+    assert snapshot["summary"]["pending"] == 0
+    assert snapshot["summary"]["skipped"] == 1
+    assert snapshot["summary"]["active"] == 0
+    assert "服务已停止" in snapshot["tasks"][0]["message"]
+
+    queued, skipped = plugin._enqueue_transfer_auto_entries([make_auto_entry(tmp_path, filename="Other.mkv")])
+    assert queued == 0
+    assert skipped == 1
 
 
 def test_auto_transfer_group_prefers_season_package_then_single_episode(tmp_path):

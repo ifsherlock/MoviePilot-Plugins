@@ -156,6 +156,7 @@ from .upload_session import (
     run_archive_command as upload_run_archive_command,
 )
 from .online_ai import OnlineAiService
+from .auto_transfer import AutoTransferService
 
 
 class SubtitleManualUpload(_PluginBase):
@@ -189,6 +190,7 @@ class SubtitleManualUpload(_PluginBase):
     _transfer_auto_lock = threading.Lock()
     _auto_transfer_tasks: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
     _auto_transfer_worker: Optional[threading.Thread] = None
+    _auto_transfer_stopping = False
     _auto_season_package_cache: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
     _embedded_subtitle_probe_cache: "OrderedDict[str, List[Dict[str, Any]]]" = OrderedDict()
     _embedded_subtitle_probe_cache_max_size = 500
@@ -338,6 +340,7 @@ class SubtitleManualUpload(_PluginBase):
         self._transfer_auto_lock = threading.Lock()
         self._auto_transfer_tasks = OrderedDict()
         self._auto_transfer_worker = None
+        self._auto_transfer_stopping = False
         self._auto_season_package_cache = OrderedDict()
         self._cache_refreshing = False
         self._cache_refresh_started_at = ""
@@ -551,7 +554,7 @@ class SubtitleManualUpload(_PluginBase):
         ]
 
     def stop_service(self):
-        pass
+        self._auto_transfer_service().stop()
 
     @eventmanager.register(EventType.TransferComplete)
     def listen_transfer_complete(self, event: MPEvent):
@@ -771,33 +774,10 @@ class SubtitleManualUpload(_PluginBase):
         self._local_media_catalog().prune_local_entries_cache()
 
     def _transfer_auto_key(self, entry: Dict[str, Any]) -> str:
-        path = self._normalize_text(entry.get("path") or entry.get("relative_path"))
-        if path:
-            normalized_path = path.lower().replace("\\", "/")
-            return self._hash_text(f"{normalized_path}|{self._entry_filesystem_signature(entry)}")
-        return self._normalize_text(entry.get("id") or entry.get("target_label") or entry.get("filename"))
+        return self._auto_transfer_service().transfer_auto_key(entry)
 
     def _claim_transfer_auto_entries(self, entries: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], int]:
-        now = time.time()
-        claimed: List[Dict[str, Any]] = []
-        skipped = 0
-        with self._transfer_auto_lock:
-            self._transfer_auto_recent = {
-                key: ts
-                for key, ts in (self._transfer_auto_recent or {}).items()
-                if now - ts < self._transfer_auto_dedupe_seconds
-            }
-            for entry in entries:
-                key = self._transfer_auto_key(entry)
-                if not key:
-                    claimed.append(entry)
-                    continue
-                if key in self._transfer_auto_recent:
-                    skipped += 1
-                    continue
-                self._transfer_auto_recent[key] = now
-                claimed.append(entry)
-        return claimed, skipped
+        return self._auto_transfer_service().claim_transfer_auto_entries(entries)
 
     @staticmethod
     def _timestamp_iso(ts: Any) -> str:
@@ -807,261 +787,40 @@ class SubtitleManualUpload(_PluginBase):
             return ""
 
     def _auto_transfer_entry_key(self, entry: Dict[str, Any]) -> str:
-        return self._transfer_auto_key(entry) or self._hash_text(
-            f"{entry.get('id')}|{entry.get('target_label')}|{entry.get('filename')}"
-        )
+        return self._auto_transfer_service().auto_transfer_entry_key(entry)
 
     def _auto_transfer_group_key(self, entry: Dict[str, Any]) -> str:
-        if self._normalize_text(entry.get("media_type")) != "tv":
-            return self._auto_transfer_entry_key(entry)
-        media_key = self._normalize_text(entry.get("media_key") or entry.get("tmdb_id") or entry.get("title"))
-        season = self._safe_int(entry.get("season"), 0)
-        if not media_key or not season:
-            return self._auto_transfer_entry_key(entry)
-        return f"tv|{media_key}|s{season:02d}"
+        return self._auto_transfer_service().auto_transfer_group_key(entry)
 
     def _trim_auto_transfer_tasks_locked(self) -> None:
-        tasks = self._auto_transfer_tasks or OrderedDict()
-        while len(tasks) > self._auto_transfer_queue_history_limit:
-            removable = next(
-                (
-                    key
-                    for key, task in tasks.items()
-                    if task.get("status") not in {"pending", "in_progress"}
-                ),
-                None,
-            )
-            if not removable:
-                break
-            tasks.pop(removable, None)
+        self._auto_transfer_service().trim_auto_transfer_tasks_locked()
 
     def _enqueue_transfer_auto_entries(self, entries: List[Dict[str, Any]]) -> Tuple[int, int]:
-        valid_entries = self._filter_existing_local_entries(entries)
-        claimed, skipped = self._claim_transfer_auto_entries(valid_entries)
-        if not claimed:
-            return 0, skipped + (len(entries or []) - len(valid_entries))
-        now = time.time()
-        queued = 0
-        with self._transfer_auto_lock:
-            active_keys = {
-                self._normalize_text(task.get("entry_key"))
-                for task in (self._auto_transfer_tasks or OrderedDict()).values()
-                if task.get("status") in {"pending", "in_progress"}
-            }
-            for entry in claimed:
-                entry_key = self._auto_transfer_entry_key(entry)
-                if entry_key in active_keys:
-                    skipped += 1
-                    continue
-                task_id = self._hash_text(f"auto-transfer|{entry_key}|{now}")[:16]
-                self._auto_transfer_tasks[task_id] = {
-                    "id": task_id,
-                    "entry_key": entry_key,
-                    "group_key": self._auto_transfer_group_key(entry),
-                    "entry": entry,
-                    "target_label": entry.get("target_label") or entry.get("filename"),
-                    "media_type": entry.get("media_type"),
-                    "title": entry.get("title"),
-                    "season": self._safe_int(entry.get("season"), 0),
-                    "episode": self._safe_int(entry.get("episode"), 0),
-                    "status": "pending",
-                    "active": True,
-                    "message": "等待入库自动字幕处理",
-                    "created_ts": now,
-                    "updated_ts": now,
-                    "next_run_ts": 0,
-                    "result": {},
-                }
-                active_keys.add(entry_key)
-                queued += 1
-            self._trim_auto_transfer_tasks_locked()
-        if queued:
-            self._ensure_transfer_auto_worker()
-        return queued, skipped
+        return self._auto_transfer_service().enqueue_transfer_auto_entries(entries)
 
     def _ensure_transfer_auto_worker(self) -> None:
-        with self._transfer_auto_lock:
-            worker = self._auto_transfer_worker
-            if worker and worker.is_alive():
-                return
-            worker = threading.Thread(
-                target=self._auto_transfer_queue_loop,
-                name="SubtitleManualUploadTransferQueue",
-                daemon=True,
-            )
-            self._auto_transfer_worker = worker
-            worker.start()
+        self._auto_transfer_service().ensure_transfer_auto_worker()
 
     def _update_auto_transfer_task(self, task_id: str, **updates: Any) -> None:
-        with self._transfer_auto_lock:
-            task = (self._auto_transfer_tasks or OrderedDict()).get(task_id)
-            if not task:
-                return
-            task.update(updates)
-            task["updated_ts"] = time.time()
-            if task.get("status") not in {"pending", "in_progress"}:
-                task["active"] = False
-                task["next_run_ts"] = 0
-            self._auto_transfer_tasks.move_to_end(task_id)
-            self._trim_auto_transfer_tasks_locked()
+        self._auto_transfer_service().update_auto_transfer_task(task_id, **updates)
 
     def _claim_next_auto_transfer_batch(self) -> Tuple[List[Dict[str, Any]], float]:
-        with self._transfer_auto_lock:
-            pending = [
-                task
-                for task in (self._auto_transfer_tasks or OrderedDict()).values()
-                if task.get("status") == "pending"
-            ]
-            if not pending:
-                self._auto_transfer_worker = None
-                return [], -1
-            first = pending[0]
-            group_key = self._normalize_text(first.get("group_key"))
-            group = [task for task in pending if self._normalize_text(task.get("group_key")) == group_key]
-            is_tv_group = self._normalize_text(first.get("media_type")) == "tv"
-            if is_tv_group:
-                newest = max(float(task.get("created_ts") or 0) for task in group)
-                wait_seconds = self._auto_transfer_queue_debounce_seconds - (time.time() - newest)
-                if wait_seconds > 0:
-                    for task in group:
-                        task["next_run_ts"] = time.time() + wait_seconds
-                        task["message"] = "等待同季入库事件聚合"
-                    return [], min(wait_seconds, 1.0)
-                batch = group
-            else:
-                batch = [first]
-            now = time.time()
-            for task in batch:
-                task["status"] = "in_progress"
-                task["active"] = True
-                task["message"] = "入库自动字幕处理中"
-                task["updated_ts"] = now
-                task["next_run_ts"] = 0
-            return [self._json_clone(task) for task in batch], 0
+        return self._auto_transfer_service().claim_next_auto_transfer_batch()
 
     def _auto_wait_online_rate_limit(self, providers: Iterable[str], task_ids: Optional[List[str]] = None) -> None:
-        provider_ids = sorted({self._normalize_text(provider).lower() for provider in providers if self._normalize_text(provider)})
-        if not provider_ids:
-            return
-        task_ids = task_ids or []
-        while True:
-            now = time.time()
-            wait_until = 0.0
-            with self._transfer_auto_lock:
-                for provider_id in provider_ids:
-                    records = [item for item in self._online_rate_records.get(provider_id, []) if now - item < 60]
-                    self._online_rate_records[provider_id] = records
-                    if len(records) >= self._online_rate_limit_per_minute:
-                        wait_until = max(wait_until, min(records) + 60)
-                if wait_until <= now:
-                    for provider_id in provider_ids:
-                        records = [item for item in self._online_rate_records.get(provider_id, []) if now - item < 60]
-                        records.append(now)
-                        self._online_rate_records[provider_id] = records
-                    for task_id in task_ids:
-                        task = self._auto_transfer_tasks.get(task_id)
-                        if task and task.get("status") == "in_progress":
-                            task["next_run_ts"] = 0
-                            task["message"] = "入库自动字幕处理中"
-                    return
-                for task_id in task_ids:
-                    task = self._auto_transfer_tasks.get(task_id)
-                    if task and task.get("status") == "in_progress":
-                        task["next_run_ts"] = wait_until
-                        task["message"] = f"等待字幕源限速窗口：{','.join(provider_ids)}"
-            time.sleep(max(0.5, min(wait_until - now, 5.0)))
+        self._auto_transfer_service().auto_wait_online_rate_limit(providers, task_ids=task_ids)
 
     def _auto_transfer_rate_status(self) -> Dict[str, Any]:
-        now = time.time()
-        status: Dict[str, Any] = {}
-        for provider_id in self._auto_search_providers():
-            records = [item for item in self._online_rate_records.get(provider_id, []) if now - item < 60]
-            remaining = max(0, self._online_rate_limit_per_minute - len(records))
-            reset_ts = min(records) + 60 if records else 0
-            status[provider_id] = {
-                "used": len(records),
-                "remaining": remaining,
-                "limit_per_minute": self._online_rate_limit_per_minute,
-                "reset_at": self._timestamp_iso(reset_ts),
-            }
-        return status
+        return self._auto_transfer_service().auto_transfer_rate_status()
 
     def _auto_transfer_queue_summary(self) -> Dict[str, Any]:
-        with self._transfer_auto_lock:
-            tasks = list((self._auto_transfer_tasks or OrderedDict()).values())
-            worker_alive = bool(self._auto_transfer_worker and self._auto_transfer_worker.is_alive())
-        summary = {
-            "pending": 0,
-            "in_progress": 0,
-            "completed": 0,
-            "skipped": 0,
-            "failed": 0,
-            "active": 0,
-            "total": len(tasks),
-            "worker_alive": worker_alive,
-        }
-        for task in tasks:
-            status = task.get("status")
-            if status in summary:
-                summary[status] += 1
-            if task.get("active") or status in {"pending", "in_progress"}:
-                summary["active"] += 1
-        return summary
+        return self._auto_transfer_service().auto_transfer_queue_summary()
 
     def _auto_transfer_queue_snapshot(self, limit: int = 100) -> Dict[str, Any]:
-        with self._transfer_auto_lock:
-            tasks = [self._json_clone(task) for task in (self._auto_transfer_tasks or OrderedDict()).values()]
-        pending_position = 0
-        public_tasks: List[Dict[str, Any]] = []
-        for task in tasks[-limit:]:
-            if task.get("status") == "pending":
-                pending_position += 1
-                task["queue_position"] = pending_position
-            task.pop("entry", None)
-            task["created_at"] = self._timestamp_iso(task.pop("created_ts", 0))
-            task["updated_at"] = self._timestamp_iso(task.pop("updated_ts", 0))
-            task["next_run_at"] = self._timestamp_iso(task.pop("next_run_ts", 0))
-            public_tasks.append(task)
-        cache_items = []
-        for item in list((self._auto_season_package_cache or OrderedDict()).values())[-20:]:
-            cache_items.append(
-                {
-                    "key": item.get("key"),
-                    "title": item.get("title"),
-                    "season": item.get("season"),
-                    "subtitle_count": len(item.get("items") or []),
-                    "updated_at": item.get("updated_at", ""),
-                    "provider": item.get("provider", ""),
-                    "source_title": item.get("source_title", ""),
-                }
-            )
-        return {
-            "summary": self._auto_transfer_queue_summary(),
-            "tasks": public_tasks,
-            "rate_limits": self._auto_transfer_rate_status(),
-            "season_package_cache": cache_items,
-            "debounce_seconds": self._auto_transfer_queue_debounce_seconds,
-            "rate_limit_scope": "provider",
-        }
+        return self._auto_transfer_service().auto_transfer_queue_snapshot(limit=limit)
 
     def _auto_transfer_queue_loop(self) -> None:
-        while True:
-            batch, wait_seconds = self._claim_next_auto_transfer_batch()
-            if wait_seconds < 0:
-                return
-            if not batch:
-                time.sleep(max(0.2, wait_seconds))
-                continue
-            try:
-                self._process_transfer_auto_task_batch(batch)
-            except Exception as exc:
-                logger.warning("[SubtitleManualUpload] 入库自动字幕队列批次失败: %s", exc)
-                for task in batch:
-                    self._update_auto_transfer_task(
-                        task["id"],
-                        status="failed",
-                        message=f"入库自动字幕处理异常: {exc}",
-                    )
+        self._auto_transfer_service().auto_transfer_queue_loop()
 
     @staticmethod
     def _is_executable_file(path: Path) -> bool:
@@ -1257,6 +1016,14 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             http_exception=HTTPException,
             logger=logger,
             check_timeline_fixer_dependencies=check_timeline_fixer_dependencies,
+        )
+
+    def _auto_transfer_service(self) -> AutoTransferService:
+        return AutoTransferService(
+            self,
+            logger=logger,
+            threading_module=threading,
+            time_module=time,
         )
 
     def _target_resolver(self) -> MediaTargetResolver:
@@ -3137,63 +2904,10 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         return results
 
     def _process_transfer_auto_task_batch(self, tasks: List[Dict[str, Any]]) -> None:
-        entries = [task.get("entry") for task in tasks if isinstance(task.get("entry"), dict)]
-        task_ids = [task["id"] for task in tasks if task.get("id")]
-        is_tv_batch = (
-            bool(entries)
-            and all(self._normalize_text(entry.get("media_type")) == "tv" for entry in entries)
-            and len({self._auto_transfer_group_key(entry) for entry in entries}) == 1
-        )
-        if is_tv_batch:
-            results = self._auto_process_transfer_group(entries, task_ids=task_ids)
-        else:
-            results = {
-                self._auto_task_result_key(entry): self._auto_process_transfer_entry(
-                    entry,
-                    queue_rate_limited=True,
-                    task_ids=task_ids,
-                )
-                for entry in entries
-            }
-        for task in tasks:
-            entry = task.get("entry") or {}
-            result = results.get(self._auto_task_result_key(entry)) or {
-                "status": "failed",
-                "reason": "入库自动字幕任务没有返回结果",
-            }
-            status = result.get("status") if result.get("status") in {"completed", "written", "skipped", "failed", "ai_submitted"} else "completed"
-            public_status = "completed" if status in {"written", "ai_submitted"} else status
-            self._update_auto_transfer_task(
-                task["id"],
-                status=public_status,
-                message=result.get("reason") or result.get("status") or public_status,
-                result=result,
-            )
-            logger.info(
-                "[SubtitleManualUpload] 入库自动字幕处理完成 target=%s strategy=%s status=%s reason=%s",
-                result.get("target") or entry.get("target_label") or entry.get("filename"),
-                result.get("strategy"),
-                result.get("status"),
-                result.get("reason", ""),
-            )
+        self._auto_transfer_service().process_transfer_auto_task_batch(tasks)
 
     def _process_transfer_auto_subtitles(self, entries: List[Dict[str, Any]]) -> None:
-        for entry in entries:
-            try:
-                result = self._auto_process_transfer_entry(entry)
-                logger.info(
-                    "[SubtitleManualUpload] 入库自动字幕处理完成 target=%s strategy=%s status=%s reason=%s",
-                    result.get("target"),
-                    result.get("strategy"),
-                    result.get("status"),
-                    result.get("reason", ""),
-                )
-            except Exception as exc:
-                logger.warning(
-                    "[SubtitleManualUpload] 入库自动字幕处理失败 target=%s error=%s",
-                    entry.get("target_label") or entry.get("filename"),
-                    exc,
-                )
+        self._auto_transfer_service().process_transfer_auto_subtitles(entries)
 
     @classmethod
     def _normalize_online_download_name(cls, name: str, content: bytes, result: Dict[str, Any]) -> str:
