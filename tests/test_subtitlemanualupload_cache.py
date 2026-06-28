@@ -1837,6 +1837,38 @@ def test_match_history_cache_invalidates_when_external_subtitle_changes(tmp_path
     assert items[0]["subtitle_count"] == 1
 
 
+def test_subtitle_history_service_persists_and_restores_cache(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    history_module = plugin_submodule(module, "subtitle_history")
+    history = history_module.SubtitleHistory(plugin, http_exception=module.HTTPException, logger=module.logger)
+    video = tmp_path / "Movie.mkv"
+    video.write_text("video", encoding="utf-8")
+    target = {
+        "id": "m1",
+        "path": str(video),
+        "basename": "Movie",
+        "target_label": "Movie",
+        "storage": "local",
+    }
+    plugin._match_history_cache = {
+        "loaded_at": module.datetime.now(),
+        "signature": "sig",
+        "items": [{"id": "movie", "targets": [target]}],
+        "entry_count": 1,
+        "persisted": False,
+    }
+
+    history.persist_match_history_cache()
+    plugin._match_history_cache = {"loaded_at": None, "signature": "", "items": [], "entry_count": 0, "persisted": False}
+    plugin._entry_map.clear()
+
+    assert history.restore_persisted_match_history_cache() is True
+    assert plugin._match_history_cache["persisted"] is True
+    assert plugin._match_history_cache["items"][0]["targets"][0]["id"] == "m1"
+    assert plugin._entry_map["m1"]["path"] == str(video)
+
+
 def test_api_match_history_builds_targets_with_media_target_resolver(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)

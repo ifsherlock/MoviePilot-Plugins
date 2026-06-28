@@ -108,6 +108,7 @@ from .subtitle_language import (
     normalize_auto_language_priority,
     normalize_language_suffix,
 )
+from .subtitle_history import SubtitleHistory
 from .subtitle_writer import (
     SubtitleWriter,
     backup_subtitle_if_needed as writer_backup_subtitle_if_needed,
@@ -1233,6 +1234,13 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             convert_subtitle_file_to_simplified=convert_subtitle_file_to_simplified,
         )
 
+    def _subtitle_history(self) -> SubtitleHistory:
+        return SubtitleHistory(
+            self,
+            http_exception=HTTPException,
+            logger=logger,
+        )
+
     def _target_resolver(self) -> MediaTargetResolver:
         return MediaTargetResolver(
             settings_obj=settings,
@@ -1341,7 +1349,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         return self._local_media_catalog().local_cache_file()
 
     def _match_history_cache_file(self) -> Path:
-        return self.get_data_path() / "match_history_cache.json"
+        return self._subtitle_history().match_history_cache_file()
 
     @classmethod
     def _cache_loaded_at(cls, value: Any) -> Optional[datetime]:
@@ -1366,82 +1374,16 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         return json.loads(json.dumps(value, ensure_ascii=False))
 
     def _match_history_signature(self, entries: List[Dict[str, Any]]) -> str:
-        loaded_at = self._cache_loaded_at((self._local_entries_cache or {}).get("loaded_at"))
-        parts = [
-            loaded_at.isoformat(timespec="seconds") if loaded_at else "",
-            str(len(entries)),
-        ]
-        for entry in entries:
-            parts.append(
-                "|".join(
-                    [
-                        self._normalize_text(entry.get("id")),
-                        self._normalize_text(entry.get("path")),
-                        self._normalize_text(entry.get("date")),
-                        self._entry_filesystem_signature(entry),
-                    ]
-                )
-            )
-        return self._hash_text("\n".join(parts))
+        return self._subtitle_history().match_history_signature(entries)
 
     def _persist_match_history_cache(self) -> None:
-        cache = self._match_history_cache or {}
-        loaded_at = self._cache_loaded_at(cache.get("loaded_at"))
-        payload = {
-            "loaded_at": loaded_at.isoformat(timespec="seconds") if loaded_at else "",
-            "signature": self._normalize_text(cache.get("signature")),
-            "entry_count": int(cache.get("entry_count") or 0),
-            "items": cache.get("items") or [],
-        }
-        try:
-            cache_file = self._match_history_cache_file()
-            cache_file.parent.mkdir(parents=True, exist_ok=True)
-            cache_file.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-        except Exception as exc:
-            logger.warning("[SubtitleManualUpload] 写入匹配历史缓存失败: %s", exc)
+        self._subtitle_history().persist_match_history_cache()
 
     def _restore_persisted_match_history_cache(self) -> bool:
-        try:
-            cache_file = self._match_history_cache_file()
-            if not cache_file.exists():
-                return False
-            payload = json.loads(cache_file.read_text(encoding="utf-8"))
-        except Exception as exc:
-            logger.warning("[SubtitleManualUpload] 读取匹配历史缓存失败: %s", exc)
-            return False
-        if not isinstance(payload, dict):
-            return False
-        loaded_at = self._cache_loaded_at(payload.get("loaded_at"))
-        items = payload.get("items")
-        if not loaded_at or not isinstance(items, list):
-            return False
-        self._match_history_cache = {
-            "loaded_at": loaded_at,
-            "signature": self._normalize_text(payload.get("signature")),
-            "items": [item for item in items if isinstance(item, dict)],
-            "entry_count": int(payload.get("entry_count") or 0),
-            "persisted": True,
-        }
-        for item in self._match_history_cache["items"]:
-            self._remember_targets([target for target in item.get("targets") or [] if isinstance(target, dict)])
-        logger.info(
-            "[SubtitleManualUpload] 已恢复匹配历史缓存 items=%s",
-            len(self._match_history_cache["items"]),
-        )
-        return True
+        return self._subtitle_history().restore_persisted_match_history_cache()
 
     def _invalidate_match_history_cache(self) -> None:
-        self._match_history_cache = {
-            "loaded_at": None,
-            "signature": "",
-            "items": [],
-            "entry_count": 0,
-            "persisted": False,
-        }
-        try:
-            self._match_history_cache_file().unlink(missing_ok=True)
-        except Exception as exc:
-            logger.warning("[SubtitleManualUpload] 删除匹配历史缓存失败: %s", exc)
+        self._subtitle_history().invalidate_match_history_cache()
 
     def _filter_match_history_items(
         self,
@@ -1450,33 +1392,11 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         keyword: str = "",
         media_type: str = "all",
     ) -> List[Dict[str, Any]]:
-        clean_keyword = self._normalize_text(keyword)
-        expected_type = self._media_type_text(media_type)
-        filtered: List[Dict[str, Any]] = []
-        for item in items:
-            if expected_type and item.get("media_type") != expected_type:
-                continue
-            if clean_keyword:
-                target_entries = item.get("targets") or []
-                synthetic_entry = {
-                    "title": item.get("title"),
-                    "filename": "",
-                    "basename": "",
-                    "relative_path": "",
-                }
-                if not self._entry_matches_keyword(synthetic_entry, clean_keyword) and not any(
-                    self._entry_matches_keyword(target, clean_keyword)
-                    for target in target_entries
-                    if isinstance(target, dict)
-                ):
-                    continue
-            filtered.append(item)
-        cloned = self._json_clone(filtered)
-        for item in cloned:
-            for target in item.get("targets") or []:
-                if isinstance(target, dict):
-                    target["timeline_task"] = self._timeline_task_for_target_id(target.get("id"))
-        return cloned
+        return self._subtitle_history().filter_match_history_items(
+            items,
+            keyword=keyword,
+            media_type=media_type,
+        )
 
     @staticmethod
     def _timeline_task_summary(tasks: List[Dict[str, Any]]) -> Dict[str, int]:
@@ -1784,67 +1704,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         return self._local_media_catalog().group_entries_as_media(entries, limit)
 
     def _match_history_items(self, *, keyword: str = "", media_type: str = "all") -> List[Dict[str, Any]]:
-        media_catalog = self._local_media_catalog()
-        target_resolver = self._target_resolver()
-        entries = media_catalog.load_local_entries(allow_stale=True)
-        signature = self._match_history_signature(entries)
-        cache = self._match_history_cache or {}
-        loaded_at = self._cache_loaded_at(cache.get("loaded_at"))
-        if (
-            loaded_at
-            and self._normalize_text(cache.get("signature")) == signature
-            and (datetime.now() - loaded_at).total_seconds() < self._match_history_cache_ttl_seconds
-        ):
-            return self._filter_match_history_items(
-                cache.get("items") or [],
-                keyword=keyword,
-                media_type=media_type,
-            )
-
-        groups: Dict[str, Dict[str, Any]] = {}
-        for entry in entries:
-            target = target_resolver.target_from_entry(entry)
-            subtitles = target.get("subtitles") or []
-            if not subtitles:
-                continue
-            key = entry.get("media_key") or entry.get("id")
-            group = groups.setdefault(
-                key,
-                {
-                    "id": key,
-                    "media_type": entry.get("media_type"),
-                    "title": entry.get("title"),
-                    "year": entry.get("year"),
-                    "tmdb_id": entry.get("tmdb_id"),
-                    "douban_id": entry.get("douban_id"),
-                    "poster_url": entry.get("poster_url"),
-                    "poster_thumb_url": entry.get("poster_thumb_url") or self._poster_url(entry.get("poster_url"), "w185"),
-                    "subtitle_count": 0,
-                    "target_count": 0,
-                    "latest_at": "",
-                    "targets": [],
-                },
-            )
-            group["target_count"] += 1
-            group["subtitle_count"] += len(subtitles)
-            latest = max((item.get("modified_at") or "" for item in subtitles), default="")
-            if latest and latest > group.get("latest_at", ""):
-                group["latest_at"] = latest
-            group["targets"].append(target)
-
-        items = list(groups.values())
-        for item in items:
-            item["targets"].sort(key=lambda target: (target.get("season", 0), target.get("episode", 0), target.get("basename", "")))
-        items.sort(key=lambda item: (item.get("latest_at", ""), item.get("title", "")), reverse=True)
-        self._match_history_cache = {
-            "loaded_at": datetime.now(),
-            "signature": signature,
-            "items": self._json_clone(items),
-            "entry_count": len(entries),
-            "persisted": False,
-        }
-        self._persist_match_history_cache()
-        return self._filter_match_history_items(items, keyword=keyword, media_type=media_type)
+        return self._subtitle_history().match_history_items(keyword=keyword, media_type=media_type)
 
     def _merge_seasons(self, entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         return self._target_resolver().merge_seasons(entries)
@@ -3613,7 +3473,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         self,
         requested_items: List[Dict[str, Any]],
     ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
-        return self._subtitle_writer().existing_timeline_operations(requested_items)
+        return self._subtitle_history().existing_timeline_operations(requested_items)
 
     def _run_existing_timeline_fix(
         self,
