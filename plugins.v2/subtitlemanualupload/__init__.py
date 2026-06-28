@@ -109,6 +109,16 @@ from .subtitle_language import (
 )
 from .timeline_fixer import TimelineFixResult, check_timeline_fixer_dependencies, fix_subtitle_timeline
 from .tongwen import convert_subtitle_file_to_simplified
+from .target_resolver import (
+    MediaTargetResolver,
+    event_value as target_event_value,
+    history_type_text as target_history_type_text,
+    is_local_video_path as target_is_local_video_path,
+    is_stream_path as target_is_stream_path,
+    media_type_text as target_media_type_text,
+    number_from_tag as target_number_from_tag,
+    poster_url as target_poster_url,
+)
 from .upload_session import (
     DEFAULT_ARCHIVE_RESOURCE_LIMITS,
     ArchiveResourceLimits,
@@ -1232,6 +1242,24 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
     def _upload_session_service(self) -> UploadSessionService:
         return self._upload_session_service_for_path(self.get_data_path())
 
+    def _target_resolver(self) -> MediaTargetResolver:
+        return MediaTargetResolver(
+            settings_obj=settings,
+            meta_info_path=MetaInfoPath,
+            stream_exts=self._stream_exts,
+            trust_transfer_history_paths=getattr(self, "_trust_transfer_history_paths", False),
+            normalize_text=self._normalize_text,
+            safe_int=self._safe_int,
+            hash_text=self._hash_text,
+            extract_episode_hint=self._extract_episode_hint,
+            subtitle_files_for_target=self._subtitle_files_for_target,
+            load_local_entries=self._load_local_entries,
+            group_entries_as_media=self._group_entries_as_media,
+            tmdb_detail_for_media=self._tmdb_detail_for_media,
+            apply_tmdb_detail=self._apply_tmdb_detail,
+            remember_targets=self._remember_targets,
+        )
+
     def _get_session_root(self) -> Path:
         return self._upload_session_service().get_session_root()
 
@@ -1240,226 +1268,48 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
 
     @classmethod
     def _media_type_text(cls, value: Any) -> str:
-        raw = str(getattr(value, "value", value) or "").strip().lower()
-        if raw in {"movie", "电影", "mediatype.movie"}:
-            return "movie"
-        if raw in {"tv", "电视剧", "series", "mediatype.tv"}:
-            return "tv"
-        return ""
+        return target_media_type_text(value)
 
     @classmethod
     def _poster_url(cls, poster_path: Any, prefix: str = "w500") -> str:
-        poster = cls._normalize_text(poster_path)
-        if not poster:
-            return ""
-        if poster.startswith(("http://", "https://")):
-            if prefix:
-                return re.sub(r"(/t/p/)[^/]+/", rf"\g<1>{prefix}/", poster, count=1)
-            return poster
-        if not poster.startswith("/"):
-            poster = f"/{poster}"
-        domain = cls._normalize_text(getattr(settings, "TMDB_IMAGE_DOMAIN", "")) or "image.tmdb.org"
-        return f"https://{domain}/t/p/{prefix}{poster}"
+        return target_poster_url(
+            poster_path,
+            prefix,
+            settings_obj=settings,
+            normalize_text=cls._normalize_text,
+        )
 
     @classmethod
     def _history_type_text(cls, media_type: Any) -> str:
-        normalized = cls._media_type_text(media_type)
-        if normalized == "movie":
-            return "电影"
-        if normalized == "tv":
-            return "电视剧"
-        return cls._normalize_text(media_type)
+        return target_history_type_text(media_type, normalize_text=cls._normalize_text)
 
     @classmethod
     def _number_from_tag(cls, value: Any) -> int:
-        match = re.search(r"\d+", cls._normalize_text(value))
-        return cls._safe_int(match.group(0), 0) if match else 0
+        return target_number_from_tag(value, normalize_text=cls._normalize_text, safe_int=cls._safe_int)
 
     @classmethod
     def _is_local_video_path(cls, storage: str, path: str) -> bool:
-        if cls._normalize_text(storage) != "local" or not path:
-            return False
-        suffix = Path(path).suffix.lower()
-        configured_exts = getattr(settings, "RMT_MEDIAEXT", set()) or set()
-        allowed_exts = {
-            ext.lower() if str(ext).startswith(".") else f".{str(ext).lower()}"
-            for ext in configured_exts
-        }
-        allowed_exts.update(cls._stream_exts)
-        if suffix and allowed_exts and suffix not in allowed_exts:
-            return False
-        if getattr(cls, "_trust_transfer_history_paths", False):
-            return True
-        try:
-            return Path(path).is_file()
-        except Exception:
-            return False
+        return target_is_local_video_path(
+            storage,
+            path,
+            normalize_text=cls._normalize_text,
+            settings_obj=settings,
+            stream_exts=cls._stream_exts,
+            trust_transfer_history_paths=getattr(cls, "_trust_transfer_history_paths", False),
+        )
 
     def _build_entry_from_history(self, history: Any) -> Optional[Dict[str, Any]]:
-        if not getattr(history, "status", False):
-            return None
-
-        raw_fileitem = getattr(history, "dest_fileitem", None)
-        fileitem = raw_fileitem if isinstance(raw_fileitem, dict) else {}
-        storage = self._normalize_text(fileitem.get("storage") or getattr(history, "dest_storage", "")) or "local"
-        path = self._normalize_text(fileitem.get("path") or getattr(history, "dest", ""))
-        if not self._is_local_video_path(storage, path):
-            return None
-
-        file_path = Path(path)
-        filename = self._normalize_text(fileitem.get("name")) or file_path.name
-        basename = self._normalize_text(fileitem.get("basename")) or file_path.stem
-        media_type = self._media_type_text(getattr(history, "type", ""))
-        if not media_type:
-            return None
-
-        title = self._normalize_text(getattr(history, "title", ""))
-        year = self._normalize_text(getattr(history, "year", ""))
-        season = self._number_from_tag(getattr(history, "seasons", ""))
-        episode = self._number_from_tag(getattr(history, "episodes", ""))
-        if not season or not episode:
-            try:
-                meta = MetaInfoPath(file_path)
-                season = season or self._safe_int(getattr(meta, "begin_season", None) or getattr(meta, "season", None), 0)
-                episode = episode or self._safe_int(getattr(meta, "begin_episode", None) or getattr(meta, "episode", None), 0)
-            except Exception:
-                pass
-        episode_hint = self._extract_episode_hint(filename or basename)
-        if episode_hint:
-            season = season or episode_hint.get("season", 0)
-            episode = episode or episode_hint.get("episode", 0)
-        if media_type == "tv" and episode and not season:
-            season = 1
-
-        tmdb_id = self._safe_int(getattr(history, "tmdbid", 0), 0)
-        douban_id = self._normalize_text(getattr(history, "doubanid", ""))
-        media_key = self._hash_text(f"{media_type}|{tmdb_id}|{douban_id}|{title}|{year}")
-        entry_id = self._hash_text(f"{storage}|{path}")
-        if media_type == "tv":
-            prefix = f"S{season:02d}E{episode:02d}" if season and episode else basename
-            target_label = f"{prefix} · {filename}"
-        else:
-            target_label = filename or (f"{title} ({year})" if year else title)
-
-        return {
-            "id": entry_id,
-            "media_key": media_key,
-            "media_type": media_type,
-            "title": title,
-            "year": year,
-            "tmdb_id": tmdb_id,
-            "douban_id": douban_id,
-            "poster_url": self._poster_url(getattr(history, "image", "")),
-            "poster_thumb_url": self._poster_url(getattr(history, "image", ""), "w185"),
-            "season": season,
-            "episode": episode,
-            "path": path,
-            "basename": basename,
-            "filename": filename,
-            "storage": storage,
-            "library_name": "MoviePilot 媒体库",
-            "relative_path": path.replace("\\", "/"),
-            "target_label": target_label,
-            "writable": True,
-            "date": self._normalize_text(getattr(history, "date", "")),
-        }
+        return self._target_resolver().build_entry_from_history(history)
 
     @classmethod
     def _event_value(cls, obj: Any, *names: str, default: Any = "") -> Any:
-        for name in names:
-            if isinstance(obj, dict) and name in obj:
-                return obj.get(name)
-            if hasattr(obj, name):
-                return getattr(obj, name)
-        return default
+        return target_event_value(obj, *names, default=default)
 
     def _transfer_event_paths(self, transferinfo: Any) -> List[str]:
-        raw_paths = self._event_value(transferinfo, "file_list_new", default=[]) or []
-        if isinstance(raw_paths, (str, Path)):
-            raw_paths = [raw_paths]
-        paths = [self._normalize_text(item) for item in raw_paths if self._normalize_text(item)]
-        if not paths:
-            target_path = self._normalize_text(self._event_value(transferinfo, "target_path", default=""))
-            if target_path:
-                paths = [target_path]
-        result = []
-        for path in paths:
-            if self._is_local_video_path("local", path):
-                result.append(path)
-        return result
+        return self._target_resolver().transfer_event_paths(transferinfo)
 
     def _entries_from_transfer_event(self, event_data: Dict[str, Any]) -> List[Dict[str, Any]]:
-        meta = event_data.get("meta") if isinstance(event_data, dict) else None
-        mediainfo = event_data.get("mediainfo") if isinstance(event_data, dict) else None
-        transferinfo = event_data.get("transferinfo") if isinstance(event_data, dict) else None
-        paths = self._transfer_event_paths(transferinfo)
-        if not paths:
-            return []
-
-        media_type = self._media_type_text(self._event_value(mediainfo, "type", default=""))
-        title = self._normalize_text(
-            self._event_value(mediainfo, "title", "name", default="")
-            or self._event_value(meta, "name", "title", default="")
-        )
-        year = self._normalize_text(self._event_value(mediainfo, "year", "release_year", default=""))
-        tmdb_id = self._safe_int(self._event_value(mediainfo, "tmdb_id", "tmdbid", default=0), 0)
-        douban_id = self._normalize_text(self._event_value(mediainfo, "douban_id", "doubanid", default=""))
-        season = self._safe_int(
-            self._event_value(meta, "begin_season", "season", default=0)
-            or self._event_value(mediainfo, "season", default=0),
-            0,
-        )
-        episode = self._safe_int(
-            self._event_value(meta, "begin_episode", "episode", default=0)
-            or self._event_value(mediainfo, "episode", default=0),
-            0,
-        )
-        episode_list = self._event_value(meta, "episode_list", default=[]) or []
-        if not episode and isinstance(episode_list, list) and len(episode_list) == 1:
-            episode = self._safe_int(episode_list[0], 0)
-        if not media_type:
-            media_type = "tv" if season or episode else "movie"
-
-        entries: List[Dict[str, Any]] = []
-        for path in paths:
-            video_path = Path(path)
-            basename = video_path.stem
-            filename = video_path.name
-            hint = self._extract_episode_hint(filename) or {}
-            item_season = season or self._safe_int(hint.get("season"), 0)
-            item_episode = episode or self._safe_int(hint.get("episode"), 0)
-            item_title = title or basename
-            media_key = self._hash_text(f"{media_type}|{tmdb_id}|{douban_id}|{item_title}|{year}")
-            target_label = (
-                f"S{item_season:02d}E{item_episode:02d} · {filename}"
-                if media_type == "tv" and item_season and item_episode
-                else filename
-            )
-            entries.append(
-                {
-                    "id": self._hash_text(f"local|{path}"),
-                    "media_key": media_key,
-                    "media_type": media_type,
-                    "title": item_title,
-                    "year": year,
-                    "tmdb_id": tmdb_id,
-                    "douban_id": douban_id,
-                    "poster_url": self._poster_url(self._event_value(mediainfo, "poster_path", "image", default="")),
-                    "poster_thumb_url": self._poster_url(self._event_value(mediainfo, "poster_path", "image", default=""), "w185"),
-                    "season": item_season,
-                    "episode": item_episode,
-                    "path": path,
-                    "basename": basename,
-                    "filename": filename,
-                    "storage": "local",
-                    "library_name": "MoviePilot 入库事件",
-                    "relative_path": path.replace("\\", "/"),
-                    "target_label": target_label,
-                    "writable": True,
-                    "date": datetime.now().isoformat(timespec="seconds"),
-                }
-            )
-        return entries
+        return self._target_resolver().entries_from_transfer_event(event_data)
 
     def _merge_local_entries_cache(self, entries: List[Dict[str, Any]]) -> None:
         if not entries:
@@ -2207,35 +2057,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         return self._filter_match_history_items(items, keyword=keyword, media_type=media_type)
 
     def _merge_seasons(self, entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        seasons: Dict[int, Dict[str, Any]] = {}
-        for entry in entries:
-            season = self._safe_int(entry.get("season"), 0)
-            episode = self._safe_int(entry.get("episode"), 0)
-            if not season:
-                continue
-            item = seasons.setdefault(
-                season,
-                {
-                    "season": season,
-                    "name": f"第 {season} 季",
-                    "episode_count": 0,
-                    "poster_url": "",
-                    "local_count": 0,
-                    "episodes": [],
-                    "available": False,
-                },
-            )
-            item["local_count"] += 1
-            item["available"] = True
-            if episode and episode not in item["episodes"]:
-                item["episodes"].append(episode)
-
-        result = list(seasons.values())
-        for item in result:
-            item["episodes"] = sorted(item.get("episodes") or [])
-            item["episode_count"] = len(item["episodes"])
-        result.sort(key=lambda item: item.get("season", 0))
-        return result
+        return self._target_resolver().merge_seasons(entries)
 
     def _targets_for_media(
         self,
@@ -2246,72 +2068,14 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         year: str = "",
         season: Any = None,
     ) -> Dict[str, Any]:
-        clean_type = self._media_type_text(media_type)
-        clean_tmdb_id = self._safe_int(tmdb_id, 0)
-        clean_title = self._normalize_text(title)
-        clean_year = self._normalize_text(year)
-        clean_douban_id = self._normalize_text(douban_id)
-
-        entries = []
-        seen_paths = set()
-        for entry in self._load_local_entries(allow_stale=True):
-            if clean_type and entry.get("media_type") != clean_type:
-                continue
-            if clean_tmdb_id and self._safe_int(entry.get("tmdb_id"), 0) != clean_tmdb_id:
-                continue
-            if clean_douban_id and self._normalize_text(entry.get("douban_id")) != clean_douban_id:
-                continue
-            if not clean_tmdb_id and not clean_douban_id and clean_title and entry.get("title") != clean_title:
-                continue
-            if clean_year and entry.get("year") != clean_year:
-                continue
-            if entry["path"] not in seen_paths:
-                seen_paths.add(entry["path"])
-                entries.append(entry)
-
-        entries.sort(key=lambda item: (item.get("season", 0), item.get("episode", 0), item.get("filename", "")))
-        media_groups = self._group_entries_as_media(entries, 1)
-        media = media_groups[0] if media_groups else {
-            "id": self._hash_text(f"{clean_type}|{clean_tmdb_id}|{douban_id}|{clean_title}|{clean_year}"),
-            "media_id": "",
-            "media_type": clean_type,
-            "title": clean_title,
-            "year": clean_year,
-            "tmdb_id": clean_tmdb_id,
-            "douban_id": self._normalize_text(douban_id),
-            "poster_url": "",
-            "poster_thumb_url": "",
-            "local_count": 0,
-            "season_count": 0,
-        }
-        tmdb_detail = self._tmdb_detail_for_media(media)
-        if tmdb_detail:
-            self._apply_tmdb_detail(media, tmdb_detail)
-        seasons = self._merge_seasons(entries) if media.get("media_type") == "tv" else []
-
-        season_value = self._normalize_text(season)
-        selected_season: Any = "all"
-        if media.get("media_type") == "tv" and season_value not in {"", "all", "0"}:
-            selected_season = self._safe_int(season_value, 0) or "all"
-
-        visible_entries = entries
-        if media.get("media_type") == "tv" and selected_season != "all":
-            visible_entries = [entry for entry in entries if self._safe_int(entry.get("season"), 0) == selected_season]
-
-        self._remember_targets(visible_entries)
-        targets = [self._target_from_entry(entry) for entry in visible_entries]
-        if tmdb_detail:
-            for target in targets:
-                self._apply_tmdb_detail(target, tmdb_detail)
-
-        return {
-            "media": media,
-            "seasons": seasons,
-            "selected_season": selected_season,
-            "targets": targets,
-            "target_count": len(visible_entries),
-            "all_target_count": len(entries),
-        }
+        return self._target_resolver().targets_for_media(
+            media_type=media_type,
+            tmdb_id=tmdb_id,
+            douban_id=douban_id,
+            title=title,
+            year=year,
+            season=season,
+        )
 
     def _tmdb_detail_for_media(self, media: Dict[str, Any]) -> Dict[str, Any]:
         tmdb_id = self._safe_int(media.get("tmdb_id"), 0)
@@ -2557,39 +2321,14 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
 
     @classmethod
     def _is_stream_path(cls, path: Any) -> bool:
-        return Path(cls._normalize_text(path)).suffix.lower() in cls._stream_exts
+        return target_is_stream_path(
+            path,
+            normalize_text=cls._normalize_text,
+            stream_exts=cls._stream_exts,
+        )
 
     def _target_from_entry(self, entry: Dict[str, Any]) -> Dict[str, Any]:
-        subtitles = self._subtitle_files_for_target(entry)
-        path = self._normalize_text(entry.get("path"))
-        return {
-            "id": entry.get("id"),
-            "label": entry.get("target_label"),
-            "basename": entry.get("basename"),
-            "path": path,
-            "media_type": entry.get("media_type"),
-            "title": entry.get("title"),
-            "tmdb_id": entry.get("tmdb_id"),
-            "douban_id": entry.get("douban_id"),
-            "season": entry.get("season", 0),
-            "episode": entry.get("episode", 0),
-            "year": entry.get("year", ""),
-            "library_name": entry.get("library_name"),
-            "relative_path": entry.get("relative_path"),
-            "original_language": entry.get("original_language"),
-            "origin_country": entry.get("origin_country"),
-            "production_countries": entry.get("production_countries"),
-            "original_title": entry.get("original_title"),
-            "original_name": entry.get("original_name"),
-            "en_title": entry.get("en_title"),
-            "tmdb_aliases": entry.get("tmdb_aliases"),
-            "storage": entry.get("storage", "local"),
-            "writable": entry.get("writable", True),
-            "is_stream": self._is_stream_path(path),
-            "has_subtitle": bool(subtitles),
-            "subtitle_count": len(subtitles),
-            "subtitles": subtitles,
-        }
+        return self._target_resolver().target_from_entry(entry)
 
     def _remember_targets(self, entries: List[Dict[str, Any]]) -> None:
         for entry in entries:
