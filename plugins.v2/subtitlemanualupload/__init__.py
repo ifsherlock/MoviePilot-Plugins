@@ -65,13 +65,35 @@ except Exception:
 
 from .online_subtitle import (
     CaptchaRequiredError,
-    DEFAULT_ENGINE,
-    DEFAULT_PROVIDER_ROOTS,
     OnlineSubtitleSearchService,
     build_search_keywords,
     extract_title_aliases,
-    normalize_online_engine,
-    normalize_provider_roots,
+)
+from .config_schema import (
+    AUTO_MULTI_SUBTITLE_MODES,
+    AUTO_TRANSFER_SUBTITLE_STRATEGIES,
+    AUTO_TRANSFER_SUBTITLE_STRATEGY_ALIASES,
+    AVAILABLE_ONLINE_PROVIDER_IDS,
+    DEFAULT_ASSRT_API_URL,
+    DEFAULT_ENGINE,
+    DEFAULT_ONLINE_PROVIDER_IDS,
+    DEFAULT_OPENSUBTITLES_API_URL,
+    DEFAULT_PROVIDER_ROOTS,
+    DEFAULT_RAR_TOOL_PATH,
+    MANUAL_ONLINE_PROVIDER_IDS,
+    RAR_DEPENDENCY_MODES,
+    build_config_form,
+    host_from_url,
+    normalize_auto_multi_subtitle_mode,
+    normalize_auto_transfer_subtitle_strategy,
+    normalize_online_site_urls,
+    normalize_plugin_config,
+    normalize_provider_ids,
+    normalize_rar_dependency_mode,
+    normalize_root_url,
+    normalize_timeline_max_offset,
+    normalize_timeline_min_offset,
+    normalize_timeline_vad_mode,
 )
 from .subtitle_language import (
     DEFAULT_AUTO_FORMAT_PRIORITY,
@@ -106,10 +128,10 @@ class SubtitleManualUpload(_PluginBase):
     _enabled = False
     _show_sidebar_nav = True
     _rar_dependency_mode = "none"
-    _rar_tool_path = "/usr/local/bin/7z"
-    _default_online_provider_ids = ["assrt", "opensubtitles"]
-    _available_online_provider_ids = ["subhd", "zimuku", "assrt", "opensubtitles"]
-    _manual_online_provider_ids = ["subhd", "zimuku", "assrt", "opensubtitles"]
+    _rar_tool_path = DEFAULT_RAR_TOOL_PATH
+    _default_online_provider_ids = list(DEFAULT_ONLINE_PROVIDER_IDS)
+    _available_online_provider_ids = list(AVAILABLE_ONLINE_PROVIDER_IDS)
+    _manual_online_provider_ids = list(MANUAL_ONLINE_PROVIDER_IDS)
     _online_provider_ids = ["assrt", "opensubtitles"]
     _online_engine = DEFAULT_ENGINE
     _online_use_proxy = False
@@ -129,9 +151,9 @@ class SubtitleManualUpload(_PluginBase):
     _embedded_subtitle_text_codecs = {"subrip", "srt", "ass", "ssa", "webvtt", "mov_text", "text"}
     _embedded_subtitle_image_codecs = {"hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "xsub", "dvb_teletext", "eia_608"}
     _assrt_api_key = ""
-    _assrt_api_url = "https://api.assrt.net"
+    _assrt_api_url = DEFAULT_ASSRT_API_URL
     _opensubtitles_api_key = ""
-    _opensubtitles_api_url = "https://api.opensubtitles.com/api/v1"
+    _opensubtitles_api_url = DEFAULT_OPENSUBTITLES_API_URL
     _opensubtitles_username = ""
     _opensubtitles_password = ""
     _ai_link_enabled = True
@@ -186,17 +208,12 @@ class SubtitleManualUpload(_PluginBase):
     _rar_tools = ("unrar", "bsdtar", "7z", "7za", "7zz")
     _sevenzip_tools = ("7z", "7za", "7zz", "bsdtar")
     _rar_python_package = "rarfile"
-    _rar_dependency_modes = {"none", "container_install", "mapped_binary"}
-    _auto_transfer_subtitle_strategies = {"online_then_ai_source", "online_source_only", "ai_source_only"}
-    _auto_multi_subtitle_modes = {"best", "chinese_all", "all"}
+    _rar_dependency_modes = set(RAR_DEPENDENCY_MODES)
+    _auto_transfer_subtitle_strategies = set(AUTO_TRANSFER_SUBTITLE_STRATEGIES)
+    _auto_multi_subtitle_modes = set(AUTO_MULTI_SUBTITLE_MODES)
     _default_auto_language_priority = list(DEFAULT_AUTO_LANGUAGE_PRIORITY)
     _default_auto_format_priority = list(DEFAULT_AUTO_FORMAT_PRIORITY)
-    _auto_transfer_subtitle_strategy_aliases = {
-        "search_first": "online_then_ai_source",
-        "search_only": "online_source_only",
-        "ai_only": "ai_source_only",
-        "ai_first": "ai_source_only",
-    }
+    _auto_transfer_subtitle_strategy_aliases = dict(AUTO_TRANSFER_SUBTITLE_STRATEGY_ALIASES)
     _chinese_media_language_codes = {"zh", "cn", "zho", "cmn", "yue"}
     _chinese_media_country_codes = {"cn", "hk", "tw", "sg"}
     _chinese_media_region_names = {
@@ -216,68 +233,44 @@ class SubtitleManualUpload(_PluginBase):
     _language_suffix_aliases = dict(LANGUAGE_SUFFIX_ALIASES)
 
     def init_plugin(self, config: dict = None):
-        config = config or {}
-        self._enabled = bool(config.get("enabled"))
-        self._show_sidebar_nav = bool(config.get("show_sidebar_nav", True))
-        self._rar_dependency_mode = self._normalize_rar_dependency_mode(config.get("rar_dependency_mode"))
-        self._rar_tool_path = self._normalize_text(config.get("rar_tool_path")) or "/usr/local/bin/7z"
-        self._online_provider_ids = self._normalize_provider_ids(config.get("online_providers"))
-        self._online_engine = normalize_online_engine(config.get("online_engine"))
-        legacy_proxy_default = "online_proxy_migrated" not in config and config.get("online_use_proxy") is True
-        self._online_use_proxy = False if legacy_proxy_default else bool(config.get("online_use_proxy", False))
-        self._online_site_urls = self._normalize_online_site_urls(config)
-        self._assrt_api_key = self._normalize_text(config.get("assrt_api_key"))
-        self._assrt_api_url = self._normalize_root_url(
-            config.get("assrt_api_url"),
-            "https://api.assrt.net",
+        normalized_config = normalize_plugin_config(
+            config,
+            subtitle_exts=self._subtitle_exts,
+            default_auto_language_priority=self._default_auto_language_priority,
+            default_auto_format_priority=self._default_auto_format_priority,
+            available_provider_ids=self._available_online_provider_ids,
+            default_provider_ids=self._default_online_provider_ids,
         )
-        self._opensubtitles_api_key = self._normalize_text(config.get("opensubtitles_api_key"))
-        self._opensubtitles_api_url = self._normalize_root_url(
-            config.get("opensubtitles_api_url"),
-            "https://api.opensubtitles.com/api/v1",
-        )
-        self._opensubtitles_username = self._normalize_text(config.get("opensubtitles_username"))
-        if "@" in self._opensubtitles_username:
+        self._enabled = normalized_config["enabled"]
+        self._show_sidebar_nav = normalized_config["show_sidebar_nav"]
+        self._rar_dependency_mode = normalized_config["rar_dependency_mode"]
+        self._rar_tool_path = normalized_config["rar_tool_path"]
+        self._online_provider_ids = normalized_config["online_providers"]
+        self._online_engine = normalized_config["online_engine"]
+        self._online_use_proxy = normalized_config["online_use_proxy"]
+        self._online_site_urls = normalized_config["online_site_urls"]
+        self._assrt_api_key = normalized_config["assrt_api_key"]
+        self._assrt_api_url = normalized_config["assrt_api_url"]
+        self._opensubtitles_api_key = normalized_config["opensubtitles_api_key"]
+        self._opensubtitles_api_url = normalized_config["opensubtitles_api_url"]
+        self._opensubtitles_username = normalized_config["opensubtitles_username"]
+        if (config or {}).get("opensubtitles_username") and "@" in self._normalize_text((config or {}).get("opensubtitles_username")):
             logger.warning("[SubtitleManualUpload] OpenSubtitles 用户名疑似邮箱，已忽略下载认证用户名")
-            self._opensubtitles_username = ""
-        self._opensubtitles_password = self._normalize_text(config.get("opensubtitles_password"))
-        self._ai_link_enabled = bool(config.get("ai_link_enabled", True))
-        self._traditional_to_simplified = bool(config.get("traditional_to_simplified", False))
-        self._auto_search_on_transfer = bool(config.get("auto_search_on_transfer", False))
-        self._auto_skip_chinese_media_on_transfer = bool(
-            config.get("auto_skip_chinese_media_on_transfer", True)
-        )
-        self._auto_transfer_subtitle_strategy = self._normalize_auto_transfer_subtitle_strategy(
-            config.get("auto_transfer_subtitle_strategy")
-        )
-        self._trust_transfer_history_paths = bool(config.get("trust_transfer_history_paths", False))
-        self._auto_multi_subtitle_mode = self._normalize_auto_multi_subtitle_mode(
-            config.get("auto_multi_subtitle_mode")
-        )
-        self._auto_subtitle_language_priority = self._normalize_auto_language_priority(
-            config.get("auto_subtitle_language_priority")
-        )
-        self._auto_subtitle_format_priority = self._normalize_auto_format_priority(
-            config.get("auto_subtitle_format_priority")
-        )
-        self._auto_ass_to_srt_for_ai = bool(config.get("auto_ass_to_srt_for_ai", True))
-        self._timeline_max_offset_seconds = self._normalize_timeline_max_offset(config.get("timeline_max_offset_seconds"))
-        self._timeline_min_offset_seconds = self._normalize_timeline_min_offset(config.get("timeline_min_offset_seconds"))
-        self._timeline_vad_mode = self._normalize_timeline_vad_mode(config.get("timeline_vad_mode"))
-        self._timeline_allow_risky_offset = bool(config.get("timeline_allow_risky_offset", False))
-        if not config.get("assrt_provider_migrated") and not self._assrt_api_key:
-            self._online_provider_ids = [item for item in self._online_provider_ids if item != "assrt"]
-        if self._assrt_api_key and "assrt" not in self._online_provider_ids:
-            self._online_provider_ids.append("assrt")
-        if self._opensubtitles_api_key and "opensubtitles" not in self._online_provider_ids:
-            self._online_provider_ids.append("opensubtitles")
-        self._online_provider_ids = [
-            item
-            for item in self._online_provider_ids
-            if item in self._available_online_provider_ids
-            and (item != "assrt" or self._assrt_api_key)
-            and (item != "opensubtitles" or self._opensubtitles_api_key)
-        ]
+        self._opensubtitles_password = normalized_config["opensubtitles_password"]
+        self._ai_link_enabled = normalized_config["ai_link_enabled"]
+        self._traditional_to_simplified = normalized_config["traditional_to_simplified"]
+        self._auto_search_on_transfer = normalized_config["auto_search_on_transfer"]
+        self._auto_skip_chinese_media_on_transfer = normalized_config["auto_skip_chinese_media_on_transfer"]
+        self._auto_transfer_subtitle_strategy = normalized_config["auto_transfer_subtitle_strategy"]
+        self._trust_transfer_history_paths = normalized_config["trust_transfer_history_paths"]
+        self._auto_multi_subtitle_mode = normalized_config["auto_multi_subtitle_mode"]
+        self._auto_subtitle_language_priority = normalized_config["auto_subtitle_language_priority"]
+        self._auto_subtitle_format_priority = normalized_config["auto_subtitle_format_priority"]
+        self._auto_ass_to_srt_for_ai = normalized_config["auto_ass_to_srt_for_ai"]
+        self._timeline_max_offset_seconds = normalized_config["timeline_max_offset_seconds"]
+        self._timeline_min_offset_seconds = normalized_config["timeline_min_offset_seconds"]
+        self._timeline_vad_mode = normalized_config["timeline_vad_mode"]
+        self._timeline_allow_risky_offset = normalized_config["timeline_allow_risky_offset"]
         type(self)._rar_dependency_mode = self._rar_dependency_mode
         type(self)._rar_tool_path = self._rar_tool_path
         type(self)._traditional_to_simplified = self._traditional_to_simplified
@@ -490,515 +483,11 @@ class SubtitleManualUpload(_PluginBase):
         ]
 
     def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
-        return [
-            {
-                "component": "VForm",
-                "content": [
-                    {
-                        "component": "VRow",
-                        "content": [
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
-                                "content": [
-                                    {
-                                        "component": "VSwitch",
-                                        "props": {
-                                            "model": "enabled",
-                                            "label": "启用插件",
-                                        },
-                                    }
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
-                                "content": [
-                                    {
-                                        "component": "VSwitch",
-                                        "props": {
-                                            "model": "show_sidebar_nav",
-                                            "label": "显示侧边栏入口",
-                                        },
-                                    }
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
-                                "content": [
-                                    {
-                                        "component": "VSwitch",
-                                        "props": {
-                                            "model": "traditional_to_simplified",
-                                            "label": "写入前繁体转简体",
-                                        },
-                                    }
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 3},
-                                "content": [
-                                    {
-                                        "component": "VSwitch",
-                                        "props": {
-                                            "model": "auto_search_on_transfer",
-                                            "label": "入库后自动搜索匹配字幕",
-                                        },
-                                    }
-                                ],
-                            },
-                        ],
-                    },
-                    {
-                        "component": "VRow",
-                        "content": [
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 4},
-                                "content": [
-                                    {
-                                        "component": "VTextField",
-                                        "props": {
-                                            "model": "timeline_max_offset_seconds",
-                                            "label": "智能调轴最大偏移秒数",
-                                            "type": "number",
-                                            "placeholder": "120",
-                                            "min": 1,
-                                            "max": 300,
-                                            "suffix": "秒",
-                                            "hint": "默认 120；不建议超过 120 秒，过大偏移通常意味着字幕错集或错版本。",
-                                            "persistentHint": True,
-                                        },
-                                    }
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 4},
-                                "content": [
-                                    {
-                                        "component": "VTextField",
-                                        "props": {
-                                            "model": "timeline_min_offset_seconds",
-                                            "label": "智能调轴最小应用阈值",
-                                            "placeholder": "0.2",
-                                        },
-                                    }
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 4},
-                                "content": [
-                                    {
-                                        "component": "VSelect",
-                                        "props": {
-                                            "model": "timeline_vad_mode",
-                                            "label": "音频 VAD 模式",
-                                            "items": [
-                                                {"title": "WebRTC VAD（推荐）", "value": "webrtc"},
-                                                {"title": "RMS 能量阈值（降级）", "value": "rms"},
-                                            ],
-                                        },
-                                    }
-                                ],
-                            },
-                        ],
-                    },
-                    {
-                        "component": "VRow",
-                        "content": [
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
-                                "content": [
-                                    {
-                                        "component": "VSwitch",
-                                        "props": {
-                                            "model": "auto_skip_chinese_media_on_transfer",
-                                            "label": "入库自动处理跳过中文资源",
-                                        },
-                                    }
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
-                                "content": [
-                                    {
-                                        "component": "VSelect",
-                                        "props": {
-                                            "model": "auto_transfer_subtitle_strategy",
-                                            "label": "入库后字幕处理策略",
-                                            "items": [
-                                                {"title": "在线匹配优先，AI 来源兜底", "value": "online_then_ai_source"},
-                                                {"title": "只用在线匹配来源", "value": "online_source_only"},
-                                                {"title": "只用 AI 来源生成", "value": "ai_source_only"},
-                                            ],
-                                        },
-                                    }
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
-                                "content": [
-                                    {
-                                        "component": "VSwitch",
-                                        "props": {
-                                            "model": "trust_transfer_history_paths",
-                                            "label": "信任整理历史路径",
-                                            "hint": "CD2、网盘挂载、SMB 等慢路径可开启，刷新资源清单时不逐条访问文件。",
-                                            "persistentHint": True,
-                                        },
-                                    }
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 4},
-                                "content": [
-                                    {
-                                        "component": "VSelect",
-                                        "props": {
-                                            "model": "auto_multi_subtitle_mode",
-                                            "label": "自动多字幕处理",
-                                            "items": [
-                                                {"title": "按偏好选择最佳", "value": "best"},
-                                                {"title": "中文/双语全部入库", "value": "chinese_all"},
-                                                {"title": "全部入库", "value": "all"},
-                                            ],
-                                        },
-                                    }
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 4},
-                                "content": [
-                                    {
-                                        "component": "VTextField",
-                                        "props": {
-                                            "model": "auto_subtitle_language_priority",
-                                            "label": "语言优先级",
-                                            "placeholder": "bilingual,chi,cht,eng",
-                                            "hint": "默认：双语, 简中, 繁中, 英文",
-                                            "persistentHint": True,
-                                        },
-                                    }
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 4},
-                                "content": [
-                                    {
-                                        "component": "VTextField",
-                                        "props": {
-                                            "model": "auto_subtitle_format_priority",
-                                            "label": "格式优先级",
-                                            "placeholder": "ass,srt,ssa,vtt",
-                                            "hint": "默认：ASS, SRT, SSA, VTT",
-                                            "persistentHint": True,
-                                        },
-                                    }
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 4},
-                                "content": [
-                                    {
-                                        "component": "VSwitch",
-                                        "props": {
-                                            "model": "auto_ass_to_srt_for_ai",
-                                            "label": "英文 ASS 转临时 SRT 后提交 AI",
-                                        },
-                                    }
-                                ],
-                            },
-                        ],
-                    },
-                    {
-                        "component": "VRow",
-                        "content": [
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
-                                "content": [
-                                    {
-                                        "component": "VSelect",
-                                        "props": {
-                                            "model": "online_providers",
-                                            "label": "自动字幕源（API）",
-                                            "multiple": True,
-                                            "chips": True,
-                                            "items": [
-                                                {"title": "SubHD 中文字幕", "value": "subhd"},
-                                                {"title": "Zimuku 中文字幕", "value": "zimuku"},
-                                                {"title": "射手网(伪，需 API Key)", "value": "assrt"},
-                                                {"title": "OpenSubtitles 多语言字幕", "value": "opensubtitles"},
-                                            ],
-                                        },
-                                    }
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
-                                "content": [
-                                    {
-                                        "component": "VSwitch",
-                                        "props": {
-                                            "model": "online_use_proxy",
-                                            "label": "API 搜索和下载使用 MoviePilot 系统代理（默认关闭）",
-                                        },
-                                    }
-                                ],
-                            },
-                        ],
-                    },
-                    {
-                        "component": "VRow",
-                        "content": [
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
-                                "content": [
-                                    {
-                                        "component": "VTextField",
-                                        "props": {
-                                            "model": "subhd_url",
-                                            "label": "SubHD 站点地址",
-                                            "placeholder": DEFAULT_PROVIDER_ROOTS["subhd"],
-                                        },
-                                    }
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
-                                "content": [
-                                    {
-                                        "component": "VTextField",
-                                        "props": {
-                                            "model": "zimuku_url",
-                                            "label": "Zimuku 站点地址",
-                                            "placeholder": DEFAULT_PROVIDER_ROOTS["zimuku"],
-                                        },
-                                    }
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
-                                "content": [
-                                    {
-                                        "component": "VTextField",
-                                        "props": {
-                                            "model": "assrt_url",
-                                            "label": "射手网(伪) 站点地址",
-                                            "placeholder": DEFAULT_PROVIDER_ROOTS["assrt"],
-                                        },
-                                    }
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
-                                "content": [
-                                    {
-                                        "component": "VTextField",
-                                        "props": {
-                                            "model": "opensubtitles_url",
-                                            "label": "OpenSubtitles 站点地址",
-                                            "placeholder": DEFAULT_PROVIDER_ROOTS["opensubtitles"],
-                                        },
-                                    }
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
-                                "content": [
-                                    {
-                                        "component": "VTextField",
-                                        "props": {
-                                            "model": "assrt_api_url",
-                                            "label": "射手网(伪) API 地址",
-                                            "placeholder": "https://api.assrt.net",
-                                        },
-                                    }
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
-                                "content": [
-                                    {
-                                        "component": "VTextField",
-                                        "props": {
-                                            "model": "assrt_api_key",
-                                            "label": "射手网(伪) API Key",
-                                            "type": "password",
-                                            "placeholder": "未填写时不参与自动搜索",
-                                        },
-                                    }
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
-                                "content": [
-                                    {
-                                        "component": "VTextField",
-                                        "props": {
-                                            "model": "opensubtitles_api_url",
-                                            "label": "OpenSubtitles API 地址",
-                                            "placeholder": "https://api.opensubtitles.com/api/v1",
-                                        },
-                                    }
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
-                                "content": [
-                                    {
-                                        "component": "VTextField",
-                                        "props": {
-                                            "model": "opensubtitles_api_key",
-                                            "label": "OpenSubtitles API Key",
-                                            "type": "password",
-                                            "placeholder": "未填写时不参与自动搜索",
-                                        },
-                                    }
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
-                                "content": [
-                                    {
-                                        "component": "VTextField",
-                                        "props": {
-                                            "model": "opensubtitles_username",
-                                            "label": "OpenSubtitles 用户名（可选）",
-                                            "placeholder": "下载时用于后台登录换取 token",
-                                        },
-                                    }
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
-                                "content": [
-                                    {
-                                        "component": "VTextField",
-                                        "props": {
-                                            "model": "opensubtitles_password",
-                                            "label": "OpenSubtitles 密码（可选）",
-                                            "type": "password",
-                                            "placeholder": "下载时用于后台登录换取 token",
-                                        },
-                                    }
-                                ],
-                            },
-                        ],
-                    },
-                    {
-                        "component": "VRow",
-                        "content": [
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12},
-                                "content": [
-                                    {
-                                        "component": "VAlert",
-                                        "props": {
-                                            "type": "info",
-                                            "variant": "tonal",
-                                            "text": "从 MoviePilot 本地整理记录中搜索已有视频资源；在线字幕搜索支持 SubHD、Zimuku、射手网(伪) 和 OpenSubtitles。",
-                                        },
-                                    }
-                                ],
-                            }
-                        ],
-                    },
-                    {
-                        "component": "VRow",
-                        "content": [
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
-                                "content": [
-                                    {
-                                        "component": "VSelect",
-                                        "props": {
-                                            "model": "rar_dependency_mode",
-                                            "label": "RAR 解压器处理方式",
-                                            "items": [
-                                                {"title": "不处理，仅检测", "value": "none"},
-                                                {"title": "加载插件时尝试容器内安装", "value": "container_install"},
-                                                {"title": "使用宿主机映射文件", "value": "mapped_binary"},
-                                            ],
-                                        },
-                                    }
-                                ],
-                            },
-                            {
-                                "component": "VCol",
-                                "props": {"cols": 12, "md": 6},
-                                "content": [
-                                    {
-                                        "component": "VTextField",
-                                        "props": {
-                                            "model": "rar_tool_path",
-                                            "label": "容器内映射路径",
-                                            "placeholder": "/usr/local/bin/7z",
-                                        },
-                                    }
-                                ],
-                            },
-                        ],
-                    },
-                ],
-            }
-        ], {
-            "enabled": False,
-            "show_sidebar_nav": True,
-            "rar_dependency_mode": "none",
-            "rar_tool_path": "/usr/local/bin/7z",
-            "traditional_to_simplified": False,
-            "auto_search_on_transfer": False,
-            "auto_skip_chinese_media_on_transfer": True,
-            "auto_transfer_subtitle_strategy": "online_then_ai_source",
-            "trust_transfer_history_paths": False,
-            "auto_multi_subtitle_mode": "best",
-            "auto_subtitle_language_priority": list(self._default_auto_language_priority),
-            "auto_subtitle_format_priority": list(self._default_auto_format_priority),
-            "auto_ass_to_srt_for_ai": True,
-            "timeline_max_offset_seconds": 120,
-            "timeline_min_offset_seconds": 0.2,
-            "timeline_vad_mode": "webrtc",
-            "timeline_allow_risky_offset": False,
-            "online_providers": list(self._default_online_provider_ids),
-            "online_engine": DEFAULT_ENGINE,
-            "online_use_proxy": False,
-            "subhd_url": DEFAULT_PROVIDER_ROOTS["subhd"],
-            "zimuku_url": DEFAULT_PROVIDER_ROOTS["zimuku"],
-            "assrt_url": DEFAULT_PROVIDER_ROOTS["assrt"],
-            "assrt_api_key": "",
-            "assrt_api_url": "https://api.assrt.net",
-            "opensubtitles_url": DEFAULT_PROVIDER_ROOTS["opensubtitles"],
-            "opensubtitles_api_key": "",
-            "opensubtitles_api_url": "https://api.opensubtitles.com/api/v1",
-            "opensubtitles_username": "",
-            "opensubtitles_password": "",
-            "ai_link_enabled": True,
-        }
+        return build_config_form(
+            default_auto_language_priority=self._default_auto_language_priority,
+            default_auto_format_priority=self._default_auto_format_priority,
+            default_online_provider_ids=self._default_online_provider_ids,
+        )
 
     def get_page(self) -> List[dict]:
         return []
@@ -1089,40 +578,19 @@ class SubtitleManualUpload(_PluginBase):
 
     @classmethod
     def _normalize_timeline_max_offset(cls, value: Any) -> int:
-        seconds = cls._safe_int(value, 120)
-        if seconds <= 0:
-            return 120
-        return min(seconds, 300)
+        return normalize_timeline_max_offset(value)
 
     @classmethod
     def _normalize_timeline_min_offset(cls, value: Any) -> float:
-        try:
-            seconds = float(value)
-        except Exception:
-            seconds = 0.2
-        if seconds <= 0 or seconds > 1:
-            return 0.2
-        return seconds
+        return normalize_timeline_min_offset(value)
 
     @classmethod
     def _normalize_timeline_vad_mode(cls, value: Any) -> str:
-        mode = cls._normalize_text(value).lower()
-        return mode if mode in {"webrtc", "rms"} else "webrtc"
+        return normalize_timeline_vad_mode(value)
 
     @classmethod
     def _normalize_auto_multi_subtitle_mode(cls, value: Any) -> str:
-        mode = cls._normalize_text(value).lower()
-        aliases = {
-            "preferred": "best",
-            "prefer": "best",
-            "best_only": "best",
-            "chinese": "chinese_all",
-            "chinese_and_bilingual": "chinese_all",
-            "all_chinese": "chinese_all",
-            "everything": "all",
-        }
-        mode = aliases.get(mode, mode)
-        return mode if mode in cls._auto_multi_subtitle_modes else "best"
+        return normalize_auto_multi_subtitle_mode(value)
 
     @classmethod
     def _normalize_auto_language_key(cls, value: Any) -> str:
@@ -1142,15 +610,11 @@ class SubtitleManualUpload(_PluginBase):
 
     @classmethod
     def _normalize_root_url(cls, value: Any, default: str) -> str:
-        url = cls._normalize_text(value).rstrip("/")
-        if re.match(r"^https?://", url, flags=re.I):
-            return url
-        return default
+        return normalize_root_url(value, default)
 
     @classmethod
     def _host_from_url(cls, value: Any) -> str:
-        match = re.match(r"^https?://([^/?#]+)", cls._normalize_text(value), flags=re.I)
-        return match.group(1) if match else ""
+        return host_from_url(value)
 
     @classmethod
     def _site_hosts(cls, site: Any) -> List[str]:
@@ -1206,45 +670,24 @@ class SubtitleManualUpload(_PluginBase):
 
     @classmethod
     def _normalize_rar_dependency_mode(cls, value: Any) -> str:
-        mode = cls._normalize_text(value).lower()
-        if mode in cls._rar_dependency_modes:
-            return mode
-        return "none"
+        return normalize_rar_dependency_mode(value)
 
     @classmethod
     def _normalize_auto_transfer_subtitle_strategy(cls, value: Any) -> str:
-        strategy = cls._normalize_text(value).lower()
-        strategy = cls._auto_transfer_subtitle_strategy_aliases.get(strategy, strategy)
-        if strategy in cls._auto_transfer_subtitle_strategies:
-            return strategy
-        return "online_then_ai_source"
+        return normalize_auto_transfer_subtitle_strategy(value)
 
     @classmethod
     def _normalize_provider_ids(cls, value: Any, *, fallback: bool = True) -> List[str]:
-        allowed = set(cls._available_online_provider_ids)
-        if isinstance(value, list):
-            raw_items = value
-        elif isinstance(value, str):
-            raw_items = re.split(r"[,，\s]+", value)
-        else:
-            raw_items = cls._default_online_provider_ids
-        providers = []
-        for item in raw_items:
-            provider_id = cls._normalize_text(item).lower()
-            if provider_id in allowed and provider_id not in providers:
-                providers.append(provider_id)
-        return providers or (list(cls._default_online_provider_ids) if fallback else [])
+        return normalize_provider_ids(
+            value,
+            fallback=fallback,
+            available_provider_ids=cls._available_online_provider_ids,
+            default_provider_ids=cls._default_online_provider_ids,
+        )
 
     @classmethod
     def _normalize_online_site_urls(cls, config: Dict[str, Any]) -> Dict[str, str]:
-        raw = config.get("online_site_urls") if isinstance(config.get("online_site_urls"), dict) else {}
-        roots = {
-            "subhd": raw.get("subhd") or config.get("subhd_url"),
-            "zimuku": raw.get("zimuku") or config.get("zimuku_url"),
-            "assrt": raw.get("assrt") or config.get("assrt_url"),
-            "opensubtitles": raw.get("opensubtitles") or config.get("opensubtitles_url"),
-        }
-        return normalize_provider_roots(roots)
+        return normalize_online_site_urls(config)
 
     def _check_online_rate_limit(self, providers: Iterable[str]) -> None:
         now = time.time()
