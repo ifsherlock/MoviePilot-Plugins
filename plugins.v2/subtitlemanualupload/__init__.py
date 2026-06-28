@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -110,7 +111,11 @@ from .subtitle_language import (
 from .timeline_fixer import TimelineFixResult, check_timeline_fixer_dependencies, fix_subtitle_timeline
 from .tongwen import convert_subtitle_file_to_simplified
 from .target_resolver import (
+    LocalMediaCatalog,
     MediaTargetResolver,
+    entry_filesystem_signature as target_entry_filesystem_signature,
+    entry_matches_keyword as target_entry_matches_keyword,
+    entry_path_is_valid as target_entry_path_is_valid,
     event_value as target_event_value,
     history_type_text as target_history_type_text,
     is_local_video_path as target_is_local_video_path,
@@ -736,75 +741,21 @@ class SubtitleManualUpload(_PluginBase):
 
     @classmethod
     def _entry_path_is_valid(cls, entry: Dict[str, Any]) -> bool:
-        storage = cls._normalize_text(entry.get("storage")) or "local"
-        if storage != "local":
-            return True
-        path = cls._normalize_text(entry.get("path"))
-        if not path:
-            return False
-        if getattr(cls, "_trust_transfer_history_paths", False):
-            return True
-        try:
-            return Path(path).is_file()
-        except Exception:
-            return False
+        return target_entry_path_is_valid(
+            entry,
+            normalize_text=cls._normalize_text,
+            trust_transfer_history_paths=getattr(cls, "_trust_transfer_history_paths", False),
+        )
 
     @classmethod
     def _entry_filesystem_signature(cls, entry: Dict[str, Any]) -> str:
-        storage = cls._normalize_text(entry.get("storage")) or "local"
-        path_text = cls._normalize_text(entry.get("path"))
-        if storage != "local" or not path_text:
-            return f"{storage}|{path_text}|remote"
-        path = Path(path_text)
-        normalized_path = path_text.lower().replace("\\", "/")
-        try:
-            stat = path.stat()
-            parent_mtime = path.parent.stat().st_mtime_ns if path.parent.exists() else 0
-            return "|".join(
-                [
-                    "local",
-                    normalized_path,
-                    "1",
-                    str(stat.st_size),
-                    str(stat.st_mtime_ns),
-                    str(parent_mtime),
-                ]
-            )
-        except FileNotFoundError:
-            return f"local|{normalized_path}|0"
-        except Exception as exc:
-            return f"local|{normalized_path}|error:{type(exc).__name__}"
+        return target_entry_filesystem_signature(entry, normalize_text=cls._normalize_text)
 
     def _filter_existing_local_entries(self, entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        filtered = [entry for entry in entries if isinstance(entry, dict) and self._entry_path_is_valid(entry)]
-        dropped = len(entries or []) - len(filtered)
-        if dropped:
-            logger.info("[SubtitleManualUpload] 已剔除失效本地视频目标 count=%s", dropped)
-        return filtered
+        return self._local_media_catalog().filter_existing_local_entries(entries)
 
     def _prune_local_entries_cache(self) -> None:
-        cache = self._local_entries_cache or {}
-        entries = [entry for entry in cache.get("entries") or [] if isinstance(entry, dict)]
-        if not entries:
-            return
-        filtered = self._filter_existing_local_entries(entries)
-        if len(filtered) == len(entries):
-            return
-        media_count = len({entry.get("media_key") for entry in filtered if entry.get("media_key")})
-        self._local_entries_cache = {
-            **cache,
-            "entries": filtered,
-            "media_count": media_count,
-            "persisted": False,
-        }
-        self._entry_map = OrderedDict(
-            (target_id, entry)
-            for target_id, entry in (self._entry_map or OrderedDict()).items()
-            if self._entry_path_is_valid(entry)
-        )
-        self._reset_media_index_cache()
-        self._invalidate_match_history_cache()
-        self._persist_local_cache()
+        self._local_media_catalog().prune_local_entries_cache()
 
     def _transfer_auto_key(self, entry: Dict[str, Any]) -> str:
         path = self._normalize_text(entry.get("path") or entry.get("relative_path"))
@@ -1260,6 +1211,14 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             remember_targets=self._remember_targets,
         )
 
+    def _local_media_catalog(self) -> LocalMediaCatalog:
+        return LocalMediaCatalog(
+            self,
+            transfer_history=TransferHistory,
+            http_exception=HTTPException,
+            logger=logger,
+        )
+
     def _get_session_root(self) -> Path:
         return self._upload_session_service().get_session_root()
 
@@ -1339,7 +1298,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         self._persist_local_cache()
 
     def _local_cache_file(self) -> Path:
-        return self.get_data_path() / "local_entries_cache.json"
+        return self._local_media_catalog().local_cache_file()
 
     def _match_history_cache_file(self) -> Path:
         return self.get_data_path() / "match_history_cache.json"
@@ -1357,49 +1316,10 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             return None
 
     def _persist_local_cache(self) -> None:
-        cache = self._local_entries_cache or {}
-        loaded_at = self._cache_loaded_at(cache.get("loaded_at"))
-        payload = {
-            "loaded_at": loaded_at.isoformat(timespec="seconds") if loaded_at else "",
-            "entries": cache.get("entries") or [],
-            "media_count": int(cache.get("media_count") or 0),
-        }
-        try:
-            cache_file = self._local_cache_file()
-            cache_file.parent.mkdir(parents=True, exist_ok=True)
-            cache_file.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
-        except Exception as exc:
-            logger.warning("[SubtitleManualUpload] 写入本地资源持久化缓存失败: %s", exc)
+        self._local_media_catalog().persist_local_cache()
 
     def _restore_persisted_local_cache(self) -> bool:
-        try:
-            cache_file = self._local_cache_file()
-            if not cache_file.exists():
-                return False
-            payload = json.loads(cache_file.read_text(encoding="utf-8"))
-        except Exception as exc:
-            logger.warning("[SubtitleManualUpload] 读取本地资源持久化缓存失败: %s", exc)
-            return False
-        entries = payload.get("entries") if isinstance(payload, dict) else []
-        loaded_at = self._cache_loaded_at(payload.get("loaded_at")) if isinstance(payload, dict) else None
-        if not loaded_at or not isinstance(entries, list):
-            return False
-        valid_entries = self._filter_existing_local_entries([entry for entry in entries if isinstance(entry, dict)])
-        media_count = len({entry.get("media_key") for entry in valid_entries if entry.get("media_key")})
-        self._local_entries_cache = {
-            "loaded_at": loaded_at,
-            "entries": valid_entries,
-            "media_count": media_count,
-            "persisted": True,
-        }
-        self._remember_targets(self._local_entries_cache["entries"])
-        self._reset_media_index_cache()
-        logger.info(
-            "[SubtitleManualUpload] 已恢复本地资源持久化缓存 entries=%s medias=%s",
-            len(self._local_entries_cache["entries"]),
-            media_count,
-        )
-        return True
+        return self._local_media_catalog().restore_persisted_local_cache()
 
     @classmethod
     def _json_clone(cls, value: Any) -> Any:
@@ -1640,99 +1560,13 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         ).start()
 
     def _load_local_entries(self, *, force: bool = False, allow_stale: bool = False) -> List[Dict[str, Any]]:
-        self._prune_local_entries_cache()
-        cache = self._local_entries_cache or {}
-        loaded_at = self._cache_loaded_at(cache.get("loaded_at"))
-        now = datetime.now()
-        if not force and loaded_at and (now - loaded_at).total_seconds() < self._cache_ttl_seconds:
-            return list(cache.get("entries") or [])
-        if not force and not loaded_at and self._restore_persisted_local_cache():
-            cache = self._local_entries_cache or {}
-            loaded_at = self._cache_loaded_at(cache.get("loaded_at"))
-            if loaded_at and (now - loaded_at).total_seconds() < self._cache_ttl_seconds:
-                return list(cache.get("entries") or [])
-        if not force and allow_stale and cache.get("entries"):
-            self._start_background_cache_refresh()
-            return list(cache.get("entries") or [])
-
-        try:
-            histories = TransferHistory.list_by_page(
-                db=None,
-                page=1,
-                count=self._cache_max_entries,
-                status=True,
-            ) or []
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"读取 MoviePilot 本地整理记录失败: {exc}") from exc
-
-        entries: List[Dict[str, Any]] = []
-        seen_paths = set()
-        for history in histories:
-            entry = self._build_entry_from_history(history)
-            if not entry:
-                continue
-            if not self._entry_path_is_valid(entry):
-                continue
-            path = entry.get("path")
-            if path in seen_paths:
-                continue
-            seen_paths.add(path)
-            entries.append(entry)
-            if len(entries) >= self._cache_max_entries:
-                break
-
-        media_count = len({entry.get("media_key") for entry in entries if entry.get("media_key")})
-        self._local_entries_cache = {
-            "loaded_at": now,
-            "entries": entries,
-            "media_count": media_count,
-            "persisted": False,
-        }
-        self._remember_targets(entries)
-        self._reset_media_index_cache()
-        self._invalidate_match_history_cache()
-        self._persist_local_cache()
-        logger.info(
-            "[SubtitleManualUpload] 本地资源缓存已刷新 entries=%s medias=%s",
-            len(entries),
-            media_count,
-        )
-        return list(entries)
+        return self._local_media_catalog().load_local_entries(force=force, allow_stale=allow_stale)
 
     def _refresh_local_cache(self) -> List[Dict[str, Any]]:
-        self._entry_map = OrderedDict()
-        self._reset_media_index_cache()
-        self._invalidate_match_history_cache()
-        self._local_entries_cache = {"loaded_at": None, "entries": [], "media_count": 0, "persisted": False}
-        return self._load_local_entries(force=True)
+        return self._local_media_catalog().refresh_local_cache()
 
     def _cache_status(self) -> Dict[str, Any]:
-        cache = self._local_entries_cache or {}
-        loaded_at = self._cache_loaded_at(cache.get("loaded_at"))
-        expires_in = 0
-        stale = False
-        if loaded_at:
-            age = (datetime.now() - loaded_at).total_seconds()
-            expires_in = max(0, int(self._cache_ttl_seconds - age))
-            stale = age >= self._cache_ttl_seconds
-        return {
-            "ready": bool(loaded_at),
-            "persisted": bool(cache.get("persisted")),
-            "stale": stale,
-            "refreshing": bool(self._cache_refreshing),
-            "refresh_started_at": self._cache_refresh_started_at,
-            "refresh_completed_at": self._cache_refresh_completed_at,
-            "refresh_error": self._cache_refresh_error,
-            "trust_transfer_history_paths": bool(self._trust_transfer_history_paths),
-            "ttl_seconds": self._cache_ttl_seconds,
-            "expires_in": expires_in,
-            "updated_at": loaded_at.isoformat(timespec="seconds") if loaded_at else "",
-            "entry_count": len(cache.get("entries") or []),
-            "media_count": int(cache.get("media_count") or 0),
-            "media_index_count": len(self._media_index_cache or {}),
-            "target_cache_count": len(self._entry_map or {}),
-            "max_entries": self._cache_max_entries,
-        }
+        return self._local_media_catalog().cache_status()
 
     def _autosub_plugin(self) -> Tuple[Any, str]:
         if not self._ai_link_enabled:
@@ -1889,111 +1723,25 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
 
     @classmethod
     def _entry_matches_keyword(cls, entry: Dict[str, Any], keyword: str) -> bool:
-        clean_keyword = cls._normalize_text(keyword).lower()
-        if not clean_keyword:
-            return True
-        haystack = " ".join(
-            cls._normalize_text(entry.get(key)).lower()
-            for key in ("title", "filename", "basename", "relative_path")
-        )
-        return all(part in haystack for part in re.split(r"\s+", clean_keyword) if part)
+        return target_entry_matches_keyword(entry, keyword, normalize_text=cls._normalize_text)
 
     def _reset_media_index_cache(self) -> None:
-        self._media_index_cache = OrderedDict()
+        self._local_media_catalog().reset_media_index_cache()
 
     def _media_index_cache_key(self, keyword: str, media_type: str) -> str:
-        clean_keyword = self._normalize_text(keyword).lower()
-        expected_type = self._media_type_text(media_type) or "all"
-        return f"{expected_type}\0{clean_keyword}"
+        return self._local_media_catalog().media_index_cache_key(keyword, media_type)
 
     def _media_index_cache_get(self, key: str, entries: List[Dict[str, Any]]) -> Optional[List[Dict[str, Any]]]:
-        cache = self._media_index_cache or OrderedDict()
-        item = cache.get(key)
-        if not item:
-            return None
-        loaded_at = self._cache_loaded_at((self._local_entries_cache or {}).get("loaded_at"))
-        cached_loaded_at = self._cache_loaded_at(item.get("loaded_at"))
-        if cached_loaded_at != loaded_at or int(item.get("entry_count") or 0) != len(entries):
-            cache.pop(key, None)
-            return None
-        cache.move_to_end(key)
-        return [dict(media) for media in item.get("medias") or [] if isinstance(media, dict)]
+        return self._local_media_catalog().media_index_cache_get(key, entries)
 
     def _media_index_cache_set(self, key: str, entries: List[Dict[str, Any]], medias: List[Dict[str, Any]]) -> None:
-        cache = self._media_index_cache or OrderedDict()
-        cache[key] = {
-            "loaded_at": (self._local_entries_cache or {}).get("loaded_at"),
-            "entry_count": len(entries),
-            "medias": [dict(media) for media in medias],
-        }
-        cache.move_to_end(key)
-        while len(cache) > self._media_index_cache_max_keys:
-            cache.popitem(last=False)
-        self._media_index_cache = cache
+        self._local_media_catalog().media_index_cache_set(key, entries, medias)
 
     async def _search_media_candidates(self, keyword: str, media_type: str, limit: int, offset: int = 0) -> Tuple[List[Dict[str, Any]], int]:
-        clean_keyword = self._normalize_text(keyword)
-        expected_type = self._media_type_text(media_type)
-        all_entries = self._load_local_entries(allow_stale=True)
-        cache_key = self._media_index_cache_key(clean_keyword, media_type)
-        all_candidates = self._media_index_cache_get(cache_key, all_entries)
-        if all_candidates is None:
-            entries: List[Dict[str, Any]] = []
-            for entry in all_entries:
-                if expected_type and entry.get("media_type") != expected_type:
-                    continue
-                if not self._entry_matches_keyword(entry, clean_keyword):
-                    continue
-                entries.append(entry)
-            all_candidates = self._group_entries_as_media(entries, 0)
-            self._media_index_cache_set(cache_key, all_entries, all_candidates)
-        total = len(all_candidates)
-        candidates = all_candidates[offset: offset + limit]
-        return candidates, total
+        return await self._local_media_catalog().search_media_candidates(keyword, media_type, limit, offset)
 
     def _group_entries_as_media(self, entries: List[Dict[str, Any]], limit: int) -> List[Dict[str, Any]]:
-        groups: Dict[str, Dict[str, Any]] = {}
-        for entry in entries:
-            key = entry["media_key"]
-            group = groups.setdefault(
-                key,
-                {
-                    "id": key,
-                    "media_id": key,
-                    "media_type": entry.get("media_type"),
-                    "title": entry.get("title"),
-                    "en_title": "",
-                    "year": entry.get("year"),
-                    "tmdb_id": entry.get("tmdb_id"),
-                    "douban_id": entry.get("douban_id"),
-                    "poster_url": entry.get("poster_url"),
-                    "poster_thumb_url": entry.get("poster_thumb_url") or self._poster_url(entry.get("poster_url"), "w185"),
-                    "backdrop_url": "",
-                    "overview": "",
-                    "vote_average": 0,
-                    "local_count": 0,
-                    "season_count": 0,
-                    "latest_at": entry.get("date", ""),
-                    "_entries": [],
-                },
-            )
-            group["_entries"].append(entry)
-            group["local_count"] += 1
-            if entry.get("poster_url") and not group.get("poster_url"):
-                group["poster_url"] = entry["poster_url"]
-            if entry.get("poster_thumb_url") and not group.get("poster_thumb_url"):
-                group["poster_thumb_url"] = entry["poster_thumb_url"]
-            if entry.get("date") and entry["date"] > group.get("latest_at", ""):
-                group["latest_at"] = entry["date"]
-
-        result = []
-        for group in groups.values():
-            seasons = self._merge_seasons(group.pop("_entries"))
-            group["seasons"] = seasons
-            group["season_count"] = len(seasons)
-            result.append(group)
-        result.sort(key=lambda item: (item.get("latest_at", ""), item.get("title", "")), reverse=True)
-        return result[:limit] if limit else result
+        return self._local_media_catalog().group_entries_as_media(entries, limit)
 
     def _match_history_items(self, *, keyword: str = "", media_type: str = "all") -> List[Dict[str, Any]]:
         entries = self._load_local_entries(allow_stale=True)
@@ -2341,60 +2089,10 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             self._entry_map.popitem(last=False)
 
     def _resolve_targets(self, target_ids: Iterable[str]) -> Dict[str, Dict[str, Any]]:
-        target_id_list = [self._normalize_text(item) for item in target_ids if self._normalize_text(item)]
-        target_id_set = set(target_id_list)
-        result: Dict[str, Dict[str, Any]] = {}
-        for target_id in target_id_list:
-            entry = self._entry_map.get(target_id)
-            if entry and self._entry_path_is_valid(entry):
-                result[target_id] = entry
-            elif entry:
-                self._entry_map.pop(target_id, None)
-        missing_ids = target_id_set - set(result.keys())
-        if not missing_ids:
-            return result
-
-        logger.info(
-            "[SubtitleManualUpload] 目标缓存未命中，回查本地整理记录 target_ids=%s missing=%s",
-            self._brief_ids(target_id_list),
-            len(missing_ids),
-        )
-
-        def take_matches(source_entries: List[Dict[str, Any]]) -> None:
-            for entry in source_entries:
-                target_id = self._normalize_text(entry.get("id"))
-                if target_id not in missing_ids:
-                    continue
-                self._remember_targets([entry])
-                result[target_id] = entry
-                missing_ids.remove(target_id)
-                if not missing_ids:
-                    break
-
-        try:
-            take_matches(self._load_local_entries(allow_stale=True))
-            if missing_ids:
-                take_matches(self._load_local_entries(force=True))
-        except Exception as exc:
-            logger.error("[SubtitleManualUpload] 回查本地整理记录失败: %s", exc)
-            return result
-
-        if missing_ids:
-            logger.warning(
-                "[SubtitleManualUpload] 仍有目标无法解析 target_ids=%s missing=%s",
-                self._brief_ids(target_id_list),
-                len(missing_ids),
-            )
-        return result
+        return self._local_media_catalog().resolve_targets(target_ids)
 
     def _cached_unlocked_targets(self, locked_ids: set) -> List[Dict[str, Any]]:
-        entries: List[Dict[str, Any]] = []
-        for target_id, entry in list((self._entry_map or OrderedDict()).items()):
-            if self._normalize_text(target_id) in locked_ids:
-                continue
-            if self._entry_path_is_valid(entry):
-                entries.append(entry)
-        return entries
+        return self._local_media_catalog().cached_unlocked_targets(locked_ids)
 
     @classmethod
     def _build_destination_name(
