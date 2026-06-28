@@ -3458,6 +3458,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         target_entries = list(self._resolve_targets(target_ids).values())
         if not target_entries:
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
+        autosub_bridge = self._autosub_bridge()
         source_policy = self._normalize_text(body.get("source_policy")) or "auto"
         if source_policy == "reuse":
             source_policy = "auto"
@@ -3467,13 +3468,13 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         if source_policy == "matched_external":
             if not source_subtitle_path:
                 raise HTTPException(status_code=400, detail="请选择要用于 AI 生成的外挂 SRT 字幕")
-            subtitle_overrides = self._selected_external_subtitle_override_for_entries(
+            subtitle_overrides = autosub_bridge.selected_external_subtitle_override_for_entries(
                 target_entries,
                 source_subtitle_path=source_subtitle_path,
                 source_subtitle_lang=source_subtitle_lang,
                 overwrite_policy=overwrite_policy,
             )
-            result = self._submit_autosub_for_entries(
+            result = autosub_bridge.submit_autosub_for_entries(
                 target_entries,
                 subtitle_overrides=subtitle_overrides,
                 trigger="manual",
@@ -3481,7 +3482,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                 overwrite_policy=overwrite_policy,
             )
         else:
-            result = self._submit_autosub_for_entries(
+            result = autosub_bridge.submit_autosub_for_entries(
                 target_entries,
                 trigger="manual",
                 source_policy=source_policy,
@@ -3510,8 +3511,9 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         selected_results = self._results_from_body(body)
         if not selected_results:
             raise HTTPException(status_code=400, detail="请至少选择一个在线字幕结果")
+        online_ai_service = self._online_ai_service()
         return await run_in_threadpool(
-            self._submit_online_ai_translate,
+            online_ai_service.submit_online_ai_translate,
             target_entries,
             selected_results,
             allow_risky_offset,
@@ -3655,7 +3657,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         target_entries = list(self._resolve_targets(target_ids).values())
         if not target_entries:
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
-        result = self._cancel_autosub_for_entries(target_entries)
+        result = self._autosub_bridge().cancel_autosub_for_entries(target_entries)
         if locked_skipped:
             result["skipped"] = [*(result.get("skipped") or []), *locked_skipped]
         return self._ok(
@@ -3716,7 +3718,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                     message=f"已跳过 {len(task_ids)} 个无法确认目标归属的 AI 字幕任务",
                 )
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
-        result = self._restart_autosub_for_entries(
+        result = self._autosub_bridge().restart_autosub_for_entries(
             target_entries,
             source_policy=self._normalize_text(body.get("source_policy")) or "reuse",
             overwrite_policy=self._normalize_text(body.get("overwrite_policy")) or "backup_replace",
@@ -3783,11 +3785,12 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
     async def api_ai_tasks(self, request: Request) -> Dict[str, Any]:
         body = await request.json()
         target_ids = self._target_ids_from_body(body)
+        autosub_bridge = self._autosub_bridge()
         if not target_ids:
             return self._ok(
                 {
-                    "status": self._autosub_status(),
-                    "summary": self._autosub_task_summary([]),
+                    "status": autosub_bridge.autosub_status(),
+                    "summary": bridge_autosub_task_summary([]),
                     "tasks": [],
                     "task_by_target": {},
                     "tasks_by_target": {},
@@ -3798,7 +3801,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
         if len(target_entries) != len(set(target_ids)):
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
-        return self._ok(self._autosub_tasks_for_entries(target_entries))
+        return self._ok(autosub_bridge.autosub_tasks_for_entries(target_entries))
 
     async def api_timeline_tasks(self, request: Request) -> Dict[str, Any]:
         body = await request.json()
@@ -4050,8 +4053,9 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         submit_ai_translate = bool(body.get("submit_ai_translate"))
         allow_risky_offset = bool(body.get("allow_risky_offset")) if isinstance(body, dict) else False
         if submit_ai_translate:
+            online_ai_service = self._online_ai_service()
             return await run_in_threadpool(
-                self._submit_online_ai_translate,
+                online_ai_service.submit_online_ai_translate,
                 target_entries,
                 selected_results,
                 allow_risky_offset,

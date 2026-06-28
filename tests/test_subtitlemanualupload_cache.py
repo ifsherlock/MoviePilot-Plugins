@@ -1023,13 +1023,30 @@ def test_ai_submit_with_selected_external_subtitle_submits_matched_override(tmp_
     plugin._remember_targets([entry])
     captured = {}
 
-    def fake_submit(entries, subtitle_overrides=None, **kwargs):
-        captured["entries"] = entries
-        captured["overrides"] = subtitle_overrides
-        captured["submit_kwargs"] = kwargs
-        return {"added": [{"path": entries[0]["path"]}], "skipped": [], "failed": [], "targets": [], "tasks": {}}
+    class FakeBridge:
+        def selected_external_subtitle_override_for_entries(self, entries, **kwargs):
+            captured["selected_kwargs"] = kwargs
+            return {
+                entries[0]["path"]: {
+                    "subtitle_path": kwargs["source_subtitle_path"],
+                    "lang": "en",
+                    "source_policy": "matched_external",
+                    "source_name": Path(kwargs["source_subtitle_path"]).name,
+                    "timeline_fixed": False,
+                    "overwrite_policy": kwargs["overwrite_policy"],
+                }
+            }
 
-    plugin._submit_autosub_for_entries = fake_submit
+        def submit_autosub_for_entries(self, entries, subtitle_overrides=None, **kwargs):
+            captured["entries"] = entries
+            captured["overrides"] = subtitle_overrides
+            captured["submit_kwargs"] = kwargs
+            return {"added": [{"path": entries[0]["path"]}], "skipped": [], "failed": [], "targets": [], "tasks": {}}
+
+    plugin._submit_autosub_for_entries = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("api_ai_submit should call AutoSubBridge directly")
+    )
+    plugin._autosub_bridge = lambda: FakeBridge()
 
     response = asyncio.run(
         plugin.api_ai_submit(
@@ -1050,6 +1067,7 @@ def test_ai_submit_with_selected_external_subtitle_submits_matched_override(tmp_
     assert override["subtitle_path"] == str(subtitle)
     assert override["lang"] == "en"
     assert override["source_policy"] == "matched_external"
+    assert captured["selected_kwargs"]["source_subtitle_path"] == str(subtitle)
     assert captured["submit_kwargs"]["trigger"] == "manual"
     assert captured["submit_kwargs"]["source_policy"] == "matched_external"
     assert captured["submit_kwargs"]["overwrite_policy"] == "new_variant"
@@ -1064,13 +1082,17 @@ def test_ai_submit_with_asr_source_policy_forwards_source_choice(tmp_path):
     plugin._remember_targets([entry])
     captured = {}
 
-    def fake_submit(entries, subtitle_overrides=None, **kwargs):
-        captured["entries"] = entries
-        captured["overrides"] = subtitle_overrides
-        captured["submit_kwargs"] = kwargs
-        return {"added": [{"path": entries[0]["path"]}], "skipped": [], "failed": [], "targets": [], "tasks": {}}
+    class FakeBridge:
+        def submit_autosub_for_entries(self, entries, subtitle_overrides=None, **kwargs):
+            captured["entries"] = entries
+            captured["overrides"] = subtitle_overrides
+            captured["submit_kwargs"] = kwargs
+            return {"added": [{"path": entries[0]["path"]}], "skipped": [], "failed": [], "targets": [], "tasks": {}}
 
-    plugin._submit_autosub_for_entries = fake_submit
+    plugin._submit_autosub_for_entries = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("api_ai_submit should call AutoSubBridge directly")
+    )
+    plugin._autosub_bridge = lambda: FakeBridge()
 
     response = asyncio.run(
         plugin.api_ai_submit(
@@ -1165,7 +1187,14 @@ def test_api_ai_restart_accepts_task_ids_without_target_ids(tmp_path):
         captured["kwargs"] = kwargs
         return {"added": [{"task_id": "old-match"}], "skipped": [], "failed": [], "tasks": {}}
 
-    plugin._restart_autosub_for_entries = fake_restart
+    class FakeBridge:
+        def restart_autosub_for_entries(self, entries, **kwargs):
+            return fake_restart(entries, **kwargs)
+
+    plugin._restart_autosub_for_entries = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("api_ai_restart should call AutoSubBridge directly")
+    )
+    plugin._autosub_bridge = lambda: FakeBridge()
 
     response = asyncio.run(plugin.api_ai_restart(FakeRequest({"task_ids": ["old-match"]})))
 
@@ -2290,6 +2319,98 @@ def test_online_ai_submit_endpoint_downloads_fixes_and_does_not_create_preview(t
     assert data["timeline_tasks"]["task_by_target"]["m1"]["status"] == "completed"
     assert Path(captured["overrides"][entry["path"]]["subtitle_path"]).exists()
     assert captured["submit_kwargs"]["source_policy"] == "matched_external"
+
+
+def test_online_ai_submit_endpoint_uses_online_ai_service(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    video.write_text("video", encoding="utf-8")
+    entry = {
+        "id": "m1",
+        "path": str(video),
+        "basename": "Movie",
+        "filename": "Movie.mkv",
+        "target_label": "Movie",
+        "storage": "local",
+    }
+    plugin._remember_targets([entry])
+    captured = {}
+
+    class FakeOnlineAiService:
+        def submit_online_ai_translate(self, entries, selected_results, allow_risky_offset=False):
+            captured["entries"] = entries
+            captured["selected_results"] = selected_results
+            captured["allow_risky_offset"] = allow_risky_offset
+            return plugin._ok({"ai_translate": {"added": [{"path": entries[0]["path"]}]}, "tasks": {}})
+
+    plugin._submit_online_ai_translate = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("api_online_ai_submit should call OnlineAiService directly")
+    )
+    plugin._online_ai_service = lambda: FakeOnlineAiService()
+
+    response = asyncio.run(
+        plugin.api_online_ai_submit(
+            FakeRequest(
+                {
+                    "target_ids": ["m1"],
+                    "allow_risky_offset": True,
+                    "results": [{"provider": "opensubtitles", "result_id": "r1", "language_category": "english"}],
+                }
+            )
+        )
+    )
+
+    assert response["success"] is True
+    assert captured["entries"] == [entry]
+    assert captured["selected_results"][0]["result_id"] == "r1"
+    assert captured["allow_risky_offset"] is True
+
+
+def test_online_download_preview_submit_ai_uses_online_ai_service(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    video.write_text("video", encoding="utf-8")
+    entry = {
+        "id": "m1",
+        "path": str(video),
+        "basename": "Movie",
+        "filename": "Movie.mkv",
+        "target_label": "Movie",
+        "storage": "local",
+    }
+    plugin._remember_targets([entry])
+    captured = {}
+
+    class FakeOnlineAiService:
+        def submit_online_ai_translate(self, entries, selected_results, allow_risky_offset=False):
+            captured["entries"] = entries
+            captured["selected_results"] = selected_results
+            captured["allow_risky_offset"] = allow_risky_offset
+            return plugin._ok({"ai_translate": {"added": [{"path": entries[0]["path"]}]}, "tasks": {}})
+
+    plugin._submit_online_ai_translate = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("api_online_download_preview should call OnlineAiService directly for submit_ai_translate")
+    )
+    plugin._online_ai_service = lambda: FakeOnlineAiService()
+
+    response = asyncio.run(
+        plugin.api_online_download_preview(
+            FakeRequest(
+                {
+                    "target_ids": ["m1"],
+                    "submit_ai_translate": True,
+                    "results": [{"provider": "opensubtitles", "result_id": "r1", "language_category": "english"}],
+                }
+            )
+        )
+    )
+
+    assert response["success"] is True
+    assert captured["entries"] == [entry]
+    assert captured["selected_results"][0]["result_id"] == "r1"
+    assert captured["allow_risky_offset"] is False
 
 
 def test_online_ai_submit_stale_target_returns_400_without_name_error():
