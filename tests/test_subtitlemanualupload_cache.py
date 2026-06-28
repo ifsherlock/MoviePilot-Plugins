@@ -2668,6 +2668,55 @@ def test_auto_transfer_queue_stop_service_marks_pending_queue_stopped(tmp_path):
     assert skipped == 1
 
 
+def test_listen_transfer_complete_uses_auto_transfer_service_directly(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._enabled = True
+    plugin._auto_search_on_transfer = True
+    entry = make_auto_entry(tmp_path, filename="Movie.mkv")
+    merged = {}
+    captured = {}
+
+    class FakeAutoTransferService:
+        def enqueue_transfer_auto_entries(self, entries):
+            captured["entries"] = entries
+            return 1, 0
+
+    plugin._entries_from_transfer_event = lambda event_data: [entry]
+    plugin._merge_local_entries_cache = lambda entries: merged.setdefault("entries", entries)
+    plugin._enqueue_transfer_auto_entries = lambda entries: (_ for _ in ()).throw(
+        AssertionError("listen_transfer_complete should call AutoTransferService directly")
+    )
+    plugin._auto_transfer_service = lambda: FakeAutoTransferService()
+
+    plugin.listen_transfer_complete(types.SimpleNamespace(event_data={"path": str(tmp_path / "Movie.mkv")}))
+
+    assert merged["entries"] == [entry]
+    assert captured["entries"] == [entry]
+
+
+def test_api_auto_transfer_queue_uses_auto_transfer_service_directly():
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    captured = {}
+
+    class FakeAutoTransferService:
+        def auto_transfer_queue_snapshot(self, limit=100):
+            captured["limit"] = limit
+            return {"summary": {"total": 0}, "tasks": []}
+
+    plugin._auto_transfer_queue_snapshot = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("api_auto_transfer_queue should call AutoTransferService directly")
+    )
+    plugin._auto_transfer_service = lambda: FakeAutoTransferService()
+
+    response = plugin.api_auto_transfer_queue(FakeRequest(query_params={"limit": "500"}))
+
+    assert response["success"] is True
+    assert captured["limit"] == 200
+    assert response["data"]["summary"]["total"] == 0
+
+
 def test_auto_transfer_group_prefers_season_package_then_single_episode(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)

@@ -568,7 +568,7 @@ class SubtitleManualUpload(_PluginBase):
             logger.info("[SubtitleManualUpload] 入库事件未解析到本地视频目标，跳过自动字幕搜索")
             return
         self._merge_local_entries_cache(entries)
-        queued, skipped = self._enqueue_transfer_auto_entries(entries)
+        queued, skipped = self._auto_transfer_service().enqueue_transfer_auto_entries(entries)
         if skipped:
             logger.info("[SubtitleManualUpload] 入库自动字幕处理去重跳过重复目标 count=%s", skipped)
         if queued:
@@ -2841,7 +2841,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
 
     def api_auto_transfer_queue(self, request: Request) -> Dict[str, Any]:
         limit = min(max(self._safe_int(request.query_params.get("limit"), 100), 1), 200)
-        return self._ok(self._auto_transfer_queue_snapshot(limit=limit))
+        return self._ok(self._auto_transfer_service().auto_transfer_queue_snapshot(limit=limit))
 
     async def api_search(self, request: Request) -> Dict[str, Any]:
         keyword = self._normalize_text(request.query_params.get("keyword"))
