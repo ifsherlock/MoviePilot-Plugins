@@ -290,6 +290,25 @@ def test_online_download_name_detects_7z_magic():
     ) == "download.7z"
 
 
+def test_upload_session_write_and_load_round_trips_payload(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    session_id = f"pytest-{module.SubtitleManualUpload._hash_text(str(tmp_path))[:8]}"
+    payload = {
+        "target_ids": ["t1"],
+        "prepared_uploads": [{"upload_id": "u1", "source_name": "Movie.chi.srt"}],
+    }
+
+    plugin._write_session(session_id, payload)
+    session_dir, loaded = plugin._load_session(session_id)
+
+    try:
+        assert session_dir == plugin._get_session_root() / session_id
+        assert loaded == payload
+    finally:
+        module.shutil.rmtree(session_dir, ignore_errors=True)
+
+
 def test_extract_7z_subtitle_files_with_external_tool(tmp_path):
     module, _, _ = load_plugin_module()
     cls = module.SubtitleManualUpload

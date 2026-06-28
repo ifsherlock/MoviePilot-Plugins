@@ -9,7 +9,6 @@ import shutil
 import subprocess
 import threading
 import time
-import zipfile
 from collections import OrderedDict
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -112,6 +111,11 @@ from .subtitle_language import (
 )
 from .timeline_fixer import TimelineFixResult, check_timeline_fixer_dependencies, fix_subtitle_timeline
 from .tongwen import convert_subtitle_file_to_simplified
+from .upload_session import (
+    UploadSessionService,
+    archive_suffix_from_content as upload_archive_suffix_from_content,
+    normalize_online_download_name as normalize_upload_download_name,
+)
 
 
 class SubtitleManualUpload(_PluginBase):
@@ -1199,22 +1203,29 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                 return {"season": season, "episode": episode}
         return None
 
+    @classmethod
+    def _upload_session_service_for_path(cls, data_path: Path) -> UploadSessionService:
+        return UploadSessionService(
+            data_path=data_path,
+            subtitle_exts=cls._subtitle_exts,
+            archive_exts=cls._archive_exts,
+            rar_exts=cls._rar_exts,
+            sevenzip_exts=cls._sevenzip_exts,
+            default_session_hours=cls._default_session_hours,
+            hash_text=cls._hash_text,
+            extract_rar_subtitle_files=cls._extract_rar_subtitle_files,
+            extract_7z_subtitle_files=cls._extract_7z_subtitle_files,
+            logger_warning=logger.warning,
+        )
+
+    def _upload_session_service(self) -> UploadSessionService:
+        return self._upload_session_service_for_path(self.get_data_path())
+
     def _get_session_root(self) -> Path:
-        root = self.get_data_path() / "sessions"
-        root.mkdir(parents=True, exist_ok=True)
-        return root
+        return self._upload_session_service().get_session_root()
 
     def _cleanup_old_sessions(self) -> None:
-        root = self._get_session_root()
-        expire_before = datetime.now() - timedelta(hours=self._default_session_hours)
-        for child in root.iterdir():
-            try:
-                if not child.is_dir():
-                    continue
-                if datetime.fromtimestamp(child.stat().st_mtime) < expire_before:
-                    shutil.rmtree(child, ignore_errors=True)
-            except Exception as exc:
-                logger.warning("[SubtitleManualUpload] 清理旧会话失败 %s: %s", child, exc)
+        self._upload_session_service().cleanup_old_sessions()
 
     @classmethod
     def _media_type_text(cls, value: Any) -> str:
@@ -3110,64 +3121,11 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         raw_bytes: bytes,
         session_dir: Path,
     ) -> List[Dict[str, Any]]:
-        source_name = Path(upload_name or "").name
-        ext = Path(source_name).suffix.lower()
-        prepared: List[Dict[str, Any]] = []
-
-        if ext in cls._subtitle_exts:
-            upload_id = cls._hash_text(f"{source_name}|{len(raw_bytes)}|{datetime.now().timestamp()}")
-            stored_path = session_dir / f"{upload_id}{ext}"
-            stored_path.write_bytes(raw_bytes)
-            prepared.append(
-                {
-                    "upload_id": upload_id,
-                    "source_name": source_name,
-                    "archive_name": "",
-                    "stored_path": str(stored_path),
-                    "ext": ext,
-                }
-            )
-            return prepared
-
-        if ext not in cls._archive_exts:
-            return prepared
-
-        archive_path = session_dir / source_name
-        archive_path.write_bytes(raw_bytes)
-        if ext in cls._rar_exts:
-            return cls._extract_rar_subtitle_files(source_name, archive_path, session_dir)
-        if ext in cls._sevenzip_exts:
-            return cls._extract_7z_subtitle_files(source_name, archive_path, session_dir)
-
-        try:
-            with zipfile.ZipFile(archive_path) as archive:
-                for member in archive.infolist():
-                    if member.is_dir():
-                        continue
-                    member_name = Path(member.filename).name
-                    if not member_name or member_name.startswith("."):
-                        continue
-                    member_ext = Path(member_name).suffix.lower()
-                    if member_ext not in cls._subtitle_exts:
-                        continue
-                    member_bytes = archive.read(member)
-                    upload_id = cls._hash_text(
-                        f"{source_name}|{member.filename}|{len(member_bytes)}|{datetime.now().timestamp()}"
-                    )
-                    stored_path = session_dir / f"{upload_id}{member_ext}"
-                    stored_path.write_bytes(member_bytes)
-                    prepared.append(
-                        {
-                            "upload_id": upload_id,
-                            "source_name": member_name,
-                            "archive_name": source_name,
-                            "stored_path": str(stored_path),
-                            "ext": member_ext,
-                        }
-                    )
-        except zipfile.BadZipFile as exc:
-            raise ValueError(f"压缩包损坏或格式不正确: {source_name}") from exc
-        return prepared
+        return cls._upload_session_service_for_path(session_dir.parent).extract_subtitle_files(
+            upload_name,
+            raw_bytes,
+            session_dir,
+        )
 
     @classmethod
     def _suggest_target(
@@ -3491,20 +3449,10 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         return written_results, fixed_count, simplified_count
 
     def _write_session(self, session_id: str, payload: Dict[str, Any]) -> None:
-        session_dir = self._get_session_root() / session_id
-        session_dir.mkdir(parents=True, exist_ok=True)
-        session_file = session_dir / "session.json"
-        session_file.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        self._upload_session_service().write_session(session_id, payload)
 
     def _load_session(self, session_id: str) -> Tuple[Path, Dict[str, Any]]:
-        session_dir = self._get_session_root() / self._normalize_text(session_id)
-        session_file = session_dir / "session.json"
-        if not session_file.exists():
-            raise HTTPException(status_code=404, detail="上传会话不存在或已过期")
-        try:
-            return session_dir, json.loads(session_file.read_text(encoding="utf-8"))
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"读取上传会话失败: {exc}") from exc
+        return self._upload_session_service().load_session(session_id, normalize_text=self._normalize_text)
 
     def _timeline_cache_dir(self) -> Path:
         return self.get_data_path() / "timeline_cache"
@@ -4559,38 +4507,19 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
 
     @classmethod
     def _normalize_online_download_name(cls, name: str, content: bytes, result: Dict[str, Any]) -> str:
-        safe_name = Path(cls._normalize_text(name)).name
-        suffix = Path(safe_name).suffix.lower()
-        magic_suffix = cls._archive_suffix_from_content(content)
-        if magic_suffix:
-            stem = Path(safe_name).stem if safe_name else ""
-            if not stem:
-                stem = re.sub(r"[\\/:*?\"<>|]+", " ", cls._normalize_text(result.get("title")) or "online-subtitle").strip()
-            return f"{stem or 'online-subtitle'}{magic_suffix}"
-        if suffix in cls._subtitle_exts or suffix in cls._archive_exts:
-            return safe_name
-        title = re.sub(r"[\\/:*?\"<>|]+", " ", cls._normalize_text(result.get("title")) or "online-subtitle").strip()
-        if content.startswith(b"PK\x03\x04"):
-            return f"{title}.zip"
-        if content.startswith(b"Rar!\x1a\x07"):
-            return f"{title}.rar"
-        text_head = cls._decode_preview_bytes(content[:4096]).lstrip()
-        if re.match(r"^\d+\s*\n\d{2}:\d{2}:\d{2}[,.]\d{3}\s+-->", text_head):
-            return f"{title}.srt"
-        if "[Script Info]" in text_head or "[V4+ Styles]" in text_head:
-            return f"{title}.ass"
-        return safe_name or f"{title}.zip"
+        return normalize_upload_download_name(
+            name,
+            content,
+            result,
+            subtitle_exts=cls._subtitle_exts,
+            archive_exts=cls._archive_exts,
+            normalize_text=cls._normalize_text,
+            decode_preview_bytes=cls._decode_preview_bytes,
+        )
 
     @staticmethod
     def _archive_suffix_from_content(content: bytes) -> str:
-        head = (content or b"")[:8]
-        if head.startswith(b"PK\x03\x04") or head.startswith(b"PK\x05\x06") or head.startswith(b"PK\x07\x08"):
-            return ".zip"
-        if head.startswith(b"Rar!\x1a\x07"):
-            return ".rar"
-        if head.startswith(b"7z\xbc\xaf\x27\x1c"):
-            return ".7z"
-        return ""
+        return upload_archive_suffix_from_content(content)
 
     def _build_preview_response_from_uploads(
         self,
