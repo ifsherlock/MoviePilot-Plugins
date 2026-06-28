@@ -1765,7 +1765,9 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         return self._local_media_catalog().group_entries_as_media(entries, limit)
 
     def _match_history_items(self, *, keyword: str = "", media_type: str = "all") -> List[Dict[str, Any]]:
-        entries = self._load_local_entries(allow_stale=True)
+        media_catalog = self._local_media_catalog()
+        target_resolver = self._target_resolver()
+        entries = media_catalog.load_local_entries(allow_stale=True)
         signature = self._match_history_signature(entries)
         cache = self._match_history_cache or {}
         loaded_at = self._cache_loaded_at(cache.get("loaded_at"))
@@ -1782,7 +1784,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
 
         groups: Dict[str, Dict[str, Any]] = {}
         for entry in entries:
-            target = self._target_from_entry(entry)
+            target = target_resolver.target_from_entry(entry)
             subtitles = target.get("subtitles") or []
             if not subtitles:
                 continue
@@ -4876,7 +4878,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         media_type = self._normalize_text(request.query_params.get("media_type")) or "all"
         page = max(self._safe_int(request.query_params.get("page"), 1), 1)
         page_size = min(max(self._safe_int(request.query_params.get("page_size") or request.query_params.get("limit"), 20), 1), 80)
-        medias, total = await self._search_media_candidates(
+        medias, total = await self._local_media_catalog().search_media_candidates(
             keyword=keyword,
             media_type=media_type,
             limit=page_size,
@@ -4931,7 +4933,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         title = self._normalize_text(request.query_params.get("title"))
         year = self._normalize_text(request.query_params.get("year"))
         season = self._normalize_text(request.query_params.get("season"))
-        result = self._targets_for_media(
+        result = self._target_resolver().targets_for_media(
             media_type=media_type,
             tmdb_id=tmdb_id,
             douban_id=douban_id,

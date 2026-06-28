@@ -132,8 +132,9 @@ def plugin_submodule(module, name):
 
 
 class FakeRequest:
-    def __init__(self, body):
-        self._body = body
+    def __init__(self, body=None, query_params=None):
+        self._body = {} if body is None else body
+        self.query_params = query_params or {}
 
     async def json(self):
         return self._body
@@ -1536,6 +1537,52 @@ def test_search_media_candidates_returns_total_with_page_slice(tmp_path):
     assert [item["title"] for item in candidates] == ["B", "A"]
 
 
+def test_api_search_uses_local_media_catalog_service(tmp_path):
+    module, histories, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    histories.data = [
+        make_history_entry(tmp_path, "a", "a.mkv", media_key="movie-a", media_type="movie", title="A", date="2024-01-01"),
+    ]
+    plugin._search_media_candidates = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("api_search should call LocalMediaCatalog directly")
+    )
+
+    response = asyncio.run(
+        plugin.api_search(FakeRequest(query_params={"media_type": "movie", "page_size": "10"}))
+    )
+
+    assert response["data"]["total"] == 1
+    assert response["data"]["medias"][0]["title"] == "A"
+
+
+def test_api_targets_uses_media_target_resolver_directly(tmp_path):
+    module, histories, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    histories.data = [
+        make_history_entry(
+            tmp_path,
+            "m1",
+            "Movie.mkv",
+            media_key="movie",
+            media_type="movie",
+            title="Movie",
+            year="2024",
+            basename="Movie",
+            target_label="Movie.mkv",
+        )
+    ]
+    plugin._targets_for_media = lambda **kwargs: (_ for _ in ()).throw(
+        AssertionError("api_targets should call MediaTargetResolver directly")
+    )
+
+    response = plugin.api_targets(
+        FakeRequest(query_params={"media_type": "movie", "title": "Movie", "year": "2024"})
+    )
+
+    assert response["data"]["target_count"] == 1
+    assert response["data"]["targets"][0]["basename"] == "Movie"
+
+
 def test_group_entries_exposes_thumbnail_poster_url():
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
@@ -1737,6 +1784,40 @@ def test_match_history_cache_invalidates_when_external_subtitle_changes(tmp_path
     items = plugin._match_history_items()
     assert len(items) == 1
     assert items[0]["subtitle_count"] == 1
+
+
+def test_api_match_history_builds_targets_with_media_target_resolver(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    subtitle = tmp_path / "Movie.chi.srt"
+    video.write_text("video", encoding="utf-8")
+    subtitle.write_text("subtitle", encoding="utf-8")
+    plugin._local_entries_cache = {
+        "loaded_at": module.datetime.now(),
+        "entries": [
+            {
+                "id": "m1",
+                "media_key": "movie",
+                "media_type": "movie",
+                "title": "Movie",
+                "path": str(video),
+                "basename": "Movie",
+                "target_label": "Movie",
+                "storage": "local",
+            }
+        ],
+        "media_count": 1,
+        "persisted": False,
+    }
+    plugin._target_from_entry = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("match history should build targets through MediaTargetResolver")
+    )
+
+    response = plugin.api_match_history(FakeRequest(query_params={"media_type": "movie"}))
+
+    assert response["data"]["total"] == 1
+    assert response["data"]["items"][0]["targets"][0]["basename"] == "Movie"
 
 
 def test_transfer_auto_dedupe_key_changes_when_same_path_is_reimported(tmp_path):
