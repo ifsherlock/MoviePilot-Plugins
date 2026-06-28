@@ -139,6 +139,35 @@ class FakeRequest:
         return self._body
 
 
+class FakeFormRequest:
+    def __init__(self, form):
+        self._form = form
+
+    async def form(self):
+        return self._form
+
+
+class FakeForm:
+    def __init__(self, values):
+        self._values = dict(values)
+
+    def get(self, key, default=None):
+        return self._values.get(key, default)
+
+    def getlist(self, key):
+        value = self._values.get(key, [])
+        return list(value) if isinstance(value, list) else [value]
+
+
+class FakeUpload:
+    def __init__(self, filename, content):
+        self.filename = filename
+        self._content = content
+
+    async def read(self):
+        return self._content
+
+
 def make_history_entry(tmp_path, entry_id, filename, **extra):
     path = tmp_path / filename
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -469,6 +498,113 @@ def test_rarfile_resource_limit_error_does_not_fallback(tmp_path):
         )
 
     assert not fallback_called
+
+
+def test_prepare_upload_uses_upload_session_service(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    video.write_text("video", encoding="utf-8")
+    plugin._remember_targets(
+        [
+            {
+                "id": "m1",
+                "path": str(video),
+                "basename": "Movie",
+                "filename": "Movie.mkv",
+                "target_label": "Movie",
+                "storage": "local",
+            }
+        ]
+    )
+    plugin._extract_subtitle_files = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("api_prepare_upload should call UploadSessionService directly")
+    )
+    form = FakeForm(
+        {
+            "target_ids": module.json.dumps(["m1"]),
+            "files": [
+                FakeUpload(
+                    "Movie.chi.srt",
+                    "1\n00:00:01,000 --> 00:00:02,000\n你好\n".encode("utf-8"),
+                )
+            ],
+        }
+    )
+
+    response = asyncio.run(plugin.api_prepare_upload(FakeFormRequest(form)))
+
+    data = response["data"]
+    assert response["success"] is True
+    assert data["source"] == "upload"
+    assert data["items"][0]["source_name"] == "Movie.chi.srt"
+    assert data["items"][0]["target_id"] == "m1"
+    session_dir, session_payload = plugin._load_session(data["session_id"])
+    assert session_payload["source"] == "upload"
+    assert Path(session_payload["uploads"][0]["stored_path"]).is_file()
+    module.shutil.rmtree(session_dir, ignore_errors=True)
+
+
+def test_online_download_preview_uses_upload_session_service(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    video.write_text("video", encoding="utf-8")
+    plugin._remember_targets(
+        [
+            {
+                "id": "m1",
+                "path": str(video),
+                "basename": "Movie",
+                "filename": "Movie.mkv",
+                "target_label": "Movie",
+                "storage": "local",
+            }
+        ]
+    )
+    plugin._extract_subtitle_files = lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("api_online_download_preview should call UploadSessionService directly")
+    )
+
+    class FakeOnlineService:
+        def download(self, selected):
+            return [
+                {
+                    "provider": selected[0]["provider"],
+                    "source_name": "Movie.eng.srt",
+                    "content": b"1\n00:00:01,000 --> 00:00:02,000\nHello\n",
+                    "result": selected[0],
+                }
+            ]
+
+    plugin._online_service = lambda: FakeOnlineService()
+
+    response = asyncio.run(
+        plugin.api_online_download_preview(
+            FakeRequest(
+                {
+                    "target_ids": ["m1"],
+                    "results": [
+                        {
+                            "provider": "opensubtitles",
+                            "result_id": "r1",
+                            "title": "Movie English",
+                        }
+                    ],
+                }
+            )
+        )
+    )
+
+    data = response["data"]
+    assert response["success"] is True
+    assert data["source"] == "online"
+    assert data["items"][0]["source_name"] == "Movie.eng.srt"
+    assert data["items"][0]["online_source"] == "opensubtitles"
+    session_dir, session_payload = plugin._load_session(data["session_id"])
+    assert session_payload["source"] == "online"
+    assert Path(session_payload["uploads"][0]["stored_path"]).is_file()
+    module.shutil.rmtree(session_dir, ignore_errors=True)
 
 
 def test_extract_7z_subtitle_files_with_external_tool(tmp_path):

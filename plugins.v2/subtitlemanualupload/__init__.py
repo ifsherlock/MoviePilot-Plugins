@@ -1225,6 +1225,8 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             extract_rar_subtitle_files=cls._extract_rar_subtitle_files,
             extract_7z_subtitle_files=cls._extract_7z_subtitle_files,
             logger_warning=logger.warning,
+            normalize_text=cls._normalize_text,
+            decode_preview_bytes=cls._decode_preview_bytes,
         )
 
     def _upload_session_service(self) -> UploadSessionService:
@@ -4855,20 +4857,22 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         self,
         selected_results: List[Dict[str, Any]],
         session_dir: Path,
+        upload_session: Optional[UploadSessionService] = None,
     ) -> Tuple[List[Dict[str, Any]], List[str], List[Dict[str, str]]]:
+        upload_session = upload_session or self._upload_session_service()
         prepared_uploads: List[Dict[str, Any]] = []
         unsupported_files: List[str] = []
         invalid_files: List[Dict[str, str]] = []
         downloads = self._online_service().download(selected_results)
         for downloaded in downloads:
             result = downloaded.get("result") or {}
-            source_name = self._normalize_online_download_name(
+            source_name = upload_session.normalize_online_download_name(
                 downloaded.get("source_name", ""),
                 downloaded.get("content") or b"",
                 result,
             )
             try:
-                extracted = self._extract_subtitle_files(
+                extracted = upload_session.extract_subtitle_files(
                     source_name,
                     downloaded.get("content") or b"",
                     session_dir,
@@ -5873,43 +5877,18 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             )
         self._check_online_rate_limit([item.get("provider") for item in selected_results if isinstance(item, dict)])
 
+        upload_session = self._upload_session_service()
         session_id = self._hash_text(f"online|{datetime.now().isoformat()}|{','.join(sorted(map(str, target_ids)))}")[:16]
-        session_dir = self._get_session_root() / session_id
+        session_dir = upload_session.get_session_root() / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
 
-        prepared_uploads: List[Dict[str, Any]] = []
-        unsupported_files: List[str] = []
-        invalid_files: List[Dict[str, str]] = []
         try:
-            downloads = await run_in_threadpool(
-                self._online_service().download,
+            prepared_uploads, unsupported_files, invalid_files = await run_in_threadpool(
+                self._download_online_results_to_uploads,
                 selected_results,
+                session_dir,
+                upload_session,
             )
-            for downloaded in downloads:
-                result = downloaded.get("result") or {}
-                source_name = self._normalize_online_download_name(
-                    downloaded.get("source_name", ""),
-                    downloaded.get("content") or b"",
-                    result,
-                )
-                try:
-                    extracted = self._extract_subtitle_files(
-                        source_name,
-                        downloaded.get("content") or b"",
-                        session_dir,
-                    )
-                except ValueError as exc:
-                    invalid_files.append({"name": source_name, "reason": str(exc)})
-                    continue
-                if not extracted:
-                    unsupported_files.append(source_name)
-                    continue
-                for item in extracted:
-                    item["online_source"] = downloaded.get("provider")
-                    item["online_title"] = result.get("title", "")
-                    if not item.get("archive_name") and source_name != item.get("source_name"):
-                        item["archive_name"] = source_name
-                prepared_uploads.extend(extracted)
         except CaptchaRequiredError as exc:
             shutil.rmtree(session_dir, ignore_errors=True)
             logger.warning("[SubtitleManualUpload] 在线字幕自动仿真下载失败 provider=%s message=%s", exc.provider, exc)
@@ -5987,8 +5966,9 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             self._brief_ids(target_ids),
         )
 
+        upload_session = self._upload_session_service()
         session_id = self._hash_text(f"{datetime.now().isoformat()}|{','.join(sorted(map(str, target_ids)))}")[:16]
-        session_dir = self._get_session_root() / session_id
+        session_dir = upload_session.get_session_root() / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
 
         prepared_uploads: List[Dict[str, Any]] = []
@@ -6000,7 +5980,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
                 continue
             raw_bytes = await upload.read()
             try:
-                extracted = self._extract_subtitle_files(file_name, raw_bytes, session_dir)
+                extracted = upload_session.extract_subtitle_files(file_name, raw_bytes, session_dir)
             except ValueError as exc:
                 invalid_files.append(
                     {

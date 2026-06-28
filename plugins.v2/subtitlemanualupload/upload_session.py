@@ -44,6 +44,17 @@ class ArchiveResourceLimitError(ValueError):
     """Raised when uploaded content or extracted archive data exceeds policy limits."""
 
 
+def _default_normalize_text(value: Any) -> str:
+    return str(value or "").strip()
+
+
+def _default_decode_preview_bytes(raw: bytes) -> str:
+    try:
+        return (raw or b"").decode("utf-8", errors="ignore")
+    except Exception:
+        return ""
+
+
 def _size_label(size: int) -> str:
     return f"{size} bytes"
 
@@ -449,6 +460,8 @@ class UploadSessionService:
         extract_7z_subtitle_files: ArchiveExtractor,
         logger_warning: Optional[WarningLogger] = None,
         resource_limits: ArchiveResourceLimits = DEFAULT_ARCHIVE_RESOURCE_LIMITS,
+        normalize_text: NormalizeText = _default_normalize_text,
+        decode_preview_bytes: DecodePreviewBytes = _default_decode_preview_bytes,
     ) -> None:
         self._data_path = Path(data_path)
         self._subtitle_exts = set(subtitle_exts)
@@ -461,6 +474,8 @@ class UploadSessionService:
         self._extract_7z_subtitle_files = extract_7z_subtitle_files
         self._logger_warning = logger_warning
         self._resource_limits = resource_limits
+        self._normalize_text = normalize_text
+        self._decode_preview_bytes = decode_preview_bytes
 
     def get_session_root(self) -> Path:
         root = self._data_path / "sessions"
@@ -559,6 +574,17 @@ class UploadSessionService:
         except zipfile.BadZipFile as exc:
             raise ValueError(f"压缩包损坏或格式不正确: {source_name}") from exc
         return prepared
+
+    def normalize_online_download_name(self, name: str, content: bytes, result: Dict[str, Any]) -> str:
+        return normalize_online_download_name(
+            name,
+            content,
+            result,
+            subtitle_exts=self._subtitle_exts,
+            archive_exts=self._archive_exts,
+            normalize_text=self._normalize_text,
+            decode_preview_bytes=self._decode_preview_bytes,
+        )
 
     def write_session(self, session_id: str, payload: Dict[str, Any]) -> None:
         session_dir = self.get_session_root() / session_id
