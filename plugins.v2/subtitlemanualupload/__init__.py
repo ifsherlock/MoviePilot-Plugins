@@ -73,6 +73,21 @@ from .online_subtitle import (
     normalize_online_engine,
     normalize_provider_roots,
 )
+from .subtitle_language import (
+    DEFAULT_AUTO_FORMAT_PRIORITY,
+    DEFAULT_AUTO_LANGUAGE_PRIORITY,
+    LANGUAGE_SUFFIX_ALIASES,
+    auto_language_bucket,
+    auto_subtitle_sort_key,
+    autosub_lang_from_suffix,
+    detect_language_profile,
+    is_chinese_language_suffix,
+    language_suffix_from_filename,
+    normalize_auto_format_priority,
+    normalize_auto_language_key,
+    normalize_auto_language_priority,
+    normalize_language_suffix,
+)
 from .timeline_fixer import TimelineFixResult, check_timeline_fixer_dependencies, fix_subtitle_timeline
 from .tongwen import convert_subtitle_file_to_simplified
 
@@ -174,8 +189,8 @@ class SubtitleManualUpload(_PluginBase):
     _rar_dependency_modes = {"none", "container_install", "mapped_binary"}
     _auto_transfer_subtitle_strategies = {"online_then_ai_source", "online_source_only", "ai_source_only"}
     _auto_multi_subtitle_modes = {"best", "chinese_all", "all"}
-    _default_auto_language_priority = ["bilingual", "chi", "cht", "eng"]
-    _default_auto_format_priority = [".ass", ".srt", ".ssa", ".vtt"]
+    _default_auto_language_priority = list(DEFAULT_AUTO_LANGUAGE_PRIORITY)
+    _default_auto_format_priority = list(DEFAULT_AUTO_FORMAT_PRIORITY)
     _auto_transfer_subtitle_strategy_aliases = {
         "search_first": "online_then_ai_source",
         "search_only": "online_source_only",
@@ -198,37 +213,7 @@ class SubtitleManualUpload(_PluginBase):
     _chinese_media_category_pattern = re.compile(r"华语|国产|大陆|内地|香港|台湾|港剧|台剧|港片|台片|港台|中国")
     _stream_exts = {".strm"}
     _default_session_hours = 24
-    _language_suffix_aliases = {
-        "zh": "chi",
-        "zh-hans": "chi",
-        "zh_hans": "chi",
-        "zh-cn": "chi",
-        "zh_cn": "chi",
-        "zh-hant": "cht",
-        "zh_hant": "cht",
-        "zh-tw": "cht",
-        "zh_tw": "cht",
-        "chs": "chi",
-        "cht": "cht",
-        "tw": "cht",
-        "hk": "cht",
-        "zho": "chi",
-        "cmn": "chi",
-        "cn": "chi",
-        "en": "eng",
-        "ja": "jpn",
-        "jp": "jpn",
-        "ko": "kor",
-        "kr": "kor",
-        "fr": "fre",
-        "fra": "fre",
-        "de": "ger",
-        "deu": "ger",
-        "es": "spa",
-        "pt": "por",
-        "it": "ita",
-        "ru": "rus",
-    }
+    _language_suffix_aliases = dict(LANGUAGE_SUFFIX_ALIASES)
 
     def init_plugin(self, config: dict = None):
         config = config or {}
@@ -1141,70 +1126,15 @@ class SubtitleManualUpload(_PluginBase):
 
     @classmethod
     def _normalize_auto_language_key(cls, value: Any) -> str:
-        text = cls._normalize_text(value).lower()
-        aliases = {
-            "双语": "bilingual",
-            "bilingual": "bilingual",
-            "chi&eng": "bilingual",
-            "chi&jp": "bilingual",
-            "chi&kr": "bilingual",
-            "简中": "chi",
-            "简体": "chi",
-            "中文": "chi",
-            "zh": "chi",
-            "chs": "chi",
-            "chi": "chi",
-            "繁中": "cht",
-            "繁体": "cht",
-            "zh-tw": "cht",
-            "cht": "cht",
-            "英文": "eng",
-            "英语": "eng",
-            "en": "eng",
-            "eng": "eng",
-        }
-        return aliases.get(text, cls._normalize_language_suffix(text))
+        return normalize_auto_language_key(value)
 
     @classmethod
     def _normalize_auto_language_priority(cls, value: Any) -> List[str]:
-        raw_items = value
-        if isinstance(raw_items, str):
-            raw_items = re.split(r"[\s,，/|]+", raw_items)
-        if not isinstance(raw_items, list):
-            raw_items = []
-        result: List[str] = []
-        for item in raw_items:
-            key = cls._normalize_auto_language_key(item)
-            if key and key != "und" and key not in result:
-                result.append(key)
-        for item in cls._default_auto_language_priority:
-            if item not in result:
-                result.append(item)
-        return result
+        return normalize_auto_language_priority(value, cls._default_auto_language_priority)
 
     @classmethod
     def _normalize_auto_format_priority(cls, value: Any) -> List[str]:
-        raw_items = value
-        if isinstance(raw_items, str):
-            raw_items = re.split(r"[\s,，/|]+", raw_items)
-        if not isinstance(raw_items, list):
-            raw_items = []
-        result: List[str] = []
-        for item in raw_items:
-            ext = cls._normalize_text(item).lower()
-            if not ext:
-                continue
-            if not ext.startswith("."):
-                ext = f".{ext}"
-            if ext in cls._subtitle_exts and ext not in result:
-                result.append(ext)
-        for item in cls._default_auto_format_priority:
-            if item not in result:
-                result.append(item)
-        for item in sorted(cls._subtitle_exts):
-            if item not in result:
-                result.append(item)
-        return result
+        return normalize_auto_format_priority(value, cls._subtitle_exts, cls._default_auto_format_priority)
 
     @staticmethod
     def _normalize_text(value: Any) -> str:
@@ -1796,173 +1726,15 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
 
     @classmethod
     def _normalize_language_suffix(cls, value: Any) -> str:
-        suffix = cls._normalize_text(value).strip().lower()
-        if not suffix:
-            return "und"
-        if any(separator in suffix for separator in ("&", "+", "/", ",")):
-            parts = []
-            for part in re.split(r"[&+/,]+", suffix):
-                normalized = cls._language_suffix_aliases.get(part.strip(), part.strip())
-                normalized = {"jpn": "jp", "kor": "kr"}.get(normalized, normalized)
-                normalized = re.sub(r"[^a-z0-9-]", "", normalized)
-                if normalized and normalized not in parts:
-                    parts.append(normalized)
-            return "&".join(parts) or "und"
-        suffix = cls._language_suffix_aliases.get(suffix, suffix)
-        return re.sub(r"[^a-z0-9-]", "", suffix) or "und"
+        return normalize_language_suffix(value)
 
     @classmethod
     def _language_suffix_from_filename(cls, file_name: str) -> Dict[str, str]:
-        name = Path(cls._normalize_text(file_name)).name
-        ext = Path(name).suffix.lower()
-        if ext not in cls._subtitle_exts:
-            return {"suffix": "und", "label": "未知"}
-
-        stem = name[: -len(ext)]
-        tokens = [
-            re.sub(r"[^a-z0-9&+/,_-]", "", token.lower()).strip("_-")
-            for token in re.split(r"[\s.\[\](){}]+", stem)
-        ]
-        aliases = {
-            **cls._language_suffix_aliases,
-            "chi": "chi",
-            "eng": "eng",
-            "jpn": "jpn",
-            "kor": "kor",
-            "english": "eng",
-            "chinese": "chi",
-            "japanese": "jpn",
-            "korean": "kor",
-        }
-        ignored_tail_tokens = {"forced", "sdh", "hi", "cc", "default", "full", "signs", "songs", "commentary"}
-        found: List[str] = []
-        for token in reversed([item for item in tokens if item]):
-            normalized = cls._normalize_language_suffix(token) if any(sep in token for sep in ("&", "+", "/", ",")) else aliases.get(token, "")
-            if normalized and normalized != "und":
-                found.append(normalized)
-                continue
-            if token in ignored_tail_tokens and not found:
-                continue
-            if found:
-                break
-            return {"suffix": "und", "label": "未知"}
-
-        if not found:
-            return {"suffix": "und", "label": "未知"}
-
-        suffix = cls._normalize_language_suffix("&".join(reversed(found)))
-        labels = {
-            "chi": "中文",
-            "cht": "繁中",
-            "eng": "英文",
-            "jpn": "日文",
-            "kor": "韩文",
-            "fre": "法文",
-            "spa": "西文",
-            "ger": "德文",
-            "por": "葡文",
-            "ita": "意文",
-            "rus": "俄文",
-        }
-        if suffix == "chi&eng":
-            label = "中英双语"
-        elif suffix == "chi&jp":
-            label = "中日双语"
-        elif suffix == "chi&kr":
-            label = "中韩双语"
-        else:
-            label = labels.get(suffix, "未知")
-        return {"suffix": suffix, "label": label}
+        return language_suffix_from_filename(file_name, cls._subtitle_exts)
 
     @classmethod
     def _detect_language_profile(cls, file_name: str, raw_bytes: bytes) -> Dict[str, str]:
-        lowered = file_name.lower()
-        filename_suffix = cls._language_suffix_from_filename(file_name)
-        if filename_suffix["suffix"] != "und":
-            return filename_suffix
-
-        preview = cls._decode_preview_bytes(raw_bytes[:16000])
-        has_cjk = len(re.findall(r"[\u4e00-\u9fff]", preview)) >= 20
-        has_kana = len(re.findall(r"[\u3040-\u30ff]", preview)) >= 20
-        has_hangul = len(re.findall(r"[\uac00-\ud7af]", preview)) >= 20
-        has_ascii = len(re.findall(r"[A-Za-z]{3,}", preview)) >= 20
-        has_chinese_name = bool(
-            re.search(r"(^|[\s._\-\[\]()])(?:zh|chi|chs|cht|zho|cmn)(?=$|[\s._\-\[\]()])", lowered)
-            or any(token in lowered for token in ("中英", "中日", "中韩", "中文", "中字", "双语", "bilingual"))
-        )
-        has_english_name = bool(
-            re.search(r"(^|[\s._\-\[\]()])(?:en|eng)(?=$|[\s._\-\[\]()])", lowered)
-            or any(token in lowered for token in ("english", "英文", "英语", "中英"))
-        )
-        has_japanese_name = bool(
-            re.search(r"(^|[\s._\-\[\]()])(?:ja|jp|jpn)(?=$|[\s._\-\[\]()])", lowered)
-            or any(token in lowered for token in ("japanese", "日文", "日语", "中日"))
-        )
-        has_korean_name = bool(
-            re.search(r"(^|[\s._\-\[\]()])(?:ko|kr|kor)(?=$|[\s._\-\[\]()])", lowered)
-            or any(token in lowered for token in ("korean", "韩文", "韩语", "中韩"))
-        )
-
-        suffix = "und"
-        label = "未知"
-
-        if (has_chinese_name or has_cjk) and (has_japanese_name or has_kana):
-            suffix = "chi&jp"
-            label = "中日双语"
-        elif (has_chinese_name or has_cjk) and (has_korean_name or has_hangul):
-            suffix = "chi&kr"
-            label = "中韩双语"
-        elif has_chinese_name and (has_english_name or has_ascii):
-            suffix = "chi&eng"
-            label = "中英双语"
-        elif any(token in lowered for token in ("zh-hant", "zh_tw", "zh-tw", "cht", "繁体", "繁中", "big5")) or re.search(
-            r"(^|[\s._\-\[\]()])(?:tw|hk)(?=$|[\s._\-\[\]()])",
-            lowered,
-        ):
-            suffix = "cht"
-            label = "繁中"
-        elif any(token in lowered for token in ("zh-hans", "zh_cn", "zh-cn", "chs", "简体", "简中", "gb")):
-            suffix = "chi"
-            label = "简中"
-        elif any(token in lowered for token in ("zh", "chi", "zho", "cmn", "中文", "中字")) or (has_cjk and not has_kana):
-            suffix = "chi"
-            label = "中文"
-        elif any(token in lowered for token in ("jpn", "japanese", "日文", "日语", ".ja.")) or has_kana:
-            suffix = "jpn"
-            label = "日文"
-        elif any(token in lowered for token in ("kor", "korean", "韩文", "韩语", ".ko.")) or has_hangul:
-            suffix = "kor"
-            label = "韩文"
-        elif any(token in lowered for token in ("eng", "english", "英文", "英语", ".en.")) or has_ascii:
-            suffix = "eng"
-            label = "英文"
-        elif any(token in lowered for token in ("fre", "fra", "french", "français", ".fr.")):
-            suffix = "fre"
-            label = "法文"
-        elif any(token in lowered for token in ("spa", "spanish", "español", ".es.")):
-            suffix = "spa"
-            label = "西文"
-        elif any(token in lowered for token in ("ger", "deu", "german", "deutsch", ".de.")):
-            suffix = "ger"
-            label = "德文"
-        elif any(token in lowered for token in ("por", "portuguese", "português", ".pt.")):
-            suffix = "por"
-            label = "葡文"
-        elif any(token in lowered for token in ("ita", "italian", "italiano", ".it.")):
-            suffix = "ita"
-            label = "意文"
-        elif any(token in lowered for token in ("rus", "russian", ".ru.")):
-            suffix = "rus"
-            label = "俄文"
-
-        if suffix == "chi" and has_ascii:
-            suffix = "chi&eng"
-            label = f"{label}/双语"
-
-        return {
-            "suffix": cls._normalize_language_suffix(suffix),
-            "label": label,
-        }
+        return detect_language_profile(file_name, raw_bytes, cls._subtitle_exts)
 
     @classmethod
     def _extract_episode_hint(cls, file_name: str) -> Optional[Dict[str, int]]:
@@ -4083,7 +3855,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
 
     @classmethod
     def _is_chinese_language_suffix(cls, suffix: Any) -> bool:
-        return any(part in {"chi", "cht"} for part in cls._normalize_language_suffix(suffix).split("&"))
+        return is_chinese_language_suffix(suffix)
 
     @classmethod
     def _target_has_chinese_subtitle(cls, target: Dict[str, Any]) -> bool:
@@ -4796,32 +4568,16 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
 
     @classmethod
     def _auto_language_bucket(cls, suffix: Any) -> str:
-        parts = [item for item in cls._normalize_language_suffix(suffix).split("&") if item]
-        if any(item in {"chi", "cht"} for item in parts) and any(item not in {"chi", "cht"} for item in parts):
-            return "bilingual"
-        if "chi" in parts:
-            return "chi"
-        if "cht" in parts:
-            return "cht"
-        if any(item in {"eng", "en"} for item in parts):
-            return "eng"
-        return parts[0] if parts else "und"
+        return auto_language_bucket(suffix)
 
     def _auto_subtitle_sort_key(self, item: Dict[str, Any]) -> Tuple[int, int, int, str]:
-        language_bucket = self._auto_language_bucket(item.get("language_suffix"))
         language_priority = list(getattr(self, "_auto_subtitle_language_priority", None) or self._default_auto_language_priority)
         format_priority = list(getattr(self, "_auto_subtitle_format_priority", None) or self._default_auto_format_priority)
-        try:
-            language_rank = language_priority.index(language_bucket)
-        except ValueError:
-            language_rank = len(language_priority)
-        ext = self._normalize_text(item.get("ext")).lower()
-        try:
-            format_rank = format_priority.index(ext)
-        except ValueError:
-            format_rank = len(format_priority)
-        bilingual_bonus = 0 if language_bucket == "bilingual" else 1
-        return (language_rank, format_rank, bilingual_bonus, self._normalize_text(item.get("source_name")).lower())
+        return auto_subtitle_sort_key(
+            item,
+            language_priority=language_priority,
+            format_priority=format_priority,
+        )
 
     def _select_auto_subtitle_items(
         self,
@@ -5826,24 +5582,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
 
     @classmethod
     def _autosub_lang_from_suffix(cls, suffix: Any) -> str:
-        normalized = cls._normalize_language_suffix(suffix)
-        first = next((part for part in normalized.split("&") if part and part not in {"chi", "cht"}), "")
-        return {
-            "eng": "en",
-            "en": "en",
-            "jpn": "ja",
-            "jp": "ja",
-            "kor": "ko",
-            "kr": "ko",
-            "fre": "fr",
-            "fra": "fr",
-            "spa": "es",
-            "ger": "de",
-            "deu": "de",
-            "por": "pt",
-            "ita": "it",
-            "rus": "ru",
-        }.get(first, first or "en")
+        return autosub_lang_from_suffix(suffix)
 
     def _online_ai_candidate_items(
         self,
