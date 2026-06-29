@@ -578,6 +578,99 @@ def extract_command_archive_subtitle_files(
     return prepared
 
 
+class ArchiveSubtitleExtractor:
+    def __init__(
+        self,
+        *,
+        archive_dependency_service: ArchiveDependencyService,
+        subtitle_exts: Iterable[str],
+        hash_text: HashText,
+        rar_python_package: str,
+        logger_warning: Optional[WarningLogger] = None,
+        resource_limits: ArchiveResourceLimits = DEFAULT_ARCHIVE_RESOURCE_LIMITS,
+    ) -> None:
+        self._archive_dependency_service = archive_dependency_service
+        self._subtitle_exts = set(subtitle_exts)
+        self._hash_text = hash_text
+        self._rar_python_package = rar_python_package
+        self._logger_warning = logger_warning
+        self._resource_limits = resource_limits
+
+    def extract_rar_subtitle_files_with_rarfile(
+        self,
+        source_name: str,
+        archive_path: Path,
+        session_dir: Path,
+        resource_limits: Optional[ArchiveResourceLimits] = None,
+    ) -> List[Dict[str, Any]]:
+        return extract_rar_subtitle_files_with_rarfile(
+            source_name,
+            archive_path,
+            session_dir,
+            rarfile_module_factory=self._archive_dependency_service.rarfile_module,
+            rar_python_package=self._rar_python_package,
+            subtitle_exts=self._subtitle_exts,
+            hash_text=self._hash_text,
+            resource_limits=resource_limits or self._resource_limits,
+        )
+
+    def extract_rar_subtitle_files(
+        self,
+        source_name: str,
+        archive_path: Path,
+        session_dir: Path,
+        resource_limits: Optional[ArchiveResourceLimits] = None,
+    ) -> List[Dict[str, Any]]:
+        return extract_rar_subtitle_files(
+            source_name,
+            archive_path,
+            session_dir,
+            rar_python_available_func=self._archive_dependency_service.rar_python_available,
+            extract_with_rarfile=self.extract_rar_subtitle_files_with_rarfile,
+            rar_tool_func=self._archive_dependency_service.rar_tool,
+            extract_command_archive_subtitle_files_func=self.extract_command_archive_subtitle_files,
+            rar_python_package=self._rar_python_package,
+            logger_warning=self._logger_warning,
+            resource_limits=resource_limits or self._resource_limits,
+        )
+
+    def extract_7z_subtitle_files(
+        self,
+        source_name: str,
+        archive_path: Path,
+        session_dir: Path,
+        resource_limits: Optional[ArchiveResourceLimits] = None,
+    ) -> List[Dict[str, Any]]:
+        return extract_7z_subtitle_files(
+            source_name,
+            archive_path,
+            session_dir,
+            sevenzip_tool_func=self._archive_dependency_service.sevenzip_tool,
+            extract_command_archive_subtitle_files_func=self.extract_command_archive_subtitle_files,
+            resource_limits=resource_limits or self._resource_limits,
+        )
+
+    def extract_command_archive_subtitle_files(
+        self,
+        source_name: str,
+        archive_path: Path,
+        session_dir: Path,
+        tool_path: str,
+        resource_limits: Optional[ArchiveResourceLimits] = None,
+    ) -> List[Dict[str, Any]]:
+        return extract_command_archive_subtitle_files(
+            source_name,
+            archive_path,
+            session_dir,
+            tool_path,
+            subtitle_exts=self._subtitle_exts,
+            hash_text=self._hash_text,
+            list_members=self._archive_dependency_service.list_rar_members,
+            read_member=self._archive_dependency_service.read_rar_member,
+            resource_limits=resource_limits or self._resource_limits,
+        )
+
+
 def normalize_online_download_name(
     name: str,
     content: bytes,

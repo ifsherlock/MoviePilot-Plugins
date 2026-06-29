@@ -656,6 +656,50 @@ def test_rarfile_resource_limit_error_does_not_fallback(tmp_path):
     assert not fallback_called
 
 
+def test_archive_subtitle_extractor_uses_dependency_service_for_7z(tmp_path):
+    module, _, _ = load_plugin_module()
+    upload_session = plugin_submodule(module, "upload_session")
+    calls = []
+
+    class FakeArchiveDependency:
+        def sevenzip_tool(self):
+            return "7z"
+
+        def list_rar_members(self, archive_path, tool_path):
+            calls.append(("list", Path(archive_path).name, tool_path))
+            return ["nested/Movie.zh.ass", "notes.txt"]
+
+        def read_rar_member(self, archive_path, member, tool_path):
+            calls.append(("read", member, tool_path))
+            return b"subtitle"
+
+    extractor = upload_session.ArchiveSubtitleExtractor(
+        archive_dependency_service=FakeArchiveDependency(),
+        subtitle_exts={".ass"},
+        hash_text=lambda value: "archive-upload-id",
+        rar_python_package="rarfile",
+    )
+    archive_path = tmp_path / "sample.7z"
+    archive_path.write_bytes(b"7z archive")
+
+    extracted = extractor.extract_7z_subtitle_files("sample.7z", archive_path, tmp_path)
+
+    assert extracted == [
+        {
+            "upload_id": "archive-upload-id",
+            "source_name": "Movie.zh.ass",
+            "archive_name": "sample.7z",
+            "stored_path": str(tmp_path / "archive-upload-id.ass"),
+            "ext": ".ass",
+        }
+    ]
+    assert (tmp_path / "archive-upload-id.ass").read_bytes() == b"subtitle"
+    assert calls == [
+        ("list", "sample.7z", "7z"),
+        ("read", "nested/Movie.zh.ass", "7z"),
+    ]
+
+
 def test_prepare_upload_uses_upload_session_service(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
