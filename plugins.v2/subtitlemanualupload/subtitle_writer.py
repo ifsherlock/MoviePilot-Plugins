@@ -180,8 +180,17 @@ class SubtitleWriter:
             target_entries,
             normalize_text=owner._normalize_text,
             normalize_language_suffix=owner._normalize_language_suffix,
-            build_destination_name_func=owner._build_destination_name,
+            build_destination_name_func=self.build_destination_name,
             http_exception=self._http_exception,
+        )
+
+    def build_destination_name(self, target_entry: Dict[str, Any], subtitle_info: Dict[str, Any]) -> str:
+        owner = self._owner
+        return build_destination_name(
+            target_entry,
+            subtitle_info,
+            normalize_text=owner._normalize_text,
+            normalize_language_suffix=owner._normalize_language_suffix,
         )
 
     def maybe_convert_operation_to_simplified(self, operation: Dict[str, Any], output_dir: Path) -> None:

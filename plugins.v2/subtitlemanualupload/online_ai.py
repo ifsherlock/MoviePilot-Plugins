@@ -192,7 +192,7 @@ class OnlineAiService:
             label = first.get("target_label") or first.get("filename") or Path(owner._normalize_text(first.get("path"))).name
             raise self._http_exception(status_code=400, detail=f"没有为 {label} 匹配到可用于 AI 翻译的外语 SRT 字幕")
 
-        operations = owner._build_write_operations(chosen_items, upload_map, target_entry_map)
+        operations = owner._subtitle_writer().build_write_operations(chosen_items, upload_map, target_entry_map)
         fixed_dir = session_dir / "ai_timeline_fixed"
         fixed_dir.mkdir(parents=True, exist_ok=True)
         overrides: Dict[str, Dict[str, str]] = {}

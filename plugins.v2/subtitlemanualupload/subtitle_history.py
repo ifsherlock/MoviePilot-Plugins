@@ -270,7 +270,7 @@ class SubtitleHistory:
                     "language_suffix": language_profile["suffix"],
                 }
                 try:
-                    operation = owner._build_write_operations(
+                    operation = owner._subtitle_writer().build_write_operations(
                         [item],
                         {upload_id: upload_info},
                         {target_id: entry},

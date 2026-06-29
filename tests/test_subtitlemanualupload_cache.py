@@ -660,6 +660,9 @@ def test_prepare_upload_uses_upload_session_service(tmp_path):
     setattr(plugin, "_auto_fill" + "_missing_targets", lambda *args, **kwargs: (_ for _ in ()).throw(
         AssertionError("preview should call target_resolver.auto_fill_missing_targets directly")
     ))
+    setattr(plugin, "_build_destination" + "_name", lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("preview should call SubtitleWriter.build_destination_name directly")
+    ))
     form = FakeForm(
         {
             "target_ids": module.json.dumps(["m1"]),
@@ -770,6 +773,9 @@ def test_api_apply_upload_uses_subtitle_writer_and_forwards_risky_offset(tmp_pat
     plugin._write_operations_to_disk = lambda **kwargs: (_ for _ in ()).throw(
         AssertionError("api_apply_upload should call SubtitleWriter directly")
     )
+    setattr(plugin, "_build_write" + "_operations", lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("api_apply_upload should call SubtitleWriter.build_write_operations directly")
+    ))
     captured = {}
 
     def fake_fix(video_path, subtitle_path, output_path, **kwargs):
@@ -2419,6 +2425,9 @@ def setup_online_ai_translate(plugin, module, tmp_path):
     ))
     setattr(plugin, "_auto_fill" + "_missing_targets", lambda *args, **kwargs: (_ for _ in ()).throw(
         AssertionError("online AI should call target_resolver.auto_fill_missing_targets directly")
+    ))
+    setattr(plugin, "_build_write" + "_operations", lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("online AI should call SubtitleWriter.build_write_operations directly")
     ))
     module.check_timeline_fixer_dependencies = lambda: {
         "available": True,
@@ -4248,6 +4257,9 @@ def test_auto_write_chinese_all_keeps_chinese_and_bilingual_variants(tmp_path):
             AssertionError("Chinese-all mode should ignore foreign-only subtitles when Chinese variants exist")
         ),
     )
+    setattr(plugin, "_build_write" + "_operations", lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("auto write should call SubtitleWriter.build_write_operations directly")
+    ))
 
     result = service.auto_write_prepared_uploads_for_entries(
         target_entries=[entry],
@@ -4285,6 +4297,9 @@ def test_auto_select_all_keeps_all_language_and_format_variants(tmp_path):
     ))
     setattr(plugin, "_auto_fill" + "_missing_targets", lambda *args, **kwargs: (_ for _ in ()).throw(
         AssertionError("auto selection should call target_resolver.auto_fill_missing_targets directly")
+    ))
+    setattr(plugin, "_build_destination" + "_name", lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("auto selection should call SubtitleWriter.build_destination_name directly")
     ))
     selected = plugin._select_auto_subtitle_items(prepared_uploads, [plugin._target_from_entry(entry)])
 

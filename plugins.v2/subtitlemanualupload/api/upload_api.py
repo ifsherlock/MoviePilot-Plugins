@@ -60,9 +60,10 @@ class UploadApi:
 
         fill_missing_target_ids(preview_items, targets, extract_episode_hint=owner._extract_episode_hint)
         target_lookup = {item["id"]: item for item in targets if item.get("id")}
+        subtitle_writer = owner._subtitle_writer()
         for item in preview_items:
             target = target_lookup.get(item.get("target_id"))
-            item["output_name"] = owner._build_destination_name(target, item) if target else ""
+            item["output_name"] = subtitle_writer.build_destination_name(target, item) if target else ""
 
         session_payload = {
             "session_id": session_id,

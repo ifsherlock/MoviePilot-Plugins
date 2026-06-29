@@ -874,7 +874,7 @@ class AutoTransferService:
             target = target_lookup.get(target_id)
             for item in chosen:
                 if target:
-                    destination_key = owner._build_destination_name(target, item)
+                    destination_key = owner._subtitle_writer().build_destination_name(target, item)
                 else:
                     destination_key = f"{target_id}|{item.get('source_name')}"
                 if destination_key in seen_destinations:
@@ -922,7 +922,7 @@ class AutoTransferService:
         simplified_count = 0
         operations: List[Dict[str, Any]] = []
         if chinese_items:
-            operations = owner._build_write_operations(chinese_items, upload_map, target_entry_map)
+            operations = owner._subtitle_writer().build_write_operations(chinese_items, upload_map, target_entry_map)
             written, _, simplified_count = self._write_operations_to_disk(
                 session_dir=session_dir,
                 operations=operations,
