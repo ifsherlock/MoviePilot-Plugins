@@ -10,7 +10,11 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from .config_schema import normalize_auto_multi_subtitle_mode
 from .online_subtitle import build_search_keywords
-from .subtitle_language import auto_target_has_chinese_subtitle as language_auto_target_has_chinese_subtitle
+from .subtitle_language import (
+    auto_subtitle_sort_key,
+    auto_target_has_chinese_subtitle as language_auto_target_has_chinese_subtitle,
+    is_chinese_language_suffix,
+)
 from .target_resolver import (
     auto_fill_missing_targets as fill_missing_target_ids,
     suggest_target as suggest_target_id,
@@ -65,14 +69,22 @@ class AutoTransferCollaborators:
             ),
             auto_media_for_entry=lambda entry: owner._media_metadata_service().auto_media_for_entry(entry),
             is_chinese_transfer_media=lambda entry: owner._media_metadata_service().is_chinese_transfer_media(entry),
-            normalize_online_download_name=owner._normalize_online_download_name,
+            normalize_online_download_name=lambda name, content, result: owner._upload_session_service().normalize_online_download_name(
+                name,
+                content,
+                result,
+            ),
             detect_language_profile=owner._detect_language_profile,
-            auto_subtitle_sort_key=owner._auto_subtitle_sort_key,
+            auto_subtitle_sort_key=lambda item: auto_subtitle_sort_key(
+                item,
+                language_priority=list(getattr(owner, "_auto_subtitle_language_priority", None) or owner._default_auto_language_priority),
+                format_priority=list(getattr(owner, "_auto_subtitle_format_priority", None) or owner._default_auto_format_priority),
+            ),
             auto_target_has_chinese_subtitle=lambda entry, target: language_auto_target_has_chinese_subtitle(
                 entry,
                 target,
                 subtitle_inventory=owner._subtitle_inventory(),
-                is_chinese_language_suffix_func=owner._is_chinese_language_suffix,
+                is_chinese_language_suffix_func=is_chinese_language_suffix,
             ),
             check_online_rate_limit=owner._check_online_rate_limit,
             logger=logger,
@@ -119,8 +131,11 @@ class AutoTransferService:
             return
         self.auto_wait_online_rate_limit(providers, task_ids=task_ids)
 
-    def _normalize_online_download_name(self, name: str, content: bytes, result: Dict[str, Any]) -> str:
-        return self._callback("normalize_online_download_name", "_normalize_online_download_name")(name, content, result)
+    def _online_download_name(self, name: str, content: bytes, result: Dict[str, Any]) -> str:
+        callback = self._collaborators.normalize_online_download_name
+        if callback:
+            return callback(name, content, result)
+        return self._owner._upload_session_service().normalize_online_download_name(name, content, result)
 
     def _extract_subtitle_files(self, upload_name: str, raw_bytes: bytes, session_dir: Path) -> List[Dict[str, Any]]:
         return self._callback("extract_subtitle_files", "_extract_subtitle_files")(upload_name, raw_bytes, session_dir)
@@ -169,8 +184,16 @@ class AutoTransferService:
     def _detect_language_profile(self, file_name: str, raw_bytes: bytes) -> Dict[str, Any]:
         return self._callback("detect_language_profile", "_detect_language_profile")(file_name, raw_bytes)
 
-    def _auto_subtitle_sort_key(self, item: Dict[str, Any]) -> Tuple[int, int, int, str]:
-        return self._callback("auto_subtitle_sort_key", "_auto_subtitle_sort_key")(item)
+    def _subtitle_preference_sort_key(self, item: Dict[str, Any]) -> Tuple[int, int, int, str]:
+        callback = self._collaborators.auto_subtitle_sort_key
+        if callback:
+            return callback(item)
+        owner = self._owner
+        return auto_subtitle_sort_key(
+            item,
+            language_priority=list(getattr(owner, "_auto_subtitle_language_priority", None) or owner._default_auto_language_priority),
+            format_priority=list(getattr(owner, "_auto_subtitle_format_priority", None) or owner._default_auto_format_priority),
+        )
 
     def _write_operations_to_disk(self, **kwargs: Any) -> Tuple[List[Dict[str, Any]], int, int]:
         return self._callback("write_operations_to_disk", "_write_operations_to_disk")(**kwargs)
@@ -581,7 +604,7 @@ class AutoTransferService:
                 prepared_uploads: List[Dict[str, Any]] = []
                 for downloaded in downloads:
                     result = downloaded.get("result") or {}
-                    source_name = self._normalize_online_download_name(
+                    source_name = self._online_download_name(
                         downloaded.get("source_name", ""),
                         downloaded.get("content") or b"",
                         result,
@@ -860,9 +883,9 @@ class AutoTransferService:
 
         selected: List[Dict[str, Any]] = []
         for target_id, group in grouped.items():
-            sorted_group = sorted(group, key=self._auto_subtitle_sort_key)
-            chinese_group = [item for item in sorted_group if owner._is_chinese_language_suffix(item.get("language_suffix"))]
-            foreign_group = [item for item in sorted_group if not owner._is_chinese_language_suffix(item.get("language_suffix"))]
+            sorted_group = sorted(group, key=self._subtitle_preference_sort_key)
+            chinese_group = [item for item in sorted_group if is_chinese_language_suffix(item.get("language_suffix"))]
+            foreign_group = [item for item in sorted_group if not is_chinese_language_suffix(item.get("language_suffix"))]
             if mode == "all":
                 chosen = [*chinese_group, *foreign_group]
             elif mode == "chinese_all":
@@ -915,8 +938,8 @@ class AutoTransferService:
             for target_id in target_entry_map
             if target_id not in used_targets
         ]
-        chinese_items = [item for item in chosen_items if owner._is_chinese_language_suffix(item.get("language_suffix"))]
-        foreign_items = [item for item in chosen_items if not owner._is_chinese_language_suffix(item.get("language_suffix"))]
+        chinese_items = [item for item in chosen_items if is_chinese_language_suffix(item.get("language_suffix"))]
+        foreign_items = [item for item in chosen_items if not is_chinese_language_suffix(item.get("language_suffix"))]
 
         written: List[Dict[str, Any]] = []
         simplified_count = 0
@@ -1152,7 +1175,7 @@ class AutoTransferService:
                 prepared_uploads: List[Dict[str, Any]] = []
                 for downloaded in downloads:
                     result = downloaded.get("result") or {}
-                    source_name = self._normalize_online_download_name(
+                    source_name = self._online_download_name(
                         downloaded.get("source_name", ""),
                         downloaded.get("content") or b"",
                         result,

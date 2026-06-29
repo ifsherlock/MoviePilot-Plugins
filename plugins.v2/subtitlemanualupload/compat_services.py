@@ -37,6 +37,7 @@ from .autosub_bridge import AutoSubBridge
 from .online_ai import OnlineAiService
 from .online_subtitle import OnlineSubtitleSearchService, extract_title_aliases
 from .subtitle_history import SubtitleHistory
+from .subtitle_language import is_chinese_language_suffix
 from .subtitle_writer import SubtitleWriter, subtitle_backup_path as writer_subtitle_backup_path
 from .target_resolver import (
     LocalMediaCatalog,
@@ -212,7 +213,7 @@ def subtitle_inventory(owner_cls) -> SubtitleInventory:
         normalize_text=owner_cls._normalize_text,
         normalize_language_suffix=owner_cls._normalize_language_suffix,
         detect_language_profile=owner_cls._detect_language_profile,
-        is_chinese_language_suffix=owner_cls._is_chinese_language_suffix,
+        is_chinese_language_suffix=is_chinese_language_suffix,
         safe_int=owner_cls._safe_int,
         subtitle_backup_path=writer_subtitle_backup_path,
         subprocess_module=owner_cls._host_module_value("subprocess", subprocess),

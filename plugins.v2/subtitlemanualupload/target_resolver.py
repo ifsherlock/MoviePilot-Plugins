@@ -712,7 +712,7 @@ class SubtitleInventory:
         self._normalize_text = normalize_text
         self._normalize_language_suffix = normalize_language_suffix
         self._detect_language_profile = detect_language_profile
-        self._is_chinese_language_suffix = is_chinese_language_suffix
+        self._language_suffix_is_chinese = is_chinese_language_suffix
         self._safe_int = safe_int
         self._subtitle_backup_path = subtitle_backup_path
         self._subprocess = subprocess_module
@@ -845,9 +845,9 @@ class SubtitleInventory:
                         stream.get("index"),
                         codec,
                     )
-                    if self._is_chinese_language_suffix(sampled_suffix):
+                    if self._language_suffix_is_chinese(sampled_suffix):
                         suffix = sampled_suffix
-            is_chinese = usable and self._is_chinese_language_suffix(suffix)
+            is_chinese = usable and self._language_suffix_is_chinese(suffix)
             tracks.append(
                 {
                     "index": stream.get("index"),

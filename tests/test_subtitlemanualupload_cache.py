@@ -406,17 +406,27 @@ def test_target_has_chinese_subtitle_checks_external_and_embedded_tracks():
 
 def test_online_download_name_prefers_archive_magic_over_filename_suffix():
     module, _, _ = load_plugin_module()
+    language = plugin_submodule(module, "subtitle_language")
+    upload_session = plugin_submodule(module, "upload_session")
     cls = module.SubtitleManualUpload
 
-    rar_named_zip = cls._normalize_online_download_name(
+    rar_named_zip = upload_session.normalize_online_download_name(
         "Spider-Man.Into.the.Spider-Verse.2018.1080p.WEB-DL.DD5.1.H264-FGT.zip",
         b"Rar!\x1a\x07\x00subtitle-data",
         {"title": "Spider-Man Into the Spider-Verse"},
+        subtitle_exts=cls._subtitle_exts,
+        archive_exts=cls._archive_exts,
+        normalize_text=language.normalize_text,
+        decode_preview_bytes=language.decode_preview_bytes,
     )
-    zip_named_unknown = cls._normalize_online_download_name(
+    zip_named_unknown = upload_session.normalize_online_download_name(
         "subtitle.bin",
         b"PK\x03\x04subtitle-data",
         {"title": "Spider-Man Into the Spider-Verse"},
+        subtitle_exts=cls._subtitle_exts,
+        archive_exts=cls._archive_exts,
+        normalize_text=language.normalize_text,
+        decode_preview_bytes=language.decode_preview_bytes,
     )
 
     assert rar_named_zip == "Spider-Man.Into.the.Spider-Verse.2018.1080p.WEB-DL.DD5.1.H264-FGT.rar"
@@ -425,12 +435,18 @@ def test_online_download_name_prefers_archive_magic_over_filename_suffix():
 
 def test_online_download_name_detects_7z_magic():
     module, _, _ = load_plugin_module()
+    language = plugin_submodule(module, "subtitle_language")
+    upload_session = plugin_submodule(module, "upload_session")
     cls = module.SubtitleManualUpload
 
-    assert cls._normalize_online_download_name(
+    assert upload_session.normalize_online_download_name(
         "download.bin",
         b"7z\xbc\xaf\x27\x1c" + b"payload",
         {"title": "Jack Reacher"},
+        subtitle_exts=cls._subtitle_exts,
+        archive_exts=cls._archive_exts,
+        normalize_text=language.normalize_text,
+        decode_preview_bytes=language.decode_preview_bytes,
     ) == "download.7z"
 
 
@@ -933,7 +949,6 @@ def test_language_suffix_supports_bilingual_codes():
     assert language.normalize_language_suffix("chi,kor") == "chi&kr"
     assert language.is_chinese_language_suffix("chi&eng") is True
     assert cls._normalize_language_suffix("zh/en") == "chi&eng"
-    assert cls._is_chinese_language_suffix("chi&eng") is True
 
 
 def test_detect_language_profile_marks_bilingual_subtitles():

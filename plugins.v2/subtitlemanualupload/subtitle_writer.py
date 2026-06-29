@@ -4,6 +4,8 @@ import shutil
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from .subtitle_language import is_chinese_language_suffix
+
 
 NormalizeText = Callable[[Any], str]
 NormalizeLanguageSuffix = Callable[[Any], str]
@@ -198,7 +200,7 @@ class SubtitleWriter:
         operation["simplified_result"] = {"enabled": False, "converted": False}
         if not owner._traditional_to_simplified:
             return
-        if not owner._is_chinese_language_suffix(operation.get("language_suffix")):
+        if not is_chinese_language_suffix(operation.get("language_suffix")):
             return
         source_path = Path(operation["write_source_path"])
         if source_path.suffix.lower() not in owner._subtitle_exts:

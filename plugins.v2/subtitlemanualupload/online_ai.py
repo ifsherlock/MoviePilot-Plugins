@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .api.online_api import download_online_results_to_uploads
 from .online_subtitle import CaptchaRequiredError
+from .subtitle_language import auto_subtitle_sort_key, is_chinese_language_suffix
 from .target_resolver import (
     auto_fill_missing_targets as fill_missing_target_ids,
     suggest_target as suggest_target_id,
@@ -41,7 +42,7 @@ class OnlineAiService:
             raw_bytes = file_path.read_bytes()
             language_profile = owner._detect_language_profile(prepared["source_name"], raw_bytes)
             suffix = language_profile["suffix"]
-            if owner._is_chinese_language_suffix(suffix):
+            if is_chinese_language_suffix(suffix):
                 continue
             items.append(
                 {
@@ -96,7 +97,7 @@ class OnlineAiService:
         except Exception:
             raw_bytes = b""
         profile = owner._detect_language_profile(prepared.get("source_name", ""), raw_bytes)
-        if owner._is_chinese_language_suffix(profile.get("suffix")):
+        if is_chinese_language_suffix(profile.get("suffix")):
             return None
         output_dir = session_dir / "ai_srt_sources"
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -172,7 +173,18 @@ class OnlineAiService:
         }
         chosen_items: List[Dict[str, Any]] = []
         used_targets = set()
-        for item in sorted(candidate_items, key=owner._auto_subtitle_sort_key):
+        for item in sorted(
+            candidate_items,
+            key=lambda candidate: auto_subtitle_sort_key(
+                candidate,
+                language_priority=list(
+                    getattr(owner, "_auto_subtitle_language_priority", None) or owner._default_auto_language_priority
+                ),
+                format_priority=list(
+                    getattr(owner, "_auto_subtitle_format_priority", None) or owner._default_auto_format_priority
+                ),
+            ),
+        ):
             target_id = owner._normalize_text(item.get("target_id"))
             if not target_id or target_id in used_targets or target_id not in target_entry_map:
                 continue
