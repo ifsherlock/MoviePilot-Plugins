@@ -986,7 +986,7 @@ class MediaTargetResolver:
         safe_int: SafeInt,
         hash_text: HashText,
         extract_episode_hint: EpisodeHint,
-        subtitle_files_for_target: SubtitleFilesForTarget,
+        subtitle_files_provider: SubtitleFilesForTarget,
         load_local_entries: Callable[..., List[Dict[str, Any]]],
         group_entries_as_media: Callable[[List[Dict[str, Any]], int], List[Dict[str, Any]]],
         tmdb_detail_for_media: Callable[[Dict[str, Any]], Dict[str, Any]],
@@ -1001,7 +1001,7 @@ class MediaTargetResolver:
         self._safe_int = safe_int
         self._hash_text = hash_text
         self._extract_episode_hint = extract_episode_hint
-        self._subtitle_files_for_target = subtitle_files_for_target
+        self._subtitle_files_provider = subtitle_files_provider
         self._load_local_entries = load_local_entries
         self._group_entries_as_media = group_entries_as_media
         self._tmdb_detail_for_media = tmdb_detail_for_media
@@ -1312,7 +1312,7 @@ class MediaTargetResolver:
         return is_stream_path(path, normalize_text=self._normalize_text, stream_exts=self._stream_exts)
 
     def target_from_entry(self, entry: Dict[str, Any]) -> Dict[str, Any]:
-        subtitles = self._subtitle_files_for_target(entry)
+        subtitles = self._subtitle_files_provider(entry)
         path = self._normalize_text(entry.get("path"))
         return {
             "id": entry.get("id"),

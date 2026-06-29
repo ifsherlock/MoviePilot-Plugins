@@ -484,7 +484,7 @@ class SubtitleWriter:
                 continue
 
             target_label = owner._target_from_entry(target_entry).get("label")
-            for subtitle in owner._subtitle_files_for_target(target_entry):
+            for subtitle in owner._subtitle_inventory().subtitle_files_for_target(target_entry):
                 subtitle_path = Path(subtitle["path"])
                 path_key = str(subtitle_path)
                 if path_key in visited_paths:
@@ -615,7 +615,7 @@ class SubtitleWriter:
         subtitle_name: str = "",
     ) -> Path:
         owner = self._owner
-        allowed_subtitles = owner._subtitle_files_for_target(target_entry)
+        allowed_subtitles = owner._subtitle_inventory().subtitle_files_for_target(target_entry)
         for subtitle in allowed_subtitles:
             subtitle_path = Path(subtitle["path"])
             if subtitle_path_raw and str(subtitle_path) == subtitle_path_raw:

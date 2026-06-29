@@ -19,7 +19,12 @@ from .compat_services import (
     install_compat_service_factories,
     install_legacy_service_delegates,
 )
-from .subtitle_language import auto_subtitle_sort_key, is_chinese_language_suffix
+from .subtitle_language import (
+    auto_subtitle_sort_key,
+    auto_target_has_chinese_subtitle as language_auto_target_has_chinese_subtitle,
+    is_chinese_language_suffix,
+    target_has_chinese_subtitle as language_target_has_chinese_subtitle,
+)
 from .subtitle_writer import (
     build_destination_name as writer_build_destination_name,
     build_write_operations as writer_build_write_operations,
@@ -128,30 +133,18 @@ class SubtitleManualUploadCompatMixin:
 
     @classmethod
     def _target_has_chinese_subtitle(cls, target: Dict[str, Any]) -> bool:
-        subtitles = target.get("subtitles") or []
-        if any(
-            cls._is_chinese_language_suffix((item or {}).get("language_suffix") or (item or {}).get("language"))
-            for item in subtitles
-            if isinstance(item, dict)
-        ):
-            return True
-        embedded_subtitles = target.get("embedded_subtitles") or []
-        return any(
-            bool((item or {}).get("is_chinese"))
-            or cls._is_chinese_language_suffix((item or {}).get("language_suffix") or (item or {}).get("language"))
-            for item in embedded_subtitles
-            if isinstance(item, dict)
+        return language_target_has_chinese_subtitle(
+            target,
+            is_chinese_language_suffix_func=cls._is_chinese_language_suffix,
         )
 
     def _auto_target_has_chinese_subtitle(self, entry: Dict[str, Any], target: Dict[str, Any]) -> bool:
-        if self._target_has_chinese_subtitle(target):
-            return True
-        embedded_subtitles = self._embedded_subtitle_tracks_for_target(entry)
-        if embedded_subtitles:
-            target["has_embedded_subtitle"] = True
-            target["embedded_subtitle_count"] = len(embedded_subtitles)
-            target["embedded_subtitles"] = embedded_subtitles
-        return self._target_has_chinese_subtitle(target)
+        return language_auto_target_has_chinese_subtitle(
+            entry,
+            target,
+            subtitle_inventory=self._subtitle_inventory(),
+            is_chinese_language_suffix_func=self._is_chinese_language_suffix,
+        )
 
     def _load_session(self, session_id: str) -> Tuple[Path, Dict[str, Any]]:
         return self._upload_session_service().load_session(session_id, normalize_text=self._normalize_text)

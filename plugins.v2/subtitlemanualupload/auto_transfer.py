@@ -10,6 +10,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from .config_schema import normalize_auto_multi_subtitle_mode
 from .online_subtitle import build_search_keywords
+from .subtitle_language import auto_target_has_chinese_subtitle as language_auto_target_has_chinese_subtitle
 
 
 @dataclass(frozen=True)
@@ -59,7 +60,12 @@ class AutoTransferCollaborators:
             normalize_online_download_name=owner._normalize_online_download_name,
             detect_language_profile=owner._detect_language_profile,
             auto_subtitle_sort_key=owner._auto_subtitle_sort_key,
-            auto_target_has_chinese_subtitle=owner._auto_target_has_chinese_subtitle,
+            auto_target_has_chinese_subtitle=lambda entry, target: language_auto_target_has_chinese_subtitle(
+                entry,
+                target,
+                subtitle_inventory=owner._subtitle_inventory(),
+                is_chinese_language_suffix_func=owner._is_chinese_language_suffix,
+            ),
             check_online_rate_limit=owner._check_online_rate_limit,
             logger=logger,
             threading_module=threading_module,

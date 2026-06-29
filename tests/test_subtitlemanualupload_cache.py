@@ -365,6 +365,32 @@ def test_entry_map_is_bounded_lru():
     assert list(plugin._entry_map.keys()) == ["b", "d"]
 
 
+def test_target_has_chinese_subtitle_checks_external_and_embedded_tracks():
+    module, _, _ = load_plugin_module()
+    subtitle_language = plugin_submodule(module, "subtitle_language")
+
+    assert subtitle_language.target_has_chinese_subtitle({"subtitles": [{"language_suffix": "chi"}]})
+    assert subtitle_language.target_has_chinese_subtitle({"embedded_subtitles": [{"language": "zh-Hant"}]})
+    assert not subtitle_language.target_has_chinese_subtitle(
+        {
+            "subtitles": [{"language_suffix": "eng"}],
+            "embedded_subtitles": [{"language": "eng"}],
+        }
+    )
+
+    target = {}
+    inventory = types.SimpleNamespace(
+        embedded_subtitle_tracks_for_target=lambda _entry: [{"language_suffix": "chi", "is_chinese": True}]
+    )
+
+    assert subtitle_language.auto_target_has_chinese_subtitle(
+        {"id": "m1"},
+        target,
+        subtitle_inventory=inventory,
+    )
+    assert target["embedded_subtitle_count"] == 1
+
+
 def test_online_download_name_prefers_archive_magic_over_filename_suffix():
     module, _, _ = load_plugin_module()
     cls = module.SubtitleManualUpload
@@ -2073,13 +2099,14 @@ def test_match_history_cache_reuses_scanned_items_until_invalidated(tmp_path):
         "persisted": False,
     }
     calls = {"count": 0}
-    original = plugin._subtitle_files_for_target
+    original_inventory = plugin._subtitle_inventory()
+    original = original_inventory.subtitle_files_for_target
 
     def counted_subtitles(entry):
         calls["count"] += 1
         return original(entry)
 
-    plugin._subtitle_files_for_target = counted_subtitles
+    plugin._subtitle_inventory = lambda: types.SimpleNamespace(subtitle_files_for_target=counted_subtitles)
 
     first = plugin._match_history_items()
     second = plugin._match_history_items()

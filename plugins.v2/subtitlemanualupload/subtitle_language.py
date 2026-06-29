@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 
 DEFAULT_AUTO_LANGUAGE_PRIORITY = ["bilingual", "chi", "cht", "eng"]
@@ -229,6 +229,44 @@ def detect_language_profile(file_name: str, raw_bytes: bytes, subtitle_exts: Ite
 
 def is_chinese_language_suffix(suffix: Any) -> bool:
     return any(part in {"chi", "cht"} for part in normalize_language_suffix(suffix).split("&"))
+
+
+def target_has_chinese_subtitle(
+    target: Dict[str, Any],
+    *,
+    is_chinese_language_suffix_func: Callable[[Any], bool] = is_chinese_language_suffix,
+) -> bool:
+    subtitles = target.get("subtitles") or []
+    if any(
+        is_chinese_language_suffix_func((item or {}).get("language_suffix") or (item or {}).get("language"))
+        for item in subtitles
+        if isinstance(item, dict)
+    ):
+        return True
+    embedded_subtitles = target.get("embedded_subtitles") or []
+    return any(
+        bool((item or {}).get("is_chinese"))
+        or is_chinese_language_suffix_func((item or {}).get("language_suffix") or (item or {}).get("language"))
+        for item in embedded_subtitles
+        if isinstance(item, dict)
+    )
+
+
+def auto_target_has_chinese_subtitle(
+    entry: Dict[str, Any],
+    target: Dict[str, Any],
+    *,
+    subtitle_inventory: Any,
+    is_chinese_language_suffix_func: Callable[[Any], bool] = is_chinese_language_suffix,
+) -> bool:
+    if target_has_chinese_subtitle(target, is_chinese_language_suffix_func=is_chinese_language_suffix_func):
+        return True
+    embedded_subtitles = subtitle_inventory.embedded_subtitle_tracks_for_target(entry)
+    if embedded_subtitles:
+        target["has_embedded_subtitle"] = True
+        target["embedded_subtitle_count"] = len(embedded_subtitles)
+        target["embedded_subtitles"] = embedded_subtitles
+    return target_has_chinese_subtitle(target, is_chinese_language_suffix_func=is_chinese_language_suffix_func)
 
 
 def auto_language_bucket(suffix: Any) -> str:

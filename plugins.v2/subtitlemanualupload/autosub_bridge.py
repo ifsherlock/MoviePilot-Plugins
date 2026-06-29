@@ -442,7 +442,7 @@ class AutoSubBridge:
         except Exception:
             candidate_resolved = str(candidate)
         allowed_paths = set()
-        for subtitle in owner._subtitle_files_for_target(entry):
+        for subtitle in owner._subtitle_inventory().subtitle_files_for_target(entry):
             if owner._normalize_text(subtitle.get("ext")).lower() != ".srt":
                 continue
             try:
