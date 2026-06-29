@@ -1,3 +1,10 @@
+"""Legacy private API compatibility shell for SubtitleManualUpload.
+
+New runtime behavior belongs in domain services or API modules; this mixin is
+kept only while existing source paths and legacy tests still reference private
+``_xxx`` helpers.
+"""
+
 from __future__ import annotations
 
 import hashlib
@@ -68,10 +75,6 @@ from .compat_services import (
     install_compat_service_factories,
     install_legacy_service_delegates,
 )
-
-
-
-
 class SubtitleManualUploadCompatMixin:
     @classmethod
     def _host_module_value(cls, name: str, default: Any) -> Any:
