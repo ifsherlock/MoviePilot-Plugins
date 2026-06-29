@@ -351,10 +351,16 @@ def test_transfer_event_entries_can_merge_into_local_cache(tmp_path):
 def test_entry_map_is_bounded_lru():
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
+    target_resolver = plugin_submodule(module, "target_resolver")
+    cache = target_resolver.TargetEntryCache(
+        plugin._entry_map,
+        max_size=plugin._entry_map_max_size,
+        normalize_text=plugin._normalize_text,
+    )
 
-    plugin._remember_targets([{"id": "a"}, {"id": "b"}, {"id": "c"}])
-    plugin._remember_targets([{"id": "b"}])
-    plugin._remember_targets([{"id": "d"}])
+    cache.remember([{"id": "a"}, {"id": "b"}, {"id": "c"}])
+    cache.remember([{"id": "b"}])
+    cache.remember([{"id": "d"}])
 
     assert list(plugin._entry_map.keys()) == ["b", "d"]
 
@@ -2154,7 +2160,17 @@ def test_subtitle_history_service_persists_and_restores_cache(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
     history_module = plugin_submodule(module, "subtitle_history")
-    history = history_module.SubtitleHistory(plugin, http_exception=module.HTTPException, logger=module.logger)
+    target_resolver = plugin_submodule(module, "target_resolver")
+    history = history_module.SubtitleHistory(
+        plugin,
+        http_exception=module.HTTPException,
+        logger=module.logger,
+        target_entry_cache=target_resolver.TargetEntryCache(
+            plugin._entry_map,
+            max_size=plugin._entry_map_max_size,
+            normalize_text=plugin._normalize_text,
+        ),
+    )
     video = tmp_path / "Movie.mkv"
     video.write_text("video", encoding="utf-8")
     target = {

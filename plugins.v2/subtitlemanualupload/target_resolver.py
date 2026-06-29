@@ -20,6 +20,50 @@ SubtitleBackupPath = Callable[[Path], Path]
 TitleAliasExtractor = Callable[[Any], List[str]]
 
 
+class TargetEntryCache:
+    def __init__(
+        self,
+        entry_map: OrderedDict[str, Dict[str, Any]],
+        *,
+        max_size: int,
+        normalize_text: NormalizeText,
+    ) -> None:
+        self._entry_map = entry_map
+        self._max_size = max_size
+        self._normalize_text = normalize_text
+
+    def remember(self, entries: List[Dict[str, Any]]) -> None:
+        for entry in entries:
+            target_id = self._normalize_text(entry.get("id"))
+            if not target_id:
+                continue
+            if target_id in self._entry_map:
+                self._entry_map.move_to_end(target_id)
+            self._entry_map[target_id] = entry
+        while len(self._entry_map) > self._max_size:
+            self._entry_map.popitem(last=False)
+
+    def clear(self) -> None:
+        self._entry_map.clear()
+
+    def prune(self, entry_is_valid: Callable[[Dict[str, Any]], bool]) -> None:
+        for target_id, entry in list(self._entry_map.items()):
+            if not entry_is_valid(entry):
+                self._entry_map.pop(target_id, None)
+
+    def get(self, target_id: str) -> Optional[Dict[str, Any]]:
+        return self._entry_map.get(self._normalize_text(target_id))
+
+    def discard(self, target_id: str) -> None:
+        self._entry_map.pop(self._normalize_text(target_id), None)
+
+    def items(self) -> List[Tuple[str, Dict[str, Any]]]:
+        return list(self._entry_map.items())
+
+    def count(self) -> int:
+        return len(self._entry_map)
+
+
 def _default_normalize_text(value: Any) -> str:
     return str(value or "").strip()
 
@@ -947,7 +991,7 @@ class MediaTargetResolver:
         group_entries_as_media: Callable[[List[Dict[str, Any]], int], List[Dict[str, Any]]],
         tmdb_detail_for_media: Callable[[Dict[str, Any]], Dict[str, Any]],
         apply_tmdb_detail: Callable[[Dict[str, Any], Dict[str, Any]], None],
-        remember_targets: Callable[[List[Dict[str, Any]]], None],
+        target_entry_cache: TargetEntryCache,
     ) -> None:
         self._settings = settings_obj
         self._meta_info_path = meta_info_path
@@ -962,7 +1006,7 @@ class MediaTargetResolver:
         self._group_entries_as_media = group_entries_as_media
         self._tmdb_detail_for_media = tmdb_detail_for_media
         self._apply_tmdb_detail = apply_tmdb_detail
-        self._remember_targets = remember_targets
+        self._target_entry_cache = target_entry_cache
 
     def media_type_text(self, value: Any) -> str:
         return media_type_text(value)
@@ -1249,7 +1293,7 @@ class MediaTargetResolver:
         if media.get("media_type") == "tv" and selected_season != "all":
             visible_entries = [entry for entry in entries if self._safe_int(entry.get("season"), 0) == selected_season]
 
-        self._remember_targets(visible_entries)
+        self._target_entry_cache.remember(visible_entries)
         targets = [self.target_from_entry(entry) for entry in visible_entries]
         if tmdb_detail:
             for target in targets:
@@ -1308,12 +1352,14 @@ class LocalMediaCatalog:
         transfer_history: Any,
         http_exception: Any,
         logger: Any,
+        target_entry_cache: TargetEntryCache,
         threading_module: Any = None,
     ) -> None:
         self._owner = owner
         self._transfer_history = transfer_history
         self._http_exception = http_exception
         self._logger = logger
+        self._target_entry_cache = target_entry_cache
         self._threading = threading_module
 
     def filter_existing_local_entries(self, entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -1340,11 +1386,7 @@ class LocalMediaCatalog:
             "media_count": media_count,
             "persisted": False,
         }
-        owner._entry_map = OrderedDict(
-            (target_id, entry)
-            for target_id, entry in (owner._entry_map or OrderedDict()).items()
-            if owner._entry_path_is_valid(entry)
-        )
+        self._target_entry_cache.prune(owner._entry_path_is_valid)
         self.reset_media_index_cache()
         owner._invalidate_match_history_cache()
         self.persist_local_cache()
@@ -1374,7 +1416,7 @@ class LocalMediaCatalog:
             "media_count": media_count,
             "persisted": False,
         }
-        owner._remember_targets(entries)
+        self._target_entry_cache.remember(entries)
         self.reset_media_index_cache()
         owner._invalidate_match_history_cache()
         self.persist_local_cache()
@@ -1420,7 +1462,7 @@ class LocalMediaCatalog:
             "media_count": media_count,
             "persisted": True,
         }
-        owner._remember_targets(owner._local_entries_cache["entries"])
+        self._target_entry_cache.remember(owner._local_entries_cache["entries"])
         self.reset_media_index_cache()
         self._logger.info(
             "[SubtitleManualUpload] 已恢复本地资源持久化缓存 entries=%s medias=%s",
@@ -1479,7 +1521,7 @@ class LocalMediaCatalog:
             "media_count": media_count,
             "persisted": False,
         }
-        owner._remember_targets(entries)
+        self._target_entry_cache.remember(entries)
         self.reset_media_index_cache()
         owner._invalidate_match_history_cache()
         self.persist_local_cache()
@@ -1518,7 +1560,7 @@ class LocalMediaCatalog:
 
     def refresh_local_cache(self) -> List[Dict[str, Any]]:
         owner = self._owner
-        owner._entry_map = OrderedDict()
+        self._target_entry_cache.clear()
         self.reset_media_index_cache()
         owner._invalidate_match_history_cache()
         owner._local_entries_cache = {"loaded_at": None, "entries": [], "media_count": 0, "persisted": False}
@@ -1549,7 +1591,7 @@ class LocalMediaCatalog:
             "entry_count": len(cache.get("entries") or []),
             "media_count": int(cache.get("media_count") or 0),
             "media_index_count": len(owner._media_index_cache or {}),
-            "target_cache_count": len(owner._entry_map or {}),
+            "target_cache_count": self._target_entry_cache.count(),
             "max_entries": owner._cache_max_entries,
         }
 
@@ -1667,11 +1709,11 @@ class LocalMediaCatalog:
         target_id_set = set(target_id_list)
         result: Dict[str, Dict[str, Any]] = {}
         for target_id in target_id_list:
-            entry = owner._entry_map.get(target_id)
+            entry = self._target_entry_cache.get(target_id)
             if entry and owner._entry_path_is_valid(entry):
                 result[target_id] = entry
             elif entry:
-                owner._entry_map.pop(target_id, None)
+                self._target_entry_cache.discard(target_id)
         missing_ids = target_id_set - set(result.keys())
         if not missing_ids:
             return result
@@ -1687,7 +1729,7 @@ class LocalMediaCatalog:
                 target_id = owner._normalize_text(entry.get("id"))
                 if target_id not in missing_ids:
                     continue
-                owner._remember_targets([entry])
+                self._target_entry_cache.remember([entry])
                 result[target_id] = entry
                 missing_ids.remove(target_id)
                 if not missing_ids:
@@ -1712,7 +1754,7 @@ class LocalMediaCatalog:
     def cached_unlocked_targets(self, locked_ids: set) -> List[Dict[str, Any]]:
         owner = self._owner
         entries: List[Dict[str, Any]] = []
-        for target_id, entry in list((owner._entry_map or OrderedDict()).items()):
+        for target_id, entry in self._target_entry_cache.items():
             if owner._normalize_text(target_id) in locked_ids:
                 continue
             if owner._entry_path_is_valid(entry):

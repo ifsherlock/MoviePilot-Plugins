@@ -13,10 +13,12 @@ class SubtitleHistory:
         *,
         http_exception: Any,
         logger: Any,
+        target_entry_cache: Any,
     ) -> None:
         self._owner = owner
         self._http_exception = http_exception
         self._logger = logger
+        self._target_entry_cache = target_entry_cache
 
     def match_history_cache_file(self) -> Path:
         return self._owner.get_data_path() / "match_history_cache.json"
@@ -82,7 +84,7 @@ class SubtitleHistory:
             "persisted": True,
         }
         for item in owner._match_history_cache["items"]:
-            owner._remember_targets([target for target in item.get("targets") or [] if isinstance(target, dict)])
+            self._target_entry_cache.remember([target for target in item.get("targets") or [] if isinstance(target, dict)])
         self._logger.info(
             "[SubtitleManualUpload] 已恢复匹配历史缓存 items=%s",
             len(owner._match_history_cache["items"]),

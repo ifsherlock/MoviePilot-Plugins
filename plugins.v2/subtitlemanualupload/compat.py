@@ -25,6 +25,7 @@ from .subtitle_writer import (
     build_write_operations as writer_build_write_operations,
 )
 from .target_resolver import (
+    TargetEntryCache,
     auto_fill_missing_targets as target_auto_fill_missing_targets,
     auto_media_for_entry as target_auto_media_for_entry,
     is_chinese_transfer_media as target_is_chinese_transfer_media,
@@ -53,14 +54,11 @@ class SubtitleManualUploadCompatMixin:
         )
 
     def _remember_targets(self, entries: List[Dict[str, Any]]) -> None:
-        for entry in entries:
-            target_id = self._normalize_text(entry.get("id"))
-            if target_id:
-                if target_id in self._entry_map:
-                    self._entry_map.move_to_end(target_id)
-                self._entry_map[target_id] = entry
-        while len(self._entry_map) > self._entry_map_max_size:
-            self._entry_map.popitem(last=False)
+        TargetEntryCache(
+            self._entry_map,
+            max_size=self._entry_map_max_size,
+            normalize_text=self._normalize_text,
+        ).remember(entries)
 
     @classmethod
     def _build_destination_name(

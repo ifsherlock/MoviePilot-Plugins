@@ -43,6 +43,7 @@ from .target_resolver import (
     MediaMetadataService,
     MediaTargetResolver,
     SubtitleInventory,
+    TargetEntryCache,
 )
 from .timeline_fixer import TimelineFixResult, check_timeline_fixer_dependencies, fix_subtitle_timeline
 from .timeline_tasks import TimelineTaskStore
@@ -233,8 +234,21 @@ def subtitle_writer(owner) -> SubtitleWriter:
     )
 
 
+def target_entry_cache(owner) -> TargetEntryCache:
+    return TargetEntryCache(
+        owner._entry_map,
+        max_size=owner._entry_map_max_size,
+        normalize_text=owner._normalize_text,
+    )
+
+
 def subtitle_history(owner) -> SubtitleHistory:
-    return SubtitleHistory(owner, http_exception=HTTPException, logger=logger)
+    return SubtitleHistory(
+        owner,
+        http_exception=HTTPException,
+        logger=logger,
+        target_entry_cache=target_entry_cache(owner),
+    )
 
 
 def autosub_bridge(owner) -> AutoSubBridge:
@@ -293,7 +307,7 @@ def target_resolver(owner) -> MediaTargetResolver:
         group_entries_as_media=owner._group_entries_as_media,
         tmdb_detail_for_media=owner._tmdb_detail_for_media,
         apply_tmdb_detail=owner._apply_tmdb_detail,
-        remember_targets=owner._remember_targets,
+        target_entry_cache=target_entry_cache(owner),
     )
 
 
@@ -303,6 +317,7 @@ def local_media_catalog(owner) -> LocalMediaCatalog:
         transfer_history=TransferHistory,
         http_exception=HTTPException,
         logger=logger,
+        target_entry_cache=target_entry_cache(owner),
         threading_module=owner._host_module_value("threading", threading),
     )
 
