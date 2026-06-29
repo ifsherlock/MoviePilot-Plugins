@@ -161,7 +161,7 @@ from .upload_session import (
 )
 from .online_ai import OnlineAiService
 from .auto_transfer import AutoTransferService
-from .compat_services import (
+from .service_factories import (
     archive_dependency_service as make_archive_dependency_service,
     auto_transfer_service as make_auto_transfer_service,
     autosub_bridge as make_autosub_bridge,
@@ -176,11 +176,10 @@ from .compat_services import (
     timeline_task_store as make_timeline_task_store,
     upload_session_service_for_path as make_upload_session_service_for_path,
 )
-from .compat import SubtitleManualUploadCompatMixin
 from .api.routes import build_api_routes
 
 
-class SubtitleManualUpload(SubtitleManualUploadCompatMixin, _PluginBase):
+class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/subtitle-match.png"
