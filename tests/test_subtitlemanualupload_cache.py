@@ -1743,8 +1743,9 @@ def test_api_search_uses_local_media_catalog_service(tmp_path):
         AssertionError("api_search should call LocalMediaCatalog directly")
     )
 
+    search_endpoint = next(route["endpoint"] for route in plugin.get_api() if route["path"] == "/search")
     response = asyncio.run(
-        plugin.api_search(FakeRequest(query_params={"media_type": "movie", "page_size": "10"}))
+        search_endpoint(FakeRequest(query_params={"media_type": "movie", "page_size": "10"}))
     )
 
     assert response["data"]["total"] == 1
@@ -1771,7 +1772,8 @@ def test_api_targets_uses_media_target_resolver_directly(tmp_path):
         AssertionError("api_targets should call MediaTargetResolver directly")
     )
 
-    response = plugin.api_targets(
+    targets_endpoint = next(route["endpoint"] for route in plugin.get_api() if route["path"] == "/targets")
+    response = targets_endpoint(
         FakeRequest(query_params={"media_type": "movie", "title": "Movie", "year": "2024"})
     )
 
@@ -2042,7 +2044,10 @@ def test_api_match_history_builds_targets_with_media_target_resolver(tmp_path):
         AssertionError("match history should build targets through MediaTargetResolver")
     )
 
-    response = plugin.api_match_history(FakeRequest(query_params={"media_type": "movie"}))
+    match_history_endpoint = next(
+        route["endpoint"] for route in plugin.get_api() if route["path"] == "/match_history"
+    )
+    response = match_history_endpoint(FakeRequest(query_params={"media_type": "movie"}))
 
     assert response["data"]["total"] == 1
     assert response["data"]["items"][0]["targets"][0]["basename"] == "Movie"

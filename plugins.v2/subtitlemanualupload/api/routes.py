@@ -4,8 +4,10 @@ from typing import Any, Dict, List
 
 
 def build_api_routes(owner: Any) -> List[Dict[str, Any]]:
+    from .catalog_api import CatalogApi
     from .status_api import StatusApi
 
+    catalog_api = CatalogApi(owner)
     status_api = StatusApi(owner)
     return [
         {
@@ -24,21 +26,21 @@ def build_api_routes(owner: Any) -> List[Dict[str, Any]]:
         },
         {
             "path": "/search",
-            "endpoint": owner.api_search,
+            "endpoint": catalog_api.search,
             "methods": ["GET"],
             "auth": "bear",
             "summary": "搜索 MoviePilot 本地资源候选",
         },
         {
             "path": "/targets",
-            "endpoint": owner.api_targets,
+            "endpoint": catalog_api.targets,
             "methods": ["GET"],
             "auth": "bear",
             "summary": "读取选中媒体的本地文件目标",
         },
         {
             "path": "/match_history",
-            "endpoint": owner.api_match_history,
+            "endpoint": catalog_api.match_history,
             "methods": ["GET"],
             "auth": "bear",
             "summary": "读取字幕匹配历史",
