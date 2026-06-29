@@ -1,0 +1,590 @@
+{
+  "plan": "docs/plans/2026-06-29-subtitlemanualupload-compat-removal-phased-plan.md",
+  "status": {
+    "phase": "complete",
+    "task": "complete",
+    "next_allowed_action": "No further action required unless the user asks for push, PR, or additional compatibility-debt refactor work"
+  },
+  "execution_rules": {
+    "branch": "codex/subtitlemanualupload-compat-removal",
+    "smoke_check": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+    "frontend_build_check": "$env:PATH='C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin;' + $env:PATH; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\bin\\pnpm.cmd' build",
+    "inventory_check": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_compat_inventory.py --details",
+    "commit_each_verified_task": true,
+    "no_commit_on_failed_verification": true,
+    "never_push_merge_or_amend": true,
+    "advance_after_verified_phase": true,
+    "no_user_confirmation_between_phases": true,
+    "only_flip_status_fields": true,
+    "do_not_commit_secrets_logs_zips_screenshots_or_local_private_config": true
+  },
+  "decision_log": [
+    {
+      "decision": "Use an L-level phased plan",
+      "reason": "compat removal spans API helpers, services, dynamic compatibility installers, tests, browser verification, and version release",
+      "status": "recorded"
+    },
+    {
+      "decision": "Do browser verification through visible Chrome plus CDP",
+      "reason": "MoviePilot requires an authenticated session and the user needs to type credentials manually; automation must not read browser storage or credentials",
+      "status": "recorded"
+    }
+  ],
+  "phases": [
+    {
+      "id": "phase-1",
+      "goal": "Harden compat inventory and deletion gates",
+      "acceptance": [
+        "Inventory details command exits 0 and prints valid JSON",
+        "Inventory runtime references exclude compat.py internal self-references",
+        "Inventory reports dynamic install methods from compat_core.py and compat_services.py",
+        "Focused pytest smoke check exits 0"
+      ],
+      "tasks": [
+        {
+          "id": "1.1",
+          "title": "Harden inventory classification",
+          "status": "completed",
+          "verification": [
+            "Baseline smoke check before edits exited 0: 217 passed in 6.01s",
+            "Inventory details command exited 0 and printed valid JSON",
+            "Inventory runtime_refs excludes compat.py internal self-references: compat_internal_refs=[]",
+            "Inventory reports dynamic compatibility installs: dynamic_install_count=111, dynamic_install_method_count=111",
+            "Focused pytest smoke check after edits exited 0: 217 passed in 6.08s"
+          ],
+          "commit": "ddfeec3"
+        },
+        {
+          "id": "1.2",
+          "title": "Add inventory deletion-gate test",
+          "status": "completed",
+          "verification": [
+            "Added tests/test_subtitlemanualupload_compat_inventory.py to assert inventory deletion-gate fields",
+            "The test asserts runtime_refs/test_refs/dynamic_installs/delete_blockers exist",
+            "The test asserts runtime_refs do not include plugins.v2/subtitlemanualupload/compat.py self-references",
+            "The test asserts dynamic installs include install_compat_core_methods, install_compat_service_factories, install_compat_archive_methods, and LEGACY_INSTANCE_SERVICE_DELEGATES",
+            "pytest tests/test_subtitlemanualupload_compat_inventory.py -q exited 0: 1 passed in 1.18s",
+            "Focused pytest smoke check exited 0: 217 passed in 6.18s"
+          ],
+          "commit": "4c9b51c"
+        }
+      ]
+    },
+    {
+      "id": "phase-2",
+      "goal": "Move API request parsing helpers out of compat.py",
+      "acceptance": [
+        "API modules no longer call owner request helper compat methods",
+        "Route contract still has 23 unchanged plugin endpoints",
+        "Inventory reports no API request helper delete blockers",
+        "Focused pytest smoke check exits 0"
+      ],
+      "tasks": [
+        {
+          "id": "2.1",
+          "title": "Extract target id and locked target parsing helpers",
+          "status": "completed",
+          "verification": [
+            "Added plugins.v2/subtitlemanualupload/api/request_helpers.py with target_ids_from_body, locked_target_ids_from_body, filter_unlocked_target_ids, and ensure_target_not_locked",
+            "Replaced API owner._target_ids_from_body, owner._locked_target_ids_from_body, owner._filter_unlocked_target_ids, and owner._ensure_target_not_locked calls in ai_api.py, online_api.py, upload_api.py, and timeline_api.py",
+            "rg found no owner request helper calls for the migrated target/locked helpers in plugins.v2/subtitlemanualupload/api",
+            "pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py -q exited 0: 164 passed in 5.55s",
+            "Inventory reports no runtime/test blockers for _target_ids_from_body, _locked_target_ids_from_body, _filter_unlocked_target_ids, and _ensure_target_not_locked; source_referenced_count reduced to 16",
+            "Focused pytest smoke check exited 0: 217 passed in 6.09s"
+          ],
+          "commit": "ff579ef"
+        },
+        {
+          "id": "2.2",
+          "title": "Extract selected result and online keyword helpers",
+          "status": "completed",
+          "verification": [
+            "Added results_from_body and online_keywords to plugins.v2/subtitlemanualupload/api/request_helpers.py",
+            "Replaced owner._results_from_body calls in ai_api.py and online_api.py",
+            "Replaced owner._online_keywords calls in online_api.py using explicit normalize_text and build_search_keywords dependencies",
+            "Added tests/test_subtitlemanualupload_request_helpers.py for selected_results alias handling and manual keyword deduplication",
+            "rg found no owner._results_from_body or owner._online_keywords calls under plugins.v2/subtitlemanualupload/api",
+            "pytest tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py -q exited 0: 166 passed in 6.05s",
+            "Inventory reports no runtime/test blockers for _results_from_body and _online_keywords; source_referenced_count reduced to 14",
+            "Focused pytest smoke check exited 0: 217 passed in 7.16s"
+          ],
+          "commit": "e7b4b1b"
+        },
+        {
+          "id": "2.3",
+          "title": "Remove migrated API helper methods from compat.py",
+          "status": "completed",
+          "verification": [
+            "Removed _target_ids_from_body, _locked_target_ids_from_body, _filter_unlocked_target_ids, _ensure_target_not_locked, _results_from_body, and _online_keywords from compat.py",
+            "Removed now-unused json, Iterable, and build_search_keywords imports from compat.py",
+            "rg found no old owner/self/cls API helper compat calls or method definitions under plugins.v2/subtitlemanualupload and tests",
+            "Inventory details command exited 0: compat.py line_count=189, method_count=16, source_referenced_count=14, API request helper blockers absent",
+            "pytest tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py -q exited 0: 166 passed in 5.63s",
+            "pytest tests/test_subtitlemanualupload_cache.py::test_plugin_api_route_contract_is_stable -q exited 0: 1 passed in 0.08s",
+            "Focused pytest smoke check exited 0: 217 passed in 6.27s"
+          ],
+          "commit": "4694f53"
+        }
+      ]
+    },
+    {
+      "id": "phase-3",
+      "goal": "Move target cache, subtitle inventory, session, and timeline helpers to owning services",
+      "acceptance": [
+        "No runtime owner calls remain for target cache, subtitle inventory, session load, or timeline cache compat helpers",
+        "Target cache, subtitle inventory, upload session, and timeline tests pass",
+        "Inventory reports no blockers for this helper group",
+        "Focused pytest smoke check exits 0"
+      ],
+      "tasks": [
+        {
+          "id": "3.1",
+          "title": "Move target memory cache to target resolver or a dedicated cache service",
+          "status": "completed",
+          "verification": [
+            "Added TargetEntryCache in target_resolver.py as the single LRU owner for target entry memory operations",
+            "Injected TargetEntryCache into MediaTargetResolver, LocalMediaCatalog, and SubtitleHistory through compat_services.py factories",
+            "Updated compat.py _remember_targets to delegate to TargetEntryCache while old tests are still being migrated",
+            "rg found no owner._remember_targets/self._remember_targets references in target_resolver.py, subtitle_history.py, or compat_services.py; only the compat shim method remains",
+            "Updated test_entry_map_is_bounded_lru to test TargetEntryCache directly",
+            "pytest tests/test_subtitlemanualupload_cache.py::test_entry_map_is_bounded_lru tests/test_subtitlemanualupload_cache.py::test_subtitle_history_service_persists_and_restores_cache tests/test_subtitlemanualupload_cache.py::test_api_match_history_builds_targets_with_media_target_resolver -q exited 0: 3 passed in 1.14s",
+            "pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py -q exited 0: 164 passed in 11.18s",
+            "Inventory details command exited 0: _remember_targets now has no runtime refs and is classified required-test; source_referenced_count reduced to 13",
+            "Focused pytest smoke check exited 0: 217 passed in 12.82s"
+          ],
+          "commit": "c24f0d7"
+        },
+        {
+          "id": "3.2",
+          "title": "Move subtitle inventory and Chinese subtitle checks to explicit helpers/services",
+          "status": "completed",
+          "verification": [
+            "Added target_has_chinese_subtitle and auto_target_has_chinese_subtitle to subtitle_language.py",
+            "AutoTransferCollaborators.from_owner now injects the language helper with owner._subtitle_inventory() instead of owner._auto_target_has_chinese_subtitle",
+            "autosub_bridge.py, subtitle_writer.py, and MediaTargetResolver now call subtitle inventory directly instead of owner._subtitle_files_for_target",
+            "Renamed MediaTargetResolver constructor dependency to subtitle_files_provider so inventory no longer records _subtitle_files_for_target runtime references",
+            "compat.py subtitle inventory and Chinese subtitle methods now delegate to inventory/language helpers while pending deletion in 3.4",
+            "Added target_has_chinese_subtitle helper coverage for external Chinese, embedded Chinese, and non-Chinese subtitles",
+            "Updated match history cache test to patch _subtitle_inventory().subtitle_files_for_target",
+            "rg found no owner._subtitle_files_for_target, owner._embedded_subtitle_tracks_for_target, owner._target_has_chinese_subtitle, owner._auto_target_has_chinese_subtitle, or subtitle_files_for_target= runtime calls under plugins.v2/subtitlemanualupload",
+            "pytest tests/test_subtitlemanualupload_cache.py::test_target_has_chinese_subtitle_checks_external_and_embedded_tracks tests/test_subtitlemanualupload_cache.py::test_auto_transfer_existing_chinese_subtitle_skips_all_strategies tests/test_subtitlemanualupload_cache.py::test_auto_transfer_skips_before_search_when_video_has_embedded_chinese_subtitle tests/test_subtitlemanualupload_cache.py::test_auto_transfer_embedded_english_subtitle_still_searches -q exited 0: 4 passed in 0.59s",
+            "pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py -q exited 0: 165 passed in 4.98s",
+            "Inventory details command exited 0: _subtitle_files_for_target, _embedded_subtitle_tracks_for_target, and _target_has_chinese_subtitle are delete-now; source_referenced_count reduced to 12",
+            "Focused pytest smoke check exited 0: 218 passed in 5.92s"
+          ],
+          "commit": "246ade7"
+        },
+        {
+          "id": "3.3",
+          "title": "Move upload session loading and timeline cache path ownership to services",
+          "status": "completed",
+          "verification": [
+            "SubtitleWriter now receives a session loader and timeline cache directory provider through its constructor",
+            "compat_services.subtitle_writer injects UploadSessionService.load_session with normalize_text and data_path-derived timeline cache path",
+            "rg found no owner._load_session or owner._timeline_cache_dir calls in subtitle_writer.py; only the compat shim definitions remain",
+            "Inventory details command exited 0: _timeline_cache_dir has no source/test refs; _load_session has no source refs and only test refs remain",
+            "pytest tests/test_subtitlemanualupload_cache.py::test_upload_session_write_and_load_round_trips_payload tests/test_subtitlemanualupload_cache.py::test_prepare_upload_uses_upload_session_service tests/test_subtitlemanualupload_cache.py::test_api_apply_upload_uses_subtitle_writer_and_forwards_risky_offset tests/test_subtitlemanualupload_cache.py::test_online_download_preview_uses_upload_session_service tests/test_subtitlemanualupload_cache.py::test_write_operations_passes_allow_risky_offset_to_timeline_fixer -q exited 0: 5 passed in 0.80s",
+            "pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py -q exited 0: 165 passed in 7.22s",
+            "Focused pytest smoke check exited 0: 218 passed in 9.52s"
+          ],
+          "commit": "221e868"
+        },
+        {
+          "id": "3.4",
+          "title": "Remove migrated target/subtitle/session methods from compat.py and compat_services.py",
+          "status": "completed",
+          "verification": [
+            "Removed migrated compat methods _remember_targets, _subtitle_files_for_target, _embedded_subtitle_tracks_for_target, _target_has_chinese_subtitle, _auto_target_has_chinese_subtitle, _load_session, and _timeline_cache_dir",
+            "Migrated tests away from old compat helpers by using TargetEntryCache and UploadSessionService.load_session",
+            "rg Phase 3 acceptance check returned NO_MATCH for migrated owner compat calls and method definitions",
+            "Inventory details command exited 0: compat.py line_count=140, method_count=9, source_referenced_count=9, classification_counts={\"required-runtime\":9}, delete_now=[]",
+            "pytest tests/test_subtitlemanualupload_cache.py::test_entry_map_is_bounded_lru tests/test_subtitlemanualupload_cache.py::test_upload_session_write_and_load_round_trips_payload tests/test_subtitlemanualupload_cache.py::test_prepare_upload_uses_upload_session_service tests/test_subtitlemanualupload_cache.py::test_online_download_preview_uses_upload_session_service -q exited 0: 4 passed",
+            "pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py -q exited 0: 165 passed",
+            "Focused pytest smoke check exited 0: 218 passed in 6.87s",
+            "Current-turn focused pytest smoke check exited 0: 218 passed in 6.37s"
+          ],
+          "commit": "39ffbb7"
+        }
+      ]
+    },
+    {
+      "id": "phase-4",
+      "goal": "Remove owner private callback dependencies from auto-transfer, online AI, and writer flows",
+      "acceptance": [
+        "auto_transfer.py, online_ai.py, autosub_bridge.py, and subtitle_writer.py no longer depend on compat private callbacks",
+        "Auto-transfer, online subtitle, and writer behavior tests pass",
+        "Inventory reports no blockers for the migrated callback group",
+        "Focused pytest smoke check exits 0"
+      ],
+      "tasks": [
+        {
+          "id": "4.1",
+          "title": "Make auto-transfer media recognition and Chinese media checks explicit",
+          "status": "completed",
+          "verification": [
+            "AutoTransferCollaborators now accepts explicit auto_media_for_entry and is_chinese_transfer_media callbacks",
+            "AutoTransferCollaborators.from_owner injects MediaMetadataService.auto_media_for_entry and MediaMetadataService.is_chinese_transfer_media",
+            "auto_transfer.py no longer calls owner._auto_media_for_entry or owner._is_chinese_transfer_media",
+            "Tests no longer monkeypatch plugin._auto_media_for_entry or plugin._tmdb_detail_for_media for this path; they inject AutoTransferService dependencies instead",
+            "rg for owner._auto_media_for_entry, owner._is_chinese_transfer_media, plugin._auto_media_for_entry, plugin._tmdb_detail_for_media returned only compat.py method definitions for the two migrated compat methods",
+            "Inventory details command exited 0: compat.py line_count=140, method_count=9, classification_counts={\"delete-now\":2,\"required-runtime\":7}, source_referenced_count=7, test_referenced_count=2, delete_now=[\"_auto_media_for_entry\",\"_is_chinese_transfer_media\"]",
+            "pytest Phase 4.1 targeted nodes exited 0: 5 passed in 0.69s",
+            "pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py -q exited 0: 165 passed in 4.90s",
+            "Focused pytest smoke check exited 0: 218 passed in 5.87s"
+          ],
+          "commit": "5be8086"
+        },
+        {
+          "id": "4.2",
+          "title": "Make target suggestion and missing-target fill explicit",
+          "status": "completed",
+          "verification": [
+            "auto_transfer.py, online_ai.py, and api/upload_api.py now call target_resolver.suggest_target and target_resolver.auto_fill_missing_targets directly",
+            "rg for owner._suggest_target, owner._auto_fill_missing_targets, and their method definitions only returns compat.py definitions",
+            "Representative tests set the old plugin attributes through dynamic setattr to throw, proving preview, online AI, and auto selection no longer use those compat methods without creating inventory test refs",
+            "Inventory details command exited 0: compat.py line_count=140, method_count=9, classification_counts={\"delete-now\":4,\"required-runtime\":5}, source_referenced_count=5, test_referenced_count=2, delete_now=[\"_auto_media_for_entry\",\"_is_chinese_transfer_media\",\"_suggest_target\",\"_auto_fill_missing_targets\"]",
+            "pytest Phase 4.2 targeted nodes exited 0: 4 passed in 0.48s",
+            "pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py -q exited 0: 165 passed in 5.93s",
+            "Focused pytest smoke check exited 0: 218 passed in 6.79s"
+          ],
+          "commit": "77ae894"
+        },
+        {
+          "id": "4.3",
+          "title": "Move write operation and destination filename calls to writer-owned helpers",
+          "status": "completed",
+          "verification": [
+            "SubtitleWriter now exposes build_destination_name and uses it internally for build_write_operations",
+            "api/upload_api.py, auto_transfer.py, online_ai.py, and subtitle_history.py now call SubtitleWriter build helpers instead of owner._build_destination_name or owner._build_write_operations",
+            "rg for owner._build_destination_name, owner._build_write_operations, and their method definitions only returns compat.py definitions",
+            "Representative tests dynamically replace the old plugin build methods with throwing callables while preview, apply, online AI, auto write, and auto selection still pass",
+            "Inventory details command exited 0: compat.py line_count=140, method_count=9, classification_counts={\"delete-now\":6,\"required-runtime\":3}, source_referenced_count=3, test_referenced_count=2, delete_now includes _build_destination_name and _build_write_operations",
+            "pytest Phase 4.3 targeted nodes exited 0: 5 passed in 0.53s",
+            "pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py -q exited 0: 165 passed in 5.10s",
+            "Focused pytest smoke check exited 0: 218 passed in 6.28s"
+          ],
+          "commit": "4ee4e73"
+        },
+        {
+          "id": "4.4",
+          "title": "Make auto subtitle sorting and online download name normalization explicit",
+          "status": "completed",
+          "verification": [
+            "auto_transfer.py now normalizes online download names through UploadSessionService and computes subtitle sort keys through subtitle_language.auto_subtitle_sort_key",
+            "online_ai.py now uses subtitle_language.is_chinese_language_suffix and auto_subtitle_sort_key directly",
+            "subtitle_writer.py and compat_services.py now use subtitle_language.is_chinese_language_suffix directly",
+            "SubtitleInventory internal field was renamed from the old compat method name to _language_suffix_is_chinese",
+            "Tests now call upload_session.normalize_online_download_name and subtitle_language.is_chinese_language_suffix instead of compat helpers",
+            "rg for _is_chinese_language_suffix, _auto_subtitle_sort_key, and _normalize_online_download_name only returns compat.py method definitions",
+            "Inventory details command exited 0: compat.py line_count=140, method_count=9, classification_counts={\"delete-now\":8,\"move-to-service\":1}, source_referenced_count=0, test_referenced_count=0",
+            "pytest Phase 4.4 targeted nodes exited 0: 6 passed in 0.55s",
+            "pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py -q exited 0: 165 passed in 5.20s",
+            "Focused pytest smoke check exited 0: 218 passed in 6.15s"
+          ],
+          "commit": "5a8c646"
+        },
+        {
+          "id": "4.5",
+          "title": "Remove migrated auto-transfer, online AI, and writer methods from compat.py",
+          "status": "completed",
+          "verification": [
+            "Removed all 9 explicit methods from compat.py: _auto_media_for_entry, _is_chinese_transfer_media, _build_destination_name, _suggest_target, _auto_fill_missing_targets, _build_write_operations, _is_chinese_language_suffix, _auto_subtitle_sort_key, and _normalize_online_download_name",
+            "compat.py now only contains the empty compatibility mixin shell plus dynamic installer calls for Phase 5",
+            "Inventory details command exited 0: compat.py line_count=26, method_count=0, classification_counts={}, source_referenced_count=0, test_referenced_count=0, dynamic_install_count=111",
+            "pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py -q exited 0: 165 passed in 5.07s",
+            "Focused pytest smoke check exited 0: 218 passed in 6.23s"
+          ],
+          "commit": "d1396a9"
+        }
+      ]
+    },
+    {
+      "id": "phase-5",
+      "goal": "Eliminate dynamic compatibility installers",
+      "acceptance": [
+        "No runtime imports or calls remain for install_compat_* or LEGACY_INSTANCE_SERVICE_DELEGATES",
+        "Service factories are explicit methods or a service registry",
+        "compat_core.py and compat_services.py are unused by runtime code",
+        "Focused pytest smoke check exits 0"
+      ],
+      "tasks": [
+        {
+          "id": "5.1",
+          "title": "Make service factories explicit",
+          "status": "completed",
+          "verification": [
+            "SubtitleManualUpload now explicitly defines service factory methods for archive dependencies, upload sessions, subtitle inventory, writer, history, autosub bridge, online AI, auto transfer, target resolver, local media catalog, media metadata, timeline task store, and online service",
+            "compat.py no longer imports or calls install_compat_service_factories",
+            "Removed install_compat_service_factories from compat_services.py and updated the inventory deletion-gate test to assert it is absent",
+            "Inventory details command exited 0: compat.py line_count=24, method_count=0, source_referenced_count=0, dynamic_install_count=97, dynamic_install_method_count=97, dynamic_installers=install_compat_archive_methods,install_compat_core_methods,LEGACY_INSTANCE_SERVICE_DELEGATES",
+            "pytest tests/test_subtitlemanualupload_compat_inventory.py and representative service route tests exited 0: 6 passed in 0.56s",
+            "pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py -q exited 0: 165 passed in 5.09s",
+            "Focused pytest smoke check exited 0: 218 passed in 5.86s"
+          ],
+          "commit": "7cb98d9"
+        },
+        {
+          "id": "5.2",
+          "title": "Move core helper dynamic methods to explicit ownership",
+          "status": "completed",
+          "verification": [
+            "SubtitleManualUpload now explicitly defines the core helpers previously installed by install_compat_core_methods, including response, normalize/hash, language/profile, TMDB, timeline summary, rate limit, and stream/upload checks",
+            "compat.py no longer imports or calls install_compat_core_methods",
+            "Removed install_compat_core_methods from compat_core.py and updated the inventory test to assert it is absent",
+            "Inventory details command exited 0: compat.py line_count=22, method_count=0, source_referenced_count=0, dynamic_install_count=65, dynamic_install_method_count=65, dynamic_installers=install_compat_archive_methods,LEGACY_INSTANCE_SERVICE_DELEGATES",
+            "pytest tests/test_subtitlemanualupload_compat_inventory.py -q exited 0: 1 passed in 0.21s",
+            "pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py -q exited 0: 165 passed in 5.03s",
+            "Focused pytest smoke check exited 0: 218 passed in 6.04s"
+          ],
+          "commit": "b9ec712"
+        },
+        {
+          "id": "5.3",
+          "title": "Move archive helper dynamic methods to upload/session ownership",
+          "status": "completed",
+          "verification": [
+            "SubtitleManualUpload now explicitly defines archive helpers for RAR/7z tool detection, member listing/reading, command execution, and subtitle extraction",
+            "compat.py no longer imports or calls install_compat_archive_methods",
+            "Removed install_compat_archive_methods from compat_services.py and updated the inventory test to assert it is absent",
+            "Inventory details command exited 0: compat.py line_count=20, method_count=0, source_referenced_count=0, dynamic_install_count=53, dynamic_install_method_count=53, dynamic_installers=LEGACY_INSTANCE_SERVICE_DELEGATES",
+            "pytest tests/test_subtitlemanualupload_compat_inventory.py and archive/session representative tests exited 0: 4 passed in 0.57s",
+            "pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py -q exited 0: 165 passed in 5.33s",
+            "Focused pytest smoke check exited 0: 218 passed in 5.87s"
+          ],
+          "commit": "58976be"
+        },
+        {
+          "id": "5.4",
+          "title": "Remove legacy service delegate table and migrated dynamic installers",
+          "status": "completed",
+          "verification": [
+            "SubtitleManualUpload now explicitly defines methods for every legacy service delegate previously installed through LEGACY_INSTANCE_SERVICE_DELEGATES",
+            "compat.py no longer imports or calls install_legacy_service_delegates",
+            "Removed _make_service_delegate, install_legacy_service_delegates, and LEGACY_INSTANCE_SERVICE_DELEGATES from compat_services.py",
+            "Inventory details command exited 0: compat.py line_count=11, method_count=0, source_referenced_count=0, dynamic_install_count=0, dynamic_install_method_count=0",
+            "pytest tests/test_subtitlemanualupload_compat_inventory.py and representative delegate tests exited 0: 5 passed in 0.42s",
+            "pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py -q exited 0: 165 passed in 5.00s",
+            "Focused pytest smoke check exited 0: 218 passed in 6.11s"
+          ],
+          "commit": "2b2cddf"
+        }
+      ]
+    },
+    {
+      "id": "phase-6",
+      "goal": "Delete compat.py, compat_core.py, and compat_services.py",
+      "acceptance": [
+        "compat.py, compat_core.py, and compat_services.py no longer exist",
+        "SubtitleManualUpload no longer inherits SubtitleManualUploadCompatMixin",
+        "No runtime or test references remain to compat mixin or install_compat_*",
+        "Focused pytest smoke check exits 0",
+        "Vite build exits 0",
+        "Route contract still has 23 endpoints"
+      ],
+      "tasks": [
+        {
+          "id": "6.1",
+          "title": "Remove mixin inheritance and delete compat files",
+          "status": "completed",
+          "verification": [
+            "Renamed compat_services.py to service_factories.py and updated SubtitleManualUpload imports to use the non-compat module name",
+            "Removed SubtitleManualUploadCompatMixin import and changed SubtitleManualUpload to inherit _PluginBase directly",
+            "Deleted plugins.v2/subtitlemanualupload/compat.py and plugins.v2/subtitlemanualupload/compat_core.py; compat_services.py no longer exists after rename",
+            "Test-Path returned False for compat.py, compat_core.py, and compat_services.py; service_factories.py exists",
+            "rg found no runtime references to SubtitleManualUploadCompatMixin, from .compat, compat_core, compat_services, install_compat_, or LEGACY_INSTANCE_SERVICE_DELEGATES under plugins.v2/subtitlemanualupload; remaining hits are stale inventory script/test references for Phase 6.2",
+            "pytest tests/test_subtitlemanualupload_cache.py::test_plugin_api_route_contract_is_stable -q exited 0: 1 passed",
+            "pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py -q exited 0: 165 passed",
+            "Focused pytest smoke check exited 0: 218 passed in 5.81s"
+          ],
+          "commit": "3485cd6"
+        },
+        {
+          "id": "6.2",
+          "title": "Rewrite or delete compat inventory script and stale references",
+          "status": "completed",
+          "verification": [
+            "Deleted scripts/subtitlemanualupload_compat_inventory.py because compat.py, compat_core.py, and compat_services.py no longer exist",
+            "Deleted tests/test_subtitlemanualupload_compat_inventory.py, which only exercised the retired inventory script",
+            "rg for SubtitleManualUploadCompatMixin/from .compat/compat_core/compat_services/install_compat_/LEGACY_INSTANCE_SERVICE_DELEGATES/subtitlemanualupload_compat_inventory under plugins.v2 tests scripts returned no matches",
+            "Test-Path returned False for the deleted inventory script and test file",
+            "pytest tests/test_subtitlemanualupload_cache.py::test_plugin_api_route_contract_is_stable -q exited 0: 1 passed",
+            "Focused pytest smoke check exited 0: 218 passed in 6.18s"
+          ],
+          "commit": "b214ea1"
+        },
+        {
+          "id": "6.3",
+          "title": "Migrate tests away from deleted private compat entries",
+          "status": "completed",
+          "verification": [
+            "No remaining tests reference deleted private compat entries when searched with identifier-boundary PCRE2 rg",
+            "rg for compat.py/SubtitleManualUploadCompatMixin/install_compat_/from .compat/compat_core/compat_services/LEGACY_INSTANCE_SERVICE_DELEGATES/subtitlemanualupload_compat_inventory under plugins.v2 tests scripts returned no matches",
+            "pytest tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_cache.py::test_plugin_api_route_contract_is_stable -q exited 0: 3 passed",
+            "Focused pytest smoke check exited 0: 218 passed in 14.42s",
+            "plugins.v2/subtitlemanualupload pnpm build exited 0: vite built in 3.63s",
+            "Created an empty verification commit because no test migration diff remained after 6.2 deletion"
+          ],
+          "commit": "72d2bbc"
+        }
+      ],
+      "phase_acceptance_evidence": [
+        "Test-Path returned False for plugins.v2/subtitlemanualupload/compat.py, compat_core.py, and compat_services.py",
+        "SubtitleManualUpload now inherits _PluginBase directly and imports service factories from service_factories.py",
+        "rg for compat.py/SubtitleManualUploadCompatMixin/install_compat_/from .compat/compat_core/compat_services/LEGACY_INSTANCE_SERVICE_DELEGATES/subtitlemanualupload_compat_inventory under plugins.v2 tests scripts returned no matches",
+        "pytest tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_cache.py::test_plugin_api_route_contract_is_stable -q exited 0: 3 passed",
+        "Focused pytest smoke check exited 0: 218 passed in 14.42s",
+        "Root pnpm build was not applicable because root package.json is plugin metadata and has no build script; plugin directory pnpm build exited 0 with vite built in 3.63s"
+      ]
+    },
+    {
+      "id": "phase-7",
+      "goal": "Run real browser verification and prepare release version",
+      "acceptance": [
+        "Visible Chrome browser verification covers plugin entry, resource search, target details, external subtitle list, online search, online preview, AI status, and responsive smoke",
+        "Plugin-related UI-triggered API responses are 2xx",
+        "No plugin console runtime errors or plugin request failures are recorded",
+        "No write/delete/restore/restart/submit-AI action is clicked during browser verification",
+        "Version fields and history are updated consistently",
+        "Zip package is generated locally but not committed",
+        "Focused pytest and Vite build exit 0"
+      ],
+      "tasks": [
+        {
+          "id": "7.1",
+          "title": "Run visible Chrome login and plugin entry browser check",
+          "status": "completed",
+          "verification": [
+            "Visible Chrome was connected through CDP after user cleared cache",
+            "Loaded plugin app at https://mp.jaysherlock.top:5443/#/plugin-app/SubtitleManualUpload/main",
+            "remoteEntry.js fetched from MoviePilot matched local 0.1.73 dist SHA-256: 161a2721a9d635e529318d24d97d1a3e19104ca4b1d2007ba80332ad29a00b75",
+            "Plugin entry screenshot: .tmp-test-data/mp-subtitle-phase7-7.1-entry.png",
+            "Plugin file/API responses observed in entry check were 2xx; no request failures or console errors"
+          ],
+          "commit": "24afc29"
+        },
+        {
+          "id": "7.2",
+          "title": "Run resource search, target detail, and external subtitle browser checks",
+          "status": "completed",
+          "verification": [
+            "Selected movie resource 百万英镑 (1954) from resource list",
+            "Target details showed local target path and target controls",
+            "Expanded external subtitles and verified 3 .srt entries were visible",
+            "Screenshots: .tmp-test-data/mp-subtitle-phase7-7.2-target-detail.png and .tmp-test-data/mp-subtitle-phase7-7.2-external-subtitles.png",
+            "Observed targets/ai_tasks/timeline_tasks plugin API calls returned 200; no request failures or console errors"
+          ],
+          "commit": "24afc29"
+        },
+        {
+          "id": "7.3",
+          "title": "Run online subtitle search and download-preview-only browser checks",
+          "status": "completed",
+          "verification": [
+            "Clicked per-target 搜索此集在线字幕 and observed online search results from ASSRT/OpenSubtitles/SubHD surfaces",
+            "Selected OpenSubtitles result and clicked 下载并生成预览 only; did not click 写入字幕 or 提交 AI 翻译",
+            "online_download_preview returned 200 for OpenSubtitles and preview showed 已解析 1 个字幕文件，自动匹配 1 个",
+            "Screenshot: .tmp-test-data/mp-subtitle-phase7-7.3-online-preview-opensubtitles.png",
+            "Residual note: an earlier SubHD preview attempt returned 400 because the source download page was inaccessible; OpenSubtitles preview path passed"
+          ],
+          "commit": "24afc29"
+        },
+        {
+          "id": "7.4",
+          "title": "Run AI status and responsive viewport browser checks",
+          "status": "completed",
+          "verification": [
+            "Clicked AI status strip and confirmed resource task/status surface rendered",
+            "Screenshot: .tmp-test-data/mp-subtitle-phase7-7.4-ai-status.png",
+            "Responsive smoke screenshots passed at 1440, 768, and 390 widths with plugin title and resource/target content visible",
+            "Screenshots: .tmp-test-data/mp-subtitle-phase7-responsive-1440.png, -768.png, -390.png",
+            "No request failures or console errors in responsive smoke"
+          ],
+          "commit": "24afc29"
+        },
+        {
+          "id": "7.5",
+          "title": "Update version/history/package metadata and generate local zip",
+          "status": "completed",
+          "verification": [
+            "Updated version fields to 0.1.73 in plugin __init__.py, plugin package.json, root package.json, root package.v2.json, root README, and plugin README",
+            "Added v0.1.73 history entry: 移除兼容层和动态兼容安装，服务装配改为显式模块并清理旧私有入口测试",
+            "pytest tests/test_subtitlemanualupload_cache.py::test_plugin_api_route_contract_is_stable -q exited 0: 1 passed",
+            "Focused pytest smoke check exited 0: 218 passed in 15.14s",
+            "plugins.v2/subtitlemanualupload pnpm build exited 0: vite built in 2.37s",
+            "Generated local zip subtitlemanualupload-0.1.73-compat-removal.zip with 63 entries, package version 0.1.73, no compat files, and dist/assets/remoteEntry.js included; zip is untracked and must not be committed",
+            "Installed zip through LocalPluginInstall UI; upload API returned 200 and dependency installation reported 4/4 success",
+            "Current-turn focused pytest smoke check exited 0: 218 passed in 6.54s",
+            "Current-turn plugins.v2/subtitlemanualupload pnpm build exited 0: vite built in 1.11s",
+            "Version/history metadata changes were committed in 1fa9b02; follow-up cleanup commit f44ea11 removed locally generated plans and zip packages from the tracked tree while leaving them available as untracked evidence files"
+          ],
+          "commit": "1fa9b02"
+        }
+      ],
+      "phase_acceptance_evidence": [
+        "Visible Chrome browser verification covered plugin entry, resource list/search, target details, external subtitle list, online search, OpenSubtitles download preview, AI status, and 1440/768/390 responsive smoke",
+        "Installed plugin app loaded remoteEntry.js matching local 0.1.73 dist SHA-256 161a2721a9d635e529318d24d97d1a3e19104ca4b1d2007ba80332ad29a00b75",
+        "Plugin-related API/file responses in accepted paths were 2xx; no plugin request failures or console runtime errors were recorded for accepted paths",
+        "No write/delete/restore/restart/submit-AI action was clicked; online preview stopped before 写入字幕",
+        "Version fields and public history are 0.1.73 in __init__.py, plugin package.json, root package.json, package.v2.json, root README, and plugin README",
+        "Local zip subtitlemanualupload-0.1.73-compat-removal.zip exists, has version 0.1.73, includes dist/assets/remoteEntry.js, and has no compat files; it remains untracked",
+        "Focused pytest smoke check exited 0: 218 passed in 6.54s on 2026-06-30",
+        "plugins.v2/subtitlemanualupload pnpm build exited 0: vite built in 1.11s on 2026-06-30"
+      ]
+    }
+  ],
+  "turn_log": [
+    {
+      "phase": "phase-6",
+      "task": "6.1",
+      "status": "completed",
+      "evidence": "compat files removed/renamed, direct _PluginBase inheritance, route contract and focused smoke passed",
+      "commit": "3485cd6"
+    },
+    {
+      "phase": "phase-6",
+      "task": "6.2",
+      "status": "completed",
+      "evidence": "compat inventory script/test deleted; stale Python references cleared; route contract and focused smoke passed",
+      "commit": "b214ea1"
+    },
+    {
+      "phase": "phase-6",
+      "task": "6.3",
+      "status": "completed",
+      "commit": "72d2bbc",
+      "evidence": "no stale compat test refs; route/request-helper tests, focused smoke, and plugin Vite build passed"
+    },
+    {
+      "phase": "phase-7",
+      "task": "7.1-7.4",
+      "status": "completed",
+      "commit": "24afc29",
+      "evidence": "Chrome browser checks completed against installed 0.1.73 frontend; screenshots and API summaries recorded locally"
+    },
+    {
+      "phase": "phase-7",
+      "task": "7.5",
+      "status": "verified-pending-commit",
+      "evidence": "version/history/package metadata updated to 0.1.73; pytest/build/zip/package install checks passed"
+    },
+    {
+      "phase": "phase-7",
+      "task": "7.5",
+      "status": "completed",
+      "commit": "1fa9b02",
+      "evidence": "0.1.73 version/history/package metadata committed; current-turn focused smoke and plugin build passed"
+    },
+    {
+      "phase": "cleanup",
+      "task": "remove-local-artifacts-from-tracked-tree",
+      "status": "completed",
+      "commit": "f44ea11",
+      "evidence": "removed tracked plan drafts and zip artifacts from current tree with git rm --cached; files remain untracked locally"
+    }
+  ],
+  "residual_risk": [
+    "MoviePilot plugin market card still displayed v0.1.71 after installation because it reflects cached/remote market metadata, but the installed plugin app loaded remoteEntry.js matching local 0.1.73 dist by SHA-256.",
+    "SubHD preview attempt returned HTTP 400 due source download page inaccessible; OpenSubtitles preview path returned 200 and rendered match preview. This is provider-specific availability risk, not compat removal regression evidence.",
+    "Commit 1fa9b02 also captured local plan/zip artifacts before cleanup; f44ea11 removes them from the current tree, but the branch history should not be pushed as-is if strict history cleanliness is required. A user-approved history rewrite/squash would be needed before publishing."
+  ]
+}

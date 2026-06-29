@@ -57,3 +57,17 @@
 - 彻底删除 `compat.py`、`compat_core.py`、`compat_services.py`，让 `SubtitleManualUpload` 不再继承兼容 mixin。
 - 将旧 `_xxx` 私有兼容入口迁移到 API request helpers、目标解析、字幕写入、上传会话、自动入库、在线 AI 等真实归属模块。
 - 使用 inventory 脚本作为删除门禁，并在最后加入真实 Chrome 登录态浏览器验收。
+
+## 后续计划：__init__.py 主入口瘦身
+
+新增计划文件：
+
+- `docs/plans/2026-06-30-subtitlemanualupload-init-shell-slimming-phased-plan.md`
+- `docs/plans/2026-06-30-subtitlemanualupload-init-shell-slimming-progress.json`
+
+目标：
+
+- 明确这不是 compat 兼容债务；compat 三文件已经删除，后续只处理主入口体量和模块边界。
+- 将 `__init__.py` 从约 1106 行继续收缩为 MoviePilot 插件壳，目标是不超过 450 行、类方法不超过 25 个。
+- 继续拆出配置运行态、runtime helper、压缩包适配、服务注册、入库事件、在线 AI / AutoSub facade。
+- 测试策略包含 inventory 门禁、route contract、focused pytest、插件 `pnpm build`、真实 Chrome 浏览器验收和本地 zip 校验。

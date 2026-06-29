@@ -1,0 +1,288 @@
+{
+  "plan": "docs/plans/2026-06-30-subtitlemanualupload-init-shell-slimming-phased-plan.md",
+  "status": {
+    "phase": "phase-1",
+    "task": "1.1",
+    "next_allowed_action": "Implement the current task; after verified completion, advance to the next task or phase automatically"
+  },
+  "execution_rules": {
+    "branch": "codex/subtitlemanualupload-init-shell-slimming",
+    "smoke_check": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+    "frontend_build_check": "$env:PATH='C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin;' + $env:PATH; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\bin\\pnpm.cmd' build",
+    "inventory_check": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_init_inventory.py --details",
+    "commit_each_verified_task": true,
+    "no_commit_on_failed_verification": true,
+    "never_push_merge_or_amend": true,
+    "advance_after_verified_phase": true,
+    "no_user_confirmation_between_phases": true,
+    "only_flip_status_fields": true,
+    "do_not_commit_secrets_logs_zips_screenshots_or_local_private_config": true
+  },
+  "decision_log": [
+    {
+      "decision": "Treat remaining work as main-entry slimming, not compat debt",
+      "reason": "compat.py, compat_core.py, compat_services.py, mixin inheritance, and dynamic installers are already removed",
+      "status": "recorded"
+    },
+    {
+      "decision": "Use an L-level phased plan",
+      "reason": "__init__.py slimming spans config runtime, helper ownership, archive adapters, service registry, event handling, AI/AutoSub boundaries, tests, browser verification, and release packaging",
+      "status": "recorded"
+    }
+  ],
+  "phases": [
+    {
+      "id": "phase-1",
+      "goal": "Build an inventory gate for remaining __init__.py responsibilities",
+      "acceptance": [
+        "scripts/subtitlemanualupload_init_inventory.py --details exits 0 and prints valid JSON",
+        "tests/test_subtitlemanualupload_init_inventory.py exits 0",
+        "Inventory reports line_count, method_count, method groups, and source/test references",
+        "Focused pytest smoke check exits 0"
+      ],
+      "tasks": [
+        {
+          "id": "1.1",
+          "title": "Add __init__.py responsibility inventory script",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "1.2",
+          "title": "Add inventory gate tests",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "phase-2",
+      "goal": "Extract config runtime and lifecycle initialization",
+      "acceptance": [
+        "init_plugin delegates config application, class sync, and runtime state reset to config_runtime.py",
+        "_save_config delegates payload construction to config_runtime.py",
+        "Config/form/init targeted tests exit 0",
+        "Focused pytest smoke check exits 0"
+      ],
+      "tasks": [
+        {
+          "id": "2.1",
+          "title": "Extract config assignment and class runtime sync",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "2.2",
+          "title": "Extract runtime cache reset",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "2.3",
+          "title": "Extract save-config payload builder",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "phase-3",
+      "goal": "Move runtime helper functions out of the plugin class",
+      "acceptance": [
+        "runtime_helpers.py owns pure helper functions and explicit dependency-injected helper functions",
+        "Tests no longer call SubtitleManualUpload private runtime helpers directly",
+        "Request-helper/cache tests exit 0",
+        "Focused pytest smoke check exits 0"
+      ],
+      "tasks": [
+        {
+          "id": "3.1",
+          "title": "Extract dependency-free pure helpers",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "3.2",
+          "title": "Extract dependency-injected target/TMDB/path helpers",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "3.3",
+          "title": "Migrate tests away from plugin private helper bindings",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "phase-4",
+      "goal": "Move archive and upload-session adapters out of __init__.py",
+      "acceptance": [
+        "__init__.py no longer defines RAR/7z member listing, reading, command execution, or extraction helpers",
+        "Upload session and archive resource-limit tests exit 0",
+        "Focused pytest smoke check exits 0"
+      ],
+      "tasks": [
+        {
+          "id": "4.1",
+          "title": "Create archive extractor or extend UploadSessionService ownership",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "4.2",
+          "title": "Update service factory injection for archive dependencies",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "4.3",
+          "title": "Migrate archive tests to upload_session/archive module boundaries",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "phase-5",
+      "goal": "Introduce a single service registry and remove one-line service delegates",
+      "acceptance": [
+        "service_registry.py is the single service composition entry",
+        "API modules use owner.services or explicit services instead of one-line owner private delegates",
+        "API route contract remains 23 endpoints",
+        "Cache/online tests and focused smoke check exit 0"
+      ],
+      "tasks": [
+        {
+          "id": "5.1",
+          "title": "Create SubtitleManualUploadServices registry",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "5.2",
+          "title": "Migrate API modules and tests to service registry access",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "5.3",
+          "title": "Remove obsolete one-line service delegates from __init__.py",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "phase-6",
+      "goal": "Move transfer event handling out of the plugin shell",
+      "acceptance": [
+        "listen_transfer_complete and stop_service remain MoviePilot hooks but only gate and delegate",
+        "Auto-transfer queue and event tests exit 0",
+        "Focused pytest smoke check exits 0"
+      ],
+      "tasks": [
+        {
+          "id": "6.1",
+          "title": "Extract transfer complete event handling",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "6.2",
+          "title": "Update auto-transfer hook tests",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "phase-7",
+      "goal": "Move online AI and AutoSub facade methods to owning services",
+      "acceptance": [
+        "__init__.py no longer defines online AI and AutoSub private facade methods",
+        "Autosub cancellation/restart and subtitlemanualupload cache tests exit 0",
+        "Focused pytest smoke check exits 0"
+      ],
+      "tasks": [
+        {
+          "id": "7.1",
+          "title": "Migrate online AI helper/facade methods",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "7.2",
+          "title": "Migrate AutoSub bridge facade methods",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "7.3",
+          "title": "Update tests to use services instead of plugin private AI/AutoSub methods",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "phase-8",
+      "goal": "Final shell audit, browser verification, and release packaging",
+      "acceptance": [
+        "__init__.py line count is <= 450",
+        "SubtitleManualUpload class method count is <= 25",
+        "No compat file, mixin, or install_compat references exist under plugins.v2/subtitlemanualupload tests scripts",
+        "API route contract remains 23 endpoints",
+        "Focused pytest smoke check exits 0",
+        "Plugin pnpm build exits 0",
+        "Visible Chrome browser verification covers entry, resource list/search, target detail, external subtitles, online search, online preview, AI status, and 1440/768/390 responsive smoke",
+        "Local zip is generated but remains untracked"
+      ],
+      "tasks": [
+        {
+          "id": "8.1",
+          "title": "Run final inventory and automated acceptance checks",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "8.2",
+          "title": "Run visible Chrome browser verification",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "8.3",
+          "title": "Update version/history if release packaging is requested and generate local zip",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        }
+      ]
+    }
+  ],
+  "turn_log": [],
+  "residual_risk": []
+}
