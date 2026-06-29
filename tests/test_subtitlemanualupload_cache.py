@@ -2098,7 +2098,9 @@ def test_timeline_fix_existing_accepts_all_subtitles_for_target(tmp_path):
         "persisted": False,
     }
     plugin._remember_targets([entry])
-    module.check_timeline_fixer_dependencies = lambda: {
+    routes = plugin.get_api()
+    timeline_api_module = plugin_submodule(module, "api.timeline_api")
+    timeline_api_module.check_timeline_fixer_dependencies = lambda: {
         "available": True,
         "ffmpeg": True,
         "ffprobe": True,
@@ -2113,12 +2115,13 @@ def test_timeline_fix_existing_accepts_all_subtitles_for_target(tmp_path):
         def start(self):
             return None
 
-    original_thread = module.threading.Thread
-    module.threading.Thread = NoopThread
+    original_thread = timeline_api_module.threading.Thread
+    timeline_api_module.threading.Thread = NoopThread
     try:
-        response = asyncio.run(plugin.api_timeline_fix_existing(FakeRequest({"items": [{"target_id": "m1"}]})))
+        timeline_endpoint = next(route["endpoint"] for route in routes if route["path"] == "/timeline_fix_existing")
+        response = asyncio.run(timeline_endpoint(FakeRequest({"items": [{"target_id": "m1"}]})))
     finally:
-        module.threading.Thread = original_thread
+        timeline_api_module.threading.Thread = original_thread
 
     assert response["success"] is True
     assert response["data"]["accepted"] == 2

@@ -6,9 +6,11 @@ from typing import Any, Dict, List
 def build_api_routes(owner: Any) -> List[Dict[str, Any]]:
     from .catalog_api import CatalogApi
     from .status_api import StatusApi
+    from .timeline_api import TimelineApi
 
     catalog_api = CatalogApi(owner)
     status_api = StatusApi(owner)
+    timeline_api = TimelineApi(owner)
     return [
         {
             "path": "/status",
@@ -47,14 +49,14 @@ def build_api_routes(owner: Any) -> List[Dict[str, Any]]:
         },
         {
             "path": "/timeline_tasks",
-            "endpoint": owner.api_timeline_tasks,
+            "endpoint": timeline_api.timeline_tasks,
             "methods": ["POST"],
             "auth": "bear",
             "summary": "查询智能调轴任务状态",
         },
         {
             "path": "/timeline_fix_existing",
-            "endpoint": owner.api_timeline_fix_existing,
+            "endpoint": timeline_api.timeline_fix_existing,
             "methods": ["POST"],
             "auth": "bear",
             "summary": "对匹配历史中的外挂字幕执行智能调轴",
