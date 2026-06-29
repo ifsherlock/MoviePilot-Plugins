@@ -570,7 +570,8 @@ def test_prepare_upload_uses_upload_session_service(tmp_path):
         }
     )
 
-    response = asyncio.run(plugin.api_prepare_upload(FakeFormRequest(form)))
+    prepare_endpoint = next(route["endpoint"] for route in plugin.get_api() if route["path"] == "/prepare_upload")
+    response = asyncio.run(prepare_endpoint(FakeFormRequest(form)))
 
     data = response["data"]
     assert response["success"] is True

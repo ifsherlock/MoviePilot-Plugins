@@ -7,10 +7,12 @@ def build_api_routes(owner: Any) -> List[Dict[str, Any]]:
     from .catalog_api import CatalogApi
     from .status_api import StatusApi
     from .timeline_api import TimelineApi
+    from .upload_api import UploadApi
 
     catalog_api = CatalogApi(owner)
     status_api = StatusApi(owner)
     timeline_api = TimelineApi(owner)
+    upload_api = UploadApi(owner)
     return [
         {
             "path": "/status",
@@ -70,7 +72,7 @@ def build_api_routes(owner: Any) -> List[Dict[str, Any]]:
         },
         {
             "path": "/prepare_upload",
-            "endpoint": owner.api_prepare_upload,
+            "endpoint": upload_api.prepare_upload,
             "methods": ["POST"],
             "auth": "bear",
             "summary": "上传字幕并生成匹配预览",
