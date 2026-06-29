@@ -924,6 +924,47 @@ def test_strm_target_skips_timeline_fixing(tmp_path):
     assert plugin._timeline_tasks_for_entries([{"id": "t1"}])["summary"]["skipped"] == 1
 
 
+def test_timeline_task_store_summary_and_target_mapping(tmp_path):
+    module, _, _ = load_plugin_module()
+    timeline_tasks = plugin_submodule(module, "timeline_tasks")
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+
+    assert timeline_tasks.timeline_task_summary([]) == {
+        "pending": 0,
+        "in_progress": 0,
+        "completed": 0,
+        "skipped": 0,
+        "failed": 0,
+        "active": 0,
+        "total": 0,
+    }
+
+    store = timeline_tasks.TimelineTaskStore(
+        plugin,
+        normalize_text=plugin._normalize_text,
+        cache_loaded_at=plugin._cache_loaded_at,
+        json_clone=plugin._json_clone,
+        timeline_task_ttl_seconds=plugin._timeline_task_ttl_seconds,
+        max_tasks=plugin._entry_map_max_size,
+    )
+    store.set_task(
+        {
+            "target_entry": {"id": "t1", "path": str(video), "basename": "Movie", "storage": "local"},
+            "upload_info": {"source_name": "subtitle.srt"},
+            "destination_name": "Movie.chi.srt",
+        },
+        status="completed",
+        message="done",
+    )
+
+    data = store.tasks_for_entries([{"id": "t1"}, {"id": "missing"}])
+
+    assert data["summary"]["completed"] == 1
+    assert data["task_by_target"]["t1"]["status"] == "completed"
+    assert data["task_by_target"]["missing"] is None
+
+
 def test_write_operations_passes_allow_risky_offset_to_timeline_fixer(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)

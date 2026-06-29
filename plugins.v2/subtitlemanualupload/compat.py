@@ -9,8 +9,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections import OrderedDict
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -121,6 +120,7 @@ from .subtitle_writer import (
     timeline_result_blocks_auto_write as writer_timeline_result_blocks_auto_write,
 )
 from .timeline_fixer import TimelineFixResult, check_timeline_fixer_dependencies, fix_subtitle_timeline
+from .timeline_tasks import TimelineTaskStore, timeline_task_summary
 from .tongwen import convert_subtitle_file_to_simplified
 from .target_resolver import (
     LocalMediaCatalog,
@@ -491,6 +491,16 @@ class SubtitleManualUploadCompatMixin:
             chinese_category_pattern=self._chinese_media_category_pattern,
         )
 
+    def _timeline_task_store(self) -> TimelineTaskStore:
+        return TimelineTaskStore(
+            self,
+            normalize_text=self._normalize_text,
+            cache_loaded_at=self._cache_loaded_at,
+            json_clone=self._json_clone,
+            timeline_task_ttl_seconds=self._timeline_task_ttl_seconds,
+            max_tasks=self._entry_map_max_size,
+        )
+
     def _get_session_root(self) -> Path:
         return self._upload_session_service().get_session_root()
 
@@ -556,39 +566,10 @@ class SubtitleManualUploadCompatMixin:
 
     @staticmethod
     def _timeline_task_summary(tasks: List[Dict[str, Any]]) -> Dict[str, int]:
-        counts = {
-            "pending": 0,
-            "in_progress": 0,
-            "completed": 0,
-            "skipped": 0,
-            "failed": 0,
-            "active": 0,
-            "total": len(tasks),
-        }
-        for task in tasks:
-            status = task.get("status")
-            if status in counts:
-                counts[status] += 1
-            if task.get("active") or status in {"pending", "in_progress"}:
-                counts["active"] += 1
-        return counts
-
-    def _cleanup_timeline_tasks(self) -> None:
-        tasks = self._timeline_tasks or OrderedDict()
-        cutoff = datetime.now() - timedelta(seconds=self._timeline_task_ttl_seconds)
-        for key in list(tasks.keys()):
-            updated_at = self._cache_loaded_at((tasks.get(key) or {}).get("updated_at"))
-            if updated_at and updated_at < cutoff:
-                tasks.pop(key, None)
-        self._timeline_tasks = tasks
+        return timeline_task_summary(tasks)
 
     def _timeline_task_for_target_id(self, target_id: Any) -> Optional[Dict[str, Any]]:
-        self._cleanup_timeline_tasks()
-        clean_id = self._normalize_text(target_id)
-        if not clean_id:
-            return None
-        task = (self._timeline_tasks or {}).get(clean_id)
-        return self._json_clone(task) if task else None
+        return self._timeline_task_store().task_for_target_id(target_id)
 
     def _set_timeline_task(
         self,
@@ -598,57 +579,15 @@ class SubtitleManualUploadCompatMixin:
         message: str = "",
         timeline_result: Optional[TimelineFixResult] = None,
     ) -> None:
-        target_entry = operation.get("target_entry") or {}
-        target_id = self._normalize_text(target_entry.get("id"))
-        if not target_id:
-            return
-        now = datetime.now().isoformat(timespec="seconds")
-        timeline = timeline_result.to_dict() if timeline_result else None
-        active = status in {"pending", "in_progress"}
-        task = {
-            "target_id": target_id,
-            "target_label": target_entry.get("target_label") or target_entry.get("filename") or Path(self._normalize_text(target_entry.get("path"))).name,
-            "source_name": (operation.get("upload_info") or {}).get("source_name", ""),
-            "output_name": operation.get("destination_name", ""),
-            "status": status,
-            "active": active,
-            "message": message or status,
-            "status_label": {
-                "pending": "等待调轴",
-                "in_progress": "智能调轴中",
-                "completed": "调轴完成",
-                "skipped": "已跳过",
-                "failed": "调轴失败",
-            }.get(status, status),
-            "timeline": timeline,
-            "updated_at": now,
-        }
-        existing = (self._timeline_tasks or OrderedDict()).get(target_id) or {}
-        if existing.get("created_at"):
-            task["created_at"] = existing.get("created_at")
-        else:
-            task["created_at"] = now
-        self._timeline_tasks[target_id] = task
-        self._timeline_tasks.move_to_end(target_id)
-        while len(self._timeline_tasks) > self._entry_map_max_size:
-            self._timeline_tasks.popitem(last=False)
+        self._timeline_task_store().set_task(
+            operation,
+            status=status,
+            message=message,
+            timeline_result=timeline_result,
+        )
 
     def _timeline_tasks_for_entries(self, target_entries: List[Dict[str, Any]]) -> Dict[str, Any]:
-        tasks: List[Dict[str, Any]] = []
-        task_by_target: Dict[str, Any] = {}
-        for entry in target_entries:
-            target_id = self._normalize_text(entry.get("id"))
-            task = self._timeline_task_for_target_id(target_id)
-            if task:
-                task_by_target[target_id] = task
-                tasks.append(task)
-            else:
-                task_by_target[target_id] = None
-        return {
-            "summary": self._timeline_task_summary(tasks),
-            "tasks": tasks,
-            "task_by_target": task_by_target,
-        }
+        return self._timeline_task_store().tasks_for_entries(target_entries)
 
     def _start_background_cache_refresh(self) -> None:
         self._local_media_catalog().start_background_cache_refresh()
