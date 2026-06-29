@@ -3796,7 +3796,8 @@ def test_auto_subtitle_preference_config_normalizes_legacy_strings(tmp_path):
     module, _, _ = load_plugin_module()
     config_schema = plugin_submodule(module, "config_schema")
     plugin = make_plugin(module)
-    plugin.update_config = lambda config: None
+    saved_configs = []
+    plugin.update_config = lambda config: saved_configs.append(config)
     raw_config = {
         "auto_multi_subtitle_mode": "chinese",
         "auto_subtitle_language_priority": "英文,双语,坏值",
@@ -3853,6 +3854,16 @@ def test_auto_subtitle_preference_config_normalizes_legacy_strings(tmp_path):
     assert plugin._cache_refresh_completed_at == ""
     assert plugin._cache_refresh_error == ""
     assert plugin._local_entries_cache == {"loaded_at": None, "entries": [], "media_count": 0, "persisted": False}
+    assert saved_configs
+    saved_config = saved_configs[-1]
+    assert saved_config["auto_multi_subtitle_mode"] == "chinese_all"
+    assert saved_config["auto_subtitle_language_priority"] == plugin._auto_subtitle_language_priority
+    assert saved_config["auto_subtitle_format_priority"] == plugin._auto_subtitle_format_priority
+    assert saved_config["auto_ass_to_srt_for_ai"] is False
+    assert saved_config["online_proxy_migrated"] is True
+    assert saved_config["assrt_provider_migrated"] is True
+    assert saved_config["subhd_url"] == plugin._online_site_urls["subhd"]
+    assert saved_config["opensubtitles_url"] == plugin._online_site_urls["opensubtitles"]
 
 
 def test_config_schema_default_config_covers_config_vue_bound_fields():

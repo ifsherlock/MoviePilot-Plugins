@@ -81,3 +81,41 @@ def reset_runtime_state(owner: Any) -> None:
     owner._cache_refresh_completed_at = ""
     owner._cache_refresh_error = ""
     owner._local_entries_cache = {"loaded_at": None, "entries": [], "media_count": 0, "persisted": False}
+
+
+def build_save_config_payload(owner: Any) -> dict[str, Any]:
+    return {
+        "enabled": owner._enabled,
+        "show_sidebar_nav": owner._show_sidebar_nav,
+        "rar_dependency_mode": owner._rar_dependency_mode,
+        "rar_tool_path": owner._rar_tool_path,
+        "traditional_to_simplified": owner._traditional_to_simplified,
+        "auto_search_on_transfer": owner._auto_search_on_transfer,
+        "auto_skip_chinese_media_on_transfer": owner._auto_skip_chinese_media_on_transfer,
+        "auto_transfer_subtitle_strategy": owner._auto_transfer_subtitle_strategy,
+        "trust_transfer_history_paths": owner._trust_transfer_history_paths,
+        "timeline_max_offset_seconds": owner._timeline_max_offset_seconds,
+        "timeline_min_offset_seconds": owner._timeline_min_offset_seconds,
+        "timeline_vad_mode": owner._timeline_vad_mode,
+        "timeline_allow_risky_offset": owner._timeline_allow_risky_offset,
+        "online_providers": owner._online_provider_ids,
+        "online_engine": owner._online_engine,
+        "online_use_proxy": owner._online_use_proxy,
+        "online_proxy_migrated": True,
+        "assrt_provider_migrated": True,
+        "subhd_url": owner._online_site_urls["subhd"],
+        "zimuku_url": owner._online_site_urls["zimuku"],
+        "assrt_url": owner._online_site_urls["assrt"],
+        "assrt_api_key": owner._assrt_api_key,
+        "assrt_api_url": owner._assrt_api_url,
+        "opensubtitles_url": owner._online_site_urls["opensubtitles"],
+        "opensubtitles_api_key": owner._opensubtitles_api_key,
+        "opensubtitles_api_url": owner._opensubtitles_api_url,
+        "opensubtitles_username": owner._opensubtitles_username,
+        "opensubtitles_password": owner._opensubtitles_password,
+        "ai_link_enabled": owner._ai_link_enabled,
+        "auto_multi_subtitle_mode": owner._auto_multi_subtitle_mode,
+        "auto_subtitle_language_priority": list(owner._auto_subtitle_language_priority),
+        "auto_subtitle_format_priority": list(owner._auto_subtitle_format_priority),
+        "auto_ass_to_srt_for_ai": owner._auto_ass_to_srt_for_ai,
+    }

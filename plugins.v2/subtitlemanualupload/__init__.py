@@ -93,7 +93,12 @@ from .config_schema import (
     normalize_timeline_min_offset,
     normalize_timeline_vad_mode,
 )
-from .config_runtime import apply_runtime_config, reset_runtime_state, sync_class_runtime_config
+from .config_runtime import (
+    apply_runtime_config,
+    build_save_config_payload,
+    reset_runtime_state,
+    sync_class_runtime_config,
+)
 from .subtitle_language import (
     DEFAULT_AUTO_FORMAT_PRIORITY,
     DEFAULT_AUTO_LANGUAGE_PRIORITY,
@@ -880,43 +885,7 @@ class SubtitleManualUpload(_PluginBase):
             logger.info("[SubtitleManualUpload] 入库自动字幕任务已入队 count=%s", queued)
 
     def _save_config(self) -> None:
-        self.update_config(
-            {
-                "enabled": self._enabled,
-                "show_sidebar_nav": self._show_sidebar_nav,
-                "rar_dependency_mode": self._rar_dependency_mode,
-                "rar_tool_path": self._rar_tool_path,
-                "traditional_to_simplified": self._traditional_to_simplified,
-                "auto_search_on_transfer": self._auto_search_on_transfer,
-                "auto_skip_chinese_media_on_transfer": self._auto_skip_chinese_media_on_transfer,
-                "auto_transfer_subtitle_strategy": self._auto_transfer_subtitle_strategy,
-                "trust_transfer_history_paths": self._trust_transfer_history_paths,
-                "timeline_max_offset_seconds": self._timeline_max_offset_seconds,
-                "timeline_min_offset_seconds": self._timeline_min_offset_seconds,
-                "timeline_vad_mode": self._timeline_vad_mode,
-                "timeline_allow_risky_offset": self._timeline_allow_risky_offset,
-                "online_providers": self._online_provider_ids,
-                "online_engine": self._online_engine,
-                "online_use_proxy": self._online_use_proxy,
-                "online_proxy_migrated": True,
-                "assrt_provider_migrated": True,
-                "subhd_url": self._online_site_urls["subhd"],
-                "zimuku_url": self._online_site_urls["zimuku"],
-                "assrt_url": self._online_site_urls["assrt"],
-                "assrt_api_key": self._assrt_api_key,
-                "assrt_api_url": self._assrt_api_url,
-                "opensubtitles_url": self._online_site_urls["opensubtitles"],
-                "opensubtitles_api_key": self._opensubtitles_api_key,
-                "opensubtitles_api_url": self._opensubtitles_api_url,
-                "opensubtitles_username": self._opensubtitles_username,
-                "opensubtitles_password": self._opensubtitles_password,
-                "ai_link_enabled": self._ai_link_enabled,
-                "auto_multi_subtitle_mode": self._auto_multi_subtitle_mode,
-                "auto_subtitle_language_priority": list(self._auto_subtitle_language_priority),
-                "auto_subtitle_format_priority": list(self._auto_subtitle_format_priority),
-                "auto_ass_to_srt_for_ai": self._auto_ass_to_srt_for_ai,
-            }
-        )
+        self.update_config(build_save_config_payload(self))
 
     @classmethod
     def _autosub_lang_from_suffix(cls, suffix: Any) -> str:
