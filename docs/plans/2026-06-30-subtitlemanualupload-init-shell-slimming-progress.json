@@ -1,8 +1,8 @@
 {
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-init-shell-slimming-phased-plan.md",
   "status": {
-    "phase": "phase-1",
-    "task": "1.2",
+    "phase": "phase-2",
+    "task": "2.1",
     "next_allowed_action": "Implement the current task; after verified completion, advance to the next task or phase automatically"
   },
   "execution_rules": {
@@ -67,8 +67,24 @@
         {
           "id": "1.2",
           "title": "Add inventory gate tests",
-          "status": "pending",
-          "verification": [],
+          "status": "completed",
+          "verification": [
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py -q",
+              "result": "passed",
+              "evidence": "4 passed in 13.37s"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_init_inventory.py --details",
+              "result": "passed",
+              "evidence": "exited 0 and printed valid JSON with line_count=1106, method_count=134, method_groups, source_references, test_references"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "218 passed in 14.80s"
+            }
+          ],
           "commit": null
         }
       ]
@@ -308,6 +324,17 @@
         "scripts/subtitlemanualupload_init_inventory.py --details exited 0 with valid JSON",
         "py_compile scripts/subtitlemanualupload_init_inventory.py exited 0",
         "baseline smoke exited 0 with 218 passed"
+      ]
+    },
+    {
+      "task": "1.2",
+      "status": "completed",
+      "summary": "Added tests/test_subtitlemanualupload_init_inventory.py to gate inventory JSON shape, method counts, responsibility groups, source/test references, and removed compat layer symbols.",
+      "evidence": [
+        "tests/test_subtitlemanualupload_init_inventory.py exited 0 with 4 passed",
+        "scripts/subtitlemanualupload_init_inventory.py --details exited 0 with valid JSON",
+        "baseline smoke exited 0 with 218 passed",
+        "phase-1 acceptance satisfied; next task is phase-2 task 2.1"
       ]
     }
   ],
