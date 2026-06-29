@@ -465,6 +465,29 @@ def test_archive_total_size_limit_rejects_zip_subtitles(tmp_path):
         service.extract_subtitle_files("sample.zip", payload, tmp_path)
 
 
+def test_archive_dependency_service_reports_mapped_binary_missing():
+    module, _, _ = load_plugin_module()
+    upload_session = plugin_submodule(module, "upload_session")
+    statuses = []
+
+    service = upload_session.ArchiveDependencyService(
+        rar_dependency_mode="mapped_binary",
+        rar_tool_path="/missing/7z",
+        rar_python_package="rarfile",
+        rar_tools=(),
+        sevenzip_tools=(),
+        normalize_text=str,
+        decode_preview_bytes=lambda raw: raw.decode("utf-8", errors="ignore"),
+        logger_info=lambda *args, **kwargs: None,
+        logger_warning=lambda *args, **kwargs: None,
+        status_setter=lambda state, message: statuses.append((state, message)),
+    )
+
+    service.prepare_rar_dependency()
+
+    assert statuses == [("missing", "未检测到映射文件，请把宿主机 7zz 映射到容器 /missing/7z")]
+
+
 def test_archive_subtitle_count_limit_rejects_zip_subtitles(tmp_path):
     module, _, _ = load_plugin_module()
     service = _limited_upload_session_service(

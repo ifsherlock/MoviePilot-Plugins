@@ -139,6 +139,7 @@ from .target_resolver import (
 )
 from .upload_session import (
     DEFAULT_ARCHIVE_RESOURCE_LIMITS,
+    ArchiveDependencyService,
     ArchiveResourceLimits,
     UploadSessionService,
     archive_suffix_from_content as upload_archive_suffix_from_content,
@@ -146,15 +147,9 @@ from .upload_session import (
     extract_command_archive_subtitle_files as upload_extract_command_archive_subtitle_files,
     extract_rar_subtitle_files as upload_extract_rar_subtitle_files,
     extract_rar_subtitle_files_with_rarfile as upload_extract_rar_subtitle_files_with_rarfile,
-    find_rar_tool as upload_find_rar_tool,
-    find_sevenzip_tool as upload_find_sevenzip_tool,
-    is_executable_file as upload_is_executable_file,
     list_rar_members as upload_list_rar_members,
     normalize_online_download_name as normalize_upload_download_name,
-    rar_python_available as upload_rar_python_available,
-    rarfile_module as upload_rarfile_module,
     read_rar_member as upload_read_rar_member,
-    run_archive_command as upload_run_archive_command,
 )
 from .online_ai import OnlineAiService
 from .auto_transfer import AutoTransferService
@@ -302,93 +297,30 @@ class SubtitleManualUploadCompatMixin:
         self._auto_transfer_service().auto_transfer_queue_loop()
 
 
+    @classmethod
+    def _archive_dependency_service(
+        cls,
+        status_setter: Optional[Any] = None,
+    ) -> ArchiveDependencyService:
+        return ArchiveDependencyService(
+            rar_dependency_mode=getattr(cls, "_rar_dependency_mode", "none"),
+            rar_tool_path=getattr(cls, "_rar_tool_path", ""),
+            rar_python_package=getattr(cls, "_rar_python_package", "rarfile"),
+            rar_tools=cls._rar_tools,
+            sevenzip_tools=cls._sevenzip_tools,
+            normalize_text=cls._normalize_text,
+            decode_preview_bytes=cls._decode_preview_bytes,
+            subprocess_module=cls._host_module_value("subprocess", subprocess),
+            logger_info=logger.info,
+            logger_warning=logger.warning,
+            status_setter=status_setter,
+        )
+
     def _set_rar_dependency_status(self, state: str, message: str) -> None:
-        self._rar_dependency_status = {
-            "mode": self._rar_dependency_mode,
-            "state": state,
-            "message": message,
-            "checked_at": datetime.now().isoformat(timespec="seconds"),
-            "tool_path": self._rar_tool_path,
-        }
+        self._rar_dependency_status = type(self)._archive_dependency_service().dependency_status(state, message)
 
     def _prepare_rar_dependency(self) -> None:
-        if self._rar_dependency_mode == "none":
-            self._set_rar_dependency_status("skipped", "未启用 RAR 解压器自动处理")
-            return
-
-        if self._rar_tool():
-            self._set_rar_dependency_status("ready", "已检测到可用 RAR 解压器")
-            return
-
-        if self._rar_dependency_mode == "mapped_binary":
-            self._set_rar_dependency_status(
-                "missing",
-                f"未检测到映射文件，请把宿主机 7zz 映射到容器 {self._rar_tool_path}",
-            )
-            logger.info(
-                "[SubtitleManualUpload] RAR 映射模式未检测到工具 path=%s",
-                self._rar_tool_path,
-            )
-            return
-
-        if self._rar_dependency_mode == "container_install":
-            self._install_container_rar_tool()
-            return
-
-        self._set_rar_dependency_status("skipped", "未知 RAR 依赖处理方式")
-
-    def _install_container_rar_tool(self) -> None:
-        logger.info("[SubtitleManualUpload] 开始尝试在容器内安装 RAR 解压器")
-        install_script = r"""
-set -eu
-if command -v unrar >/dev/null 2>&1 || command -v bsdtar >/dev/null 2>&1 || command -v 7z >/dev/null 2>&1 || command -v 7za >/dev/null 2>&1 || command -v 7zz >/dev/null 2>&1; then
-  exit 0
-fi
-if ! command -v apt-get >/dev/null 2>&1; then
-  echo "当前容器没有 apt-get，无法自动安装，请使用宿主机静态 7zz 映射" >&2
-  exit 78
-fi
-export DEBIAN_FRONTEND=noninteractive
-apt-get update
-apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get install -y --no-install-recommends 7zip unrar-free libarchive-tools
-"""
-        subprocess_module = self._host_module_value("subprocess", subprocess)
-        try:
-            completed = subprocess_module.run(
-                ["sh", "-lc", install_script],
-                stdout=subprocess_module.PIPE,
-                stderr=subprocess_module.PIPE,
-                check=True,
-                timeout=600,
-            )
-        except subprocess_module.TimeoutExpired:
-            self._set_rar_dependency_status("failed", "容器内安装 RAR 解压器超时")
-            logger.warning("[SubtitleManualUpload] 容器内安装 RAR 解压器超时")
-            return
-        except subprocess_module.CalledProcessError as exc:
-            stderr = self._decode_preview_bytes(exc.stderr or b"").strip()
-            message = stderr[-500:] if stderr else str(exc)
-            self._set_rar_dependency_status("failed", f"容器内安装失败: {message}")
-            logger.warning(
-                "[SubtitleManualUpload] 容器内安装 RAR 解压器失败 returncode=%s error=%s",
-                exc.returncode,
-                message,
-            )
-            return
-
-        stdout = self._decode_preview_bytes(completed.stdout or b"").strip()
-        tool_path = self._rar_tool()
-        if tool_path:
-            self._set_rar_dependency_status("ready", f"容器内安装完成，当前工具: {Path(tool_path).name}")
-            logger.info(
-                "[SubtitleManualUpload] 容器内安装 RAR 解压器完成 tool=%s output_tail=%s",
-                Path(tool_path).name,
-                stdout[-300:],
-            )
-            return
-
-        self._set_rar_dependency_status("failed", "安装命令结束，但仍未检测到 unrar、bsdtar、7z、7za 或 7zz")
-        logger.warning("[SubtitleManualUpload] 容器内安装后仍未检测到 RAR 解压器")
+        type(self)._archive_dependency_service(self._set_rar_dependency_status).prepare_rar_dependency()
 
     @classmethod
     def _normalize_language_suffix(cls, value: Any) -> str:
@@ -1084,31 +1016,23 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
 
     @classmethod
     def _rar_tool(cls) -> str:
-        return upload_find_rar_tool(
-            configured_tool_path=getattr(cls, "_rar_tool_path", ""),
-            normalize_text=cls._normalize_text,
-            rar_tools=cls._rar_tools,
-        )
+        return cls._archive_dependency_service().rar_tool()
 
     @classmethod
     def _sevenzip_tool(cls) -> str:
-        return upload_find_sevenzip_tool(
-            configured_tool_path=getattr(cls, "_rar_tool_path", ""),
-            normalize_text=cls._normalize_text,
-            sevenzip_tools=cls._sevenzip_tools,
-        )
+        return cls._archive_dependency_service().sevenzip_tool()
 
     @classmethod
     def _rar_python_available(cls) -> bool:
-        return upload_rar_python_available(cls._rar_python_package)
+        return cls._archive_dependency_service().rar_python_available()
 
     @classmethod
     def _rarfile_module(cls) -> Any:
-        return upload_rarfile_module(cls._rar_python_package)
+        return cls._archive_dependency_service().rarfile_module()
 
     @classmethod
     def _run_archive_command(cls, args: List[str], timeout: int = 120) -> bytes:
-        return upload_run_archive_command(args, decode_preview_bytes=cls._decode_preview_bytes, timeout=timeout)
+        return cls._archive_dependency_service().run_archive_command(args, timeout=timeout)
 
     @classmethod
     def _list_rar_members(cls, archive_path: Path, tool_path: str) -> List[str]:

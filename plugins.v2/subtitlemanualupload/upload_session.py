@@ -20,6 +20,8 @@ DecodePreviewBytes = Callable[[bytes], str]
 ArchiveExtractor = Callable[..., List[Dict[str, Any]]]
 NormalizeText = Callable[[Any], str]
 WarningLogger = Callable[..., None]
+InfoLogger = Callable[..., None]
+StatusSetter = Callable[[str, str], None]
 
 MAX_UPLOAD_CONTENT_BYTES = 50 * 1024 * 1024
 MAX_ARCHIVE_MEMBERS = 512
@@ -170,6 +172,170 @@ def find_sevenzip_tool(
         if found:
             return found
     return ""
+
+
+class ArchiveDependencyService:
+    def __init__(
+        self,
+        *,
+        rar_dependency_mode: str,
+        rar_tool_path: str,
+        rar_python_package: str,
+        rar_tools: Iterable[str],
+        sevenzip_tools: Iterable[str],
+        normalize_text: NormalizeText,
+        decode_preview_bytes: DecodePreviewBytes,
+        subprocess_module: Any = subprocess,
+        logger_info: Optional[InfoLogger] = None,
+        logger_warning: Optional[WarningLogger] = None,
+        status_setter: Optional[StatusSetter] = None,
+    ) -> None:
+        self._rar_dependency_mode = rar_dependency_mode
+        self._rar_tool_path = rar_tool_path
+        self._rar_python_package = rar_python_package
+        self._rar_tools = tuple(rar_tools)
+        self._sevenzip_tools = tuple(sevenzip_tools)
+        self._normalize_text = normalize_text
+        self._decode_preview_bytes = decode_preview_bytes
+        self._subprocess = subprocess_module
+        self._logger_info = logger_info
+        self._logger_warning = logger_warning
+        self._status_setter = status_setter
+
+    def dependency_status(self, state: str, message: str) -> Dict[str, Any]:
+        return {
+            "mode": self._rar_dependency_mode,
+            "state": state,
+            "message": message,
+            "checked_at": datetime.now().isoformat(timespec="seconds"),
+            "tool_path": self._rar_tool_path,
+        }
+
+    def set_dependency_status(self, state: str, message: str) -> None:
+        if self._status_setter:
+            self._status_setter(state, message)
+
+    def prepare_rar_dependency(self) -> None:
+        if self._rar_dependency_mode == "none":
+            self.set_dependency_status("skipped", "未启用 RAR 解压器自动处理")
+            return
+
+        if self.rar_tool():
+            self.set_dependency_status("ready", "已检测到可用 RAR 解压器")
+            return
+
+        if self._rar_dependency_mode == "mapped_binary":
+            self.set_dependency_status(
+                "missing",
+                f"未检测到映射文件，请把宿主机 7zz 映射到容器 {self._rar_tool_path}",
+            )
+            self._log_info("[SubtitleManualUpload] RAR 映射模式未检测到工具 path=%s", self._rar_tool_path)
+            return
+
+        if self._rar_dependency_mode == "container_install":
+            self.install_container_rar_tool()
+            return
+
+        self.set_dependency_status("skipped", "未知 RAR 依赖处理方式")
+
+    def install_container_rar_tool(self) -> None:
+        self._log_info("[SubtitleManualUpload] 开始尝试在容器内安装 RAR 解压器")
+        install_script = r"""
+set -eu
+if command -v unrar >/dev/null 2>&1 || command -v bsdtar >/dev/null 2>&1 || command -v 7z >/dev/null 2>&1 || command -v 7za >/dev/null 2>&1 || command -v 7zz >/dev/null 2>&1; then
+  exit 0
+fi
+if ! command -v apt-get >/dev/null 2>&1; then
+  echo "当前容器没有 apt-get，无法自动安装，请使用宿主机静态 7zz 映射" >&2
+  exit 78
+fi
+export DEBIAN_FRONTEND=noninteractive
+apt-get update
+apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get install -y --no-install-recommends 7zip unrar-free libarchive-tools
+"""
+        try:
+            completed = self._subprocess.run(
+                ["sh", "-lc", install_script],
+                stdout=self._subprocess.PIPE,
+                stderr=self._subprocess.PIPE,
+                check=True,
+                timeout=600,
+            )
+        except self._subprocess.TimeoutExpired:
+            self.set_dependency_status("failed", "容器内安装 RAR 解压器超时")
+            self._log_warning("[SubtitleManualUpload] 容器内安装 RAR 解压器超时")
+            return
+        except self._subprocess.CalledProcessError as exc:
+            stderr = self._decode_preview_bytes(exc.stderr or b"").strip()
+            message = stderr[-500:] if stderr else str(exc)
+            self.set_dependency_status("failed", f"容器内安装失败: {message}")
+            self._log_warning(
+                "[SubtitleManualUpload] 容器内安装 RAR 解压器失败 returncode=%s error=%s",
+                exc.returncode,
+                message,
+            )
+            return
+
+        stdout = self._decode_preview_bytes(completed.stdout or b"").strip()
+        tool_path = self.rar_tool()
+        if tool_path:
+            self.set_dependency_status("ready", f"容器内安装完成，当前工具: {Path(tool_path).name}")
+            self._log_info(
+                "[SubtitleManualUpload] 容器内安装 RAR 解压器完成 tool=%s output_tail=%s",
+                Path(tool_path).name,
+                stdout[-300:],
+            )
+            return
+
+        self.set_dependency_status("failed", "安装命令结束，但仍未检测到 unrar、bsdtar、7z、7za 或 7zz")
+        self._log_warning("[SubtitleManualUpload] 容器内安装后仍未检测到 RAR 解压器")
+
+    def rar_tool(self) -> str:
+        return find_rar_tool(
+            configured_tool_path=self._rar_tool_path,
+            normalize_text=self._normalize_text,
+            rar_tools=self._rar_tools,
+        )
+
+    def sevenzip_tool(self) -> str:
+        return find_sevenzip_tool(
+            configured_tool_path=self._rar_tool_path,
+            normalize_text=self._normalize_text,
+            sevenzip_tools=self._sevenzip_tools,
+        )
+
+    def rar_python_available(self) -> bool:
+        return rar_python_available(self._rar_python_package)
+
+    def rarfile_module(self) -> Any:
+        return rarfile_module(self._rar_python_package)
+
+    def run_archive_command(self, args: List[str], timeout: int = 120) -> bytes:
+        return run_archive_command(args, decode_preview_bytes=self._decode_preview_bytes, timeout=timeout)
+
+    def list_rar_members(self, archive_path: Path, tool_path: str) -> List[str]:
+        return list_rar_members(
+            archive_path,
+            tool_path,
+            decode_preview_bytes=self._decode_preview_bytes,
+            run_command=self.run_archive_command,
+        )
+
+    def read_rar_member(self, archive_path: Path, member: str, tool_path: str) -> bytes:
+        return read_rar_member(
+            archive_path,
+            member,
+            tool_path,
+            run_command=self.run_archive_command,
+        )
+
+    def _log_info(self, *args: Any, **kwargs: Any) -> None:
+        if self._logger_info:
+            self._logger_info(*args, **kwargs)
+
+    def _log_warning(self, *args: Any, **kwargs: Any) -> None:
+        if self._logger_warning:
+            self._logger_warning(*args, **kwargs)
 
 
 def rar_python_available(rar_python_package: str) -> bool:
