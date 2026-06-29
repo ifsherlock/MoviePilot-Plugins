@@ -2804,10 +2804,17 @@ def make_auto_entry(tmp_path, filename="Movie.mkv", **overrides):
     return entry
 
 
+def auto_transfer_service_with(plugin, **methods):
+    service = plugin._auto_transfer_service()
+    for name, method in methods.items():
+        setattr(service, name, method)
+    plugin._auto_transfer_service = lambda: service
+    return service
+
+
 def test_auto_transfer_queue_enqueues_tv_season_tasks_without_starting_immediately(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
-    plugin._ensure_transfer_auto_worker = lambda: None
     entries = [
         make_auto_entry(
             tmp_path,
@@ -2830,6 +2837,7 @@ def test_auto_transfer_queue_enqueues_tv_season_tasks_without_starting_immediate
     ]
 
     service = plugin._auto_transfer_service()
+    service.ensure_transfer_auto_worker = lambda: None
     queued, skipped = service.enqueue_transfer_auto_entries(entries)
     snapshot = service.auto_transfer_queue_snapshot()
 
@@ -2842,10 +2850,10 @@ def test_auto_transfer_queue_enqueues_tv_season_tasks_without_starting_immediate
 def test_auto_transfer_queue_stop_service_marks_pending_queue_stopped(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
-    plugin._ensure_transfer_auto_worker = lambda: None
     entry = make_auto_entry(tmp_path, filename="Movie.mkv")
 
     service = plugin._auto_transfer_service()
+    service.ensure_transfer_auto_worker = lambda: None
     queued, skipped = service.enqueue_transfer_auto_entries([entry])
     assert queued == 1
     assert skipped == 0
@@ -2935,7 +2943,7 @@ def test_auto_transfer_group_prefers_season_package_then_single_episode(tmp_path
         ),
     ]
     calls = []
-    plugin._auto_write_from_season_cache = lambda items: {"status": "skipped", "written_by_target": {}}
+    fake_cache = lambda items: {"status": "skipped", "written_by_target": {}}
 
     def fake_season(items, task_ids=None):
         calls.append(("season", [item["id"] for item in items], list(task_ids or [])))
@@ -2951,10 +2959,14 @@ def test_auto_transfer_group_prefers_season_package_then_single_episode(tmp_path
         calls.append(("single", entry["id"], kwargs.get("queue_rate_limited")))
         return {"status": "written", "target": target.get("label"), "result": "single episode"}
 
-    plugin._auto_search_write_season_package = fake_season
-    plugin._auto_search_write_subtitle = fake_single
+    service = auto_transfer_service_with(
+        plugin,
+        auto_write_from_season_cache=fake_cache,
+        auto_search_write_season_package=fake_season,
+        auto_search_write_subtitle=fake_single,
+    )
 
-    results = plugin._auto_process_transfer_group(entries, task_ids=["t1", "t2"])
+    results = service.auto_process_transfer_group(entries, task_ids=["t1", "t2"])
 
     assert calls == [("season", ["e1", "e2"], ["t1", "t2"]), ("single", "e2", True)]
     assert results["e1"]["season_package"] is True
@@ -2970,8 +2982,8 @@ def test_auto_transfer_group_accepts_season_ai_by_target(tmp_path):
         make_auto_entry(tmp_path, filename="Show.S01E02.mkv", id="e2", media_key="tv-key", media_type="tv", title="Show", season=1, episode=2),
     ]
     calls = []
-    plugin._auto_write_from_season_cache = lambda items: {"status": "skipped", "written_by_target": {}}
-    plugin._auto_search_write_season_package = lambda items, task_ids=None: {
+    fake_cache = lambda items: {"status": "skipped", "written_by_target": {}}
+    fake_season = lambda items, task_ids=None: {
         "status": "written",
         "result": "Show S01 English pack",
         "written_by_target": {},
@@ -2988,9 +3000,14 @@ def test_auto_transfer_group_accepts_season_ai_by_target(tmp_path):
         calls.append(entry["id"])
         return {"status": "written"}
 
-    plugin._auto_search_write_subtitle = fake_single
+    service = auto_transfer_service_with(
+        plugin,
+        auto_write_from_season_cache=fake_cache,
+        auto_search_write_season_package=fake_season,
+        auto_search_write_subtitle=fake_single,
+    )
 
-    results = plugin._auto_process_transfer_group(entries, task_ids=["t1", "t2"])
+    results = service.auto_process_transfer_group(entries, task_ids=["t1", "t2"])
 
     assert calls == []
     assert results["e1"]["status"] == "ai_submitted"
@@ -3025,13 +3042,12 @@ def test_auto_season_package_tries_next_candidate_when_coverage_incomplete(tmp_p
 
     service = FakeSeasonService()
     plugin._online_service = lambda: service
-    plugin._auto_wait_online_rate_limit = lambda *args, **kwargs: None
     plugin._auto_media_for_entry = lambda entry: {"media_type": "tv", "title": "Show", "year": "2024"}
     plugin._apply_tmdb_detail = lambda target, media: None
-    plugin._extract_subtitle_files = lambda source_name, content, session_dir: [
+    fake_extract = lambda source_name, content, session_dir: [
         {"upload_id": source_name, "source_name": source_name, "stored_path": str(tmp_path / source_name), "ext": ".srt"}
     ]
-    plugin._store_auto_season_package_cache = lambda *args, **kwargs: None
+    fake_store_cache = lambda *args, **kwargs: None
 
     def fake_write(**kwargs):
         selected_title = kwargs["selected_result"]["title"]
@@ -3056,9 +3072,14 @@ def test_auto_season_package_tries_next_candidate_when_coverage_incomplete(tmp_p
             "coverage_complete": True,
         }
 
-    plugin._auto_write_prepared_uploads_for_entries = fake_write
+    auto_service = auto_transfer_service_with(
+        plugin,
+        _extract_subtitle_files=fake_extract,
+        store_auto_season_package_cache=fake_store_cache,
+        auto_write_prepared_uploads_for_entries=fake_write,
+    )
 
-    result = plugin._auto_search_write_season_package(entries)
+    result = auto_service.auto_search_write_season_package(entries)
 
     assert service.downloaded == ["partial", "full"]
     assert result["result"] == "full pack"
@@ -3101,13 +3122,12 @@ def test_levius_season_package_requires_all_twelve_episodes(tmp_path):
 
     service = FakeSeasonService()
     plugin._online_service = lambda: service
-    plugin._auto_wait_online_rate_limit = lambda *args, **kwargs: None
     plugin._auto_media_for_entry = lambda entry: {"media_type": "tv", "title": "Levius", "year": "2019"}
     plugin._apply_tmdb_detail = lambda target, media: None
-    plugin._extract_subtitle_files = lambda source_name, content, session_dir: [
+    fake_extract = lambda source_name, content, session_dir: [
         {"upload_id": source_name, "source_name": source_name, "stored_path": str(tmp_path / source_name), "ext": ".srt"}
     ]
-    plugin._store_auto_season_package_cache = lambda *args, **kwargs: None
+    fake_store_cache = lambda *args, **kwargs: None
 
     def fake_write(**kwargs):
         selected_title = kwargs["selected_result"]["title"]
@@ -3131,9 +3151,14 @@ def test_levius_season_package_requires_all_twelve_episodes(tmp_path):
             "coverage_complete": True,
         }
 
-    plugin._auto_write_prepared_uploads_for_entries = fake_write
+    auto_service = auto_transfer_service_with(
+        plugin,
+        _extract_subtitle_files=fake_extract,
+        store_auto_season_package_cache=fake_store_cache,
+        auto_write_prepared_uploads_for_entries=fake_write,
+    )
 
-    result = plugin._auto_search_write_season_package(entries)
+    result = auto_service.auto_search_write_season_package(entries)
 
     assert service.downloaded == ["levius-11", "levius-12"]
     assert result["result"] == "Levius pack 12 episodes"
@@ -3164,17 +3189,7 @@ def test_auto_season_foreign_srt_submits_ai_as_subtitle_fallback(tmp_path):
         )
 
     captured = {}
-    plugin._auto_prepared_items_for_targets = lambda uploads, targets: [
-        {
-            "upload_id": item["upload_id"],
-            "source_name": item["source_name"],
-            "ext": ".srt",
-            "target_id": item["target_id"],
-            "language_suffix": "eng",
-        }
-        for item in uploads
-    ]
-    plugin._prepare_online_ai_subtitle_overrides = lambda **kwargs: (
+    fake_overrides = lambda **kwargs: (
         {entry["path"]: {"subtitle_path": str(tmp_path / f"{entry['basename']}.fixed.srt"), "lang": "en"} for entry in kwargs["target_entries"]},
         [{"target_id": entry["id"], "subtitle_path": str(tmp_path / f"{entry['basename']}.fixed.srt"), "autosub_lang": "en"} for entry in kwargs["target_entries"]],
     )
@@ -3189,12 +3204,16 @@ def test_auto_season_foreign_srt_submits_ai_as_subtitle_fallback(tmp_path):
             "failed": [],
         }
 
-    plugin._submit_autosub_for_entries = fake_submit
-    plugin._write_operations_to_disk = lambda **kwargs: (_ for _ in ()).throw(
-        AssertionError("Foreign season package should be submitted to AI instead of written")
+    service = auto_transfer_service_with(
+        plugin,
+        _prepare_online_ai_subtitle_overrides=fake_overrides,
+        _submit_autosub_for_entries=fake_submit,
+        _write_operations_to_disk=lambda **kwargs: (_ for _ in ()).throw(
+            AssertionError("Foreign season package should be submitted to AI instead of written")
+        ),
     )
 
-    result = plugin._auto_write_prepared_uploads_for_entries(
+    result = service.auto_write_prepared_uploads_for_entries(
         target_entries=entries,
         prepared_uploads=prepared_uploads,
         session_dir=tmp_path,
@@ -3252,14 +3271,17 @@ def test_auto_transfer_skips_chinese_media_by_tmdb_language(tmp_path):
     plugin = make_plugin(module)
     entry = make_auto_entry(tmp_path, title="流浪地球")
     plugin._tmdb_detail_for_media = lambda media: {"original_language": "zh", "origin_country": ["CN"]}
-    plugin._auto_search_write_subtitle = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("Chinese media should skip search")
-    )
-    plugin._auto_submit_ai_for_entry = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("Chinese media should skip AI")
+    service = auto_transfer_service_with(
+        plugin,
+        auto_search_write_subtitle=lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("Chinese media should skip search")
+        ),
+        auto_submit_ai_for_entry=lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("Chinese media should skip AI")
+        ),
     )
 
-    result = plugin._auto_process_transfer_entry(entry)
+    result = service.auto_process_transfer_entry(entry)
 
     assert result["status"] == "skipped"
     assert "中文资源自动跳过" in result["reason"]
@@ -3274,15 +3296,18 @@ def test_auto_transfer_skips_before_search_when_video_has_embedded_chinese_subti
     module.subprocess.run = lambda *args, **kwargs: types.SimpleNamespace(
         stdout='{"streams":[{"index":2,"codec_name":"subrip","tags":{"language":"chi","title":"Chinese Simplified"}}]}'
     )
-    plugin._auto_search_write_subtitle = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("Embedded Chinese subtitle should skip online search")
-    )
-    plugin._auto_submit_ai_for_entry = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("Embedded Chinese subtitle should skip AI")
+    service = auto_transfer_service_with(
+        plugin,
+        auto_search_write_subtitle=lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("Embedded Chinese subtitle should skip online search")
+        ),
+        auto_submit_ai_for_entry=lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("Embedded Chinese subtitle should skip AI")
+        ),
     )
 
     try:
-        result = plugin._auto_process_transfer_entry(entry)
+        result = service.auto_process_transfer_entry(entry)
     finally:
         module.subprocess.run = original_run
 
@@ -3300,12 +3325,15 @@ def test_auto_transfer_ai_source_only_skips_embedded_chinese_before_ai(tmp_path)
     module.subprocess.run = lambda *args, **kwargs: types.SimpleNamespace(
         stdout='{"streams":[{"index":2,"codec_name":"subrip","tags":{"language":"zho"}}]}'
     )
-    plugin._auto_submit_ai_for_entry = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("Embedded Chinese subtitle should skip ai_source_only")
+    service = auto_transfer_service_with(
+        plugin,
+        auto_submit_ai_for_entry=lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("Embedded Chinese subtitle should skip ai_source_only")
+        ),
     )
 
     try:
-        result = plugin._auto_process_transfer_entry(entry)
+        result = service.auto_process_transfer_entry(entry)
     finally:
         module.subprocess.run = original_run
 
@@ -3330,15 +3358,18 @@ def test_auto_transfer_samples_unknown_embedded_text_subtitle_content(tmp_path):
         )
 
     module.subprocess.run = fake_run
-    plugin._auto_search_write_subtitle = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("Sampled Chinese subtitle should skip online search")
-    )
-    plugin._auto_submit_ai_for_entry = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("Sampled Chinese subtitle should skip AI")
+    service = auto_transfer_service_with(
+        plugin,
+        auto_search_write_subtitle=lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("Sampled Chinese subtitle should skip online search")
+        ),
+        auto_submit_ai_for_entry=lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("Sampled Chinese subtitle should skip AI")
+        ),
     )
 
     try:
-        result = plugin._auto_process_transfer_entry(entry)
+        result = service.auto_process_transfer_entry(entry)
     finally:
         module.subprocess.run = original_run
 
@@ -3355,17 +3386,20 @@ def test_auto_transfer_embedded_english_subtitle_still_searches(tmp_path):
     module.subprocess.run = lambda *args, **kwargs: types.SimpleNamespace(
         stdout='{"streams":[{"index":4,"codec_name":"ass","tags":{"language":"eng","title":"English subtitles for Chinese dialogue"}}]}'
     )
-    plugin._auto_search_write_subtitle = lambda item, target, **kwargs: {
-        "status": "written",
-        "target": target.get("label"),
-        "result": "online chinese subtitle",
-    }
-    plugin._auto_submit_ai_for_entry = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("Written online subtitle should not trigger AI")
+    service = auto_transfer_service_with(
+        plugin,
+        auto_search_write_subtitle=lambda item, target, **kwargs: {
+            "status": "written",
+            "target": target.get("label"),
+            "result": "online chinese subtitle",
+        },
+        auto_submit_ai_for_entry=lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("Written online subtitle should not trigger AI")
+        ),
     )
 
     try:
-        result = plugin._auto_process_transfer_entry(entry)
+        result = service.auto_process_transfer_entry(entry)
     finally:
         module.subprocess.run = original_run
 
@@ -3382,12 +3416,15 @@ def test_auto_transfer_embedded_regional_chinese_language_tag_skips(tmp_path):
     module.subprocess.run = lambda *args, **kwargs: types.SimpleNamespace(
         stdout='{"streams":[{"index":2,"codec_name":"ass","tags":{"language":"zh-Hans-CN"}}]}'
     )
-    plugin._auto_search_write_subtitle = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("Regional Chinese language tag should skip online search")
+    service = auto_transfer_service_with(
+        plugin,
+        auto_search_write_subtitle=lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("Regional Chinese language tag should skip online search")
+        ),
     )
 
     try:
-        result = plugin._auto_process_transfer_entry(entry)
+        result = service.auto_process_transfer_entry(entry)
     finally:
         module.subprocess.run = original_run
 
@@ -3404,14 +3441,17 @@ def test_auto_transfer_embedded_chinese_pgs_does_not_skip_online_search(tmp_path
     module.subprocess.run = lambda *args, **kwargs: types.SimpleNamespace(
         stdout='{"streams":[{"index":5,"codec_name":"hdmv_pgs_subtitle","tags":{"language":"chi","title":"Chinese"}}]}'
     )
-    plugin._auto_search_write_subtitle = lambda item, target, **kwargs: {
-        "status": "written",
-        "target": target.get("label"),
-        "result": "online chinese subtitle",
-    }
+    service = auto_transfer_service_with(
+        plugin,
+        auto_search_write_subtitle=lambda item, target, **kwargs: {
+            "status": "written",
+            "target": target.get("label"),
+            "result": "online chinese subtitle",
+        },
+    )
 
     try:
-        result = plugin._auto_process_transfer_entry(entry)
+        result = service.auto_process_transfer_entry(entry)
     finally:
         module.subprocess.run = original_run
 
@@ -3428,14 +3468,17 @@ def test_auto_transfer_embedded_chinese_signs_does_not_skip_online_search(tmp_pa
     module.subprocess.run = lambda *args, **kwargs: types.SimpleNamespace(
         stdout='{"streams":[{"index":2,"codec_name":"ass","tags":{"language":"chi","title":"Chinese Signs/Songs"}}]}'
     )
-    plugin._auto_search_write_subtitle = lambda item, target, **kwargs: {
-        "status": "written",
-        "target": target.get("label"),
-        "result": "online chinese subtitle",
-    }
+    service = auto_transfer_service_with(
+        plugin,
+        auto_search_write_subtitle=lambda item, target, **kwargs: {
+            "status": "written",
+            "target": target.get("label"),
+            "result": "online chinese subtitle",
+        },
+    )
 
     try:
-        result = plugin._auto_process_transfer_entry(entry)
+        result = service.auto_process_transfer_entry(entry)
     finally:
         module.subprocess.run = original_run
 
@@ -3477,13 +3520,19 @@ def test_auto_transfer_group_skips_embedded_chinese_target_before_season_search(
             "ai_by_target": {},
         }
 
-    plugin._auto_write_from_season_cache = fake_cache
-    plugin._auto_search_write_season_package = fake_season
     searched = []
-    plugin._auto_search_write_subtitle = lambda entry, target, **kwargs: searched.append(entry["id"]) or {"status": "skipped", "target": target.get("label")}
+    service = auto_transfer_service_with(
+        plugin,
+        auto_write_from_season_cache=fake_cache,
+        auto_search_write_season_package=fake_season,
+        auto_search_write_subtitle=lambda entry, target, **kwargs: searched.append(entry["id"]) or {
+            "status": "skipped",
+            "target": target.get("label"),
+        },
+    )
 
     try:
-        results = plugin._auto_process_transfer_group(entries, task_ids=["t1", "t2"])
+        results = service.auto_process_transfer_group(entries, task_ids=["t1", "t2"])
     finally:
         module.subprocess.run = original_run
 
@@ -3499,16 +3548,19 @@ def test_auto_transfer_chinese_title_is_not_skip_evidence_without_tmdb_match(tmp
     plugin = make_plugin(module)
     entry = make_auto_entry(tmp_path, title="灰原同学的第二轮青春游戏", media_type="tv", season=1, episode=7)
     plugin._tmdb_detail_for_media = lambda media: {"original_language": "ja", "origin_country": ["JP"]}
-    plugin._auto_search_write_subtitle = lambda item, target: {
-        "status": "written",
-        "target": target.get("label"),
-        "result": "Haigakura S01E07",
-    }
-    plugin._auto_submit_ai_for_entry = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("Written result should not trigger fallback AI")
+    service = auto_transfer_service_with(
+        plugin,
+        auto_search_write_subtitle=lambda item, target, **kwargs: {
+            "status": "written",
+            "target": target.get("label"),
+            "result": "Haigakura S01E07",
+        },
+        auto_submit_ai_for_entry=lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("Written result should not trigger fallback AI")
+        ),
     )
 
-    result = plugin._auto_process_transfer_entry(entry)
+    result = service.auto_process_transfer_entry(entry)
 
     assert result["status"] == "written"
     assert result["result"] == "Haigakura S01E07"
@@ -3519,19 +3571,22 @@ def test_auto_transfer_online_then_ai_source_falls_back_to_ai_when_search_is_unc
     plugin = make_plugin(module)
     entry = make_auto_entry(tmp_path)
     plugin._auto_skip_chinese_media_on_transfer = False
-    plugin._auto_search_write_subtitle = lambda item, target: {
-        "status": "skipped",
-        "target": target.get("label"),
-        "reason": "高置信可下载结果数量为 0",
-        "search_results": 0,
-    }
-    plugin._auto_submit_ai_for_entry = lambda item, target, reason: {
-        "status": "ai_submitted",
-        "target": target.get("label"),
-        "reason": reason,
-    }
+    service = auto_transfer_service_with(
+        plugin,
+        auto_search_write_subtitle=lambda item, target, **kwargs: {
+            "status": "skipped",
+            "target": target.get("label"),
+            "reason": "高置信可下载结果数量为 0",
+            "search_results": 0,
+        },
+        auto_submit_ai_for_entry=lambda item, target, reason: {
+            "status": "ai_submitted",
+            "target": target.get("label"),
+            "reason": reason,
+        },
+    )
 
-    result = plugin._auto_process_transfer_entry(entry)
+    result = service.auto_process_transfer_entry(entry)
 
     assert result["status"] == "ai_submitted"
     assert result["search"]["search_results"] == 0
@@ -3544,16 +3599,19 @@ def test_auto_transfer_online_source_only_never_submits_ai_source_fallback(tmp_p
     entry = make_auto_entry(tmp_path)
     plugin._auto_skip_chinese_media_on_transfer = False
     plugin._auto_transfer_subtitle_strategy = "online_source_only"
-    plugin._auto_search_write_subtitle = lambda item, target: {
-        "status": "skipped",
-        "target": target.get("label"),
-        "reason": "高置信可下载结果数量为 0",
-    }
-    plugin._auto_submit_ai_for_entry = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("search_only should not submit AI")
+    service = auto_transfer_service_with(
+        plugin,
+        auto_search_write_subtitle=lambda item, target, **kwargs: {
+            "status": "skipped",
+            "target": target.get("label"),
+            "reason": "高置信可下载结果数量为 0",
+        },
+        auto_submit_ai_for_entry=lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("search_only should not submit AI")
+        ),
     )
 
-    result = plugin._auto_process_transfer_entry(entry)
+    result = service.auto_process_transfer_entry(entry)
 
     assert result["status"] == "skipped"
     assert result["strategy"] == "online_source_only"
@@ -3565,16 +3623,19 @@ def test_auto_transfer_ai_source_only_never_searches(tmp_path):
     entry = make_auto_entry(tmp_path)
     plugin._auto_skip_chinese_media_on_transfer = False
     plugin._auto_transfer_subtitle_strategy = "ai_source_only"
-    plugin._auto_search_write_subtitle = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("ai_only should not search")
+    service = auto_transfer_service_with(
+        plugin,
+        auto_search_write_subtitle=lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("ai_only should not search")
+        ),
+        auto_submit_ai_for_entry=lambda item, target, reason: {
+            "status": "ai_submitted",
+            "target": target.get("label"),
+            "reason": reason,
+        },
     )
-    plugin._auto_submit_ai_for_entry = lambda item, target, reason: {
-        "status": "ai_submitted",
-        "target": target.get("label"),
-        "reason": reason,
-    }
 
-    result = plugin._auto_process_transfer_entry(entry)
+    result = service.auto_process_transfer_entry(entry)
 
     assert result["status"] == "ai_submitted"
     assert result["strategy"] == "ai_source_only"
@@ -3586,16 +3647,19 @@ def test_auto_transfer_legacy_ai_first_maps_to_ai_source_only(tmp_path):
     entry = make_auto_entry(tmp_path)
     plugin._auto_skip_chinese_media_on_transfer = False
     plugin._auto_transfer_subtitle_strategy = "ai_first"
-    plugin._auto_search_write_subtitle = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("ai_first legacy value should migrate to ai_source_only and never search")
+    service = auto_transfer_service_with(
+        plugin,
+        auto_search_write_subtitle=lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("ai_first legacy value should migrate to ai_source_only and never search")
+        ),
+        auto_submit_ai_for_entry=lambda item, target, reason: {
+            "status": "ai_submitted",
+            "target": target.get("label"),
+            "reason": reason,
+        },
     )
-    plugin._auto_submit_ai_for_entry = lambda item, target, reason: {
-        "status": "ai_submitted",
-        "target": target.get("label"),
-        "reason": reason,
-    }
 
-    result = plugin._auto_process_transfer_entry(entry)
+    result = service.auto_process_transfer_entry(entry)
 
     assert result["status"] == "ai_submitted"
     assert result["strategy"] == "ai_source_only"
@@ -3671,14 +3735,17 @@ def test_auto_transfer_existing_chinese_subtitle_skips_all_strategies(tmp_path):
     plugin = make_plugin(module)
     entry = make_auto_entry(tmp_path, filename="Movie.mkv")
     (tmp_path / "Movie.chi.srt").write_text("subtitle", encoding="utf-8")
-    plugin._auto_search_write_subtitle = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("existing subtitle should skip search")
-    )
-    plugin._auto_submit_ai_for_entry = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("existing subtitle should skip AI")
+    service = auto_transfer_service_with(
+        plugin,
+        auto_search_write_subtitle=lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("existing subtitle should skip search")
+        ),
+        auto_submit_ai_for_entry=lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("existing subtitle should skip AI")
+        ),
     )
 
-    result = plugin._auto_process_transfer_entry(entry)
+    result = service.auto_process_transfer_entry(entry)
 
     assert result["status"] == "skipped"
     assert result["reason"] == "目标已有中文字幕"
@@ -3692,17 +3759,20 @@ def test_auto_transfer_existing_non_chinese_subtitle_still_searches(tmp_path):
     plugin._auto_skip_chinese_media_on_transfer = False
     original_run = module.subprocess.run
     module.subprocess.run = lambda *args, **kwargs: types.SimpleNamespace(stdout='{"streams":[]}')
-    plugin._auto_search_write_subtitle = lambda item, target, **kwargs: {
-        "status": "written",
-        "target": target.get("label"),
-        "result": "online chinese subtitle",
-    }
-    plugin._auto_submit_ai_for_entry = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("Written online subtitle should not trigger AI")
+    service = auto_transfer_service_with(
+        plugin,
+        auto_search_write_subtitle=lambda item, target, **kwargs: {
+            "status": "written",
+            "target": target.get("label"),
+            "result": "online chinese subtitle",
+        },
+        auto_submit_ai_for_entry=lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("Written online subtitle should not trigger AI")
+        ),
     )
 
     try:
-        result = plugin._auto_process_transfer_entry(entry)
+        result = service.auto_process_transfer_entry(entry)
     finally:
         module.subprocess.run = original_run
 
@@ -3755,10 +3825,10 @@ def test_auto_search_write_uses_best_api_candidate_when_multiple_results(tmp_pat
                 }
             ]
 
-    service = FakeAutoService()
-    plugin._online_service = lambda: service
-    plugin._auto_search_keywords_for_entry = lambda item, target: ["Movie 2024"]
-    plugin._extract_subtitle_files = lambda source_name, content, session_dir: [
+    online_service = FakeAutoService()
+    plugin._online_service = lambda: online_service
+    fake_keywords = lambda item, target: ["Movie 2024"]
+    fake_extract = lambda source_name, content, session_dir: [
         {
             "upload_id": "u1",
             "source_name": source_name,
@@ -3766,16 +3836,21 @@ def test_auto_search_write_uses_best_api_candidate_when_multiple_results(tmp_pat
             "ext": ".srt",
         }
     ]
-    plugin._write_operations_to_disk = lambda **kwargs: ([{"output_name": "Movie.chi.srt"}], 0, 0)
-    plugin._auto_submit_ai_for_entry = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("Chinese subtitle should not trigger AI")
+    service = auto_transfer_service_with(
+        plugin,
+        auto_search_keywords_for_entry=fake_keywords,
+        _extract_subtitle_files=fake_extract,
+        _write_operations_to_disk=lambda **kwargs: ([{"output_name": "Movie.chi.srt"}], 0, 0),
+        auto_submit_ai_for_entry=lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("Chinese subtitle should not trigger AI")
+        ),
     )
 
-    result = plugin._auto_search_write_subtitle(entry)
+    result = service.auto_search_write_subtitle(entry)
 
     assert result["status"] == "written"
     assert result["candidate_count"] == 2
-    assert service.downloaded[0]["result_id"] == "os-1"
+    assert online_service.downloaded[0]["result_id"] == "os-1"
 
 
 def test_auto_search_write_falls_back_when_best_download_has_no_subtitle(tmp_path):
@@ -3833,9 +3908,9 @@ def test_auto_search_write_falls_back_when_best_download_has_no_subtitle(tmp_pat
                 }
             ]
 
-    service = FakeAutoService()
-    plugin._online_service = lambda: service
-    plugin._auto_search_keywords_for_entry = lambda item, target: ["Movie 2024"]
+    online_service = FakeAutoService()
+    plugin._online_service = lambda: online_service
+    fake_keywords = lambda item, target: ["Movie 2024"]
 
     def fake_extract(source_name, content, session_dir):
         if source_name.endswith(".txt"):
@@ -3849,14 +3924,18 @@ def test_auto_search_write_falls_back_when_best_download_has_no_subtitle(tmp_pat
             }
         ]
 
-    plugin._extract_subtitle_files = fake_extract
-    plugin._write_operations_to_disk = lambda **kwargs: ([{"output_name": "Movie.chi.srt"}], 0, 0)
+    service = auto_transfer_service_with(
+        plugin,
+        auto_search_keywords_for_entry=fake_keywords,
+        _extract_subtitle_files=fake_extract,
+        _write_operations_to_disk=lambda **kwargs: ([{"output_name": "Movie.chi.srt"}], 0, 0),
+    )
 
-    result = plugin._auto_search_write_subtitle(entry)
+    result = service.auto_search_write_subtitle(entry)
 
     assert result["status"] == "written"
     assert result["result"] == "Movie Chinese Subtitle"
-    assert service.downloaded_ids == ["os-link", "assrt-sub"]
+    assert online_service.downloaded_ids == ["os-link", "assrt-sub"]
 
 
 def test_auto_search_write_chinese_subtitle_enables_timeline_fix(tmp_path):
@@ -3893,8 +3972,8 @@ def test_auto_search_write_chinese_subtitle_enables_timeline_fix(tmp_path):
 
     observed = {}
     plugin._online_service = lambda: FakeAutoService()
-    plugin._auto_search_keywords_for_entry = lambda item, target: ["Movie 2024"]
-    plugin._extract_subtitle_files = lambda source_name, content, session_dir: [
+    fake_keywords = lambda item, target: ["Movie 2024"]
+    fake_extract = lambda source_name, content, session_dir: [
         {
             "upload_id": "u1",
             "source_name": source_name,
@@ -3906,12 +3985,17 @@ def test_auto_search_write_chinese_subtitle_enables_timeline_fix(tmp_path):
         observed["fix_timeline"] = kwargs.get("fix_timeline")
         return [{"output_name": "Movie.chi.srt"}], 1, 0
 
-    plugin._write_operations_to_disk = fake_write
-    plugin._submit_autosub_for_entries = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("Chinese subtitle should not trigger AI")
+    service = auto_transfer_service_with(
+        plugin,
+        auto_search_keywords_for_entry=fake_keywords,
+        _extract_subtitle_files=fake_extract,
+        _write_operations_to_disk=fake_write,
+        _submit_autosub_for_entries=lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("Chinese subtitle should not trigger AI")
+        ),
     )
 
-    result = plugin._auto_search_write_subtitle(entry)
+    result = service.auto_search_write_subtitle(entry)
 
     assert result["status"] == "written"
     assert observed["fix_timeline"] is True
@@ -3951,8 +4035,8 @@ def test_auto_search_write_foreign_srt_submits_ai_without_writing(tmp_path):
 
     captured = {}
     plugin._online_service = lambda: FakeAutoService()
-    plugin._auto_search_keywords_for_entry = lambda item, target: ["Movie 2024"]
-    plugin._extract_subtitle_files = lambda source_name, content, session_dir: [
+    fake_keywords = lambda item, target: ["Movie 2024"]
+    fake_extract = lambda source_name, content, session_dir: [
         {
             "upload_id": "u1",
             "source_name": source_name,
@@ -3960,10 +4044,10 @@ def test_auto_search_write_foreign_srt_submits_ai_without_writing(tmp_path):
             "ext": ".srt",
         }
     ]
-    plugin._write_operations_to_disk = lambda **kwargs: (_ for _ in ()).throw(
+    fake_write = lambda **kwargs: (_ for _ in ()).throw(
         AssertionError("Foreign SRT should be submitted to AI instead of written")
     )
-    plugin._prepare_online_ai_subtitle_overrides = lambda **kwargs: (
+    fake_overrides = lambda **kwargs: (
         {entry["path"]: {"subtitle_path": str(subtitle), "lang": "en"}},
         [{"target_id": entry["id"], "subtitle_path": str(subtitle), "autosub_lang": "en"}],
     )
@@ -3978,9 +4062,16 @@ def test_auto_search_write_foreign_srt_submits_ai_without_writing(tmp_path):
             "tasks": {"task_by_target": {"e1": {"status": "pending"}}},
         }
 
-    plugin._submit_autosub_for_entries = fake_submit
+    service = auto_transfer_service_with(
+        plugin,
+        auto_search_keywords_for_entry=fake_keywords,
+        _extract_subtitle_files=fake_extract,
+        _write_operations_to_disk=fake_write,
+        _prepare_online_ai_subtitle_overrides=fake_overrides,
+        _submit_autosub_for_entries=fake_submit,
+    )
 
-    result = plugin._auto_search_write_subtitle(entry)
+    result = service.auto_search_write_subtitle(entry)
 
     assert result["status"] == "ai_submitted"
     assert captured["overrides"][entry["path"]]["lang"] == "en"
@@ -4012,8 +4103,8 @@ def test_auto_search_write_prefers_chinese_ass_from_multi_subtitle_package(tmp_p
             return [{"provider": "opensubtitles", "source_name": "Movie.zip", "content": b"zip", "result": selected[0]}]
 
     plugin._online_service = lambda: FakeAutoService()
-    plugin._auto_search_keywords_for_entry = lambda item, target: ["Movie 2024"]
-    plugin._extract_subtitle_files = lambda source_name, content, session_dir: [
+    fake_keywords = lambda item, target: ["Movie 2024"]
+    fake_extract = lambda source_name, content, session_dir: [
         {"upload_id": name, "source_name": name, "stored_path": str(path), "ext": path.suffix.lower()}
         for name, path in files.items()
     ]
@@ -4023,12 +4114,17 @@ def test_auto_search_write_prefers_chinese_ass_from_multi_subtitle_package(tmp_p
         captured["operations"] = kwargs["operations"]
         return [{"output_name": operation["destination_name"]} for operation in kwargs["operations"]], 1, 0
 
-    plugin._write_operations_to_disk = fake_write
-    plugin._submit_autosub_for_entries = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("Chinese best match should not trigger AI")
+    service = auto_transfer_service_with(
+        plugin,
+        auto_search_keywords_for_entry=fake_keywords,
+        _extract_subtitle_files=fake_extract,
+        _write_operations_to_disk=fake_write,
+        _submit_autosub_for_entries=lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("Chinese best match should not trigger AI")
+        ),
     )
 
-    result = plugin._auto_search_write_subtitle(entry)
+    result = service.auto_search_write_subtitle(entry)
 
     assert result["status"] == "written"
     assert [operation["upload_info"]["source_name"] for operation in captured["operations"]] == ["Movie.chi.ass"]
@@ -4057,12 +4153,15 @@ def test_auto_write_chinese_all_keeps_chinese_and_bilingual_variants(tmp_path):
         captured["operations"] = kwargs["operations"]
         return [{"output_name": operation["destination_name"]} for operation in kwargs["operations"]], 1, 0
 
-    plugin._write_operations_to_disk = fake_write
-    plugin._submit_autosub_for_entries = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("Chinese-all mode should ignore foreign-only subtitles when Chinese variants exist")
+    service = auto_transfer_service_with(
+        plugin,
+        _write_operations_to_disk=fake_write,
+        _submit_autosub_for_entries=lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("Chinese-all mode should ignore foreign-only subtitles when Chinese variants exist")
+        ),
     )
 
-    result = plugin._auto_write_prepared_uploads_for_entries(
+    result = service.auto_write_prepared_uploads_for_entries(
         target_entries=[entry],
         prepared_uploads=prepared_uploads,
         session_dir=tmp_path,
@@ -4158,18 +4257,23 @@ def test_auto_write_foreign_ai_skip_is_not_counted_as_completed(tmp_path):
             "ext": ".srt",
         }
     ]
-    plugin._prepare_online_ai_subtitle_overrides = lambda **kwargs: (
+    fake_overrides = lambda **kwargs: (
         {entry["path"]: {"subtitle_path": str(subtitle), "lang": "en"}},
         [{"target_id": entry["id"], "subtitle_path": str(subtitle), "autosub_lang": "en"}],
     )
-    plugin._submit_autosub_for_entries = lambda *args, **kwargs: {
+    fake_submit = lambda *args, **kwargs: {
         "added": [],
         "skipped": [{"path": entry["path"], "reason": "任务已存在"}],
         "failed": [],
         "tasks": {"task_by_target": {}},
     }
+    service = auto_transfer_service_with(
+        plugin,
+        _prepare_online_ai_subtitle_overrides=fake_overrides,
+        _submit_autosub_for_entries=fake_submit,
+    )
 
-    result = plugin._auto_write_prepared_uploads_for_entries(
+    result = service.auto_write_prepared_uploads_for_entries(
         target_entries=[entry],
         prepared_uploads=prepared_uploads,
         session_dir=tmp_path,

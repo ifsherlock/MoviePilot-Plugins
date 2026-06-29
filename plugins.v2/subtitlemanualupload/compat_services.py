@@ -52,9 +52,12 @@ from .upload_session import (
     ArchiveResourceLimits,
     DEFAULT_ARCHIVE_RESOURCE_LIMITS,
     UploadSessionService,
+    extract_7z_subtitle_files as upload_extract_7z_subtitle_files,
     extract_command_archive_subtitle_files as upload_extract_command_archive_subtitle_files,
     extract_rar_subtitle_files as upload_extract_rar_subtitle_files,
     extract_rar_subtitle_files_with_rarfile as upload_extract_rar_subtitle_files_with_rarfile,
+    list_rar_members as upload_list_rar_members,
+    read_rar_member as upload_read_rar_member,
 )
 
 
@@ -70,6 +73,40 @@ def install_legacy_service_delegates(cls, specs: Tuple[Tuple[str, str, str], ...
         method = _make_service_delegate(service_name, target_name)
         method.__name__ = legacy_name
         setattr(cls, legacy_name, method)
+
+
+def install_compat_service_factories(cls) -> None:
+    cls._archive_dependency_service = classmethod(
+        lambda owner_cls, status_setter=None: archive_dependency_service(owner_cls, status_setter=status_setter)
+    )
+    cls._upload_session_service_for_path = classmethod(upload_session_service_for_path)
+    cls._subtitle_inventory = classmethod(subtitle_inventory)
+    cls._upload_session_service = lambda owner: owner._upload_session_service_for_path(owner.get_data_path())
+    cls._subtitle_writer = subtitle_writer
+    cls._subtitle_history = subtitle_history
+    cls._autosub_bridge = autosub_bridge
+    cls._online_ai_service = online_ai_service
+    cls._auto_transfer_service = auto_transfer_service
+    cls._target_resolver = target_resolver
+    cls._local_media_catalog = local_media_catalog
+    cls._media_metadata_service = media_metadata_service
+    cls._timeline_task_store = timeline_task_store
+    cls._online_service = online_service
+
+
+def install_compat_archive_methods(cls) -> None:
+    cls._rar_tool = classmethod(lambda owner_cls: archive_dependency_service(owner_cls).rar_tool())
+    cls._sevenzip_tool = classmethod(lambda owner_cls: archive_dependency_service(owner_cls).sevenzip_tool())
+    cls._rar_python_available = classmethod(lambda owner_cls: archive_dependency_service(owner_cls).rar_python_available())
+    cls._rarfile_module = classmethod(lambda owner_cls: archive_dependency_service(owner_cls).rarfile_module())
+    cls._run_archive_command = classmethod(lambda owner_cls, args, timeout=120: archive_dependency_service(owner_cls).run_archive_command(args, timeout=timeout))
+    cls._list_rar_members = classmethod(list_rar_members)
+    cls._read_rar_member = classmethod(read_rar_member)
+    cls._extract_rar_subtitle_files_with_rarfile = classmethod(extract_rar_subtitle_files_with_rarfile)
+    cls._extract_rar_subtitle_files = classmethod(extract_rar_subtitle_files)
+    cls._extract_7z_subtitle_files = classmethod(extract_7z_subtitle_files)
+    cls._extract_command_archive_subtitle_files = classmethod(extract_command_archive_subtitle_files)
+    cls._extract_subtitle_files = classmethod(extract_subtitle_files)
 
 
 LEGACY_INSTANCE_SERVICE_DELEGATES = (
@@ -313,6 +350,24 @@ def online_service(owner) -> OnlineSubtitleSearchService:
     )
 
 
+def list_rar_members(owner_cls, archive_path: Path, tool_path: str):
+    return upload_list_rar_members(
+        archive_path,
+        tool_path,
+        decode_preview_bytes=owner_cls._decode_preview_bytes,
+        run_command=owner_cls._run_archive_command,
+    )
+
+
+def read_rar_member(owner_cls, archive_path: Path, member: str, tool_path: str):
+    return upload_read_rar_member(
+        archive_path,
+        member,
+        tool_path,
+        run_command=owner_cls._run_archive_command,
+    )
+
+
 def extract_rar_subtitle_files_with_rarfile(
     owner_cls,
     source_name: str,
@@ -353,6 +408,23 @@ def extract_rar_subtitle_files(
     )
 
 
+def extract_7z_subtitle_files(
+    owner_cls,
+    source_name: str,
+    archive_path: Path,
+    session_dir: Path,
+    resource_limits: ArchiveResourceLimits = DEFAULT_ARCHIVE_RESOURCE_LIMITS,
+):
+    return upload_extract_7z_subtitle_files(
+        source_name,
+        archive_path,
+        session_dir,
+        sevenzip_tool_func=owner_cls._sevenzip_tool,
+        extract_command_archive_subtitle_files_func=owner_cls._extract_command_archive_subtitle_files,
+        resource_limits=resource_limits,
+    )
+
+
 def extract_command_archive_subtitle_files(
     owner_cls,
     source_name: str,
@@ -374,22 +446,9 @@ def extract_command_archive_subtitle_files(
     )
 
 
-def call_auto_search_write_subtitle(
-    owner,
-    entry,
-    target,
-    *,
-    queue_rate_limited: bool = False,
-    task_ids=None,
-):
-    try:
-        return owner._auto_search_write_subtitle(
-            entry,
-            target,
-            queue_rate_limited=queue_rate_limited,
-            task_ids=task_ids,
-        )
-    except TypeError as exc:
-        if "unexpected keyword argument" not in str(exc):
-            raise
-        return owner._auto_search_write_subtitle(entry, target)
+def extract_subtitle_files(owner_cls, upload_name: str, raw_bytes: bytes, session_dir: Path):
+    return upload_session_service_for_path(owner_cls, session_dir.parent).extract_subtitle_files(
+        upload_name,
+        raw_bytes,
+        session_dir,
+    )

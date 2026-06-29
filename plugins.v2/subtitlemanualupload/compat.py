@@ -2,44 +2,16 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
-import shutil
-import subprocess
 import sys
-import threading
 import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from fastapi import HTTPException, Request
-from starlette.concurrency import run_in_threadpool
+from fastapi import HTTPException
 from starlette.datastructures import UploadFile
 
 from app.core.config import settings
-from app.core.metainfo import MetaInfoPath
-from app.db.models.transferhistory import TransferHistory
-from app.log import logger
-from app.plugins import _PluginBase
-
-try:
-    from app.core.plugin import PluginManager
-except Exception:
-    PluginManager = None
-
-try:
-    from app.chain.tmdb import TmdbChain
-except Exception:
-    TmdbChain = None
-
-try:
-    from app.schemas.types import MediaType
-except Exception:
-    class _NoopMediaType:
-        MOVIE = "movie"
-        TV = "tv"
-
-    MediaType = _NoopMediaType
 
 try:
     from app.core.event import eventmanager, Event as MPEvent
@@ -60,73 +32,20 @@ except Exception:
     MPEvent = Any
     EventType = _NoopEventType
 
-from .online_subtitle import (
-    CaptchaRequiredError,
-    OnlineSubtitleSearchService,
-    build_search_keywords,
-    check_online_rate_limit,
-    extract_title_aliases,
-)
-from .config_schema import (
-    AUTO_MULTI_SUBTITLE_MODES,
-    AUTO_TRANSFER_SUBTITLE_STRATEGIES,
-    AUTO_TRANSFER_SUBTITLE_STRATEGY_ALIASES,
-    AVAILABLE_ONLINE_PROVIDER_IDS,
-    DEFAULT_ASSRT_API_URL,
-    DEFAULT_ENGINE,
-    DEFAULT_ONLINE_PROVIDER_IDS,
-    DEFAULT_OPENSUBTITLES_API_URL,
-    DEFAULT_PROVIDER_ROOTS,
-    DEFAULT_RAR_TOOL_PATH,
-    MANUAL_ONLINE_PROVIDER_IDS,
-    RAR_DEPENDENCY_MODES,
-    build_config_form,
-    host_from_url,
-    normalize_auto_multi_subtitle_mode,
-    normalize_auto_transfer_subtitle_strategy,
-    normalize_online_site_urls,
-    normalize_plugin_config,
-    normalize_provider_ids,
-    normalize_rar_dependency_mode,
-    normalize_root_url,
-    normalize_timeline_max_offset,
-    normalize_timeline_min_offset,
-    normalize_timeline_vad_mode,
-)
-from .subtitle_language import (
-    DEFAULT_AUTO_FORMAT_PRIORITY,
-    DEFAULT_AUTO_LANGUAGE_PRIORITY,
-    LANGUAGE_SUFFIX_ALIASES,
-    auto_language_bucket,
-    auto_subtitle_sort_key,
-    autosub_lang_from_suffix,
-    detect_language_profile,
-    is_chinese_language_suffix,
-    language_suffix_from_filename,
-    normalize_auto_format_priority,
-    normalize_auto_language_key,
-    normalize_auto_language_priority,
-    normalize_language_suffix,
-)
-from .autosub_bridge import AutoSubBridge, autosub_task_summary as bridge_autosub_task_summary
-from .subtitle_history import SubtitleHistory
+from .online_subtitle import OnlineSubtitleSearchService, build_search_keywords, check_online_rate_limit, extract_title_aliases
+from .config_schema import normalize_auto_transfer_subtitle_strategy
+from .subtitle_language import auto_subtitle_sort_key, detect_language_profile, is_chinese_language_suffix, normalize_language_suffix
+from .autosub_bridge import autosub_task_summary as bridge_autosub_task_summary
 from .subtitle_writer import (
-    SubtitleWriter,
-    backup_subtitle_if_needed as writer_backup_subtitle_if_needed,
     build_destination_name as writer_build_destination_name,
     build_write_operations as writer_build_write_operations,
     subtitle_backup_path as writer_subtitle_backup_path,
     timeline_rejection_message as writer_timeline_rejection_message,
     timeline_result_blocks_auto_write as writer_timeline_result_blocks_auto_write,
 )
-from .timeline_fixer import TimelineFixResult, check_timeline_fixer_dependencies, fix_subtitle_timeline
-from .timeline_tasks import TimelineTaskStore, timeline_task_summary
-from .tongwen import convert_subtitle_file_to_simplified
+from .timeline_fixer import TimelineFixResult
+from .timeline_tasks import timeline_task_summary
 from .target_resolver import (
-    LocalMediaCatalog,
-    MediaMetadataService,
-    MediaTargetResolver,
-    SubtitleInventory,
     apply_tmdb_detail as target_apply_tmdb_detail,
     auto_media_for_entry as target_auto_media_for_entry,
     auto_fill_missing_targets as target_auto_fill_missing_targets,
@@ -134,54 +53,20 @@ from .target_resolver import (
     entry_matches_keyword as target_entry_matches_keyword,
     entry_path_is_valid as target_entry_path_is_valid,
     extract_episode_hint as target_extract_episode_hint,
-    event_value as target_event_value,
-    history_type_text as target_history_type_text,
     is_chinese_transfer_media as target_is_chinese_transfer_media,
-    is_local_video_path as target_is_local_video_path,
     is_stream_path as target_is_stream_path,
     media_type_text as target_media_type_text,
-    number_from_tag as target_number_from_tag,
     poster_url as target_poster_url,
     suggest_target as target_suggest_target,
     tmdb_aliases as target_tmdb_aliases,
     tmdb_detail_payload as target_tmdb_detail_payload,
 )
-from .upload_session import (
-    DEFAULT_ARCHIVE_RESOURCE_LIMITS,
-    ArchiveDependencyService,
-    ArchiveResourceLimits,
-    UploadSessionService,
-    archive_suffix_from_content as upload_archive_suffix_from_content,
-    extract_7z_subtitle_files as upload_extract_7z_subtitle_files,
-    extract_command_archive_subtitle_files as upload_extract_command_archive_subtitle_files,
-    extract_rar_subtitle_files as upload_extract_rar_subtitle_files,
-    extract_rar_subtitle_files_with_rarfile as upload_extract_rar_subtitle_files_with_rarfile,
-    list_rar_members as upload_list_rar_members,
-    normalize_online_download_name as normalize_upload_download_name,
-    read_rar_member as upload_read_rar_member,
-)
-from .online_ai import OnlineAiService
-from .auto_transfer import AutoTransferService
+from .upload_session import normalize_online_download_name as normalize_upload_download_name
 from .compat_services import (
     LEGACY_INSTANCE_SERVICE_DELEGATES,
-    archive_dependency_service as build_archive_dependency_service,
-    auto_transfer_service as build_auto_transfer_service,
-    autosub_bridge as build_autosub_bridge,
-    call_auto_search_write_subtitle as compat_call_auto_search_write_subtitle,
-    extract_command_archive_subtitle_files as compat_extract_command_archive_subtitle_files,
-    extract_rar_subtitle_files as compat_extract_rar_subtitle_files,
-    extract_rar_subtitle_files_with_rarfile as compat_extract_rar_subtitle_files_with_rarfile,
+    install_compat_archive_methods,
+    install_compat_service_factories,
     install_legacy_service_delegates,
-    local_media_catalog as build_local_media_catalog,
-    media_metadata_service as build_media_metadata_service,
-    online_ai_service as build_online_ai_service,
-    online_service as build_online_service,
-    subtitle_history as build_subtitle_history,
-    subtitle_inventory as build_subtitle_inventory,
-    subtitle_writer as build_subtitle_writer,
-    target_resolver as build_target_resolver,
-    timeline_task_store as build_timeline_task_store,
-    upload_session_service_for_path as build_upload_session_service_for_path,
 )
 
 
@@ -276,13 +161,6 @@ class SubtitleManualUploadCompatMixin:
             return ""
 
 
-    @classmethod
-    def _archive_dependency_service(
-        cls,
-        status_setter: Optional[Any] = None,
-    ) -> ArchiveDependencyService:
-        return build_archive_dependency_service(cls, status_setter=status_setter)
-
     def _set_rar_dependency_status(self, state: str, message: str) -> None:
         self._rar_dependency_status = type(self)._archive_dependency_service().dependency_status(state, message)
 
@@ -301,44 +179,6 @@ class SubtitleManualUploadCompatMixin:
     @classmethod
     def _extract_episode_hint(cls, file_name: str) -> Optional[Dict[str, int]]:
         return target_extract_episode_hint(file_name, safe_int=cls._safe_int)
-
-    @classmethod
-    def _upload_session_service_for_path(cls, data_path: Path) -> UploadSessionService:
-        return build_upload_session_service_for_path(cls, data_path)
-
-    def _upload_session_service(self) -> UploadSessionService:
-        return self._upload_session_service_for_path(self.get_data_path())
-
-    @classmethod
-    def _subtitle_inventory(cls) -> SubtitleInventory:
-        return build_subtitle_inventory(cls)
-
-    def _subtitle_writer(self) -> SubtitleWriter:
-        return build_subtitle_writer(self)
-
-    def _subtitle_history(self) -> SubtitleHistory:
-        return build_subtitle_history(self)
-
-    def _autosub_bridge(self) -> AutoSubBridge:
-        return build_autosub_bridge(self)
-
-    def _online_ai_service(self) -> OnlineAiService:
-        return build_online_ai_service(self)
-
-    def _auto_transfer_service(self) -> AutoTransferService:
-        return build_auto_transfer_service(self)
-
-    def _target_resolver(self) -> MediaTargetResolver:
-        return build_target_resolver(self)
-
-    def _local_media_catalog(self) -> LocalMediaCatalog:
-        return build_local_media_catalog(self)
-
-    def _media_metadata_service(self) -> MediaMetadataService:
-        return build_media_metadata_service(self)
-
-    def _timeline_task_store(self) -> TimelineTaskStore:
-        return build_timeline_task_store(self)
 
     @classmethod
     def _media_type_text(cls, value: Any) -> str:
@@ -464,107 +304,6 @@ class SubtitleManualUploadCompatMixin:
     @staticmethod
     def _is_upload_file(value: Any) -> bool:
         return isinstance(value, UploadFile)
-
-    @classmethod
-    def _rar_tool(cls) -> str:
-        return cls._archive_dependency_service().rar_tool()
-
-    @classmethod
-    def _sevenzip_tool(cls) -> str:
-        return cls._archive_dependency_service().sevenzip_tool()
-
-    @classmethod
-    def _rar_python_available(cls) -> bool:
-        return cls._archive_dependency_service().rar_python_available()
-
-    @classmethod
-    def _rarfile_module(cls) -> Any:
-        return cls._archive_dependency_service().rarfile_module()
-
-    @classmethod
-    def _run_archive_command(cls, args: List[str], timeout: int = 120) -> bytes:
-        return cls._archive_dependency_service().run_archive_command(args, timeout=timeout)
-
-    @classmethod
-    def _list_rar_members(cls, archive_path: Path, tool_path: str) -> List[str]:
-        return upload_list_rar_members(
-            archive_path,
-            tool_path,
-            decode_preview_bytes=cls._decode_preview_bytes,
-            run_command=cls._run_archive_command,
-        )
-
-    @classmethod
-    def _read_rar_member(cls, archive_path: Path, member: str, tool_path: str) -> bytes:
-        return upload_read_rar_member(
-            archive_path,
-            member,
-            tool_path,
-            run_command=cls._run_archive_command,
-        )
-
-    @classmethod
-    def _extract_rar_subtitle_files_with_rarfile(
-        cls,
-        source_name: str,
-        archive_path: Path,
-        session_dir: Path,
-        resource_limits: ArchiveResourceLimits = DEFAULT_ARCHIVE_RESOURCE_LIMITS,
-    ) -> List[Dict[str, Any]]:
-        return compat_extract_rar_subtitle_files_with_rarfile(cls, source_name, archive_path, session_dir, resource_limits)
-
-    @classmethod
-    def _extract_rar_subtitle_files(
-        cls,
-        source_name: str,
-        archive_path: Path,
-        session_dir: Path,
-        resource_limits: ArchiveResourceLimits = DEFAULT_ARCHIVE_RESOURCE_LIMITS,
-    ) -> List[Dict[str, Any]]:
-        return compat_extract_rar_subtitle_files(cls, source_name, archive_path, session_dir, resource_limits)
-
-    @classmethod
-    def _extract_7z_subtitle_files(
-        cls,
-        source_name: str,
-        archive_path: Path,
-        session_dir: Path,
-        resource_limits: ArchiveResourceLimits = DEFAULT_ARCHIVE_RESOURCE_LIMITS,
-    ) -> List[Dict[str, Any]]:
-        return upload_extract_7z_subtitle_files(
-            source_name,
-            archive_path,
-            session_dir,
-            sevenzip_tool_func=cls._sevenzip_tool,
-            extract_command_archive_subtitle_files_func=cls._extract_command_archive_subtitle_files,
-            resource_limits=resource_limits,
-        )
-
-    @classmethod
-    def _extract_command_archive_subtitle_files(
-        cls,
-        source_name: str,
-        archive_path: Path,
-        session_dir: Path,
-        tool_path: str,
-        resource_limits: ArchiveResourceLimits = DEFAULT_ARCHIVE_RESOURCE_LIMITS,
-    ) -> List[Dict[str, Any]]:
-        return compat_extract_command_archive_subtitle_files(
-            cls, source_name, archive_path, session_dir, tool_path, resource_limits
-        )
-
-    @classmethod
-    def _extract_subtitle_files(
-        cls,
-        upload_name: str,
-        raw_bytes: bytes,
-        session_dir: Path,
-    ) -> List[Dict[str, Any]]:
-        return cls._upload_session_service_for_path(session_dir.parent).extract_subtitle_files(
-            upload_name,
-            raw_bytes,
-            session_dir,
-        )
 
     @classmethod
     def _suggest_target(
@@ -726,35 +465,6 @@ class SubtitleManualUploadCompatMixin:
             keywords = [manual_keyword, *[item for item in keywords if item != manual_keyword]]
         return keywords[:8]
 
-    def _call_auto_search_write_subtitle(
-        self,
-        entry: Dict[str, Any],
-        target: Dict[str, Any],
-        *,
-        queue_rate_limited: bool = False,
-        task_ids: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
-        return compat_call_auto_search_write_subtitle(
-            self,
-            entry,
-            target,
-            queue_rate_limited=queue_rate_limited,
-            task_ids=task_ids,
-        )
-
-    def _auto_task_result_key(self, entry: Dict[str, Any]) -> str:
-        return self._normalize_text(entry.get("id")) or self._auto_transfer_entry_key(entry)
-
-    def _auto_season_cache_key(self, entry: Dict[str, Any]) -> str:
-        media_key = self._normalize_text(entry.get("media_key") or entry.get("tmdb_id") or entry.get("title"))
-        season = self._safe_int(entry.get("season"), 0)
-        if not media_key or not season:
-            return ""
-        return self._hash_text(f"{media_key}|s{season:02d}")[:20]
-
-    def _auto_season_cache_dir(self, cache_key: str) -> Path:
-        return self.get_data_path() / "auto_season_packages" / cache_key
-
     def _auto_subtitle_sort_key(self, item: Dict[str, Any]) -> Tuple[int, int, int, str]:
         language_priority = list(getattr(self, "_auto_subtitle_language_priority", None) or self._default_auto_language_priority)
         format_priority = list(getattr(self, "_auto_subtitle_format_priority", None) or self._default_auto_format_priority)
@@ -777,4 +487,6 @@ class SubtitleManualUploadCompatMixin:
         )
 
 
+install_compat_service_factories(SubtitleManualUploadCompatMixin)
+install_compat_archive_methods(SubtitleManualUploadCompatMixin)
 install_legacy_service_delegates(SubtitleManualUploadCompatMixin, LEGACY_INSTANCE_SERVICE_DELEGATES)
