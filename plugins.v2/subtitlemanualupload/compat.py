@@ -7,7 +7,6 @@ kept only while existing source paths and legacy tests still reference private
 
 from __future__ import annotations
 
-from .compat_core import install_compat_core_methods
 from .compat_services import (
     LEGACY_INSTANCE_SERVICE_DELEGATES,
     install_compat_archive_methods,
@@ -19,6 +18,5 @@ class SubtitleManualUploadCompatMixin:
     pass
 
 
-install_compat_core_methods(SubtitleManualUploadCompatMixin)
 install_compat_archive_methods(SubtitleManualUploadCompatMixin)
 install_legacy_service_delegates(SubtitleManualUploadCompatMixin, LEGACY_INSTANCE_SERVICE_DELEGATES)

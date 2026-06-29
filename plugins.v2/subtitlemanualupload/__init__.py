@@ -6,6 +6,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import threading
 import time
 from collections import OrderedDict
@@ -63,6 +64,7 @@ except Exception:
 from .online_subtitle import (
     OnlineSubtitleSearchService,
     build_search_keywords,
+    check_online_rate_limit,
     extract_title_aliases,
 )
 from .config_schema import (
@@ -106,7 +108,7 @@ from .subtitle_language import (
     normalize_auto_language_priority,
     normalize_language_suffix,
 )
-from .autosub_bridge import AutoSubBridge
+from .autosub_bridge import AutoSubBridge, autosub_task_summary as bridge_autosub_task_summary
 from .subtitle_history import SubtitleHistory
 from .subtitle_writer import (
     SubtitleWriter,
@@ -123,17 +125,22 @@ from .target_resolver import (
     LocalMediaCatalog,
     MediaTargetResolver,
     SubtitleInventory,
+    apply_tmdb_detail as target_apply_tmdb_detail,
     entry_filesystem_signature as target_entry_filesystem_signature,
     entry_matches_keyword as target_entry_matches_keyword,
     entry_path_is_valid as target_entry_path_is_valid,
     event_value as target_event_value,
+    extract_episode_hint as target_extract_episode_hint,
     history_type_text as target_history_type_text,
     is_local_video_path as target_is_local_video_path,
     is_stream_path as target_is_stream_path,
     media_type_text as target_media_type_text,
     number_from_tag as target_number_from_tag,
     poster_url as target_poster_url,
+    tmdb_aliases as target_tmdb_aliases,
+    tmdb_detail_payload as target_tmdb_detail_payload,
 )
+from .timeline_tasks import timeline_task_summary
 from .upload_session import (
     DEFAULT_ARCHIVE_RESOURCE_LIMITS,
     ArchiveResourceLimits,
@@ -404,6 +411,179 @@ class SubtitleManualUpload(SubtitleManualUploadCompatMixin, _PluginBase):
                 "order": 48,
             }
         ]
+
+    @classmethod
+    def _host_module_value(cls, name: str, default: Any) -> Any:
+        module = sys.modules.get(cls.__module__)
+        return getattr(module, name, default) if module is not None else default
+
+    def _ok(self, data: Any = None, message: str = "ok") -> Dict[str, Any]:
+        return {"success": True, "message": message, "data": data}
+
+    @staticmethod
+    def _safe_int(value: Any, default: int = 0) -> int:
+        try:
+            return int(value)
+        except Exception:
+            return default
+
+    @staticmethod
+    def _normalize_text(value: Any) -> str:
+        return str(value or "").strip()
+
+    @staticmethod
+    def _hash_text(value: str) -> str:
+        return hashlib.sha1(value.encode("utf-8")).hexdigest()
+
+    @classmethod
+    def _brief_ids(cls, values: Iterable[Any], limit: int = 5) -> str:
+        items = [cls._normalize_text(item)[:8] for item in values if cls._normalize_text(item)]
+        if len(items) > limit:
+            return f"{','.join(items[:limit])},+{len(items) - limit}"
+        return ",".join(items)
+
+    @staticmethod
+    def _decode_preview_bytes(raw_bytes: bytes) -> str:
+        if not raw_bytes:
+            return ""
+        for encoding in ("utf-8-sig", "utf-16", "gb18030", "big5"):
+            try:
+                return raw_bytes.decode(encoding)
+            except Exception:
+                continue
+        return raw_bytes.decode("utf-8", errors="ignore")
+
+    @classmethod
+    def _normalize_auto_transfer_subtitle_strategy(cls, value: Any) -> str:
+        return normalize_auto_transfer_subtitle_strategy(value)
+
+    def _check_online_rate_limit(self, providers: Iterable[str]) -> None:
+        check_online_rate_limit(
+            providers,
+            records=self._online_rate_records,
+            limit_per_minute=self._online_rate_limit_per_minute,
+            now=self._host_module_value("time", time).time(),
+            normalize_text=self._normalize_text,
+            http_exception=HTTPException,
+        )
+
+    @classmethod
+    def _entry_path_is_valid(cls, entry: Dict[str, Any]) -> bool:
+        return target_entry_path_is_valid(
+            entry,
+            normalize_text=cls._normalize_text,
+            trust_transfer_history_paths=getattr(cls, "_trust_transfer_history_paths", False),
+        )
+
+    @classmethod
+    def _entry_filesystem_signature(cls, entry: Dict[str, Any]) -> str:
+        return target_entry_filesystem_signature(entry, normalize_text=cls._normalize_text)
+
+    @staticmethod
+    def _timestamp_iso(ts: Any) -> str:
+        try:
+            return datetime.fromtimestamp(float(ts)).isoformat(timespec="seconds")
+        except Exception:
+            return ""
+
+    def _set_rar_dependency_status(self, state: str, message: str) -> None:
+        self._rar_dependency_status = type(self)._archive_dependency_service().dependency_status(state, message)
+
+    def _prepare_rar_dependency(self) -> None:
+        type(self)._archive_dependency_service(self._set_rar_dependency_status).prepare_rar_dependency()
+
+    @classmethod
+    def _normalize_language_suffix(cls, value: Any) -> str:
+        return normalize_language_suffix(value)
+
+    @classmethod
+    def _detect_language_profile(cls, file_name: str, raw_bytes: bytes) -> Dict[str, Any]:
+        return detect_language_profile(file_name, raw_bytes, cls._subtitle_exts)
+
+    @classmethod
+    def _extract_episode_hint(cls, file_name: str) -> Optional[Dict[str, int]]:
+        return target_extract_episode_hint(file_name, safe_int=cls._safe_int)
+
+    @classmethod
+    def _media_type_text(cls, value: Any) -> str:
+        return target_media_type_text(value)
+
+    @classmethod
+    def _poster_url(cls, poster_path: Any, prefix: str = "w500") -> str:
+        return target_poster_url(
+            poster_path,
+            prefix,
+            settings_obj=settings,
+            normalize_text=cls._normalize_text,
+        )
+
+    @classmethod
+    def _cache_loaded_at(cls, value: Any) -> Optional[datetime]:
+        if isinstance(value, datetime):
+            return value
+        text = cls._normalize_text(value)
+        if not text:
+            return None
+        try:
+            return datetime.fromisoformat(text)
+        except Exception:
+            return None
+
+    @staticmethod
+    def _json_clone(value: Any) -> Any:
+        return json.loads(json.dumps(value, ensure_ascii=False))
+
+    @staticmethod
+    def _timeline_task_summary(tasks: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+        return timeline_task_summary(tasks)
+
+    @staticmethod
+    def _autosub_task_summary(tasks: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
+        return bridge_autosub_task_summary(tasks)
+
+    @classmethod
+    def _entry_matches_keyword(cls, entry: Dict[str, Any], keyword: str) -> bool:
+        return target_entry_matches_keyword(
+            entry,
+            keyword,
+            normalize_text=cls._normalize_text,
+        )
+
+    @classmethod
+    def _tmdb_detail_payload(cls, detail: Any) -> Dict[str, Any]:
+        return target_tmdb_detail_payload(
+            detail,
+            extract_title_aliases_func=extract_title_aliases,
+            normalize_text=cls._normalize_text,
+        )
+
+    @classmethod
+    def _tmdb_aliases(cls, *values: Any) -> List[str]:
+        return target_tmdb_aliases(*values, extract_title_aliases_func=extract_title_aliases)
+
+    @classmethod
+    def _apply_tmdb_detail(cls, target: Dict[str, Any], detail: Dict[str, Any]) -> None:
+        target_apply_tmdb_detail(target, detail)
+
+    @classmethod
+    def _is_stream_path(cls, path: Any) -> bool:
+        return target_is_stream_path(path, normalize_text=cls._normalize_text, stream_exts=cls._stream_exts)
+
+    @staticmethod
+    def _is_upload_file(value: Any) -> bool:
+        return isinstance(value, UploadFile)
+
+    @staticmethod
+    def _timeline_result_blocks_auto_write(result: TimelineFixResult) -> bool:
+        return writer_timeline_result_blocks_auto_write(result)
+
+    @staticmethod
+    def _timeline_rejection_message(result: TimelineFixResult) -> str:
+        return writer_timeline_rejection_message(result)
+
+    @classmethod
+    def _subtitle_backup_path(cls, subtitle_path: Path) -> Path:
+        return writer_subtitle_backup_path(subtitle_path)
 
     @classmethod
     def _archive_dependency_service(cls, status_setter=None):
