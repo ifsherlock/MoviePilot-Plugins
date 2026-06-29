@@ -181,9 +181,6 @@ class SubtitleManualUploadCompatMixin:
 
 
 
-    @classmethod
-    def _normalize_auto_multi_subtitle_mode(cls, value: Any) -> str:
-        return normalize_auto_multi_subtitle_mode(value)
 
 
 
@@ -193,39 +190,7 @@ class SubtitleManualUploadCompatMixin:
         return str(value or "").strip()
 
 
-    @classmethod
-    def _host_from_url(cls, value: Any) -> str:
-        return host_from_url(value)
 
-    @classmethod
-    def _site_hosts(cls, site: Any) -> List[str]:
-        hosts: List[str] = []
-        for attr in ("url", "domain"):
-            host = cls._normalize_site_host(getattr(site, attr, ""))
-            if host and host not in hosts:
-                hosts.append(host)
-        return hosts
-
-    @classmethod
-    def _normalize_site_host(cls, value: Any) -> str:
-        text = cls._normalize_text(value)
-        if not text:
-            return ""
-        host = cls._host_from_url(text)
-        if not host:
-            text = re.sub(r"^[a-z][a-z0-9+.-]*://", "", text, flags=re.I)
-            host = re.split(r"[/?#]", text, maxsplit=1)[0]
-        if "@" in host:
-            host = host.rsplit("@", 1)[-1]
-        if ":" in host:
-            host = host.split(":", 1)[0]
-        return host.strip(".").lower()
-
-    @staticmethod
-    def _site_host_matches(site_host: str, target_host: str) -> bool:
-        site_host = site_host.lower().removeprefix("www.")
-        target_host = target_host.lower().removeprefix("www.")
-        return site_host == target_host or site_host.endswith(f".{target_host}") or target_host.endswith(f".{site_host}")
 
     @staticmethod
     def _hash_text(value: str) -> str:
@@ -254,14 +219,6 @@ class SubtitleManualUploadCompatMixin:
     def _normalize_auto_transfer_subtitle_strategy(cls, value: Any) -> str:
         return normalize_auto_transfer_subtitle_strategy(value)
 
-    @classmethod
-    def _normalize_provider_ids(cls, value: Any, *, fallback: bool = True) -> List[str]:
-        return normalize_provider_ids(
-            value,
-            fallback=fallback,
-            available_provider_ids=cls._available_online_provider_ids,
-            default_provider_ids=cls._default_online_provider_ids,
-        )
 
 
     def _check_online_rate_limit(self, providers: Iterable[str]) -> None:
@@ -321,8 +278,6 @@ class SubtitleManualUploadCompatMixin:
     def _trim_auto_transfer_tasks_locked(self) -> None:
         self._auto_transfer_service().trim_auto_transfer_tasks_locked()
 
-    def _enqueue_transfer_auto_entries(self, entries: List[Dict[str, Any]]) -> Tuple[int, int]:
-        return self._auto_transfer_service().enqueue_transfer_auto_entries(entries)
 
     def _ensure_transfer_auto_worker(self) -> None:
         self._auto_transfer_service().ensure_transfer_auto_worker()
@@ -342,8 +297,6 @@ class SubtitleManualUploadCompatMixin:
     def _auto_transfer_queue_summary(self) -> Dict[str, Any]:
         return self._auto_transfer_service().auto_transfer_queue_summary()
 
-    def _auto_transfer_queue_snapshot(self, limit: int = 100) -> Dict[str, Any]:
-        return self._auto_transfer_service().auto_transfer_queue_snapshot(limit=limit)
 
     def _auto_transfer_queue_loop(self) -> None:
         self._auto_transfer_service().auto_transfer_queue_loop()
@@ -637,11 +590,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         self._invalidate_match_history_cache()
         self._persist_local_cache()
 
-    def _local_cache_file(self) -> Path:
-        return self._local_media_catalog().local_cache_file()
 
-    def _match_history_cache_file(self) -> Path:
-        return self._subtitle_history().match_history_cache_file()
 
     @classmethod
     def _cache_loaded_at(cls, value: Any) -> Optional[datetime]:
@@ -798,11 +747,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
     def _load_local_entries(self, *, force: bool = False, allow_stale: bool = False) -> List[Dict[str, Any]]:
         return self._local_media_catalog().load_local_entries(force=force, allow_stale=allow_stale)
 
-    def _refresh_local_cache(self) -> List[Dict[str, Any]]:
-        return self._local_media_catalog().refresh_local_cache()
 
-    def _cache_status(self) -> Dict[str, Any]:
-        return self._local_media_catalog().cache_status()
 
     def _autosub_plugin(self) -> Tuple[Any, str]:
         return self._autosub_bridge().autosub_plugin()
@@ -827,8 +772,6 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
 
 
 
-    async def _search_media_candidates(self, keyword: str, media_type: str, limit: int, offset: int = 0) -> Tuple[List[Dict[str, Any]], int]:
-        return await self._local_media_catalog().search_media_candidates(keyword, media_type, limit, offset)
 
     def _group_entries_as_media(self, entries: List[Dict[str, Any]], limit: int) -> List[Dict[str, Any]]:
         return self._local_media_catalog().group_entries_as_media(entries, limit)
@@ -839,23 +782,6 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
     def _merge_seasons(self, entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         return self._target_resolver().merge_seasons(entries)
 
-    def _targets_for_media(
-        self,
-        media_type: str,
-        tmdb_id: Any = None,
-        douban_id: Any = None,
-        title: str = "",
-        year: str = "",
-        season: Any = None,
-    ) -> Dict[str, Any]:
-        return self._target_resolver().targets_for_media(
-            media_type=media_type,
-            tmdb_id=tmdb_id,
-            douban_id=douban_id,
-            title=title,
-            year=year,
-            season=season,
-        )
 
     def _tmdb_detail_for_media(self, media: Dict[str, Any]) -> Dict[str, Any]:
         tmdb_id = self._safe_int(media.get("tmdb_id"), 0)
@@ -1123,8 +1049,6 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
     def _resolve_targets(self, target_ids: Iterable[str]) -> Dict[str, Dict[str, Any]]:
         return self._local_media_catalog().resolve_targets(target_ids)
 
-    def _cached_unlocked_targets(self, locked_ids: set) -> List[Dict[str, Any]]:
-        return self._local_media_catalog().cached_unlocked_targets(locked_ids)
 
     @classmethod
     def _build_destination_name(

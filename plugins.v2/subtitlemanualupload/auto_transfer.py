@@ -7,6 +7,7 @@ import json
 import shutil
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
+from .config_schema import normalize_auto_multi_subtitle_mode
 from .online_subtitle import build_search_keywords
 
 
@@ -682,7 +683,7 @@ class AutoTransferService:
         if not items:
             return []
 
-        mode = owner._normalize_auto_multi_subtitle_mode(getattr(owner, "_auto_multi_subtitle_mode", "best"))
+        mode = normalize_auto_multi_subtitle_mode(getattr(owner, "_auto_multi_subtitle_mode", "best"))
         target_lookup = {item.get("id"): item for item in targets if item.get("id")}
         grouped: Dict[str, List[Dict[str, Any]]] = {}
         for item in items:

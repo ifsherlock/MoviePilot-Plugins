@@ -143,7 +143,7 @@ class AiApi:
         elif requested_target_ids:
             target_entries = []
         else:
-            target_entries = owner._cached_unlocked_targets(locked_ids)
+            target_entries = owner._local_media_catalog().cached_unlocked_targets(locked_ids)
         if requested_target_ids and not target_ids and locked_skipped:
             skipped = [
                 {"task_id": task_id, "reason": "任务不属于当前可操作目标或目标已锁定"}

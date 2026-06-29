@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict
 
+from ..config_schema import host_from_url
 from ..timeline_fixer import check_timeline_fixer_dependencies
 
 
@@ -22,7 +23,7 @@ class StatusApi:
                 "auto_transfer_subtitle_strategy": owner._auto_transfer_subtitle_strategy,
                 "traditional_to_simplified": bool(owner._traditional_to_simplified),
                 "source": "MoviePilot 本地整理记录",
-                "index": owner._cache_status(),
+                "index": owner._local_media_catalog().cache_status(),
                 "archive_support": {
                     "zip": True,
                     "rar": bool(rar_tool),
@@ -43,9 +44,9 @@ class StatusApi:
                 "online_search": {
                     "enabled_providers": owner._online_provider_ids,
                     "assrt_api_configured": bool(owner._assrt_api_key),
-                    "assrt_api_host": owner._host_from_url(owner._assrt_api_url),
+                    "assrt_api_host": host_from_url(owner._assrt_api_url),
                     "opensubtitles_api_configured": bool(owner._opensubtitles_api_key),
-                    "opensubtitles_api_host": owner._host_from_url(owner._opensubtitles_api_url),
+                    "opensubtitles_api_host": host_from_url(owner._opensubtitles_api_url),
                     "opensubtitles_download_configured": bool(
                         owner._opensubtitles_username and owner._opensubtitles_password
                     ),
@@ -58,7 +59,7 @@ class StatusApi:
     def refresh_index(self) -> Dict[str, Any]:
         owner = self.owner
         owner._start_background_cache_refresh()
-        cache_status = owner._cache_status()
+        cache_status = owner._local_media_catalog().cache_status()
         has_cache = bool((owner._local_entries_cache or {}).get("entries"))
         message = "媒体库资源清单已在后台刷新"
         if has_cache:

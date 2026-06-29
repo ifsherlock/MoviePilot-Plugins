@@ -123,7 +123,10 @@ def make_plugin(module):
     plugin._transfer_auto_lock = module.threading.Lock()
     plugin._tmdb_detail_cache = {}
     plugin._build_entry_from_history = lambda history: dict(history)
-    for cache_file in [plugin._local_cache_file(), plugin._match_history_cache_file()]:
+    for cache_file in [
+        plugin._local_media_catalog().local_cache_file(),
+        plugin._subtitle_history().match_history_cache_file(),
+    ]:
         if cache_file.exists():
             cache_file.unlink()
     return plugin
@@ -235,8 +238,8 @@ def test_local_entries_cache_hits_until_forced_refresh(tmp_path):
 
     assert first == second == forced
     assert histories.calls == 2
-    assert plugin._cache_status()["entry_count"] == 1
-    assert plugin._cache_status()["media_count"] == 1
+    assert plugin._local_media_catalog().cache_status()["entry_count"] == 1
+    assert plugin._local_media_catalog().cache_status()["media_count"] == 1
 
 
 def test_refresh_local_cache_rebuilds_entries(tmp_path):
@@ -247,7 +250,7 @@ def test_refresh_local_cache_rebuilds_entries(tmp_path):
     plugin._load_local_entries()
 
     histories.data = [make_history_entry(tmp_path, "b", "b.mkv", media_key="movie-b")]
-    refreshed = plugin._refresh_local_cache()
+    refreshed = plugin._local_media_catalog().refresh_local_cache()
 
     assert [item["id"] for item in refreshed] == ["b"]
     assert list(plugin._entry_map.keys()) == ["b"]
@@ -275,7 +278,7 @@ def test_local_entries_cache_persists_between_plugin_instances(tmp_path):
 
     assert restored == first
     assert histories.calls == 1
-    assert plugin2._cache_status()["persisted"] is True
+    assert plugin2._local_media_catalog().cache_status()["persisted"] is True
 
 
 def test_stale_persisted_cache_returns_before_background_refresh(tmp_path):
@@ -322,7 +325,7 @@ def test_transfer_event_entries_can_merge_into_local_cache(tmp_path):
     assert entries[0]["media_type"] == "tv"
     assert entries[0]["season"] == 1
     assert entries[0]["episode"] == 2
-    assert plugin._cache_status()["entry_count"] == 1
+    assert plugin._local_media_catalog().cache_status()["entry_count"] == 1
 
 
 def test_entry_map_is_bounded_lru():
@@ -1775,11 +1778,20 @@ def test_search_media_candidates_returns_total_with_page_slice(tmp_path):
         make_history_entry(tmp_path, "b", "b.mkv", media_key="movie-b", media_type="movie", title="B", date="2024-01-02"),
         make_history_entry(tmp_path, "c", "c.mkv", media_key="movie-c", media_type="movie", title="C", date="2024-01-03"),
     ]
-    plugin._targets_for_media = lambda **kwargs: (_ for _ in ()).throw(
-        AssertionError("media list search should not load target details")
-    )
+    original_resolver = plugin._target_resolver()
 
-    candidates, total = asyncio.run(plugin._search_media_candidates(keyword="", media_type="movie", limit=2, offset=1))
+    class NoTargetDetailResolver:
+        def merge_seasons(self, entries):
+            return original_resolver.merge_seasons(entries)
+
+        def targets_for_media(self, **kwargs):
+            raise AssertionError("media list search should not load target details")
+
+    plugin._target_resolver = lambda: NoTargetDetailResolver()
+
+    candidates, total = asyncio.run(
+        plugin._local_media_catalog().search_media_candidates(keyword="", media_type="movie", limit=2, offset=1)
+    )
 
     assert total == 3
     assert [item["title"] for item in candidates] == ["B", "A"]
@@ -1791,9 +1803,14 @@ def test_api_search_uses_local_media_catalog_service(tmp_path):
     histories.data = [
         make_history_entry(tmp_path, "a", "a.mkv", media_key="movie-a", media_type="movie", title="A", date="2024-01-01"),
     ]
-    plugin._search_media_candidates = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("api_search should call LocalMediaCatalog directly")
-    )
+    captured = {}
+
+    class FakeCatalog:
+        async def search_media_candidates(self, **kwargs):
+            captured.update(kwargs)
+            return [{"title": "A"}], 1
+
+    plugin._local_media_catalog = lambda: FakeCatalog()
 
     search_endpoint = next(route["endpoint"] for route in plugin.get_api() if route["path"] == "/search")
     response = asyncio.run(
@@ -1802,6 +1819,7 @@ def test_api_search_uses_local_media_catalog_service(tmp_path):
 
     assert response["data"]["total"] == 1
     assert response["data"]["medias"][0]["title"] == "A"
+    assert captured["media_type"] == "movie"
 
 
 def test_api_targets_uses_media_target_resolver_directly(tmp_path):
@@ -1820,9 +1838,19 @@ def test_api_targets_uses_media_target_resolver_directly(tmp_path):
             target_label="Movie.mkv",
         )
     ]
-    plugin._targets_for_media = lambda **kwargs: (_ for _ in ()).throw(
-        AssertionError("api_targets should call MediaTargetResolver directly")
-    )
+    captured = {}
+
+    class FakeResolver:
+        def targets_for_media(self, **kwargs):
+            captured.update(kwargs)
+            return {
+                "targets": [{"basename": "Movie"}],
+                "target_count": 1,
+                "all_target_count": 1,
+                "selected_season": "",
+            }
+
+    plugin._target_resolver = lambda: FakeResolver()
 
     targets_endpoint = next(route["endpoint"] for route in plugin.get_api() if route["path"] == "/targets")
     response = targets_endpoint(
@@ -1831,6 +1859,7 @@ def test_api_targets_uses_media_target_resolver_directly(tmp_path):
 
     assert response["data"]["target_count"] == 1
     assert response["data"]["targets"][0]["basename"] == "Movie"
+    assert captured["media_type"] == "movie"
 
 
 def test_group_entries_exposes_thumbnail_poster_url():
@@ -1871,8 +1900,9 @@ def test_search_media_candidates_reuses_media_index_cache(tmp_path):
 
     plugin._group_entries_as_media = counted_group
 
-    first, first_total = asyncio.run(plugin._search_media_candidates(keyword="", media_type="movie", limit=2, offset=0))
-    second, second_total = asyncio.run(plugin._search_media_candidates(keyword="", media_type="movie", limit=2, offset=2))
+    catalog = plugin._local_media_catalog()
+    first, first_total = asyncio.run(catalog.search_media_candidates(keyword="", media_type="movie", limit=2, offset=0))
+    second, second_total = asyncio.run(catalog.search_media_candidates(keyword="", media_type="movie", limit=2, offset=2))
 
     assert first_total == second_total == 3
     assert [item["title"] for item in first] == ["C", "B"]
@@ -1999,7 +2029,7 @@ def test_match_history_filters_deleted_local_targets(tmp_path):
 
     video.unlink()
     assert plugin._match_history_items() == []
-    assert plugin._cache_status()["entry_count"] == 0
+    assert plugin._local_media_catalog().cache_status()["entry_count"] == 0
 
 
 def test_match_history_cache_invalidates_when_external_subtitle_changes(tmp_path):
@@ -2735,8 +2765,9 @@ def test_auto_transfer_queue_enqueues_tv_season_tasks_without_starting_immediate
         ),
     ]
 
-    queued, skipped = plugin._enqueue_transfer_auto_entries(entries)
-    snapshot = plugin._auto_transfer_queue_snapshot()
+    service = plugin._auto_transfer_service()
+    queued, skipped = service.enqueue_transfer_auto_entries(entries)
+    snapshot = service.auto_transfer_queue_snapshot()
 
     assert queued == 2
     assert skipped == 0
@@ -2750,12 +2781,13 @@ def test_auto_transfer_queue_stop_service_marks_pending_queue_stopped(tmp_path):
     plugin._ensure_transfer_auto_worker = lambda: None
     entry = make_auto_entry(tmp_path, filename="Movie.mkv")
 
-    queued, skipped = plugin._enqueue_transfer_auto_entries([entry])
+    service = plugin._auto_transfer_service()
+    queued, skipped = service.enqueue_transfer_auto_entries([entry])
     assert queued == 1
     assert skipped == 0
 
     plugin.stop_service()
-    snapshot = plugin._auto_transfer_queue_snapshot()
+    snapshot = service.auto_transfer_queue_snapshot()
 
     assert plugin._auto_transfer_stopping is True
     assert snapshot["summary"]["pending"] == 0
@@ -2763,7 +2795,7 @@ def test_auto_transfer_queue_stop_service_marks_pending_queue_stopped(tmp_path):
     assert snapshot["summary"]["active"] == 0
     assert "服务已停止" in snapshot["tasks"][0]["message"]
 
-    queued, skipped = plugin._enqueue_transfer_auto_entries([make_auto_entry(tmp_path, filename="Other.mkv")])
+    queued, skipped = service.enqueue_transfer_auto_entries([make_auto_entry(tmp_path, filename="Other.mkv")])
     assert queued == 0
     assert skipped == 1
 
@@ -2784,9 +2816,6 @@ def test_listen_transfer_complete_uses_auto_transfer_service_directly(tmp_path):
 
     plugin._entries_from_transfer_event = lambda event_data: [entry]
     plugin._merge_local_entries_cache = lambda entries: merged.setdefault("entries", entries)
-    plugin._enqueue_transfer_auto_entries = lambda entries: (_ for _ in ()).throw(
-        AssertionError("listen_transfer_complete should call AutoTransferService directly")
-    )
     plugin._auto_transfer_service = lambda: FakeAutoTransferService()
 
     plugin.listen_transfer_complete(types.SimpleNamespace(event_data={"path": str(tmp_path / "Movie.mkv")}))
@@ -2805,9 +2834,6 @@ def test_api_auto_transfer_queue_uses_auto_transfer_service_directly():
             captured["limit"] = limit
             return {"summary": {"total": 0}, "tasks": []}
 
-    plugin._auto_transfer_queue_snapshot = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("api_auto_transfer_queue should call AutoTransferService directly")
-    )
     plugin._auto_transfer_service = lambda: FakeAutoTransferService()
 
     queue_endpoint = next(route["endpoint"] for route in plugin.get_api() if route["path"] == "/auto_transfer_queue")

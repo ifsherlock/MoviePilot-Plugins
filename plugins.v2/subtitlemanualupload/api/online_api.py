@@ -10,6 +10,7 @@ from starlette.concurrency import run_in_threadpool
 
 from app.log import logger
 
+from ..config_schema import host_from_url, normalize_provider_ids
 from ..online_subtitle import CaptchaRequiredError
 from .upload_api import UploadApi
 
@@ -77,9 +78,9 @@ class OnlineApi:
         status["online_engine"] = owner._online_engine
         status["provider_roots"] = owner._online_site_urls
         status["assrt_api_configured"] = bool(owner._assrt_api_key)
-        status["assrt_api_host"] = owner._host_from_url(owner._assrt_api_url)
+        status["assrt_api_host"] = host_from_url(owner._assrt_api_url)
         status["opensubtitles_api_configured"] = bool(owner._opensubtitles_api_key)
-        status["opensubtitles_api_host"] = owner._host_from_url(owner._opensubtitles_api_url)
+        status["opensubtitles_api_host"] = host_from_url(owner._opensubtitles_api_url)
         status["opensubtitles_download_configured"] = bool(
             owner._opensubtitles_username and owner._opensubtitles_password
         )
@@ -128,7 +129,12 @@ class OnlineApi:
         if not keywords:
             raise HTTPException(status_code=400, detail="没有可用搜索关键词，请手动输入关键词")
         requested_providers = body.get("providers") if isinstance(body.get("providers"), list) else owner._online_provider_ids
-        providers = owner._normalize_provider_ids(requested_providers, fallback=not isinstance(body.get("providers"), list))
+        providers = normalize_provider_ids(
+            requested_providers,
+            fallback=not isinstance(body.get("providers"), list),
+            available_provider_ids=owner._available_online_provider_ids,
+            default_provider_ids=owner._default_online_provider_ids,
+        )
         if not providers:
             raise HTTPException(status_code=400, detail="请至少选择一个在线字幕源")
         owner._check_online_rate_limit(providers)
@@ -174,7 +180,12 @@ class OnlineApi:
         if not keywords:
             raise HTTPException(status_code=400, detail="没有可用搜索关键词，请手动输入关键词")
         provider_id = owner._normalize_text(body.get("provider"))
-        providers = owner._normalize_provider_ids([provider_id], fallback=False)
+        providers = normalize_provider_ids(
+            [provider_id],
+            fallback=False,
+            available_provider_ids=owner._available_online_provider_ids,
+            default_provider_ids=owner._default_online_provider_ids,
+        )
         if not providers:
             raise HTTPException(status_code=400, detail="未知或未启用的在线字幕源")
         owner._check_online_rate_limit(providers)
