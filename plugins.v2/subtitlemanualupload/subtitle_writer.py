@@ -8,6 +8,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 NormalizeText = Callable[[Any], str]
 NormalizeLanguageSuffix = Callable[[Any], str]
 BuildDestinationName = Callable[[Dict[str, Any], Dict[str, Any]], str]
+SessionLoader = Callable[[str], Tuple[Path, Dict[str, Any]]]
+TimelineCacheDir = Callable[[], Path]
 
 
 def build_destination_name(
@@ -153,6 +155,8 @@ class SubtitleWriter:
         timeline_result_type: Any,
         timeline_fix_func: Callable[..., Any],
         convert_subtitle_file_to_simplified: Callable[[Path, Path], bool],
+        load_session: SessionLoader,
+        timeline_cache_dir: TimelineCacheDir,
     ) -> None:
         self._owner = owner
         self._http_exception = http_exception
@@ -160,6 +164,8 @@ class SubtitleWriter:
         self._timeline_result_type = timeline_result_type
         self._timeline_fix_func = timeline_fix_func
         self._convert_subtitle_file_to_simplified = convert_subtitle_file_to_simplified
+        self._session_loader = load_session
+        self._timeline_cache_dir_provider = timeline_cache_dir
 
     def build_write_operations(
         self,
@@ -353,7 +359,7 @@ class SubtitleWriter:
         allow_risky_offset: bool = False,
     ) -> Tuple[Dict[str, Any], str]:
         owner = self._owner
-        session_dir, session_payload = owner._load_session(session_id)
+        session_dir, session_payload = self._session_loader(session_id)
         upload_map = {
             item["upload_id"]: item
             for item in session_payload.get("uploads", [])
@@ -427,7 +433,7 @@ class SubtitleWriter:
                 output_path=output_path,
                 max_offset_seconds=owner._timeline_max_offset_seconds,
                 min_offset_seconds=owner._timeline_min_offset_seconds,
-                cache_dir=owner._timeline_cache_dir(),
+                cache_dir=self._timeline_cache_dir_provider(),
                 allow_risky_offset=effective_allow_risky_offset,
                 vad_mode=owner._timeline_vad_mode,
             )

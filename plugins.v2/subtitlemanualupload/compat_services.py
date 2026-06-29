@@ -231,6 +231,11 @@ def subtitle_writer(owner) -> SubtitleWriter:
             "convert_subtitle_file_to_simplified",
             convert_subtitle_file_to_simplified,
         ),
+        load_session=lambda session_id: owner._upload_session_service().load_session(
+            session_id,
+            normalize_text=owner._normalize_text,
+        ),
+        timeline_cache_dir=lambda: owner.get_data_path() / "timeline_cache",
     )
 
 
