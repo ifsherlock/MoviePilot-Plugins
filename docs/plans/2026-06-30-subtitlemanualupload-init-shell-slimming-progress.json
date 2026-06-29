@@ -1,8 +1,8 @@
 {
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-init-shell-slimming-phased-plan.md",
   "status": {
-    "phase": "phase-3",
-    "task": "3.3",
+    "phase": "phase-4",
+    "task": "4.1",
     "next_allowed_action": "Implement the current task; after verified completion, advance to the next task or phase automatically"
   },
   "execution_rules": {
@@ -279,8 +279,39 @@
         {
           "id": "3.3",
           "title": "Migrate tests away from plugin private helper bindings",
-          "status": "pending",
-          "verification": [],
+          "status": "completed",
+          "verification": [
+            {
+              "command": "rg -n \"\\._(?:host_module_value|ok|safe_int|normalize_text|hash_text|brief_ids|decode_preview_bytes|normalize_auto_transfer_subtitle_strategy|check_online_rate_limit|entry_path_is_valid|entry_filesystem_signature|timestamp_iso|normalize_language_suffix|detect_language_profile|extract_episode_hint|media_type_text|poster_url|cache_loaded_at|json_clone|timeline_task_summary|autosub_task_summary|entry_matches_keyword|tmdb_detail_payload|tmdb_aliases|is_stream_path|is_upload_file|timeline_result_blocks_auto_write|timeline_rejection_message|subtitle_backup_path)\\b\" tests -g \"*.py\"; if ($LASTEXITCODE -eq 0) { exit 1 } elseif ($LASTEXITCODE -eq 1) { exit 0 } else { exit $LASTEXITCODE }",
+              "result": "passed",
+              "evidence": "no test references to runtime helper private bindings"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile tests/test_subtitlemanualupload_cache.py",
+              "result": "passed",
+              "evidence": "compiled successfully"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_request_helpers.py -q",
+              "result": "passed",
+              "evidence": "125 passed in 4.76s"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py -q",
+              "result": "passed",
+              "evidence": "4 passed in 4.98s"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_init_inventory.py --details",
+              "result": "passed",
+              "evidence": "line_count=1000, method_count=134, runtime helper private test binding grep no matches"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "218 passed in 6.11s"
+            }
+          ],
           "commit": null
         }
       ]
@@ -522,6 +553,18 @@
         "inventory reported line_count=1000",
         "baseline smoke exited 0 with 218 passed",
         "next task is phase-3 task 3.3"
+      ]
+    },
+    {
+      "task": "3.3",
+      "status": "completed",
+      "summary": "Migrated tests from SubtitleManualUpload private runtime helper bindings to runtime_helpers, subtitle_language, subtitle_writer, and config_schema module functions.",
+      "evidence": [
+        "runtime helper private binding grep under tests returned no matches",
+        "cache/request helper tests exited 0 with 125 passed",
+        "inventory tests exited 0 with 4 passed",
+        "baseline smoke exited 0 with 218 passed",
+        "phase-3 acceptance satisfied; next task is phase-4 task 4.1"
       ]
     }
   ],

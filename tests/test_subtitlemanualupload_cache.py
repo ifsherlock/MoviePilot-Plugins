@@ -139,15 +139,17 @@ def plugin_submodule(module, name):
 
 def remember_targets(plugin, module, entries):
     target_resolver = plugin_submodule(module, "target_resolver")
+    runtime_helpers = plugin_submodule(module, "runtime_helpers")
     target_resolver.TargetEntryCache(
         plugin._entry_map,
         max_size=plugin._entry_map_max_size,
-        normalize_text=plugin._normalize_text,
+        normalize_text=runtime_helpers.normalize_text,
     ).remember(entries)
 
 
-def load_session(plugin, session_id):
-    return plugin._upload_session_service().load_session(session_id, normalize_text=plugin._normalize_text)
+def load_session(plugin, module, session_id):
+    runtime_helpers = plugin_submodule(module, "runtime_helpers")
+    return plugin._upload_session_service().load_session(session_id, normalize_text=runtime_helpers.normalize_text)
 
 
 def api_endpoint(plugin, path):
@@ -365,10 +367,11 @@ def test_entry_map_is_bounded_lru():
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
     target_resolver = plugin_submodule(module, "target_resolver")
+    runtime_helpers = plugin_submodule(module, "runtime_helpers")
     cache = target_resolver.TargetEntryCache(
         plugin._entry_map,
         max_size=plugin._entry_map_max_size,
-        normalize_text=plugin._normalize_text,
+        normalize_text=runtime_helpers.normalize_text,
     )
 
     cache.remember([{"id": "a"}, {"id": "b"}, {"id": "c"}])
@@ -452,15 +455,16 @@ def test_online_download_name_detects_7z_magic():
 
 def test_upload_session_write_and_load_round_trips_payload(tmp_path):
     module, _, _ = load_plugin_module()
+    runtime_helpers = plugin_submodule(module, "runtime_helpers")
     plugin = make_plugin(module)
-    session_id = f"pytest-{module.SubtitleManualUpload._hash_text(str(tmp_path))[:8]}"
+    session_id = f"pytest-{runtime_helpers.hash_text(str(tmp_path))[:8]}"
     payload = {
         "target_ids": ["t1"],
         "prepared_uploads": [{"upload_id": "u1", "source_name": "Movie.chi.srt"}],
     }
 
     plugin._write_session(session_id, payload)
-    session_dir, loaded = load_session(plugin, session_id)
+    session_dir, loaded = load_session(plugin, module, session_id)
 
     try:
         assert session_dir == plugin._get_session_root() / session_id
@@ -479,6 +483,7 @@ def _zip_payload(entries):
 
 def _limited_upload_session_service(module, tmp_path, **limit_overrides):
     upload_session = plugin_submodule(module, "upload_session")
+    runtime_helpers = plugin_submodule(module, "runtime_helpers")
     cls = module.SubtitleManualUpload
     limits = upload_session.ArchiveResourceLimits(**limit_overrides)
     return upload_session.UploadSessionService(
@@ -488,7 +493,7 @@ def _limited_upload_session_service(module, tmp_path, **limit_overrides):
         rar_exts=cls._rar_exts,
         sevenzip_exts=cls._sevenzip_exts,
         default_session_hours=cls._default_session_hours,
-        hash_text=cls._hash_text,
+        hash_text=runtime_helpers.hash_text,
         extract_rar_subtitle_files=lambda *args, **kwargs: [],
         extract_7z_subtitle_files=lambda *args, **kwargs: [],
         resource_limits=limits,
@@ -588,6 +593,7 @@ def test_archive_subtitle_count_limit_rejects_zip_subtitles(tmp_path):
 def test_rarfile_resource_limit_error_does_not_fallback(tmp_path):
     module, _, _ = load_plugin_module()
     upload_session = plugin_submodule(module, "upload_session")
+    runtime_helpers = plugin_submodule(module, "runtime_helpers")
     fallback_called = False
 
     class FakeMember:
@@ -623,7 +629,7 @@ def test_rarfile_resource_limit_error_does_not_fallback(tmp_path):
             rarfile_module_factory=lambda: FakeRarfileModule,
             rar_python_package="rarfile",
             subtitle_exts={".srt"},
-            hash_text=module.SubtitleManualUpload._hash_text,
+            hash_text=runtime_helpers.hash_text,
             **kwargs,
         )
 
@@ -699,7 +705,7 @@ def test_prepare_upload_uses_upload_session_service(tmp_path):
     assert data["source"] == "upload"
     assert data["items"][0]["source_name"] == "Movie.chi.srt"
     assert data["items"][0]["target_id"] == "m1"
-    session_dir, session_payload = load_session(plugin, data["session_id"])
+    session_dir, session_payload = load_session(plugin, module, data["session_id"])
     assert session_payload["source"] == "upload"
     assert Path(session_payload["uploads"][0]["stored_path"]).is_file()
     shutil.rmtree(session_dir, ignore_errors=True)
@@ -895,7 +901,7 @@ def test_online_download_preview_uses_upload_session_service(tmp_path):
     assert data["source"] == "online"
     assert data["items"][0]["source_name"] == "Movie.eng.srt"
     assert data["items"][0]["online_source"] == "opensubtitles"
-    session_dir, session_payload = load_session(plugin, data["session_id"])
+    session_dir, session_payload = load_session(plugin, module, data["session_id"])
     assert session_payload["source"] == "online"
     assert Path(session_payload["uploads"][0]["stored_path"]).is_file()
     module.shutil.rmtree(session_dir, ignore_errors=True)
@@ -941,14 +947,12 @@ def test_extract_7z_subtitle_files_with_external_tool(tmp_path):
 def test_language_suffix_supports_bilingual_codes():
     module, _, _ = load_plugin_module()
     language = plugin_submodule(module, "subtitle_language")
-    cls = module.SubtitleManualUpload
 
     assert language.normalize_language_suffix("chi&eng") == "chi&eng"
     assert language.normalize_language_suffix("zh/en") == "chi&eng"
     assert language.normalize_language_suffix("chi+jpn") == "chi&jp"
     assert language.normalize_language_suffix("chi,kor") == "chi&kr"
     assert language.is_chinese_language_suffix("chi&eng") is True
-    assert cls._normalize_language_suffix("zh/en") == "chi&eng"
 
 
 def test_detect_language_profile_marks_bilingual_subtitles():
@@ -964,7 +968,6 @@ def test_detect_language_profile_marks_bilingual_subtitles():
     assert language.detect_language_profile("movie.zh.en.srt", f"{chinese}{english}".encode(), cls._subtitle_exts)["suffix"] == "chi&eng"
     assert language.detect_language_profile("movie.srt", f"{chinese}{japanese}".encode(), cls._subtitle_exts)["suffix"] == "chi&jp"
     assert language.detect_language_profile("movie.srt", f"{chinese}{korean}".encode(), cls._subtitle_exts)["suffix"] == "chi&kr"
-    assert cls._detect_language_profile("movie.zh.en.srt", f"{chinese}{english}".encode())["suffix"] == "chi&eng"
 
 
 def test_detect_language_profile_prefers_suffix_token_before_subtitle_extension():
@@ -975,7 +978,6 @@ def test_detect_language_profile_prefers_suffix_token_before_subtitle_extension(
     name = "Jack.Reacher.Never.Go.Back.2016.1080p.KORSUB.HDRip.x264.AAC2.0-STUTTERSHIT.eng.srt"
     assert language.detect_language_profile(name, b"", cls._subtitle_exts)["suffix"] == "eng"
     assert language.detect_language_profile("Example.Movie.2024.zh.en.ass", b"", cls._subtitle_exts)["suffix"] == "chi&eng"
-    assert cls._detect_language_profile(name, b"")["suffix"] == "eng"
 
 
 def test_strm_target_skips_timeline_fixing(tmp_path):
@@ -1019,6 +1021,7 @@ def test_strm_target_skips_timeline_fixing(tmp_path):
 def test_timeline_task_store_summary_and_target_mapping(tmp_path):
     module, _, _ = load_plugin_module()
     timeline_tasks = plugin_submodule(module, "timeline_tasks")
+    runtime_helpers = plugin_submodule(module, "runtime_helpers")
     plugin = make_plugin(module)
     video = tmp_path / "Movie.mkv"
 
@@ -1034,9 +1037,9 @@ def test_timeline_task_store_summary_and_target_mapping(tmp_path):
 
     store = timeline_tasks.TimelineTaskStore(
         plugin,
-        normalize_text=plugin._normalize_text,
-        cache_loaded_at=plugin._cache_loaded_at,
-        json_clone=plugin._json_clone,
+        normalize_text=runtime_helpers.normalize_text,
+        cache_loaded_at=runtime_helpers.cache_loaded_at,
+        json_clone=runtime_helpers.json_clone,
         timeline_task_ttl_seconds=plugin._timeline_task_ttl_seconds,
         max_tasks=plugin._entry_map_max_size,
     )
@@ -1162,6 +1165,7 @@ def test_write_operations_rejects_low_confidence_timeline_result(tmp_path):
 
 def test_low_confidence_timeline_result_blocks_auto_write():
     module, _, _ = load_plugin_module()
+    subtitle_writer = plugin_submodule(module, "subtitle_writer")
 
     result = module.TimelineFixResult(
         enabled=True,
@@ -1176,11 +1180,12 @@ def test_low_confidence_timeline_result_blocks_auto_write():
         risk_flags=["weak_score_margin", "rms_low_precision"],
     )
 
-    assert module.SubtitleManualUpload._timeline_result_blocks_auto_write(result) is True
+    assert subtitle_writer.timeline_result_blocks_auto_write(result) is True
 
 
 def test_offset_below_threshold_with_blocking_risk_still_blocks_auto_write():
     module, _, _ = load_plugin_module()
+    subtitle_writer = plugin_submodule(module, "subtitle_writer")
 
     result = module.TimelineFixResult(
         enabled=True,
@@ -1195,7 +1200,7 @@ def test_offset_below_threshold_with_blocking_risk_still_blocks_auto_write():
         risk_flags=["local_alignment_unstable"],
     )
 
-    assert module.SubtitleManualUpload._timeline_result_blocks_auto_write(result) is True
+    assert subtitle_writer.timeline_result_blocks_auto_write(result) is True
 
 
 def test_target_payload_marks_strm_resources(tmp_path):
@@ -2228,6 +2233,7 @@ def test_subtitle_history_service_persists_and_restores_cache(tmp_path):
     plugin = make_plugin(module)
     history_module = plugin_submodule(module, "subtitle_history")
     target_resolver = plugin_submodule(module, "target_resolver")
+    runtime_helpers = plugin_submodule(module, "runtime_helpers")
     history = history_module.SubtitleHistory(
         plugin,
         http_exception=module.HTTPException,
@@ -2235,7 +2241,7 @@ def test_subtitle_history_service_persists_and_restores_cache(tmp_path):
         target_entry_cache=target_resolver.TargetEntryCache(
             plugin._entry_map,
             max_size=plugin._entry_map_max_size,
-            normalize_text=plugin._normalize_text,
+            normalize_text=runtime_helpers.normalize_text,
         ),
     )
     video = tmp_path / "Movie.mkv"
@@ -2629,6 +2635,7 @@ def test_online_ai_submit_endpoint_downloads_fixes_and_does_not_create_preview(t
 
 def test_online_ai_submit_endpoint_uses_online_ai_service(tmp_path):
     module, _, _ = load_plugin_module()
+    runtime_helpers = plugin_submodule(module, "runtime_helpers")
     plugin = make_plugin(module)
     video = tmp_path / "Movie.mkv"
     video.write_text("video", encoding="utf-8")
@@ -2648,7 +2655,7 @@ def test_online_ai_submit_endpoint_uses_online_ai_service(tmp_path):
             captured["entries"] = entries
             captured["selected_results"] = selected_results
             captured["allow_risky_offset"] = allow_risky_offset
-            return plugin._ok({"ai_translate": {"added": [{"path": entries[0]["path"]}]}, "tasks": {}})
+            return runtime_helpers.ok_response({"ai_translate": {"added": [{"path": entries[0]["path"]}]}, "tasks": {}})
 
     plugin._submit_online_ai_translate = lambda *args, **kwargs: (_ for _ in ()).throw(
         AssertionError("api_online_ai_submit should call OnlineAiService directly")
@@ -2675,6 +2682,7 @@ def test_online_ai_submit_endpoint_uses_online_ai_service(tmp_path):
 
 def test_online_download_preview_submit_ai_uses_online_ai_service(tmp_path):
     module, _, _ = load_plugin_module()
+    runtime_helpers = plugin_submodule(module, "runtime_helpers")
     plugin = make_plugin(module)
     video = tmp_path / "Movie.mkv"
     video.write_text("video", encoding="utf-8")
@@ -2694,7 +2702,7 @@ def test_online_download_preview_submit_ai_uses_online_ai_service(tmp_path):
             captured["entries"] = entries
             captured["selected_results"] = selected_results
             captured["allow_risky_offset"] = allow_risky_offset
-            return plugin._ok({"ai_translate": {"added": [{"path": entries[0]["path"]}]}, "tasks": {}})
+            return runtime_helpers.ok_response({"ai_translate": {"added": [{"path": entries[0]["path"]}]}, "tasks": {}})
 
     plugin._submit_online_ai_translate = lambda *args, **kwargs: (_ for _ in ()).throw(
         AssertionError("online_download_preview endpoint should call OnlineAiService directly for submit_ai_translate")
@@ -2849,13 +2857,16 @@ def test_online_ai_submit_requires_timeline_fixer_before_download(tmp_path):
 
 def test_tmdb_aliases_reuse_online_title_cleaner():
     module, _, _ = load_plugin_module()
+    online_subtitle = plugin_submodule(module, "online_subtitle")
+    runtime_helpers = plugin_submodule(module, "runtime_helpers")
 
-    aliases = module.SubtitleManualUpload._tmdb_aliases(
+    aliases = runtime_helpers.tmdb_aliases(
         [
             {"iso_639_1": "tr", "name": "Turkish", "english_name": "Turkish", "data": {"title": "Hayalet Sürücü"}},
             {"iso_639_1": "fi", "name": "suomi", "english_name": "Finnish", "data": {"title": ""}},
             {"iso_639_1": "en", "name": "English", "english_name": "English", "data": {"title": "Ghost Rider"}},
-        ]
+        ],
+        extract_title_aliases_func=online_subtitle.extract_title_aliases,
     )
 
     assert "Hayalet Sürücü" in aliases
@@ -2867,8 +2878,10 @@ def test_tmdb_aliases_reuse_online_title_cleaner():
 
 def test_tmdb_detail_payload_prefers_real_english_translation_title():
     module, _, _ = load_plugin_module()
+    online_subtitle = plugin_submodule(module, "online_subtitle")
+    runtime_helpers = plugin_submodule(module, "runtime_helpers")
 
-    payload = module.SubtitleManualUpload._tmdb_detail_payload(
+    payload = runtime_helpers.tmdb_detail_payload(
         {
             "original_language": "en",
             "origin_country": ["US"],
@@ -2887,7 +2900,8 @@ def test_tmdb_detail_payload_prefers_real_english_translation_title():
                     "data": {"title": "The Lord of the Rings: The Return of the King"},
                 },
             ],
-        }
+        },
+        extract_title_aliases_func=online_subtitle.extract_title_aliases,
     )
 
     assert payload["en_title"] == "The Lord of the Rings: The Return of the King"
@@ -3789,7 +3803,6 @@ def test_auto_transfer_legacy_strategy_aliases_are_migrated():
 
     for legacy, expected in aliases.items():
         assert config_schema.normalize_auto_transfer_subtitle_strategy(legacy) == expected
-    assert module.SubtitleManualUpload._normalize_auto_transfer_subtitle_strategy("ai_first") == "ai_source_only"
 
 
 def test_auto_subtitle_preference_config_normalizes_legacy_strings(tmp_path):
