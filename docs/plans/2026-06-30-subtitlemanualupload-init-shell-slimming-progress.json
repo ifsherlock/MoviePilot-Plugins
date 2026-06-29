@@ -2,7 +2,7 @@
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-init-shell-slimming-phased-plan.md",
   "status": {
     "phase": "phase-3",
-    "task": "3.1",
+    "task": "3.2",
     "next_allowed_action": "Implement the current task; after verified completion, advance to the next task or phase automatically"
   },
   "execution_rules": {
@@ -213,8 +213,34 @@
         {
           "id": "3.1",
           "title": "Extract dependency-free pure helpers",
-          "status": "pending",
-          "verification": [],
+          "status": "completed",
+          "verification": [
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile plugins.v2/subtitlemanualupload/__init__.py plugins.v2/subtitlemanualupload/runtime_helpers.py",
+              "result": "passed",
+              "evidence": "compiled successfully"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_request_helpers.py -q",
+              "result": "passed",
+              "evidence": "125 passed in 5.03s"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py -q",
+              "result": "passed",
+              "evidence": "4 passed in 5.48s"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_init_inventory.py --details",
+              "result": "passed",
+              "evidence": "line_count=1007, method_count=134, runtime_helper group count=30"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "218 passed in 6.18s"
+            }
+          ],
           "commit": null
         },
         {
@@ -447,6 +473,17 @@
         "inventory reported line_count=1021 and _save_config line_count=2",
         "baseline smoke exited 0 with 218 passed",
         "phase-2 acceptance satisfied; next task is phase-3 task 3.1"
+      ]
+    },
+    {
+      "task": "3.1",
+      "status": "completed",
+      "summary": "Added runtime_helpers.py for dependency-free ok, int, text, hash, brief-id, decode, timestamp, cache date, and JSON clone helpers while retaining plugin private wrappers for later test migration.",
+      "evidence": [
+        "cache/request helper tests exited 0 with 125 passed",
+        "inventory tests exited 0 with 4 passed",
+        "inventory reported line_count=1007",
+        "baseline smoke exited 0 with 218 passed"
       ]
     }
   ],

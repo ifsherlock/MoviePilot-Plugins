@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
@@ -98,6 +97,17 @@ from .config_runtime import (
     build_save_config_payload,
     reset_runtime_state,
     sync_class_runtime_config,
+)
+from .runtime_helpers import (
+    brief_ids as runtime_brief_ids,
+    cache_loaded_at as runtime_cache_loaded_at,
+    decode_preview_bytes as runtime_decode_preview_bytes,
+    hash_text as runtime_hash_text,
+    json_clone as runtime_json_clone,
+    normalize_text as runtime_normalize_text,
+    ok_response,
+    safe_int as runtime_safe_int,
+    timestamp_iso as runtime_timestamp_iso,
 )
 from .subtitle_language import (
     DEFAULT_AUTO_FORMAT_PRIORITY,
@@ -368,40 +378,27 @@ class SubtitleManualUpload(_PluginBase):
         return getattr(module, name, default) if module is not None else default
 
     def _ok(self, data: Any = None, message: str = "ok") -> Dict[str, Any]:
-        return {"success": True, "message": message, "data": data}
+        return ok_response(data, message)
 
     @staticmethod
     def _safe_int(value: Any, default: int = 0) -> int:
-        try:
-            return int(value)
-        except Exception:
-            return default
+        return runtime_safe_int(value, default)
 
     @staticmethod
     def _normalize_text(value: Any) -> str:
-        return str(value or "").strip()
+        return runtime_normalize_text(value)
 
     @staticmethod
     def _hash_text(value: str) -> str:
-        return hashlib.sha1(value.encode("utf-8")).hexdigest()
+        return runtime_hash_text(value)
 
     @classmethod
     def _brief_ids(cls, values: Iterable[Any], limit: int = 5) -> str:
-        items = [cls._normalize_text(item)[:8] for item in values if cls._normalize_text(item)]
-        if len(items) > limit:
-            return f"{','.join(items[:limit])},+{len(items) - limit}"
-        return ",".join(items)
+        return runtime_brief_ids(values, limit)
 
     @staticmethod
     def _decode_preview_bytes(raw_bytes: bytes) -> str:
-        if not raw_bytes:
-            return ""
-        for encoding in ("utf-8-sig", "utf-16", "gb18030", "big5"):
-            try:
-                return raw_bytes.decode(encoding)
-            except Exception:
-                continue
-        return raw_bytes.decode("utf-8", errors="ignore")
+        return runtime_decode_preview_bytes(raw_bytes)
 
     @classmethod
     def _normalize_auto_transfer_subtitle_strategy(cls, value: Any) -> str:
@@ -431,10 +428,7 @@ class SubtitleManualUpload(_PluginBase):
 
     @staticmethod
     def _timestamp_iso(ts: Any) -> str:
-        try:
-            return datetime.fromtimestamp(float(ts)).isoformat(timespec="seconds")
-        except Exception:
-            return ""
+        return runtime_timestamp_iso(ts)
 
     def _set_rar_dependency_status(self, state: str, message: str) -> None:
         self._rar_dependency_status = type(self)._archive_dependency_service().dependency_status(state, message)
@@ -469,19 +463,11 @@ class SubtitleManualUpload(_PluginBase):
 
     @classmethod
     def _cache_loaded_at(cls, value: Any) -> Optional[datetime]:
-        if isinstance(value, datetime):
-            return value
-        text = cls._normalize_text(value)
-        if not text:
-            return None
-        try:
-            return datetime.fromisoformat(text)
-        except Exception:
-            return None
+        return runtime_cache_loaded_at(value)
 
     @staticmethod
     def _json_clone(value: Any) -> Any:
-        return json.loads(json.dumps(value, ensure_ascii=False))
+        return runtime_json_clone(value)
 
     @staticmethod
     def _timeline_task_summary(tasks: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
