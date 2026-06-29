@@ -7,7 +7,6 @@ kept only while existing source paths and legacy tests still reference private
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import HTTPException
@@ -21,16 +20,13 @@ from .compat_services import (
 )
 from .subtitle_language import (
     auto_subtitle_sort_key,
-    auto_target_has_chinese_subtitle as language_auto_target_has_chinese_subtitle,
     is_chinese_language_suffix,
-    target_has_chinese_subtitle as language_target_has_chinese_subtitle,
 )
 from .subtitle_writer import (
     build_destination_name as writer_build_destination_name,
     build_write_operations as writer_build_write_operations,
 )
 from .target_resolver import (
-    TargetEntryCache,
     auto_fill_missing_targets as target_auto_fill_missing_targets,
     auto_media_for_entry as target_auto_media_for_entry,
     is_chinese_transfer_media as target_is_chinese_transfer_media,
@@ -58,13 +54,6 @@ class SubtitleManualUploadCompatMixin:
             chinese_category_pattern=self._chinese_media_category_pattern,
         )
 
-    def _remember_targets(self, entries: List[Dict[str, Any]]) -> None:
-        TargetEntryCache(
-            self._entry_map,
-            max_size=self._entry_map_max_size,
-            normalize_text=self._normalize_text,
-        ).remember(entries)
-
     @classmethod
     def _build_destination_name(
         cls,
@@ -77,14 +66,6 @@ class SubtitleManualUploadCompatMixin:
             normalize_text=cls._normalize_text,
             normalize_language_suffix=cls._normalize_language_suffix,
         )
-
-    @classmethod
-    def _subtitle_files_for_target(cls, target_entry: Dict[str, Any]) -> List[Dict[str, Any]]:
-        return cls._subtitle_inventory().subtitle_files_for_target(target_entry)
-
-    @classmethod
-    def _embedded_subtitle_tracks_for_target(cls, target_entry: Dict[str, Any]) -> List[Dict[str, Any]]:
-        return cls._subtitle_inventory().embedded_subtitle_tracks_for_target(target_entry)
 
     @classmethod
     def _suggest_target(
@@ -130,27 +111,6 @@ class SubtitleManualUploadCompatMixin:
     @classmethod
     def _is_chinese_language_suffix(cls, suffix: Any) -> bool:
         return is_chinese_language_suffix(suffix)
-
-    @classmethod
-    def _target_has_chinese_subtitle(cls, target: Dict[str, Any]) -> bool:
-        return language_target_has_chinese_subtitle(
-            target,
-            is_chinese_language_suffix_func=cls._is_chinese_language_suffix,
-        )
-
-    def _auto_target_has_chinese_subtitle(self, entry: Dict[str, Any], target: Dict[str, Any]) -> bool:
-        return language_auto_target_has_chinese_subtitle(
-            entry,
-            target,
-            subtitle_inventory=self._subtitle_inventory(),
-            is_chinese_language_suffix_func=self._is_chinese_language_suffix,
-        )
-
-    def _load_session(self, session_id: str) -> Tuple[Path, Dict[str, Any]]:
-        return self._upload_session_service().load_session(session_id, normalize_text=self._normalize_text)
-
-    def _timeline_cache_dir(self) -> Path:
-        return self.get_data_path() / "timeline_cache"
 
     def _auto_subtitle_sort_key(self, item: Dict[str, Any]) -> Tuple[int, int, int, str]:
         language_priority = list(getattr(self, "_auto_subtitle_language_priority", None) or self._default_auto_language_priority)

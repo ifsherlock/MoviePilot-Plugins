@@ -137,6 +137,19 @@ def plugin_submodule(module, name):
     return sys.modules[f"{module.__name__}.{name}"]
 
 
+def remember_targets(plugin, module, entries):
+    target_resolver = plugin_submodule(module, "target_resolver")
+    target_resolver.TargetEntryCache(
+        plugin._entry_map,
+        max_size=plugin._entry_map_max_size,
+        normalize_text=plugin._normalize_text,
+    ).remember(entries)
+
+
+def load_session(plugin, session_id):
+    return plugin._upload_session_service().load_session(session_id, normalize_text=plugin._normalize_text)
+
+
 def api_endpoint(plugin, path):
     return next(route["endpoint"] for route in plugin.get_api() if route["path"] == path)
 
@@ -431,7 +444,7 @@ def test_upload_session_write_and_load_round_trips_payload(tmp_path):
     }
 
     plugin._write_session(session_id, payload)
-    session_dir, loaded = plugin._load_session(session_id)
+    session_dir, loaded = load_session(plugin, session_id)
 
     try:
         assert session_dir == plugin._get_session_root() / session_id
@@ -626,7 +639,7 @@ def test_prepare_upload_uses_upload_session_service(tmp_path):
     plugin = make_plugin(module)
     video = tmp_path / "Movie.mkv"
     video.write_text("video", encoding="utf-8")
-    plugin._remember_targets(
+    remember_targets(plugin, module,
         [
             {
                 "id": "m1",
@@ -661,7 +674,7 @@ def test_prepare_upload_uses_upload_session_service(tmp_path):
     assert data["source"] == "upload"
     assert data["items"][0]["source_name"] == "Movie.chi.srt"
     assert data["items"][0]["target_id"] == "m1"
-    session_dir, session_payload = plugin._load_session(data["session_id"])
+    session_dir, session_payload = load_session(plugin, data["session_id"])
     assert session_payload["source"] == "upload"
     assert Path(session_payload["uploads"][0]["stored_path"]).is_file()
     shutil.rmtree(session_dir, ignore_errors=True)
@@ -672,7 +685,7 @@ def test_online_search_endpoint_uses_online_service(tmp_path):
     plugin = make_plugin(module)
     video = tmp_path / "Movie.mkv"
     video.write_text("video", encoding="utf-8")
-    plugin._remember_targets(
+    remember_targets(plugin, module,
         [
             {
                 "id": "m1",
@@ -802,7 +815,7 @@ def test_online_download_preview_uses_upload_session_service(tmp_path):
     plugin = make_plugin(module)
     video = tmp_path / "Movie.mkv"
     video.write_text("video", encoding="utf-8")
-    plugin._remember_targets(
+    remember_targets(plugin, module,
         [
             {
                 "id": "m1",
@@ -854,7 +867,7 @@ def test_online_download_preview_uses_upload_session_service(tmp_path):
     assert data["source"] == "online"
     assert data["items"][0]["source_name"] == "Movie.eng.srt"
     assert data["items"][0]["online_source"] == "opensubtitles"
-    session_dir, session_payload = plugin._load_session(data["session_id"])
+    session_dir, session_payload = load_session(plugin, data["session_id"])
     assert session_payload["source"] == "online"
     assert Path(session_payload["uploads"][0]["stored_path"]).is_file()
     module.shutil.rmtree(session_dir, ignore_errors=True)
@@ -1234,7 +1247,7 @@ def test_ai_submit_with_selected_external_subtitle_submits_matched_override(tmp_
     video.write_text("video", encoding="utf-8")
     subtitle.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
     entry = {"id": "t1", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}
-    plugin._remember_targets([entry])
+    remember_targets(plugin, module, [entry])
     captured = {}
 
     class FakeBridge:
@@ -1293,7 +1306,7 @@ def test_ai_submit_with_asr_source_policy_forwards_source_choice(tmp_path):
     video = tmp_path / "Movie.mkv"
     video.write_text("video", encoding="utf-8")
     entry = {"id": "t1", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}
-    plugin._remember_targets([entry])
+    remember_targets(plugin, module, [entry])
     captured = {}
 
     class FakeBridge:
@@ -1393,7 +1406,7 @@ def test_api_ai_restart_accepts_task_ids_without_target_ids(tmp_path):
     video = tmp_path / "Movie.mkv"
     video.write_text("video", encoding="utf-8")
     entry = {"id": "t1", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}
-    plugin._remember_targets([entry])
+    remember_targets(plugin, module, [entry])
     captured = {}
 
     def fake_restart(entries, **kwargs):
@@ -1461,7 +1474,7 @@ def test_ai_restart_task_ids_for_locked_target_are_skipped(tmp_path):
     video = tmp_path / "Locked.mkv"
     video.write_text("video", encoding="utf-8")
     locked_entry = {"id": "locked", "path": str(video), "basename": "Locked", "target_label": "Locked", "storage": "local"}
-    plugin._remember_targets([locked_entry])
+    remember_targets(plugin, module, [locked_entry])
     called = {"restart": False}
 
     class FakeAutoSub:
@@ -1563,7 +1576,7 @@ def test_api_ai_restart_all_requested_targets_locked_with_task_ids_does_not_fall
     video2 = tmp_path / "Episode2.mkv"
     video1.write_text("video", encoding="utf-8")
     video2.write_text("video", encoding="utf-8")
-    plugin._remember_targets(
+    remember_targets(plugin, module,
         [
             {"id": "e1", "path": str(video1), "basename": "Episode1", "target_label": "E01", "storage": "local"},
             {"id": "e2", "path": str(video2), "basename": "Episode2", "target_label": "E02", "storage": "local"},
@@ -1599,7 +1612,7 @@ def test_api_ai_restart_mixed_unlocked_and_locked_task_ids(tmp_path):
     video2.write_text("video", encoding="utf-8")
     entry1 = {"id": "e1", "path": str(video1), "basename": "Episode1", "target_label": "E01", "storage": "local"}
     entry2 = {"id": "e2", "path": str(video2), "basename": "Episode2", "target_label": "E02", "storage": "local"}
-    plugin._remember_targets([entry1, entry2])
+    remember_targets(plugin, module, [entry1, entry2])
     captured = {}
 
     class FakeAutoSub:
@@ -1646,7 +1659,7 @@ def test_api_ai_restart_stale_target_ids_with_task_ids_returns_400(tmp_path):
     plugin = make_plugin(module)
     video = tmp_path / "Movie.mkv"
     video.write_text("video", encoding="utf-8")
-    plugin._remember_targets([{"id": "valid", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}])
+    remember_targets(plugin, module, [{"id": "valid", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}])
 
     try:
         asyncio.run(api_endpoint(plugin, "/ai_restart")(FakeRequest({"target_ids": ["missing"], "task_ids": ["task-1"]})))
@@ -1662,7 +1675,7 @@ def test_api_ai_restart_mixed_stale_target_ids_returns_400(tmp_path):
     plugin = make_plugin(module)
     video = tmp_path / "Movie.mkv"
     video.write_text("video", encoding="utf-8")
-    plugin._remember_targets([{"id": "valid", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}])
+    remember_targets(plugin, module, [{"id": "valid", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}])
 
     try:
         asyncio.run(api_endpoint(plugin, "/ai_restart")(FakeRequest({"target_ids": ["valid", "missing"], "task_ids": ["task-1"]})))
@@ -1805,7 +1818,7 @@ def test_api_delete_subtitle_only_allows_target_subtitles(tmp_path):
     subtitle.write_text("subtitle", encoding="utf-8")
     unrelated.write_text("other", encoding="utf-8")
     entry = {"id": "t1", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}
-    plugin._remember_targets([entry])
+    remember_targets(plugin, module, [entry])
 
     delete_endpoint = next(route["endpoint"] for route in plugin.get_api() if route["path"] == "/delete_subtitle")
     response = asyncio.run(delete_endpoint(FakeRequest({"target_id": "t1", "subtitle_path": str(subtitle)})))
@@ -1823,7 +1836,7 @@ def test_api_delete_subtitle_rejects_locked_target(tmp_path):
     video.write_text("video", encoding="utf-8")
     subtitle.write_text("subtitle", encoding="utf-8")
     entry = {"id": "t1", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}
-    plugin._remember_targets([entry])
+    remember_targets(plugin, module, [entry])
 
     delete_endpoint = next(route["endpoint"] for route in plugin.get_api() if route["path"] == "/delete_subtitle")
     try:
@@ -1851,7 +1864,7 @@ def test_clear_subtitles_skips_locked_targets_and_uses_enumerated_subtitles(tmp_
         {"id": "t1", "path": str(video1), "basename": "Movie1", "target_label": "Movie1", "storage": "local"},
         {"id": "t2", "path": str(video2), "basename": "Movie2", "target_label": "Movie2", "storage": "local"},
     ]
-    plugin._remember_targets(entries)
+    remember_targets(plugin, module, entries)
 
     clear_endpoint = next(route["endpoint"] for route in plugin.get_api() if route["path"] == "/clear_subtitles")
     response = asyncio.run(clear_endpoint(FakeRequest({"target_ids": ["t1", "t2"], "locked_target_ids": ["t2"]})))
@@ -1872,7 +1885,7 @@ def test_restore_subtitle_backup_missing_returns_404(tmp_path):
     video.write_text("video", encoding="utf-8")
     subtitle.write_text("subtitle", encoding="utf-8")
     entry = {"id": "t1", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}
-    plugin._remember_targets([entry])
+    remember_targets(plugin, module, [entry])
 
     restore_endpoint = next(
         route["endpoint"] for route in plugin.get_api() if route["path"] == "/restore_subtitle_backup"
@@ -2140,7 +2153,7 @@ def test_match_history_filters_deleted_local_targets(tmp_path):
         "media_count": 1,
         "persisted": False,
     }
-    plugin._remember_targets([entry])
+    remember_targets(plugin, module, [entry])
 
     assert len(plugin._match_history_items()) == 1
 
@@ -2306,7 +2319,7 @@ def test_timeline_fix_existing_accepts_all_subtitles_for_target(tmp_path):
         "media_count": 1,
         "persisted": False,
     }
-    plugin._remember_targets([entry])
+    remember_targets(plugin, module, [entry])
     routes = plugin.get_api()
     timeline_api_module = plugin_submodule(module, "api.timeline_api")
     timeline_api_module.check_timeline_fixer_dependencies = lambda: {
@@ -2349,7 +2362,7 @@ def setup_online_ai_translate(plugin, module, tmp_path):
         "target_label": "Movie",
         "storage": "local",
     }
-    plugin._remember_targets([entry])
+    remember_targets(plugin, module, [entry])
 
     class FakeOnlineService:
         def download(self, results):
@@ -2591,7 +2604,7 @@ def test_online_ai_submit_endpoint_uses_online_ai_service(tmp_path):
         "target_label": "Movie",
         "storage": "local",
     }
-    plugin._remember_targets([entry])
+    remember_targets(plugin, module, [entry])
     captured = {}
 
     class FakeOnlineAiService:
@@ -2637,7 +2650,7 @@ def test_online_download_preview_submit_ai_uses_online_ai_service(tmp_path):
         "target_label": "Movie",
         "storage": "local",
     }
-    plugin._remember_targets([entry])
+    remember_targets(plugin, module, [entry])
     captured = {}
 
     class FakeOnlineAiService:
@@ -2698,7 +2711,7 @@ def test_online_ai_submit_mixed_stale_target_returns_400(tmp_path):
     plugin = make_plugin(module)
     video = tmp_path / "Movie.mkv"
     video.write_text("video", encoding="utf-8")
-    plugin._remember_targets(
+    remember_targets(plugin, module,
         [{"id": "m1", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}]
     )
 
@@ -2753,7 +2766,7 @@ def test_online_ai_submit_requires_timeline_fixer_before_download(tmp_path):
     plugin = make_plugin(module)
     video = tmp_path / "Movie.mkv"
     video.write_text("video", encoding="utf-8")
-    plugin._remember_targets(
+    remember_targets(plugin, module,
         [
             {
                 "id": "m1",
