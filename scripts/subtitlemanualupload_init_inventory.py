@@ -156,6 +156,17 @@ PURE_HELPER_NAMES = {
     "_timeline_rejection_message",
     "_subtitle_backup_path",
 }
+REPORT_GROUPS = (
+    "ai_autosub_facade",
+    "archive_methods",
+    "auto_transfer_facade",
+    "config_runtime",
+    "moviepilot_hooks",
+    "other",
+    "runtime_helpers",
+    "service_delegates",
+    "service_factories",
+)
 
 
 def _relative(path: Path) -> str:
@@ -255,6 +266,8 @@ def build_inventory(*, details: bool = False) -> dict[str, Any]:
             "one_line_delegate": node.name in one_line_delegates,
         }
         method_items.append(item)
+    for group in REPORT_GROUPS:
+        method_groups.setdefault(group, [])
 
     method_names = [item["name"] for item in method_items]
     references = _references_for(method_names)

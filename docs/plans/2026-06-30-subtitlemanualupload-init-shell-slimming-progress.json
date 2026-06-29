@@ -1,8 +1,8 @@
 {
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-init-shell-slimming-phased-plan.md",
   "status": {
-    "phase": "phase-4",
-    "task": "4.3",
+    "phase": "phase-5",
+    "task": "5.1",
     "next_allowed_action": "Implement the current task; after verified completion, advance to the next task or phase automatically"
   },
   "execution_rules": {
@@ -399,8 +399,49 @@
         {
           "id": "4.3",
           "title": "Migrate archive tests to upload_session/archive module boundaries",
-          "status": "pending",
-          "verification": [],
+          "status": "completed",
+          "verification": [
+            {
+              "command": "rg -n \"_extract_rar_subtitle_files|_extract_7z_subtitle_files|_run_archive_command|_list_rar_members|_read_rar_member\" plugins.v2/subtitlemanualupload/__init__.py tests -g \"*.py\"",
+              "result": "passed",
+              "evidence": "no main-entry archive helper definitions or test direct bindings remain"
+            },
+            {
+              "command": "rg -n \"def _(?:rar_tool|sevenzip_tool|rar_python_available|rarfile_module|run_archive_command|list_rar_members|read_rar_member|extract_rar_subtitle_files_with_rarfile|extract_rar_subtitle_files|extract_7z_subtitle_files|extract_command_archive_subtitle_files|extract_subtitle_files)\\b\" plugins.v2/subtitlemanualupload/__init__.py",
+              "result": "passed",
+              "evidence": "no archive helper definitions remain in __init__.py"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile plugins.v2/subtitlemanualupload/__init__.py plugins.v2/subtitlemanualupload/api/status_api.py plugins.v2/subtitlemanualupload/upload_session.py scripts/subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_init_inventory.py",
+              "result": "passed",
+              "evidence": "compiled successfully"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py::test_7z_archive_extraction_with_external_tool -q",
+              "result": "passed",
+              "evidence": "1 passed in 0.55s"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py -q",
+              "result": "passed",
+              "evidence": "4 passed in 4.63s"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py -q",
+              "result": "passed",
+              "evidence": "124 passed in 4.56s"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_init_inventory.py --details",
+              "result": "passed",
+              "evidence": "line_count=858, method_count=122, archive_methods count=0"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "219 passed in 5.47s"
+            }
+          ],
           "commit": null
         }
       ]
@@ -647,6 +688,19 @@
         "inventory reported line_count=1000 and archive_methods count=12 because __init__.py wrappers remain for task 4.3",
         "baseline smoke exited 0 with 219 passed",
         "next task is phase-4 task 4.3"
+      ]
+    },
+    {
+      "task": "4.3",
+      "status": "completed",
+      "summary": "Removed RAR/7z archive helper wrappers and imports from __init__.py, moved status API archive checks to ArchiveDependencyService, and migrated the 7z archive test to UploadSessionService/ArchiveSubtitleExtractor.",
+      "evidence": [
+        "archive helper acceptance grep over __init__.py and tests returned no matches",
+        "cache tests exited 0 with 124 passed",
+        "inventory tests exited 0 with 4 passed",
+        "inventory reported line_count=858, method_count=122, archive_methods count=0",
+        "baseline smoke exited 0 with 219 passed",
+        "phase-4 acceptance satisfied; next task is phase-5 task 5.1"
       ]
     }
   ],

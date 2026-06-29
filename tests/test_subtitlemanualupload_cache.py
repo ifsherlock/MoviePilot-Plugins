@@ -717,9 +717,6 @@ def test_prepare_upload_uses_upload_session_service(tmp_path):
             }
         ]
     )
-    plugin._extract_subtitle_files = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("api_prepare_upload should call UploadSessionService directly")
-    )
     setattr(plugin, "_suggest" + "_target", lambda *args, **kwargs: (_ for _ in ()).throw(
         AssertionError("preview should call target_resolver.suggest_target directly")
     ))
@@ -905,9 +902,6 @@ def test_online_download_preview_uses_upload_session_service(tmp_path):
             }
         ]
     )
-    plugin._extract_subtitle_files = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("online_download_preview endpoint should call UploadSessionService directly")
-    )
 
     class FakeOnlineService:
         def download(self, selected):
@@ -951,11 +945,12 @@ def test_online_download_preview_uses_upload_session_service(tmp_path):
     module.shutil.rmtree(session_dir, ignore_errors=True)
 
 
-def test_extract_7z_subtitle_files_with_external_tool(tmp_path):
+def test_7z_archive_extraction_with_external_tool(tmp_path):
     module, _, _ = load_plugin_module()
     cls = module.SubtitleManualUpload
-    original_which = module.shutil.which
-    original_run = module.subprocess.run
+    upload_session = plugin_submodule(module, "upload_session")
+    original_which = upload_session.shutil.which
+    original_run = upload_session.subprocess.run
 
     def fake_which(tool):
         return "7z" if tool == "7z" else ""
@@ -976,14 +971,42 @@ def test_extract_7z_subtitle_files_with_external_tool(tmp_path):
             raise AssertionError(args)
         return types.SimpleNamespace(stdout=output, stderr=b"")
 
-    module.shutil.which = fake_which
-    module.subprocess.run = fake_run
+    upload_session.shutil.which = fake_which
+    upload_session.subprocess.run = fake_run
 
     try:
-        extracted = cls._extract_subtitle_files("sample.7z", b"7z\xbc\xaf\x27\x1c" + b"payload", tmp_path)
+        archive_dependency = upload_session.ArchiveDependencyService(
+            rar_dependency_mode="none",
+            rar_tool_path="",
+            rar_python_package=cls._rar_python_package,
+            rar_tools=cls._rar_tools,
+            sevenzip_tools=("7z",),
+            normalize_text=lambda value: str(value or "").strip(),
+            decode_preview_bytes=lambda raw: (raw or b"").decode("utf-8", errors="ignore"),
+        )
+        extractor = upload_session.ArchiveSubtitleExtractor(
+            archive_dependency_service=archive_dependency,
+            subtitle_exts=cls._subtitle_exts,
+            hash_text=cls._hash_text,
+            rar_python_package=cls._rar_python_package,
+        )
+        service = upload_session.UploadSessionService(
+            data_path=tmp_path,
+            subtitle_exts=cls._subtitle_exts,
+            archive_exts=cls._archive_exts,
+            rar_exts=cls._rar_exts,
+            sevenzip_exts=cls._sevenzip_exts,
+            default_session_hours=cls._default_session_hours,
+            hash_text=cls._hash_text,
+            extract_rar_subtitle_files=extractor.extract_rar_subtitle_files,
+            extract_7z_subtitle_files=extractor.extract_7z_subtitle_files,
+            normalize_text=lambda value: str(value or "").strip(),
+            decode_preview_bytes=lambda raw: (raw or b"").decode("utf-8", errors="ignore"),
+        )
+        extracted = service.extract_subtitle_files("sample.7z", b"7z\xbc\xaf\x27\x1c" + b"payload", tmp_path)
     finally:
-        module.shutil.which = original_which
-        module.subprocess.run = original_run
+        upload_session.shutil.which = original_which
+        upload_session.subprocess.run = original_run
 
     assert [item["source_name"] for item in extracted] == [
         "Jack.Reacher.2012.chs&eng.ass",

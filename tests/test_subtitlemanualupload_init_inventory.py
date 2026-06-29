@@ -63,7 +63,6 @@ def test_inventory_groups_main_entry_responsibilities_and_references():
     for group in (
         "moviepilot_hooks",
         "runtime_helpers",
-        "archive_methods",
         "service_factories",
         "service_delegates",
         "ai_autosub_facade",
@@ -72,9 +71,10 @@ def test_inventory_groups_main_entry_responsibilities_and_references():
         assert groups[group]["count"] > 0
         assert groups[group]["methods"]
 
+    assert groups["archive_methods"]["count"] == 0
+    assert groups["archive_methods"]["methods"] == []
     assert "init_plugin" in groups["moviepilot_hooks"]["methods"]
     assert "_save_config" in groups["config_runtime"]["methods"]
-    assert "_extract_rar_subtitle_files" in groups["archive_methods"]["methods"]
     assert "_subtitle_writer" in groups["service_factories"]["methods"]
     assert "_write_operations_to_disk" in groups["service_delegates"]["methods"]
     assert "_submit_online_ai_translate" in groups["ai_autosub_facade"]["methods"]

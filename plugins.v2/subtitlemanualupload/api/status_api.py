@@ -15,8 +15,9 @@ class StatusApi:
 
     def status(self) -> Dict[str, Any]:
         owner = self.owner
-        rar_tool = owner._rar_tool()
-        rar_python = owner._rar_python_available()
+        archive_dependency = owner._archive_dependency_service()
+        rar_tool = archive_dependency.rar_tool()
+        rar_python = archive_dependency.rar_python_available()
         return owner._ok(
             {
                 "enabled": owner.get_state(),
