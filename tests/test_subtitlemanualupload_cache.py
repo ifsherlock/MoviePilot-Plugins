@@ -4,6 +4,7 @@ import asyncio
 import io
 import importlib.util
 import re
+import shutil
 import sys
 import types
 import zipfile
@@ -581,7 +582,7 @@ def test_prepare_upload_uses_upload_session_service(tmp_path):
     session_dir, session_payload = plugin._load_session(data["session_id"])
     assert session_payload["source"] == "upload"
     assert Path(session_payload["uploads"][0]["stored_path"]).is_file()
-    module.shutil.rmtree(session_dir, ignore_errors=True)
+    shutil.rmtree(session_dir, ignore_errors=True)
 
 
 def test_online_search_endpoint_uses_online_service(tmp_path):
@@ -732,7 +733,7 @@ def test_online_download_preview_uses_upload_session_service(tmp_path):
         ]
     )
     plugin._extract_subtitle_files = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("api_online_download_preview should call UploadSessionService directly")
+        AssertionError("online_download_preview endpoint should call UploadSessionService directly")
     )
 
     class FakeOnlineService:
@@ -747,9 +748,10 @@ def test_online_download_preview_uses_upload_session_service(tmp_path):
             ]
 
     plugin._online_service = lambda: FakeOnlineService()
+    download_endpoint = next(route["endpoint"] for route in plugin.get_api() if route["path"] == "/online_download_preview")
 
     response = asyncio.run(
-        plugin.api_online_download_preview(
+        download_endpoint(
             FakeRequest(
                 {
                     "target_ids": ["m1"],
@@ -2246,9 +2248,10 @@ def test_online_ai_translate_downloads_fixes_and_does_not_create_preview(tmp_pat
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
     entry, captured = setup_online_ai_translate(plugin, module, tmp_path)
+    download_endpoint = next(route["endpoint"] for route in plugin.get_api() if route["path"] == "/online_download_preview")
 
     response = asyncio.run(
-        plugin.api_online_download_preview(
+        download_endpoint(
             FakeRequest(
                 {
                     "target_ids": ["m1"],
@@ -2313,8 +2316,9 @@ def test_online_ai_translate_rejects_low_confidence_timeline_before_submit(tmp_p
     module.fix_subtitle_timeline = fake_fix
 
     try:
+        download_endpoint = next(route["endpoint"] for route in plugin.get_api() if route["path"] == "/online_download_preview")
         asyncio.run(
-            plugin.api_online_download_preview(
+            download_endpoint(
                 FakeRequest(
                     {
                         "target_ids": ["m1"],
@@ -2352,8 +2356,9 @@ def test_online_download_preview_submit_ai_rejects_mixed_stale_targets(tmp_path)
     plugin._submit_online_ai_translate = fake_submit
 
     try:
+        download_endpoint = next(route["endpoint"] for route in plugin.get_api() if route["path"] == "/online_download_preview")
         asyncio.run(
-            plugin.api_online_download_preview(
+            download_endpoint(
                 FakeRequest(
                     {
                         "target_ids": ["m1", "missing"],
@@ -2482,12 +2487,13 @@ def test_online_download_preview_submit_ai_uses_online_ai_service(tmp_path):
             return plugin._ok({"ai_translate": {"added": [{"path": entries[0]["path"]}]}, "tasks": {}})
 
     plugin._submit_online_ai_translate = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("api_online_download_preview should call OnlineAiService directly for submit_ai_translate")
+        AssertionError("online_download_preview endpoint should call OnlineAiService directly for submit_ai_translate")
     )
     plugin._online_ai_service = lambda: FakeOnlineAiService()
+    download_endpoint = next(route["endpoint"] for route in plugin.get_api() if route["path"] == "/online_download_preview")
 
     response = asyncio.run(
-        plugin.api_online_download_preview(
+        download_endpoint(
             FakeRequest(
                 {
                     "target_ids": ["m1"],

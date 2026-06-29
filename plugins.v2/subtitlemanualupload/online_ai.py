@@ -4,6 +4,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from .api.online_api import download_online_results_to_uploads
 from .online_subtitle import CaptchaRequiredError
 
 
@@ -292,7 +293,8 @@ class OnlineAiService:
         session_dir = owner._get_session_root() / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
         try:
-            prepared_uploads, unsupported_files, invalid_files = owner._download_online_results_to_uploads(
+            prepared_uploads, unsupported_files, invalid_files = download_online_results_to_uploads(
+                owner,
                 selected_results,
                 session_dir,
             )

@@ -62,7 +62,6 @@ except Exception:
     EventType = _NoopEventType
 
 from .online_subtitle import (
-    CaptchaRequiredError,
     OnlineSubtitleSearchService,
     build_search_keywords,
     extract_title_aliases,
@@ -139,7 +138,6 @@ from .target_resolver import (
 from .upload_session import (
     DEFAULT_ARCHIVE_RESOURCE_LIMITS,
     ArchiveResourceLimits,
-    UploadSessionService,
     archive_suffix_from_content as upload_archive_suffix_from_content,
     extract_7z_subtitle_files as upload_extract_7z_subtitle_files,
     extract_command_archive_subtitle_files as upload_extract_command_archive_subtitle_files,
@@ -529,44 +527,6 @@ class SubtitleManualUpload(SubtitleManualUploadCompatMixin, _PluginBase):
             allow_risky_offset,
         )
 
-    def _download_online_results_to_uploads(
-        self,
-        selected_results: List[Dict[str, Any]],
-        session_dir: Path,
-        upload_session: Optional[UploadSessionService] = None,
-    ) -> Tuple[List[Dict[str, Any]], List[str], List[Dict[str, str]]]:
-        upload_session = upload_session or self._upload_session_service()
-        prepared_uploads: List[Dict[str, Any]] = []
-        unsupported_files: List[str] = []
-        invalid_files: List[Dict[str, str]] = []
-        downloads = self._online_service().download(selected_results)
-        for downloaded in downloads:
-            result = downloaded.get("result") or {}
-            source_name = upload_session.normalize_online_download_name(
-                downloaded.get("source_name", ""),
-                downloaded.get("content") or b"",
-                result,
-            )
-            try:
-                extracted = upload_session.extract_subtitle_files(
-                    source_name,
-                    downloaded.get("content") or b"",
-                    session_dir,
-                )
-            except ValueError as exc:
-                invalid_files.append({"name": source_name, "reason": str(exc)})
-                continue
-            if not extracted:
-                unsupported_files.append(source_name)
-                continue
-            for item in extracted:
-                item["online_source"] = downloaded.get("provider")
-                item["online_title"] = result.get("title", "")
-                if not item.get("archive_name") and source_name != item.get("source_name"):
-                    item["archive_name"] = source_name
-            prepared_uploads.extend(extracted)
-        return prepared_uploads, unsupported_files, invalid_files
-
     @classmethod
     def _autosub_lang_from_suffix(cls, suffix: Any) -> str:
         return autosub_lang_from_suffix(suffix)
@@ -812,83 +772,3 @@ class SubtitleManualUpload(SubtitleManualUploadCompatMixin, _PluginBase):
         if len(target_entries) != len(set(target_ids)):
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
         return self._ok(autosub_bridge.autosub_tasks_for_entries(target_entries))
-
-    async def api_online_download_preview(self, request: Request) -> Dict[str, Any]:
-        body = await request.json()
-        target_ids = self._target_ids_from_body(body)
-        locked_ids = self._locked_target_ids_from_body(body)
-        target_ids, locked_skipped = self._filter_unlocked_target_ids(target_ids, locked_ids)
-        if not target_ids:
-            if locked_skipped:
-                raise HTTPException(status_code=423, detail="选中的目标均已锁定，不能下载写入在线字幕")
-            raise HTTPException(status_code=400, detail="请先选择要写入字幕的本地视频")
-        target_entries = list(self._resolve_targets(target_ids).values())
-        if not target_entries:
-            raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
-        if len(target_entries) != len(set(target_ids)):
-            raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
-        selected_results = self._results_from_body(body)
-        if not selected_results:
-            raise HTTPException(status_code=400, detail="请至少选择一个在线字幕结果")
-        submit_ai_translate = bool(body.get("submit_ai_translate"))
-        allow_risky_offset = bool(body.get("allow_risky_offset")) if isinstance(body, dict) else False
-        if submit_ai_translate:
-            online_ai_service = self._online_ai_service()
-            return await run_in_threadpool(
-                online_ai_service.submit_online_ai_translate,
-                target_entries,
-                selected_results,
-                allow_risky_offset,
-            )
-        self._check_online_rate_limit([item.get("provider") for item in selected_results if isinstance(item, dict)])
-
-        upload_session = self._upload_session_service()
-        session_id = self._hash_text(f"online|{datetime.now().isoformat()}|{','.join(sorted(map(str, target_ids)))}")[:16]
-        session_dir = upload_session.get_session_root() / session_id
-        session_dir.mkdir(parents=True, exist_ok=True)
-
-        try:
-            prepared_uploads, unsupported_files, invalid_files = await run_in_threadpool(
-                self._download_online_results_to_uploads,
-                selected_results,
-                session_dir,
-                upload_session,
-            )
-        except CaptchaRequiredError as exc:
-            shutil.rmtree(session_dir, ignore_errors=True)
-            logger.warning("[SubtitleManualUpload] 在线字幕自动仿真下载失败 provider=%s message=%s", exc.provider, exc)
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except ValueError as exc:
-            shutil.rmtree(session_dir, ignore_errors=True)
-            logger.warning("[SubtitleManualUpload] 在线字幕下载预览失败：%s", exc)
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        except Exception as exc:
-            shutil.rmtree(session_dir, ignore_errors=True)
-            logger.error("[SubtitleManualUpload] 在线字幕下载预览异常: %s", exc)
-            raise HTTPException(status_code=500, detail=f"在线字幕下载失败: {exc}") from exc
-
-        if not prepared_uploads:
-            shutil.rmtree(session_dir, ignore_errors=True)
-            if invalid_files:
-                raise HTTPException(status_code=400, detail=f"没有解析到可用字幕文件，{invalid_files[0]['reason']}")
-            raise HTTPException(status_code=400, detail="没有解析到可用的在线字幕文件")
-
-        logger.info(
-            "[SubtitleManualUpload] 在线字幕下载完成 selected=%s prepared=%s unsupported=%s invalid=%s",
-            len(selected_results),
-            len(prepared_uploads),
-            len(unsupported_files),
-            len(invalid_files),
-        )
-        from .api.upload_api import UploadApi
-
-        response = UploadApi(self).build_preview_response_from_uploads(
-            session_id=session_id,
-            target_ids=target_ids,
-            target_entries=target_entries,
-            prepared_uploads=prepared_uploads,
-            unsupported_files=unsupported_files,
-            invalid_files=invalid_files,
-            source="online",
-        )
-        return response

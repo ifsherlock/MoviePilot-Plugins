@@ -172,7 +172,7 @@ def build_api_routes(owner: Any) -> List[Dict[str, Any]]:
         },
         {
             "path": "/online_download_preview",
-            "endpoint": owner.api_online_download_preview,
+            "endpoint": online_api.online_download_preview,
             "methods": ["POST"],
             "auth": "bear",
             "summary": "下载在线字幕并生成匹配预览",
