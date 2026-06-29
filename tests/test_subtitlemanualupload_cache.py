@@ -3818,6 +3818,10 @@ def test_auto_subtitle_preference_config_normalizes_legacy_strings(tmp_path):
     assert plugin._auto_subtitle_format_priority[:4] == [".srt", ".ass", ".ssa", ".vtt"]
     assert ".sbv" in plugin._auto_subtitle_format_priority
     assert plugin._auto_ass_to_srt_for_ai is False
+    assert module.SubtitleManualUpload._auto_multi_subtitle_mode == plugin._auto_multi_subtitle_mode
+    assert module.SubtitleManualUpload._auto_subtitle_language_priority == plugin._auto_subtitle_language_priority
+    assert module.SubtitleManualUpload._auto_subtitle_format_priority == plugin._auto_subtitle_format_priority
+    assert module.SubtitleManualUpload._auto_ass_to_srt_for_ai == plugin._auto_ass_to_srt_for_ai
 
 
 def test_config_schema_default_config_covers_config_vue_bound_fields():

@@ -93,6 +93,7 @@ from .config_schema import (
     normalize_timeline_min_offset,
     normalize_timeline_vad_mode,
 )
+from .config_runtime import apply_runtime_config, sync_class_runtime_config
 from .subtitle_language import (
     DEFAULT_AUTO_FORMAT_PRIORITY,
     DEFAULT_AUTO_LANGUAGE_PRIORITY,
@@ -307,51 +308,10 @@ class SubtitleManualUpload(_PluginBase):
             available_provider_ids=self._available_online_provider_ids,
             default_provider_ids=self._default_online_provider_ids,
         )
-        self._enabled = normalized_config["enabled"]
-        self._show_sidebar_nav = normalized_config["show_sidebar_nav"]
-        self._rar_dependency_mode = normalized_config["rar_dependency_mode"]
-        self._rar_tool_path = normalized_config["rar_tool_path"]
-        self._online_provider_ids = normalized_config["online_providers"]
-        self._online_engine = normalized_config["online_engine"]
-        self._online_use_proxy = normalized_config["online_use_proxy"]
-        self._online_site_urls = normalized_config["online_site_urls"]
-        self._assrt_api_key = normalized_config["assrt_api_key"]
-        self._assrt_api_url = normalized_config["assrt_api_url"]
-        self._opensubtitles_api_key = normalized_config["opensubtitles_api_key"]
-        self._opensubtitles_api_url = normalized_config["opensubtitles_api_url"]
-        self._opensubtitles_username = normalized_config["opensubtitles_username"]
+        apply_runtime_config(self, normalized_config)
         if (config or {}).get("opensubtitles_username") and "@" in self._normalize_text((config or {}).get("opensubtitles_username")):
             logger.warning("[SubtitleManualUpload] OpenSubtitles 用户名疑似邮箱，已忽略下载认证用户名")
-        self._opensubtitles_password = normalized_config["opensubtitles_password"]
-        self._ai_link_enabled = normalized_config["ai_link_enabled"]
-        self._traditional_to_simplified = normalized_config["traditional_to_simplified"]
-        self._auto_search_on_transfer = normalized_config["auto_search_on_transfer"]
-        self._auto_skip_chinese_media_on_transfer = normalized_config["auto_skip_chinese_media_on_transfer"]
-        self._auto_transfer_subtitle_strategy = normalized_config["auto_transfer_subtitle_strategy"]
-        self._trust_transfer_history_paths = normalized_config["trust_transfer_history_paths"]
-        self._auto_multi_subtitle_mode = normalized_config["auto_multi_subtitle_mode"]
-        self._auto_subtitle_language_priority = normalized_config["auto_subtitle_language_priority"]
-        self._auto_subtitle_format_priority = normalized_config["auto_subtitle_format_priority"]
-        self._auto_ass_to_srt_for_ai = normalized_config["auto_ass_to_srt_for_ai"]
-        self._timeline_max_offset_seconds = normalized_config["timeline_max_offset_seconds"]
-        self._timeline_min_offset_seconds = normalized_config["timeline_min_offset_seconds"]
-        self._timeline_vad_mode = normalized_config["timeline_vad_mode"]
-        self._timeline_allow_risky_offset = normalized_config["timeline_allow_risky_offset"]
-        type(self)._rar_dependency_mode = self._rar_dependency_mode
-        type(self)._rar_tool_path = self._rar_tool_path
-        type(self)._traditional_to_simplified = self._traditional_to_simplified
-        type(self)._auto_search_on_transfer = self._auto_search_on_transfer
-        type(self)._auto_skip_chinese_media_on_transfer = self._auto_skip_chinese_media_on_transfer
-        type(self)._auto_transfer_subtitle_strategy = self._auto_transfer_subtitle_strategy
-        type(self)._trust_transfer_history_paths = self._trust_transfer_history_paths
-        type(self)._auto_multi_subtitle_mode = self._auto_multi_subtitle_mode
-        type(self)._auto_subtitle_language_priority = self._auto_subtitle_language_priority
-        type(self)._auto_subtitle_format_priority = self._auto_subtitle_format_priority
-        type(self)._auto_ass_to_srt_for_ai = self._auto_ass_to_srt_for_ai
-        type(self)._timeline_max_offset_seconds = self._timeline_max_offset_seconds
-        type(self)._timeline_min_offset_seconds = self._timeline_min_offset_seconds
-        type(self)._timeline_vad_mode = self._timeline_vad_mode
-        type(self)._timeline_allow_risky_offset = self._timeline_allow_risky_offset
+        sync_class_runtime_config(type(self), self)
         self._entry_map = OrderedDict()
         self._media_index_cache = OrderedDict()
         self._match_history_cache = {"loaded_at": None, "signature": "", "items": [], "entry_count": 0, "persisted": False}

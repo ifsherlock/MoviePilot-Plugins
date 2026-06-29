@@ -2,7 +2,7 @@
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-init-shell-slimming-phased-plan.md",
   "status": {
     "phase": "phase-2",
-    "task": "2.1",
+    "task": "2.2",
     "next_allowed_action": "Implement the current task; after verified completion, advance to the next task or phase automatically"
   },
   "execution_rules": {
@@ -102,8 +102,34 @@
         {
           "id": "2.1",
           "title": "Extract config assignment and class runtime sync",
-          "status": "pending",
-          "verification": [],
+          "status": "completed",
+          "verification": [
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile plugins.v2/subtitlemanualupload/__init__.py plugins.v2/subtitlemanualupload/config_runtime.py",
+              "result": "passed",
+              "evidence": "compiled successfully"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py::test_auto_subtitle_preference_config_normalizes_legacy_strings tests/test_subtitlemanualupload_cache.py::test_config_schema_default_config_covers_config_vue_bound_fields -q",
+              "result": "passed",
+              "evidence": "2 passed in 1.27s"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py -q",
+              "result": "passed",
+              "evidence": "4 passed in 11.34s"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_init_inventory.py --details",
+              "result": "passed",
+              "evidence": "line_count=1066, method_count=134, init_plugin line_count=33"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "218 passed in 13.63s"
+            }
+          ],
           "commit": null
         },
         {
@@ -335,6 +361,17 @@
         "scripts/subtitlemanualupload_init_inventory.py --details exited 0 with valid JSON",
         "baseline smoke exited 0 with 218 passed",
         "phase-1 acceptance satisfied; next task is phase-2 task 2.1"
+      ]
+    },
+    {
+      "task": "2.1",
+      "status": "completed",
+      "summary": "Extracted runtime config assignment and class runtime synchronization into config_runtime.py while keeping runtime cache reset and save-config payload in __init__.py for later tasks.",
+      "evidence": [
+        "config targeted tests exited 0 with 2 passed",
+        "inventory tests exited 0 with 4 passed",
+        "inventory reported line_count=1066 and init_plugin line_count=33",
+        "baseline smoke exited 0 with 218 passed"
       ]
     }
   ],
