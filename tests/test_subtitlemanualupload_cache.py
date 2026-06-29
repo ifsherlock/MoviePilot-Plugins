@@ -1395,7 +1395,7 @@ def test_ai_submit_skips_strm_without_requiring_autosub_plugin(tmp_path):
     video = tmp_path / "Movie.strm"
     video.write_text("http://example.invalid/movie.mkv", encoding="utf-8")
 
-    result = plugin._submit_autosub_for_entries(
+    result = plugin.services.autosub_bridge().submit_autosub_for_entries(
         [{"id": "t1", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}]
     )
 
@@ -1422,9 +1422,11 @@ def test_ai_restart_with_selected_external_subtitle_submits_matched_override(tmp
         captured["submit_kwargs"] = kwargs
         return {"added": [{"path": entries[0]["path"]}], "skipped": [], "failed": [], "targets": [], "tasks": {}}
 
-    plugin._submit_autosub_for_entries = fake_submit
+    bridge = plugin.services.autosub_bridge()
+    bridge.submit_autosub_for_entries = fake_submit
+    override_services(plugin, autosub_bridge=bridge)
 
-    result = plugin._restart_autosub_for_entries(
+    result = plugin.services.autosub_bridge().restart_autosub_for_entries(
         [entry],
         source_policy="matched_external",
         overwrite_policy="new_variant",
@@ -1474,9 +1476,6 @@ def test_ai_submit_with_selected_external_subtitle_submits_matched_override(tmp_
             captured["submit_kwargs"] = kwargs
             return {"added": [{"path": entries[0]["path"]}], "skipped": [], "failed": [], "targets": [], "tasks": {}}
 
-    plugin._submit_autosub_for_entries = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("api_ai_submit should call AutoSubBridge directly")
-    )
     override_services(plugin, autosub_bridge=FakeBridge())
 
     response = asyncio.run(
@@ -1520,9 +1519,6 @@ def test_ai_submit_with_asr_source_policy_forwards_source_choice(tmp_path):
             captured["submit_kwargs"] = kwargs
             return {"added": [{"path": entries[0]["path"]}], "skipped": [], "failed": [], "targets": [], "tasks": {}}
 
-    plugin._submit_autosub_for_entries = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("api_ai_submit should call AutoSubBridge directly")
-    )
     override_services(plugin, autosub_bridge=FakeBridge())
 
     response = asyncio.run(
@@ -1598,7 +1594,7 @@ def test_ai_restart_forwards_selected_task_ids_without_using_latest(tmp_path):
     plugin._ai_link_enabled = True
     plugin._autosub_plugin = lambda: (FakeAutoSub(), "")
 
-    result = plugin._restart_autosub_for_entries([entry], task_ids=["old-match"])
+    result = plugin.services.autosub_bridge().restart_autosub_for_entries([entry], task_ids=["old-match"])
 
     assert captured["task_ids"] == ["old-match"]
     assert result["added"] == [{"task_id": "old-match"}]
@@ -1622,9 +1618,6 @@ def test_api_ai_restart_accepts_task_ids_without_target_ids(tmp_path):
         def restart_autosub_for_entries(self, entries, **kwargs):
             return fake_restart(entries, **kwargs)
 
-    plugin._restart_autosub_for_entries = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("api_ai_restart should call AutoSubBridge directly")
-    )
     override_services(plugin, autosub_bridge=FakeBridge())
 
     response = asyncio.run(api_endpoint(plugin, "/ai_restart")(FakeRequest({"task_ids": ["old-match"]})))
@@ -1665,7 +1658,7 @@ def test_ai_restart_filters_task_ids_outside_current_target(tmp_path):
     plugin._ai_link_enabled = True
     plugin._autosub_plugin = lambda: (FakeAutoSub(), "")
 
-    result = plugin._restart_autosub_for_entries([entry1], task_ids=["task-e1", "task-e2"])
+    result = plugin.services.autosub_bridge().restart_autosub_for_entries([entry1], task_ids=["task-e1", "task-e2"])
 
     assert captured["task_ids"] == ["task-e1"]
     assert result["skipped"][0]["task_id"] == "task-e2"
@@ -1736,7 +1729,7 @@ def test_ai_restart_explicit_task_ids_filtered_empty_does_not_fallback(tmp_path)
     plugin._ai_link_enabled = True
     plugin._autosub_plugin = lambda: (FakeAutoSub(), "")
 
-    result = plugin._restart_autosub_for_entries([entry1], task_ids=["task-e2"])
+    result = plugin.services.autosub_bridge().restart_autosub_for_entries([entry1], task_ids=["task-e2"])
 
     assert called["restart"] is False
     assert result["added"] == []
@@ -1792,7 +1785,11 @@ def test_api_ai_restart_all_requested_targets_locked_with_task_ids_does_not_fall
         called["restart"] = True
         return {"added": [], "skipped": [], "failed": [], "tasks": {}}
 
-    plugin._restart_autosub_for_entries = fake_restart
+    class FakeBridge:
+        def restart_autosub_for_entries(self, entries, **kwargs):
+            return fake_restart(entries, **kwargs)
+
+    override_services(plugin, autosub_bridge=FakeBridge())
 
     response = asyncio.run(
         api_endpoint(plugin, "/ai_restart")(
@@ -1900,7 +1897,10 @@ def test_ai_restart_rejects_external_subtitle_outside_current_target(tmp_path):
     entry = {"id": "t1", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}
 
     try:
-        plugin._selected_external_subtitle_override_for_entries([entry], source_subtitle_path=str(subtitle))
+        plugin.services.autosub_bridge().selected_external_subtitle_override_for_entries(
+            [entry],
+            source_subtitle_path=str(subtitle),
+        )
     except module.HTTPException as exc:
         assert exc.status_code == 400
         assert "当前集" in exc.detail
@@ -1942,9 +1942,11 @@ def test_ai_restart_matched_external_filters_explicit_task_ids_before_submit(tmp
 
     plugin._ai_link_enabled = True
     plugin._autosub_plugin = lambda: (FakeAutoSub(), "")
-    plugin._submit_autosub_for_entries = fake_submit
+    bridge = plugin.services.autosub_bridge()
+    bridge.submit_autosub_for_entries = fake_submit
+    override_services(plugin, autosub_bridge=bridge)
 
-    result = plugin._restart_autosub_for_entries(
+    result = plugin.services.autosub_bridge().restart_autosub_for_entries(
         [entry1],
         source_policy="matched_external",
         source_subtitle_path=str(subtitle),
@@ -1985,9 +1987,11 @@ def test_ai_restart_matched_external_backup_replace_becomes_new_variant(tmp_path
 
     plugin._ai_link_enabled = True
     plugin._autosub_plugin = lambda: (FakeAutoSub(), "")
-    plugin._submit_autosub_for_entries = fake_submit
+    bridge = plugin.services.autosub_bridge()
+    bridge.submit_autosub_for_entries = fake_submit
+    override_services(plugin, autosub_bridge=bridge)
 
-    result = plugin._restart_autosub_for_entries(
+    result = plugin.services.autosub_bridge().restart_autosub_for_entries(
         [entry],
         source_policy="matched_external",
         overwrite_policy="backup_replace",

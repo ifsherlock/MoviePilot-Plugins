@@ -126,7 +126,6 @@ from .subtitle_language import (
     LANGUAGE_SUFFIX_ALIASES,
     auto_language_bucket,
     auto_subtitle_sort_key,
-    autosub_lang_from_suffix,
     detect_language_profile,
     is_chinese_language_suffix,
     language_suffix_from_filename,
@@ -662,72 +661,3 @@ class SubtitleManualUpload(_PluginBase):
 
     def _save_config(self) -> None:
         self.update_config(build_save_config_payload(self))
-
-    @classmethod
-    def _autosub_lang_from_suffix(cls, suffix: Any) -> str:
-        return autosub_lang_from_suffix(suffix)
-
-    def _submit_autosub_for_entries(
-        self,
-        target_entries: List[Dict[str, Any]],
-        subtitle_overrides: Optional[Dict[str, Dict[str, str]]] = None,
-        *,
-        trigger: str = "manual",
-        source_policy: str = "auto",
-        overwrite_policy: str = "skip",
-    ) -> Dict[str, Any]:
-        return self._autosub_bridge().submit_autosub_for_entries(
-            target_entries,
-            subtitle_overrides=subtitle_overrides,
-            trigger=trigger,
-            source_policy=source_policy,
-            overwrite_policy=overwrite_policy,
-        )
-    def _cancel_autosub_for_entries(self, target_entries: List[Dict[str, Any]]) -> Dict[str, Any]:
-        return self._autosub_bridge().cancel_autosub_for_entries(target_entries)
-
-    def _restart_autosub_for_entries(
-        self,
-        target_entries: List[Dict[str, Any]],
-        *,
-        source_policy: str = "reuse",
-        overwrite_policy: str = "backup_replace",
-        source_subtitle_path: str = "",
-        source_subtitle_lang: str = "",
-        task_ids: Optional[List[str]] = None,
-    ) -> Dict[str, Any]:
-        return self._autosub_bridge().restart_autosub_for_entries(
-            target_entries,
-            source_policy=source_policy,
-            overwrite_policy=overwrite_policy,
-            source_subtitle_path=source_subtitle_path,
-            source_subtitle_lang=source_subtitle_lang,
-            task_ids=task_ids,
-        )
-
-    def _filter_restart_task_ids_by_targets(
-        self,
-        task_ids: List[str],
-        tasks_data: Dict[str, Any],
-        target_entries: List[Dict[str, Any]],
-    ) -> Tuple[List[str], List[Dict[str, str]]]:
-        return self._autosub_bridge().filter_restart_task_ids_by_targets(
-            task_ids,
-            tasks_data,
-            target_entries,
-        )
-
-    def _selected_external_subtitle_override_for_entries(
-        self,
-        target_entries: List[Dict[str, Any]],
-        *,
-        source_subtitle_path: str,
-        source_subtitle_lang: str = "",
-        overwrite_policy: str = "new_variant",
-    ) -> Dict[str, Dict[str, Any]]:
-        return self._autosub_bridge().selected_external_subtitle_override_for_entries(
-            target_entries,
-            source_subtitle_path=source_subtitle_path,
-            source_subtitle_lang=source_subtitle_lang,
-            overwrite_policy=overwrite_policy,
-        )

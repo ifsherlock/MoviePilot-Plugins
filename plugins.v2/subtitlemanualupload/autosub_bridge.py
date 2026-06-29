@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from .subtitle_language import autosub_lang_from_suffix
+
 
 def autosub_task_summary(tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
     counts = {
@@ -311,7 +313,7 @@ class AutoSubBridge:
         explicit_task_ids = bool(requested_task_ids)
         ownership_skipped: List[Dict[str, str]] = []
         if requested_task_ids:
-            requested_task_ids, ownership_skipped = owner._filter_restart_task_ids_by_targets(
+            requested_task_ids, ownership_skipped = self.filter_restart_task_ids_by_targets(
                 requested_task_ids,
                 tasks_data,
                 target_entries,
@@ -326,13 +328,13 @@ class AutoSubBridge:
                     "targets": [owner._target_from_entry(entry) for entry in target_entries],
                     "tasks": tasks_data,
                 }
-            subtitle_overrides = owner._selected_external_subtitle_override_for_entries(
+            subtitle_overrides = self.selected_external_subtitle_override_for_entries(
                 target_entries,
                 source_subtitle_path=source_subtitle_path,
                 source_subtitle_lang=source_subtitle_lang,
                 overwrite_policy=effective_overwrite_policy,
             )
-            result = owner._submit_autosub_for_entries(
+            result = self.submit_autosub_for_entries(
                 target_entries,
                 subtitle_overrides=subtitle_overrides,
                 trigger="manual",
@@ -456,7 +458,7 @@ class AutoSubBridge:
         except Exception:
             raw_bytes = b""
         profile = owner._detect_language_profile(candidate.name, raw_bytes)
-        lang = source_subtitle_lang or owner._autosub_lang_from_suffix(profile.get("suffix"))
+        lang = source_subtitle_lang or autosub_lang_from_suffix(profile.get("suffix"))
         return {
             video_path: {
                 "subtitle_path": str(candidate),

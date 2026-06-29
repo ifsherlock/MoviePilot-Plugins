@@ -2,7 +2,7 @@
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-init-shell-slimming-phased-plan.md",
   "status": {
     "phase": "phase-7",
-    "task": "7.2",
+    "task": "7.3",
     "next_allowed_action": "Implement the current task; after verified completion, advance to the next task or phase automatically"
   },
   "execution_rules": {
@@ -744,8 +744,54 @@
         {
           "id": "7.2",
           "title": "Migrate AutoSub bridge facade methods",
-          "status": "pending",
-          "verification": [],
+          "status": "completed",
+          "verification": [
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile plugins.v2/subtitlemanualupload/__init__.py plugins.v2/subtitlemanualupload/autosub_bridge.py plugins.v2/subtitlemanualupload/online_ai.py plugins.v2/subtitlemanualupload/auto_transfer.py",
+              "result": "passed",
+              "evidence": "compiled successfully"
+            },
+            {
+              "command": "rg -n \"def _(autosub_lang_from_suffix|submit_autosub_for_entries|cancel_autosub_for_entries|restart_autosub_for_entries|filter_restart_task_ids_by_targets|selected_external_subtitle_override_for_entries)\" plugins.v2/subtitlemanualupload/__init__.py",
+              "result": "passed",
+              "evidence": "no matches"
+            },
+            {
+              "command": "rg -n \"owner\\._(autosub_lang_from_suffix|filter_restart_task_ids_by_targets|selected_external_subtitle_override_for_entries|submit_autosub_for_entries)\" plugins.v2/subtitlemanualupload/autosub_bridge.py plugins.v2/subtitlemanualupload/online_ai.py",
+              "result": "passed",
+              "evidence": "no matches"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py::test_ai_restart_with_selected_external_subtitle_submits_matched_override tests/test_subtitlemanualupload_cache.py::test_ai_restart_matched_external_filters_explicit_task_ids_before_submit tests/test_subtitlemanualupload_cache.py::test_ai_restart_matched_external_backup_replace_becomes_new_variant -q",
+              "result": "passed",
+              "evidence": "3 passed in 0.55s"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py -q",
+              "result": "passed",
+              "evidence": "4 passed in 3.63s"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_init_inventory.py --details",
+              "result": "passed",
+              "evidence": "line_count=664, method_count=97, ai_autosub_facade count=0, service_delegates count=39"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_autosubv3_cancel.py tests/test_subtitlemanualupload_cache.py -q",
+              "result": "passed",
+              "evidence": "163 passed in 4.58s"
+            },
+            {
+              "command": "rg -n \"def _(online_ai_candidate_items|convert_ass_to_ai_srt|submit_online_ai_translate|submit_autosub_for_entries|restart_autosub_for_entries|selected_external_subtitle_override_for_entries)\" plugins.v2/subtitlemanualupload/__init__.py",
+              "result": "passed",
+              "evidence": "no matches"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "222 passed in 5.76s"
+            }
+          ],
           "commit": null
         },
         {
@@ -1006,6 +1052,21 @@
         "inventory reported line_count=733, method_count=103, ai_autosub_facade count=6",
         "baseline smoke exited 0 with 222 passed",
         "next task is phase-7 task 7.2"
+      ]
+    },
+    {
+      "task": "7.2",
+      "status": "completed",
+      "summary": "Removed AutoSub bridge facade methods from __init__.py, moved bridge restart internals to direct service methods and subtitle-language helpers, and migrated AutoSub tests to services.autosub_bridge().",
+      "evidence": [
+        "AutoSub facade grep over __init__.py returned no matches",
+        "autosub_bridge.py and online_ai.py owner private AutoSub callback grep returned no matches",
+        "matched external restart targeted tests exited 0 with 3 passed",
+        "cache plus AutoSub cancel tests exited 0 with 163 passed",
+        "inventory tests exited 0 with 4 passed",
+        "inventory reported line_count=664, method_count=97, ai_autosub_facade count=0",
+        "baseline smoke exited 0 with 222 passed",
+        "next task is phase-7 task 7.3"
       ]
     }
   ],

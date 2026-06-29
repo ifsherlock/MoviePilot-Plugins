@@ -6,7 +6,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .api.online_api import download_online_results_to_uploads
 from .online_subtitle import CaptchaRequiredError
-from .subtitle_language import auto_subtitle_sort_key, is_chinese_language_suffix
+from .subtitle_language import auto_subtitle_sort_key, autosub_lang_from_suffix, is_chinese_language_suffix
 from .target_resolver import (
     auto_fill_missing_targets as fill_missing_target_ids,
     suggest_target as suggest_target_id,
@@ -253,7 +253,7 @@ class OnlineAiService:
                 timeline_result=timeline_result,
             )
             video_path = str(operation["video_path"])
-            lang = owner._autosub_lang_from_suffix(operation.get("language_suffix"))
+            lang = autosub_lang_from_suffix(operation.get("language_suffix"))
             overrides[video_path] = {
                 "subtitle_path": str(fixed_path),
                 "lang": lang,
