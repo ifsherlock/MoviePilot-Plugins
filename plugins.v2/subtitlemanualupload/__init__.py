@@ -156,21 +156,7 @@ from .target_resolver import (
 from .timeline_tasks import timeline_task_summary
 from .online_ai import OnlineAiService
 from .auto_transfer import AutoTransferService
-from .service_factories import (
-    archive_dependency_service as make_archive_dependency_service,
-    auto_transfer_service as make_auto_transfer_service,
-    autosub_bridge as make_autosub_bridge,
-    local_media_catalog as make_local_media_catalog,
-    media_metadata_service as make_media_metadata_service,
-    online_ai_service as make_online_ai_service,
-    online_service as make_online_service,
-    subtitle_history as make_subtitle_history,
-    subtitle_inventory as make_subtitle_inventory,
-    subtitle_writer as make_subtitle_writer,
-    target_resolver as make_target_resolver,
-    timeline_task_store as make_timeline_task_store,
-    upload_session_service_for_path as make_upload_session_service_for_path,
-)
+from .service_registry import SubtitleManualUploadServices
 from .api.routes import build_api_routes
 
 
@@ -496,50 +482,58 @@ class SubtitleManualUpload(_PluginBase):
     def _subtitle_backup_path(cls, subtitle_path: Path) -> Path:
         return writer_subtitle_backup_path(subtitle_path)
 
+    @property
+    def services(self) -> SubtitleManualUploadServices:
+        registry = getattr(self, "_services_registry", None)
+        if registry is None:
+            registry = SubtitleManualUploadServices(self)
+            self._services_registry = registry
+        return registry
+
     @classmethod
     def _archive_dependency_service(cls, status_setter=None):
-        return make_archive_dependency_service(cls, status_setter=status_setter)
+        return SubtitleManualUploadServices(cls).archive_dependency(status_setter=status_setter)
 
     @classmethod
     def _upload_session_service_for_path(cls, data_path: Path):
-        return make_upload_session_service_for_path(cls, data_path)
+        return SubtitleManualUploadServices(cls).upload_session_for_path(data_path)
 
     @classmethod
     def _subtitle_inventory(cls):
-        return make_subtitle_inventory(cls)
+        return SubtitleManualUploadServices(cls).subtitle_inventory()
 
     def _upload_session_service(self):
-        return self._upload_session_service_for_path(self.get_data_path())
+        return self.services.upload_session()
 
     def _subtitle_writer(self):
-        return make_subtitle_writer(self)
+        return self.services.writer()
 
     def _subtitle_history(self):
-        return make_subtitle_history(self)
+        return self.services.history()
 
     def _autosub_bridge(self):
-        return make_autosub_bridge(self)
+        return self.services.autosub_bridge()
 
     def _online_ai_service(self):
-        return make_online_ai_service(self)
+        return self.services.online_ai()
 
     def _auto_transfer_service(self):
-        return make_auto_transfer_service(self)
+        return self.services.auto_transfer()
 
     def _target_resolver(self):
-        return make_target_resolver(self)
+        return self.services.target_resolver()
 
     def _local_media_catalog(self):
-        return make_local_media_catalog(self)
+        return self.services.local_media_catalog()
 
     def _media_metadata_service(self):
-        return make_media_metadata_service(self)
+        return self.services.media_metadata()
 
     def _timeline_task_store(self):
-        return make_timeline_task_store(self)
+        return self.services.timeline_tasks()
 
     def _online_service(self):
-        return make_online_service(self)
+        return self.services.online_subtitles()
 
     def _filter_existing_local_entries(self, *args, **kwargs):
         return self._local_media_catalog().filter_existing_local_entries(*args, **kwargs)

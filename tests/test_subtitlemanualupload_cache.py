@@ -152,6 +152,91 @@ def load_session(plugin, module, session_id):
     return plugin._upload_session_service().load_session(session_id, normalize_text=runtime_helpers.normalize_text)
 
 
+def test_service_wrappers_delegate_to_services_registry():
+    module, _, _ = load_plugin_module()
+    service_registry = plugin_submodule(module, "service_registry")
+    plugin = module.SubtitleManualUpload.__new__(module.SubtitleManualUpload)
+
+    assert isinstance(plugin.services, service_registry.SubtitleManualUploadServices)
+    assert plugin.services is plugin.services
+    assert module.SubtitleManualUpload._archive_dependency_service().__class__.__name__ == "ArchiveDependencyService"
+
+    calls = []
+    marker = object()
+
+    class FakeServices:
+        def upload_session(self):
+            calls.append("upload_session")
+            return marker
+
+        def writer(self):
+            calls.append("writer")
+            return marker
+
+        def history(self):
+            calls.append("history")
+            return marker
+
+        def autosub_bridge(self):
+            calls.append("autosub_bridge")
+            return marker
+
+        def online_ai(self):
+            calls.append("online_ai")
+            return marker
+
+        def auto_transfer(self):
+            calls.append("auto_transfer")
+            return marker
+
+        def target_resolver(self):
+            calls.append("target_resolver")
+            return marker
+
+        def local_media_catalog(self):
+            calls.append("local_media_catalog")
+            return marker
+
+        def media_metadata(self):
+            calls.append("media_metadata")
+            return marker
+
+        def timeline_tasks(self):
+            calls.append("timeline_tasks")
+            return marker
+
+        def online_subtitles(self):
+            calls.append("online_subtitles")
+            return marker
+
+    plugin._services_registry = FakeServices()
+
+    assert plugin._upload_session_service() is marker
+    assert plugin._subtitle_writer() is marker
+    assert plugin._subtitle_history() is marker
+    assert plugin._autosub_bridge() is marker
+    assert plugin._online_ai_service() is marker
+    assert plugin._auto_transfer_service() is marker
+    assert plugin._target_resolver() is marker
+    assert plugin._local_media_catalog() is marker
+    assert plugin._media_metadata_service() is marker
+    assert plugin._timeline_task_store() is marker
+    assert plugin._online_service() is marker
+    assert calls == [
+        "upload_session",
+        "writer",
+        "history",
+        "autosub_bridge",
+        "online_ai",
+        "auto_transfer",
+        "target_resolver",
+        "local_media_catalog",
+        "media_metadata",
+        "timeline_tasks",
+        "online_subtitles",
+    ]
+
+
 def api_endpoint(plugin, path):
     return next(route["endpoint"] for route in plugin.get_api() if route["path"] == path)
 

@@ -2,7 +2,7 @@
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-init-shell-slimming-phased-plan.md",
   "status": {
     "phase": "phase-5",
-    "task": "5.1",
+    "task": "5.2",
     "next_allowed_action": "Implement the current task; after verified completion, advance to the next task or phase automatically"
   },
   "execution_rules": {
@@ -459,8 +459,49 @@
         {
           "id": "5.1",
           "title": "Create SubtitleManualUploadServices registry",
-          "status": "pending",
-          "verification": [],
+          "status": "completed",
+          "verification": [
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile plugins.v2/subtitlemanualupload/__init__.py plugins.v2/subtitlemanualupload/service_registry.py plugins.v2/subtitlemanualupload/service_factories.py scripts/subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py",
+              "result": "passed",
+              "evidence": "compiled successfully"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py::test_service_wrappers_delegate_to_services_registry -q",
+              "result": "passed",
+              "evidence": "1 passed in 0.39s"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py::test_plugin_api_route_contract_is_stable -q",
+              "result": "passed",
+              "evidence": "1 passed in 0.38s"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py -q",
+              "result": "passed",
+              "evidence": "167 passed in 5.29s"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py -q",
+              "result": "passed",
+              "evidence": "4 passed in 4.63s"
+            },
+            {
+              "command": "rg -n \"make_.*service|service_factories\" plugins.v2/subtitlemanualupload/__init__.py",
+              "result": "passed",
+              "evidence": "__init__.py no longer imports service_factories aliases directly"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_init_inventory.py --details",
+              "result": "passed",
+              "evidence": "line_count=852, method_count=123, service_factories count=15"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "220 passed in 6.09s"
+            }
+          ],
           "commit": null
         },
         {
@@ -701,6 +742,20 @@
         "inventory reported line_count=858, method_count=122, archive_methods count=0",
         "baseline smoke exited 0 with 219 passed",
         "phase-4 acceptance satisfied; next task is phase-5 task 5.1"
+      ]
+    },
+    {
+      "task": "5.1",
+      "status": "completed",
+      "summary": "Added service_registry.py with SubtitleManualUploadServices as the single service composition entry and changed main-entry service wrappers to delegate through plugin.services.",
+      "evidence": [
+        "focused registry delegation test exited 0 with 1 passed",
+        "API route contract test exited 0 with 1 passed",
+        "cache+online tests exited 0 with 167 passed",
+        "__init__.py direct service_factories alias grep returned no matches",
+        "inventory reported line_count=852, method_count=123, service_factories count=15",
+        "baseline smoke exited 0 with 220 passed",
+        "next task is phase-5 task 5.2"
       ]
     }
   ],

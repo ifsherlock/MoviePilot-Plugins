@@ -40,6 +40,7 @@ ARCHIVE_PREFIXES = (
     "_extract_subtitle_files",
 )
 SERVICE_FACTORY_NAMES = {
+    "services",
     "_archive_dependency_service",
     "_upload_session_service_for_path",
     "_upload_session_service",
