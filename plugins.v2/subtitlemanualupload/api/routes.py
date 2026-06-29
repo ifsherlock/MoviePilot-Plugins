@@ -4,17 +4,20 @@ from typing import Any, Dict, List
 
 
 def build_api_routes(owner: Any) -> List[Dict[str, Any]]:
+    from .status_api import StatusApi
+
+    status_api = StatusApi(owner)
     return [
         {
             "path": "/status",
-            "endpoint": owner.api_status,
+            "endpoint": status_api.status,
             "methods": ["GET"],
             "auth": "bear",
             "summary": "获取字幕匹配插件状态",
         },
         {
             "path": "/refresh_index",
-            "endpoint": owner.api_refresh_index,
+            "endpoint": status_api.refresh_index,
             "methods": ["POST"],
             "auth": "bear",
             "summary": "兼容旧版刷新索引入口",
@@ -56,7 +59,7 @@ def build_api_routes(owner: Any) -> List[Dict[str, Any]]:
         },
         {
             "path": "/auto_transfer_queue",
-            "endpoint": owner.api_auto_transfer_queue,
+            "endpoint": status_api.auto_transfer_queue,
             "methods": ["GET"],
             "auth": "bear",
             "summary": "查询入库自动字幕处理队列",

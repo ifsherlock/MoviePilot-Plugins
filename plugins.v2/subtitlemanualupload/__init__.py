@@ -527,68 +527,6 @@ class SubtitleManualUpload(SubtitleManualUploadCompatMixin, _PluginBase):
             },
             message=message,
         )
-    def api_status(self) -> Dict[str, Any]:
-        rar_tool = self._rar_tool()
-        rar_python = self._rar_python_available()
-        return self._ok(
-            {
-                "enabled": self.get_state(),
-                "auto_search_on_transfer": bool(self._auto_search_on_transfer),
-                "auto_skip_chinese_media_on_transfer": bool(self._auto_skip_chinese_media_on_transfer),
-                "auto_transfer_subtitle_strategy": self._auto_transfer_subtitle_strategy,
-                "traditional_to_simplified": bool(self._traditional_to_simplified),
-                "source": "MoviePilot 本地整理记录",
-                "index": self._cache_status(),
-                "archive_support": {
-                    "zip": True,
-                    "rar": bool(rar_tool),
-                    "rar_tool": Path(rar_tool).name if rar_tool else "",
-                    "rar_tool_path": rar_tool or self._rar_tool_path,
-                    "rar_python": rar_python,
-                    "rar_python_package": self._rar_python_package,
-                    "dependency_mode": self._rar_dependency_mode,
-                    "dependency_status": self._rar_dependency_status,
-                },
-                "timeline_fixer": {
-                    **check_timeline_fixer_dependencies(),
-                    "configured_max_offset_seconds": self._timeline_max_offset_seconds,
-                    "configured_min_offset_seconds": self._timeline_min_offset_seconds,
-                    "vad_mode": self._timeline_vad_mode,
-                    "allow_risky_offset": bool(self._timeline_allow_risky_offset),
-                },
-                "online_search": {
-                    "enabled_providers": self._online_provider_ids,
-                    "assrt_api_configured": bool(self._assrt_api_key),
-                    "assrt_api_host": self._host_from_url(self._assrt_api_url),
-                    "opensubtitles_api_configured": bool(self._opensubtitles_api_key),
-                    "opensubtitles_api_host": self._host_from_url(self._opensubtitles_api_url),
-                    "opensubtitles_download_configured": bool(
-                        self._opensubtitles_username and self._opensubtitles_password
-                    ),
-                },
-                "auto_transfer_queue": self._auto_transfer_queue_summary(),
-                "ai_subtitle": self._autosub_status(),
-            }
-        )
-
-    def api_refresh_index(self) -> Dict[str, Any]:
-        self._start_background_cache_refresh()
-        cache_status = self._cache_status()
-        has_cache = bool((self._local_entries_cache or {}).get("entries"))
-        message = "媒体库资源清单已在后台刷新"
-        if has_cache:
-            message += "，当前页面先使用已有缓存"
-        else:
-            message += "，首次刷新完成前列表可能暂时为空"
-        return self._ok(
-            {
-                "realtime": False,
-                "background": True,
-                "index": cache_status,
-            },
-            message=message,
-        )
-
     def _existing_timeline_operations(
         self,
         requested_items: List[Dict[str, Any]],
@@ -1060,10 +998,6 @@ class SubtitleManualUpload(SubtitleManualUploadCompatMixin, _PluginBase):
         if not target_entries:
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
         return self._ok(self._timeline_tasks_for_entries(target_entries))
-
-    def api_auto_transfer_queue(self, request: Request) -> Dict[str, Any]:
-        limit = min(max(self._safe_int(request.query_params.get("limit"), 100), 1), 200)
-        return self._ok(self._auto_transfer_service().auto_transfer_queue_snapshot(limit=limit))
 
     async def api_search(self, request: Request) -> Dict[str, Any]:
         keyword = self._normalize_text(request.query_params.get("keyword"))

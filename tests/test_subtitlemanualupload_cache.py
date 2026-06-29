@@ -2746,7 +2746,8 @@ def test_api_auto_transfer_queue_uses_auto_transfer_service_directly():
     )
     plugin._auto_transfer_service = lambda: FakeAutoTransferService()
 
-    response = plugin.api_auto_transfer_queue(FakeRequest(query_params={"limit": "500"}))
+    queue_endpoint = next(route["endpoint"] for route in plugin.get_api() if route["path"] == "/auto_transfer_queue")
+    response = queue_endpoint(FakeRequest(query_params={"limit": "500"}))
 
     assert response["success"] is True
     assert captured["limit"] == 200
