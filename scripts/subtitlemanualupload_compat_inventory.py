@@ -28,12 +28,13 @@ def iter_python_files(root: Path) -> list[Path]:
     return [
         path
         for path in root.rglob("*.py")
-        if "__pycache__" not in path.parts and path != COMPAT_PATH
+        if "__pycache__" not in path.parts
     ]
 
 
 def call_sites(name: str, files: list[Path]) -> list[str]:
-    pattern = re.compile(rf"(?<![A-Za-z0-9_]){re.escape(name)}\s*\(")
+    pattern = re.compile(rf"(?<![A-Za-z0-9_]){re.escape(name)}(?![A-Za-z0-9_])")
+    definition_pattern = re.compile(rf"^\s*(async\s+def|def)\s+{re.escape(name)}\s*\(")
     hits: list[str] = []
     for path in files:
         try:
@@ -41,6 +42,8 @@ def call_sites(name: str, files: list[Path]) -> list[str]:
         except UnicodeDecodeError:
             lines = path.read_text(encoding="utf-8", errors="ignore").splitlines()
         for line_no, line in enumerate(lines, 1):
+            if path == COMPAT_PATH and definition_pattern.search(line):
+                continue
             if pattern.search(line):
                 hits.append(f"{path.relative_to(ROOT).as_posix()}:{line_no}")
     return hits

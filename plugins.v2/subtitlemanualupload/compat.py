@@ -178,41 +178,20 @@ class SubtitleManualUploadCompatMixin:
         except Exception:
             return default
 
-    @classmethod
-    def _normalize_timeline_max_offset(cls, value: Any) -> int:
-        return normalize_timeline_max_offset(value)
 
-    @classmethod
-    def _normalize_timeline_min_offset(cls, value: Any) -> float:
-        return normalize_timeline_min_offset(value)
 
-    @classmethod
-    def _normalize_timeline_vad_mode(cls, value: Any) -> str:
-        return normalize_timeline_vad_mode(value)
 
     @classmethod
     def _normalize_auto_multi_subtitle_mode(cls, value: Any) -> str:
         return normalize_auto_multi_subtitle_mode(value)
 
-    @classmethod
-    def _normalize_auto_language_key(cls, value: Any) -> str:
-        return normalize_auto_language_key(value)
 
-    @classmethod
-    def _normalize_auto_language_priority(cls, value: Any) -> List[str]:
-        return normalize_auto_language_priority(value, cls._default_auto_language_priority)
 
-    @classmethod
-    def _normalize_auto_format_priority(cls, value: Any) -> List[str]:
-        return normalize_auto_format_priority(value, cls._subtitle_exts, cls._default_auto_format_priority)
 
     @staticmethod
     def _normalize_text(value: Any) -> str:
         return str(value or "").strip()
 
-    @classmethod
-    def _normalize_root_url(cls, value: Any, default: str) -> str:
-        return normalize_root_url(value, default)
 
     @classmethod
     def _host_from_url(cls, value: Any) -> str:
@@ -270,9 +249,6 @@ class SubtitleManualUploadCompatMixin:
                 continue
         return raw_bytes.decode("utf-8", errors="ignore")
 
-    @classmethod
-    def _normalize_rar_dependency_mode(cls, value: Any) -> str:
-        return normalize_rar_dependency_mode(value)
 
     @classmethod
     def _normalize_auto_transfer_subtitle_strategy(cls, value: Any) -> str:
@@ -287,9 +263,6 @@ class SubtitleManualUploadCompatMixin:
             default_provider_ids=cls._default_online_provider_ids,
         )
 
-    @classmethod
-    def _normalize_online_site_urls(cls, config: Dict[str, Any]) -> Dict[str, str]:
-        return normalize_online_site_urls(config)
 
     def _check_online_rate_limit(self, providers: Iterable[str]) -> None:
         now = self._host_module_value("time", time).time()
@@ -325,8 +298,6 @@ class SubtitleManualUploadCompatMixin:
     def _filter_existing_local_entries(self, entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         return self._local_media_catalog().filter_existing_local_entries(entries)
 
-    def _prune_local_entries_cache(self) -> None:
-        self._local_media_catalog().prune_local_entries_cache()
 
     def _transfer_auto_key(self, entry: Dict[str, Any]) -> str:
         return self._auto_transfer_service().transfer_auto_key(entry)
@@ -377,9 +348,6 @@ class SubtitleManualUploadCompatMixin:
     def _auto_transfer_queue_loop(self) -> None:
         self._auto_transfer_service().auto_transfer_queue_loop()
 
-    @staticmethod
-    def _is_executable_file(path: Path) -> bool:
-        return upload_is_executable_file(path)
 
     def _set_rar_dependency_status(self, state: str, message: str) -> None:
         self._rar_dependency_status = {
@@ -473,9 +441,6 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
     def _normalize_language_suffix(cls, value: Any) -> str:
         return normalize_language_suffix(value)
 
-    @classmethod
-    def _language_suffix_from_filename(cls, file_name: str) -> Dict[str, str]:
-        return language_suffix_from_filename(file_name, cls._subtitle_exts)
 
     @classmethod
     def _detect_language_profile(cls, file_name: str, raw_bytes: bytes) -> Dict[str, str]:
@@ -634,34 +599,13 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             normalize_text=cls._normalize_text,
         )
 
-    @classmethod
-    def _history_type_text(cls, media_type: Any) -> str:
-        return target_history_type_text(media_type, normalize_text=cls._normalize_text)
 
-    @classmethod
-    def _number_from_tag(cls, value: Any) -> int:
-        return target_number_from_tag(value, normalize_text=cls._normalize_text, safe_int=cls._safe_int)
 
-    @classmethod
-    def _is_local_video_path(cls, storage: str, path: str) -> bool:
-        return target_is_local_video_path(
-            storage,
-            path,
-            normalize_text=cls._normalize_text,
-            settings_obj=settings,
-            stream_exts=cls._stream_exts,
-            trust_transfer_history_paths=getattr(cls, "_trust_transfer_history_paths", False),
-        )
 
     def _build_entry_from_history(self, history: Any) -> Optional[Dict[str, Any]]:
         return self._target_resolver().build_entry_from_history(history)
 
-    @classmethod
-    def _event_value(cls, obj: Any, *names: str, default: Any = "") -> Any:
-        return target_event_value(obj, *names, default=default)
 
-    def _transfer_event_paths(self, transferinfo: Any) -> List[str]:
-        return self._target_resolver().transfer_event_paths(transferinfo)
 
     def _entries_from_transfer_event(self, event_data: Dict[str, Any]) -> List[Dict[str, Any]]:
         return self._target_resolver().entries_from_transfer_event(event_data)
@@ -721,11 +665,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
     def _json_clone(cls, value: Any) -> Any:
         return json.loads(json.dumps(value, ensure_ascii=False))
 
-    def _match_history_signature(self, entries: List[Dict[str, Any]]) -> str:
-        return self._subtitle_history().match_history_signature(entries)
 
-    def _persist_match_history_cache(self) -> None:
-        self._subtitle_history().persist_match_history_cache()
 
     def _restore_persisted_match_history_cache(self) -> bool:
         return self._subtitle_history().restore_persisted_match_history_cache()
@@ -733,18 +673,6 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
     def _invalidate_match_history_cache(self) -> None:
         self._subtitle_history().invalidate_match_history_cache()
 
-    def _filter_match_history_items(
-        self,
-        items: List[Dict[str, Any]],
-        *,
-        keyword: str = "",
-        media_type: str = "all",
-    ) -> List[Dict[str, Any]]:
-        return self._subtitle_history().filter_match_history_items(
-            items,
-            keyword=keyword,
-            media_type=media_type,
-        )
 
     @staticmethod
     def _timeline_task_summary(tasks: List[Dict[str, Any]]) -> Dict[str, int]:
@@ -896,14 +824,8 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
     def _reset_media_index_cache(self) -> None:
         self._local_media_catalog().reset_media_index_cache()
 
-    def _media_index_cache_key(self, keyword: str, media_type: str) -> str:
-        return self._local_media_catalog().media_index_cache_key(keyword, media_type)
 
-    def _media_index_cache_get(self, key: str, entries: List[Dict[str, Any]]) -> Optional[List[Dict[str, Any]]]:
-        return self._local_media_catalog().media_index_cache_get(key, entries)
 
-    def _media_index_cache_set(self, key: str, entries: List[Dict[str, Any]], medias: List[Dict[str, Any]]) -> None:
-        self._local_media_catalog().media_index_cache_set(key, entries, medias)
 
     async def _search_media_candidates(self, keyword: str, media_type: str, limit: int, offset: int = 0) -> Tuple[List[Dict[str, Any]], int]:
         return await self._local_media_catalog().search_media_candidates(keyword, media_type, limit, offset)
@@ -1225,21 +1147,9 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
     def _embedded_subtitle_tracks_for_target(cls, target_entry: Dict[str, Any]) -> List[Dict[str, Any]]:
         return cls._subtitle_inventory().embedded_subtitle_tracks_for_target(target_entry)
 
-    @classmethod
-    def _embedded_subtitle_language_suffix(cls, language: Any, title: Any = "") -> str:
-        return cls._subtitle_inventory().embedded_subtitle_language_suffix(language, title)
 
-    @classmethod
-    def _embedded_subtitle_probe_cache_key(cls, video_path: Path) -> str:
-        return cls._subtitle_inventory().embedded_subtitle_probe_cache_key(video_path)
 
-    @classmethod
-    def _embedded_subtitle_track_is_usable(cls, codec: Any, title: Any = "", disposition: Optional[Dict[str, Any]] = None) -> bool:
-        return cls._subtitle_inventory().embedded_subtitle_track_is_usable(codec, title, disposition)
 
-    @classmethod
-    def _embedded_subtitle_sample_language_suffix(cls, video_path: Path, stream_index: Any, codec_name: Any) -> str:
-        return cls._subtitle_inventory().embedded_subtitle_sample_language_suffix(video_path, stream_index, codec_name)
 
     def _remove_ext_marks(self, video_path: Path) -> None:
         self._subtitle_inventory().remove_ext_marks(video_path)
@@ -1500,8 +1410,6 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             target["embedded_subtitles"] = embedded_subtitles
         return self._target_has_chinese_subtitle(target)
 
-    def _maybe_convert_operation_to_simplified(self, operation: Dict[str, Any], output_dir: Path) -> None:
-        self._subtitle_writer().maybe_convert_operation_to_simplified(operation, output_dir)
 
     def _write_operations_to_disk(
         self,
@@ -1539,9 +1447,6 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
     def _subtitle_backup_path(cls, subtitle_path: Path) -> Path:
         return writer_subtitle_backup_path(subtitle_path)
 
-    @classmethod
-    def _backup_subtitle_if_needed(cls, subtitle_path: Path) -> Optional[Path]:
-        return writer_backup_subtitle_if_needed(subtitle_path)
 
     def _run_timeline_fix(
         self,
@@ -1654,8 +1559,6 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             queue_rate_limited=queue_rate_limited,
             task_ids=task_ids,
         )
-    def _auto_search_and_write_entry(self, entry: Dict[str, Any]) -> Dict[str, Any]:
-        return self._auto_transfer_service().auto_search_and_write_entry(entry)
     def _call_auto_search_write_subtitle(
         self,
         entry: Dict[str, Any],
@@ -1714,9 +1617,6 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
         targets: List[Dict[str, Any]],
     ) -> List[Dict[str, Any]]:
         return self._auto_transfer_service().auto_prepared_items_for_targets(prepared_uploads, targets)
-    @classmethod
-    def _auto_language_bucket(cls, suffix: Any) -> str:
-        return auto_language_bucket(suffix)
 
     def _auto_subtitle_sort_key(self, item: Dict[str, Any]) -> Tuple[int, int, int, str]:
         language_priority = list(getattr(self, "_auto_subtitle_language_priority", None) or self._default_auto_language_priority)
@@ -1774,8 +1674,6 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
     def _process_transfer_auto_task_batch(self, tasks: List[Dict[str, Any]]) -> None:
         self._auto_transfer_service().process_transfer_auto_task_batch(tasks)
 
-    def _process_transfer_auto_subtitles(self, entries: List[Dict[str, Any]]) -> None:
-        self._auto_transfer_service().process_transfer_auto_subtitles(entries)
 
     @classmethod
     def _normalize_online_download_name(cls, name: str, content: bytes, result: Dict[str, Any]) -> str:
@@ -1788,7 +1686,3 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             normalize_text=cls._normalize_text,
             decode_preview_bytes=cls._decode_preview_bytes,
         )
-
-    @staticmethod
-    def _archive_suffix_from_content(content: bytes) -> str:
-        return upload_archive_suffix_from_content(content)
