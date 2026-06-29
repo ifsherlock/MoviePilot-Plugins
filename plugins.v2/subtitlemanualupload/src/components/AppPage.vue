@@ -940,13 +940,40 @@ function timelineMetaItems(item) {
   return items
 }
 
+function readableErrorDetail(value) {
+  if (!value) return ''
+  if (typeof value === 'string') return value
+  if (Array.isArray(value)) {
+    return value
+      .map(item => readableErrorDetail(item))
+      .filter(Boolean)
+      .join('；')
+  }
+  if (typeof value === 'object') {
+    const direct = value.message || value.msg || value.detail || value.reason || value.error
+    if (direct) return readableErrorDetail(direct)
+    const parts = []
+    if (Array.isArray(value.loc) && value.loc.length) parts.push(value.loc.join('.'))
+    if (value.type) parts.push(value.type)
+    if (parts.length) return parts.join('：')
+    try {
+      return JSON.stringify(value, null, 0)
+    } catch (_) {
+      return String(value)
+    }
+  }
+  return String(value)
+}
+
 function errorMessage(err, fallback) {
-  return err?.response?.data?.detail
+  return readableErrorDetail(
+    err?.response?.data?.detail
     || err?.response?.data?.message
     || err?.data?.detail
     || err?.data?.message
     || err?.message
     || fallback
+  )
 }
 
 function buildOutputName(target, item) {

@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 
 from ..timeline_fixer import check_timeline_fixer_dependencies
 
@@ -32,7 +32,7 @@ class TimelineApi:
             allow_risky_offset=allow_risky_offset,
         )
 
-    async def timeline_fix_existing(self, request: Any) -> Dict[str, Any]:
+    async def timeline_fix_existing(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         body = await request.json()
         requested_items = body.get("items") if isinstance(body, dict) else []
@@ -111,7 +111,7 @@ class TimelineApi:
             message=f"已提交 {len(operations)} 个历史字幕智能调轴任务，跳过 {len(skipped)} 个，失败 {len(failed)} 个",
         )
 
-    async def timeline_tasks(self, request: Any) -> Dict[str, Any]:
+    async def timeline_tasks(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         body = await request.json()
         target_ids = owner._target_ids_from_body(body)

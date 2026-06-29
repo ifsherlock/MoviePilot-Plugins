@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+from fastapi import Request
 from app.log import logger
 
 
@@ -9,7 +10,7 @@ class CatalogApi:
     def __init__(self, owner: Any):
         self.owner = owner
 
-    async def search(self, request: Any) -> Dict[str, Any]:
+    async def search(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         keyword = owner._normalize_text(request.query_params.get("keyword"))
         media_type = owner._normalize_text(request.query_params.get("media_type")) or "all"
@@ -45,7 +46,7 @@ class CatalogApi:
             }
         )
 
-    def match_history(self, request: Any) -> Dict[str, Any]:
+    def match_history(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         keyword = owner._normalize_text(request.query_params.get("keyword"))
         media_type = owner._normalize_text(request.query_params.get("media_type")) or "all"
@@ -67,7 +68,7 @@ class CatalogApi:
             }
         )
 
-    def targets(self, request: Any) -> Dict[str, Any]:
+    def targets(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         media_type = owner._normalize_text(request.query_params.get("media_type"))
         tmdb_id = owner._normalize_text(request.query_params.get("tmdb_id"))

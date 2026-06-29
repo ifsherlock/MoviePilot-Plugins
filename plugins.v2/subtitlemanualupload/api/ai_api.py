@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 
 from ..autosub_bridge import autosub_task_summary as bridge_autosub_task_summary
@@ -12,7 +12,7 @@ class AiApi:
     def __init__(self, owner: Any):
         self.owner = owner
 
-    async def ai_submit(self, request: Any) -> Dict[str, Any]:
+    async def ai_submit(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         body = await request.json()
         target_ids = owner._target_ids_from_body(body)
@@ -67,7 +67,7 @@ class AiApi:
             message=f"已提交 {len(result.get('added') or [])} 个 AI 字幕生成任务，跳过 {len(result.get('skipped') or [])} 个，失败 {len(result.get('failed') or [])} 个",
         )
 
-    async def online_ai_submit(self, request: Any) -> Dict[str, Any]:
+    async def online_ai_submit(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         body = await request.json()
         target_ids = owner._target_ids_from_body(body)
@@ -92,7 +92,7 @@ class AiApi:
             allow_risky_offset,
         )
 
-    async def ai_cancel(self, request: Any) -> Dict[str, Any]:
+    async def ai_cancel(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         body = await request.json()
         target_ids = owner._target_ids_from_body(body)
@@ -116,7 +116,7 @@ class AiApi:
             message=f"已取消 {len(result.get('cancelled') or [])} 个 AI 字幕任务，跳过 {len(result.get('skipped') or [])} 个",
         )
 
-    async def ai_restart(self, request: Any) -> Dict[str, Any]:
+    async def ai_restart(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         body = await request.json()
         target_ids = owner._target_ids_from_body(body)
@@ -189,7 +189,7 @@ class AiApi:
             message=f"已重新提交 {len(result.get('added') or [])} 个 AI 字幕任务，跳过 {len(result.get('skipped') or [])} 个，失败 {len(result.get('failed') or [])} 个",
         )
 
-    async def ai_tasks(self, request: Any) -> Dict[str, Any]:
+    async def ai_tasks(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         body = await request.json()
         target_ids = owner._target_ids_from_body(body)

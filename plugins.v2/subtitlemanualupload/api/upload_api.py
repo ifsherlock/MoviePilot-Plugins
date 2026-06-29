@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 
 from app.log import logger
 
@@ -91,7 +91,7 @@ class UploadApi:
             message=message,
         )
 
-    async def prepare_upload(self, request: Any) -> Dict[str, Any]:
+    async def prepare_upload(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         form = await request.form()
         target_ids_raw = owner._normalize_text(form.get("target_ids"))
@@ -187,7 +187,7 @@ class UploadApi:
             source="upload",
         )
 
-    async def apply_upload(self, request: Any) -> Dict[str, Any]:
+    async def apply_upload(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         body = await request.json()
         session_id = owner._normalize_text(body.get("session_id"))
@@ -228,7 +228,7 @@ class UploadApi:
 
         return owner._ok(payload, message=message)
 
-    async def clear_subtitles(self, request: Any) -> Dict[str, Any]:
+    async def clear_subtitles(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         body = await request.json()
         target_ids = owner._target_ids_from_body(body)
@@ -271,7 +271,7 @@ class UploadApi:
 
         return owner._ok(payload, message=message)
 
-    async def delete_subtitle(self, request: Any) -> Dict[str, Any]:
+    async def delete_subtitle(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         body = await request.json()
         target_id = owner._normalize_text(body.get("target_id"))
@@ -302,7 +302,7 @@ class UploadApi:
         )
         return owner._ok(payload, message=message)
 
-    async def restore_subtitle_backup(self, request: Any) -> Dict[str, Any]:
+    async def restore_subtitle_backup(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         body = await request.json()
         target_id = owner._normalize_text(body.get("target_id"))

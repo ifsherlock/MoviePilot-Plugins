@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import inspect
 import io
 import importlib.util
 import re
@@ -203,6 +204,25 @@ def test_plugin_api_route_contract_is_stable():
         ("/online_ai_submit", ("POST",), "bear", "提交在线外语字幕到 AI 翻译状态队列"),
         ("/online_download_preview", ("POST",), "bear", "下载在线字幕并生成匹配预览"),
     ]
+
+
+def test_plugin_api_request_parameters_are_fastapi_requests():
+    module, _, _ = load_plugin_module()
+    plugin = module.SubtitleManualUpload.__new__(module.SubtitleManualUpload)
+
+    request_routes = [
+        route["path"]
+        for route in plugin.get_api()
+        if "request" in inspect.signature(route["endpoint"]).parameters
+    ]
+
+    assert request_routes
+    for route in plugin.get_api():
+        signature = inspect.signature(route["endpoint"])
+        parameter = signature.parameters.get("request")
+        if parameter is None:
+            continue
+        assert parameter.annotation == "Request", route["path"]
 
 
 class FakeUpload:

@@ -5,7 +5,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 
 from app.log import logger
@@ -87,7 +87,7 @@ class OnlineApi:
         status["rate_limit_per_minute"] = owner._online_rate_limit_per_minute
         return owner._ok(status)
 
-    async def online_manual_links(self, request: Any) -> Dict[str, Any]:
+    async def online_manual_links(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         body = await request.json()
         target_ids = owner._target_ids_from_body(body)
@@ -115,7 +115,7 @@ class OnlineApi:
             }
         )
 
-    async def online_search(self, request: Any) -> Dict[str, Any]:
+    async def online_search(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         body = await request.json()
         target_ids = owner._target_ids_from_body(body)
@@ -166,7 +166,7 @@ class OnlineApi:
             }
         )
 
-    async def online_search_provider(self, request: Any) -> Dict[str, Any]:
+    async def online_search_provider(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         body = await request.json()
         target_ids = owner._target_ids_from_body(body)
@@ -216,7 +216,7 @@ class OnlineApi:
             }
         )
 
-    async def online_download_preview(self, request: Any) -> Dict[str, Any]:
+    async def online_download_preview(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         body = await request.json()
         target_ids = owner._target_ids_from_body(body)

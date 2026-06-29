@@ -3,6 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict
 
+from fastapi import Request
+
 from ..config_schema import host_from_url
 from ..timeline_fixer import check_timeline_fixer_dependencies
 
@@ -75,7 +77,7 @@ class StatusApi:
             message=message,
         )
 
-    def auto_transfer_queue(self, request: Any) -> Dict[str, Any]:
+    def auto_transfer_queue(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         limit = min(max(owner._safe_int(request.query_params.get("limit"), 100), 1), 200)
         return owner._ok(owner._auto_transfer_service().auto_transfer_queue_snapshot(limit=limit))
