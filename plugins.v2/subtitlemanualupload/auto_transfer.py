@@ -79,6 +79,49 @@ class AutoTransferService:
         self._time = self._collaborators.time_module or time_module
         self._http_exception = self._collaborators.http_exception or http_exception
 
+    def _callback(self, name: str, fallback_name: str) -> Callable[..., Any]:
+        callback = getattr(self._collaborators, name)
+        return callback or getattr(self._owner, fallback_name)
+
+    def _online_service(self) -> Any:
+        return self._callback("online_service_factory", "_online_service")()
+
+    def _target_from_entry(self, entry: Dict[str, Any]) -> Dict[str, Any]:
+        return self._callback("target_from_entry", "_target_from_entry")(entry)
+
+    def _check_online_rate_limit(self, providers: Iterable[str]) -> None:
+        self._callback("check_online_rate_limit", "_check_online_rate_limit")(providers)
+
+    def _wait_online_rate_limit(self, providers: Iterable[str], task_ids: Optional[List[str]] = None) -> None:
+        self._callback("wait_online_rate_limit", "_auto_wait_online_rate_limit")(providers, task_ids=task_ids)
+
+    def _normalize_online_download_name(self, name: str, content: bytes, result: Dict[str, Any]) -> str:
+        return self._callback("normalize_online_download_name", "_normalize_online_download_name")(name, content, result)
+
+    def _extract_subtitle_files(self, upload_name: str, raw_bytes: bytes, session_dir: Path) -> List[Dict[str, Any]]:
+        return self._callback("extract_subtitle_files", "_extract_subtitle_files")(upload_name, raw_bytes, session_dir)
+
+    def _auto_target_has_chinese_subtitle(self, entry: Dict[str, Any], target: Dict[str, Any]) -> bool:
+        return self._callback("auto_target_has_chinese_subtitle", "_auto_target_has_chinese_subtitle")(entry, target)
+
+    def _auto_search_write_subtitle(self, entry: Dict[str, Any], target: Dict[str, Any]) -> Dict[str, Any]:
+        return self._callback("auto_search_write_subtitle", "_auto_search_write_subtitle")(entry, target)
+
+    def _submit_autosub_for_entries(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+        return self._callback("submit_autosub_for_entries", "_submit_autosub_for_entries")(*args, **kwargs)
+
+    def _detect_language_profile(self, file_name: str, raw_bytes: bytes) -> Dict[str, Any]:
+        return self._callback("detect_language_profile", "_detect_language_profile")(file_name, raw_bytes)
+
+    def _auto_subtitle_sort_key(self, item: Dict[str, Any]) -> Tuple[int, int, int, str]:
+        return self._callback("auto_subtitle_sort_key", "_auto_subtitle_sort_key")(item)
+
+    def _write_operations_to_disk(self, **kwargs: Any) -> Tuple[List[Dict[str, Any]], int, int]:
+        return self._callback("write_operations_to_disk", "_write_operations_to_disk")(**kwargs)
+
+    def _prepare_online_ai_subtitle_overrides(self, *args: Any, **kwargs: Any):
+        return self._callback("prepare_online_ai_subtitle_overrides", "_prepare_online_ai_subtitle_overrides")(*args, **kwargs)
+
     def stop(self) -> None:
         owner = self._owner
         with owner._transfer_auto_lock:
@@ -424,7 +467,7 @@ class AutoTransferService:
         task_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         owner = self._owner
-        target = target or owner._target_from_entry(entry)
+        target = target or self._target_from_entry(entry)
         providers = owner._auto_search_providers()
         if not providers:
             return {"status": "skipped", "reason": "未配置可用 API 字幕源", "target": target.get("label")}
@@ -433,10 +476,10 @@ class AutoTransferService:
             return {"status": "skipped", "reason": "没有可用搜索关键词", "target": target.get("label")}
 
         if queue_rate_limited:
-            owner._auto_wait_online_rate_limit(providers, task_ids=task_ids)
+            self._wait_online_rate_limit(providers, task_ids=task_ids)
         else:
-            owner._check_online_rate_limit(providers)
-        service = owner._online_service()
+            self._check_online_rate_limit(providers)
+        service = self._online_service()
         search_result = service.search(
             keywords=keywords,
             providers=providers,
@@ -467,13 +510,13 @@ class AutoTransferService:
                 prepared_uploads: List[Dict[str, Any]] = []
                 for downloaded in downloads:
                     result = downloaded.get("result") or {}
-                    source_name = owner._normalize_online_download_name(
+                    source_name = self._normalize_online_download_name(
                         downloaded.get("source_name", ""),
                         downloaded.get("content") or b"",
                         result,
                     )
                     try:
-                        extracted = owner._extract_subtitle_files(
+                        extracted = self._extract_subtitle_files(
                             source_name,
                             downloaded.get("content") or b"",
                             session_dir,
@@ -575,15 +618,15 @@ class AutoTransferService:
 
     def auto_search_and_write_entry(self, entry: Dict[str, Any]) -> Dict[str, Any]:
         owner = self._owner
-        target = owner._target_from_entry(entry)
-        if owner._auto_target_has_chinese_subtitle(entry, target):
+        target = self._target_from_entry(entry)
+        if self._auto_target_has_chinese_subtitle(entry, target):
             return {"status": "skipped", "reason": "目标已有中文字幕", "target": target.get("label")}
         if target.get("has_subtitle"):
             self._logger.info(
                 "[SubtitleManualUpload] 目标已有外挂字幕但未确认中文，继续自动匹配/AI target=%s",
                 target.get("label"),
             )
-        return owner._auto_search_write_subtitle(entry, target)
+        return self._auto_search_write_subtitle(entry, target)
 
 
     def auto_submit_ai_for_entry(
@@ -593,9 +636,9 @@ class AutoTransferService:
         reason: str = "",
     ) -> Dict[str, Any]:
         owner = self._owner
-        target = target or owner._target_from_entry(entry)
+        target = target or self._target_from_entry(entry)
         try:
-            result = owner._submit_autosub_for_entries(
+            result = self._submit_autosub_for_entries(
                 [entry],
                 trigger="subtitle_fallback",
                 source_policy="auto",
@@ -658,11 +701,11 @@ class AutoTransferService:
         task_ids: Optional[List[str]] = None,
     ) -> Dict[str, Any]:
         owner = self._owner
-        target = owner._target_from_entry(entry)
+        target = self._target_from_entry(entry)
         strategy = owner._normalize_auto_transfer_subtitle_strategy(owner._auto_transfer_subtitle_strategy)
         base = {"strategy": strategy, "target": target.get("label")}
 
-        if owner._auto_target_has_chinese_subtitle(entry, target):
+        if self._auto_target_has_chinese_subtitle(entry, target):
             return {**base, "status": "skipped", "reason": "目标已有中文字幕"}
         if target.get("has_subtitle"):
             self._logger.info(
@@ -708,7 +751,7 @@ class AutoTransferService:
                 raw_bytes = Path(prepared["stored_path"]).read_bytes()
             except Exception:
                 raw_bytes = b""
-            language_profile = owner._detect_language_profile(prepared.get("source_name", ""), raw_bytes)
+            language_profile = self._detect_language_profile(prepared.get("source_name", ""), raw_bytes)
             items.append(
                 {
                     "upload_id": prepared["upload_id"],
@@ -746,7 +789,7 @@ class AutoTransferService:
 
         selected: List[Dict[str, Any]] = []
         for target_id, group in grouped.items():
-            sorted_group = sorted(group, key=owner._auto_subtitle_sort_key)
+            sorted_group = sorted(group, key=self._auto_subtitle_sort_key)
             chinese_group = [item for item in sorted_group if owner._is_chinese_language_suffix(item.get("language_suffix"))]
             foreign_group = [item for item in sorted_group if not owner._is_chinese_language_suffix(item.get("language_suffix"))]
             if mode == "all":
@@ -779,7 +822,7 @@ class AutoTransferService:
         selected_result: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         owner = self._owner
-        targets = [owner._target_from_entry(entry) for entry in target_entries]
+        targets = [self._target_from_entry(entry) for entry in target_entries]
         target_entry_map = {owner._normalize_text(entry.get("id")): entry for entry in target_entries}
         upload_map = {item["upload_id"]: item for item in prepared_uploads if item.get("upload_id")}
         chosen_items = [
@@ -809,7 +852,7 @@ class AutoTransferService:
         operations: List[Dict[str, Any]] = []
         if chinese_items:
             operations = owner._build_write_operations(chinese_items, upload_map, target_entry_map)
-            written, _, simplified_count = owner._write_operations_to_disk(
+            written, _, simplified_count = self._write_operations_to_disk(
                 session_dir=session_dir,
                 operations=operations,
                 fix_timeline=True,
@@ -822,12 +865,12 @@ class AutoTransferService:
             foreign_entries = [entry for target_id, entry in target_entry_map.items() if target_id in foreign_target_ids]
             foreign_upload_ids = {item.get("upload_id") for item in foreign_items}
             foreign_uploads = [item for item in prepared_uploads if item.get("upload_id") in foreign_upload_ids]
-            subtitle_overrides, fixed_subtitles = owner._prepare_online_ai_subtitle_overrides(
+            subtitle_overrides, fixed_subtitles = self._prepare_online_ai_subtitle_overrides(
                 session_dir=session_dir,
                 target_entries=foreign_entries,
                 prepared_uploads=foreign_uploads,
             )
-            ai_submit_result = owner._submit_autosub_for_entries(
+            ai_submit_result = self._submit_autosub_for_entries(
                 foreign_entries,
                 subtitle_overrides=subtitle_overrides,
                 trigger="subtitle_fallback",
@@ -999,15 +1042,15 @@ class AutoTransferService:
         providers = owner._auto_search_providers()
         if not providers:
             return {"status": "skipped", "reason": "未配置可用 API 字幕源", "written_by_target": {}}
-        targets = [owner._target_from_entry(entry) for entry in entries]
+        targets = [self._target_from_entry(entry) for entry in entries]
         media = owner._auto_media_for_entry(entries[0])
         owner._apply_tmdb_detail(targets[0], media)
         keywords = build_search_keywords(media, targets, "season")[:8]
         if not keywords:
             return {"status": "skipped", "reason": "没有可用整季搜索关键词", "written_by_target": {}}
 
-        owner._auto_wait_online_rate_limit(providers, task_ids=task_ids)
-        service = owner._online_service()
+        self._wait_online_rate_limit(providers, task_ids=task_ids)
+        service = self._online_service()
         search_result = service.search(
             keywords=keywords,
             providers=providers,
@@ -1038,12 +1081,12 @@ class AutoTransferService:
                 prepared_uploads: List[Dict[str, Any]] = []
                 for downloaded in downloads:
                     result = downloaded.get("result") or {}
-                    source_name = owner._normalize_online_download_name(
+                    source_name = self._normalize_online_download_name(
                         downloaded.get("source_name", ""),
                         downloaded.get("content") or b"",
                         result,
                     )
-                    extracted = owner._extract_subtitle_files(
+                    extracted = self._extract_subtitle_files(
                         source_name,
                         downloaded.get("content") or b"",
                         session_dir,
@@ -1112,7 +1155,7 @@ class AutoTransferService:
             return results
         if strategy == "ai_source_only":
             for entry in entries:
-                results[owner._auto_task_result_key(entry)] = owner._auto_process_transfer_entry(
+                results[owner._auto_task_result_key(entry)] = self.auto_process_transfer_entry(
                     entry,
                     queue_rate_limited=True,
                     task_ids=task_ids,
@@ -1122,9 +1165,9 @@ class AutoTransferService:
         pending_entries: List[Dict[str, Any]] = []
         for entry in entries:
             key = owner._auto_task_result_key(entry)
-            target = owner._target_from_entry(entry)
+            target = self._target_from_entry(entry)
             base = {"strategy": strategy, "target": target.get("label")}
-            if owner._auto_target_has_chinese_subtitle(entry, target):
+            if self._auto_target_has_chinese_subtitle(entry, target):
                 results[key] = {**base, "status": "skipped", "reason": "目标已有中文字幕"}
                 continue
             if target.get("has_subtitle"):
@@ -1150,7 +1193,7 @@ class AutoTransferService:
                 results[key] = {
                     "strategy": strategy,
                     "status": "written",
-                    "target": owner._target_from_entry(entry).get("label"),
+                    "target": self._target_from_entry(entry).get("label"),
                     "result": cache_result.get("result"),
                     "written": [written_by_target[target_id]],
                     "from_cache": True,
@@ -1160,7 +1203,7 @@ class AutoTransferService:
                 results[key] = {
                     "strategy": strategy,
                     "status": "ai_submitted",
-                    "target": owner._target_from_entry(entry).get("label"),
+                    "target": self._target_from_entry(entry).get("label"),
                     "result": cache_result.get("result"),
                     "fixed_subtitles": [ai_by_target[target_id]],
                     "ai": cache_result.get("ai_translate"),
@@ -1182,7 +1225,7 @@ class AutoTransferService:
                     results[key] = {
                         "strategy": strategy,
                         "status": "written",
-                        "target": owner._target_from_entry(entry).get("label"),
+                        "target": self._target_from_entry(entry).get("label"),
                         "result": season_result.get("result"),
                         "written": [written_by_target[target_id]],
                         "season_package": True,
@@ -1193,7 +1236,7 @@ class AutoTransferService:
                     results[key] = {
                         "strategy": strategy,
                         "status": "ai_submitted",
-                        "target": owner._target_from_entry(entry).get("label"),
+                        "target": self._target_from_entry(entry).get("label"),
                         "result": season_result.get("result"),
                         "fixed_subtitles": [ai_by_target[target_id]],
                         "ai": season_result.get("ai_translate"),
@@ -1207,7 +1250,7 @@ class AutoTransferService:
 
         for entry in remaining_entries:
             key = owner._auto_task_result_key(entry)
-            results[key] = owner._auto_process_transfer_entry(
+            results[key] = self.auto_process_transfer_entry(
                 entry,
                 queue_rate_limited=True,
                 task_ids=task_ids,
@@ -1225,10 +1268,10 @@ class AutoTransferService:
             and len({owner._auto_transfer_group_key(entry) for entry in entries}) == 1
         )
         if is_tv_batch:
-            results = owner._auto_process_transfer_group(entries, task_ids=task_ids)
+            results = self.auto_process_transfer_group(entries, task_ids=task_ids)
         else:
             results = {
-                owner._auto_task_result_key(entry): owner._auto_process_transfer_entry(
+                owner._auto_task_result_key(entry): self.auto_process_transfer_entry(
                     entry,
                     queue_rate_limited=True,
                     task_ids=task_ids,
@@ -1261,7 +1304,7 @@ class AutoTransferService:
         owner = self._owner
         for entry in entries:
             try:
-                result = owner._auto_process_transfer_entry(entry)
+                result = self.auto_process_transfer_entry(entry)
                 self._logger.info(
                     "[SubtitleManualUpload] 入库自动字幕处理完成 target=%s strategy=%s status=%s reason=%s",
                     result.get("target"),
