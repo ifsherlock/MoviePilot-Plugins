@@ -11,8 +11,14 @@ from starlette.concurrency import run_in_threadpool
 from app.log import logger
 
 from ..config_schema import host_from_url, normalize_provider_ids
-from ..online_subtitle import CaptchaRequiredError
-from .request_helpers import filter_unlocked_target_ids, locked_target_ids_from_body, target_ids_from_body
+from ..online_subtitle import CaptchaRequiredError, build_search_keywords
+from .request_helpers import (
+    filter_unlocked_target_ids,
+    locked_target_ids_from_body,
+    online_keywords,
+    results_from_body,
+    target_ids_from_body,
+)
 from .upload_api import UploadApi
 
 
@@ -98,7 +104,7 @@ class OnlineApi:
         if not target_entries:
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
         targets = [owner._target_from_entry(item) for item in target_entries]
-        keywords = owner._online_keywords(body, targets)
+        keywords = online_keywords(body, targets, owner._normalize_text, build_search_keywords)
         if not keywords:
             raise HTTPException(status_code=400, detail="没有可用搜索关键词，请手动输入关键词")
         providers = list(owner._manual_online_provider_ids)
@@ -126,7 +132,7 @@ class OnlineApi:
         if not target_entries:
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
         targets = [owner._target_from_entry(item) for item in target_entries]
-        keywords = owner._online_keywords(body, targets)
+        keywords = online_keywords(body, targets, owner._normalize_text, build_search_keywords)
         if not keywords:
             raise HTTPException(status_code=400, detail="没有可用搜索关键词，请手动输入关键词")
         requested_providers = body.get("providers") if isinstance(body.get("providers"), list) else owner._online_provider_ids
@@ -177,7 +183,7 @@ class OnlineApi:
         if not target_entries:
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
         targets = [owner._target_from_entry(item) for item in target_entries]
-        keywords = owner._online_keywords(body, targets)
+        keywords = online_keywords(body, targets, owner._normalize_text, build_search_keywords)
         if not keywords:
             raise HTTPException(status_code=400, detail="没有可用搜索关键词，请手动输入关键词")
         provider_id = owner._normalize_text(body.get("provider"))
@@ -232,7 +238,7 @@ class OnlineApi:
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
         if len(target_entries) != len(set(target_ids)):
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
-        selected_results = owner._results_from_body(body)
+        selected_results = results_from_body(body)
         if not selected_results:
             raise HTTPException(status_code=400, detail="请至少选择一个在线字幕结果")
         submit_ai_translate = bool(body.get("submit_ai_translate"))

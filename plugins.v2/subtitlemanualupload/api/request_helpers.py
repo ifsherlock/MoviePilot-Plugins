@@ -7,6 +7,7 @@ from fastapi import HTTPException
 
 
 NormalizeText = Callable[[Any], str]
+BuildSearchKeywords = Callable[[Dict[str, Any], List[Dict[str, Any]], str], List[str]]
 
 
 def target_ids_from_body(body: Dict[str, Any], normalize_text: NormalizeText) -> List[str]:
@@ -54,3 +55,27 @@ def filter_unlocked_target_ids(
 def ensure_target_not_locked(target_id: str, locked_ids: Set[str], normalize_text: NormalizeText) -> None:
     if normalize_text(target_id) in locked_ids:
         raise HTTPException(status_code=423, detail="目标已锁定，不能执行该操作")
+
+
+def results_from_body(body: Dict[str, Any]) -> List[Dict[str, Any]]:
+    results = body.get("results") or body.get("selected_results") or []
+    if isinstance(results, dict):
+        results = [results]
+    if not isinstance(results, list):
+        return []
+    return [item for item in results if isinstance(item, dict)]
+
+
+def online_keywords(
+    body: Dict[str, Any],
+    targets: List[Dict[str, Any]],
+    normalize_text: NormalizeText,
+    build_search_keywords: BuildSearchKeywords,
+) -> List[str]:
+    manual_keyword = normalize_text(body.get("keyword"))
+    media = body.get("media") if isinstance(body.get("media"), dict) else {}
+    scope = normalize_text(body.get("scope")) or "auto"
+    keywords = build_search_keywords(media, targets, scope)
+    if manual_keyword:
+        keywords = [manual_keyword, *[item for item in keywords if item != manual_keyword]]
+    return keywords[:8]

@@ -6,7 +6,12 @@ from fastapi import HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 
 from ..autosub_bridge import autosub_task_summary as bridge_autosub_task_summary
-from .request_helpers import filter_unlocked_target_ids, locked_target_ids_from_body, target_ids_from_body
+from .request_helpers import (
+    filter_unlocked_target_ids,
+    locked_target_ids_from_body,
+    results_from_body,
+    target_ids_from_body,
+)
 
 
 class AiApi:
@@ -82,7 +87,7 @@ class AiApi:
         target_entries = list(owner._resolve_targets(target_ids).values())
         if not target_entries or len(target_entries) != len(set(target_ids)):
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
-        selected_results = owner._results_from_body(body)
+        selected_results = results_from_body(body)
         if not selected_results:
             raise HTTPException(status_code=400, detail="请至少选择一个在线字幕结果")
         online_ai_service = owner._online_ai_service()
