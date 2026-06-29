@@ -51,15 +51,8 @@ from .timeline_tasks import TimelineTaskStore
 from .tongwen import convert_subtitle_file_to_simplified
 from .upload_session import (
     ArchiveDependencyService,
-    ArchiveResourceLimits,
-    DEFAULT_ARCHIVE_RESOURCE_LIMITS,
+    ArchiveSubtitleExtractor,
     UploadSessionService,
-    extract_7z_subtitle_files as upload_extract_7z_subtitle_files,
-    extract_command_archive_subtitle_files as upload_extract_command_archive_subtitle_files,
-    extract_rar_subtitle_files as upload_extract_rar_subtitle_files,
-    extract_rar_subtitle_files_with_rarfile as upload_extract_rar_subtitle_files_with_rarfile,
-    list_rar_members as upload_list_rar_members,
-    read_rar_member as upload_read_rar_member,
 )
 
 
@@ -79,7 +72,18 @@ def archive_dependency_service(owner_cls, status_setter=None) -> ArchiveDependen
     )
 
 
+def archive_subtitle_extractor(owner_cls) -> ArchiveSubtitleExtractor:
+    return ArchiveSubtitleExtractor(
+        archive_dependency_service=archive_dependency_service(owner_cls),
+        subtitle_exts=owner_cls._subtitle_exts,
+        hash_text=owner_cls._hash_text,
+        rar_python_package=owner_cls._rar_python_package,
+        logger_warning=logger.warning,
+    )
+
+
 def upload_session_service_for_path(owner_cls, data_path: Path) -> UploadSessionService:
+    extractor = archive_subtitle_extractor(owner_cls)
     return UploadSessionService(
         data_path=data_path,
         subtitle_exts=owner_cls._subtitle_exts,
@@ -88,8 +92,8 @@ def upload_session_service_for_path(owner_cls, data_path: Path) -> UploadSession
         sevenzip_exts=owner_cls._sevenzip_exts,
         default_session_hours=owner_cls._default_session_hours,
         hash_text=owner_cls._hash_text,
-        extract_rar_subtitle_files=owner_cls._extract_rar_subtitle_files,
-        extract_7z_subtitle_files=owner_cls._extract_7z_subtitle_files,
+        extract_rar_subtitle_files=extractor.extract_rar_subtitle_files,
+        extract_7z_subtitle_files=extractor.extract_7z_subtitle_files,
         logger_warning=logger.warning,
         normalize_text=owner_cls._normalize_text,
         decode_preview_bytes=owner_cls._decode_preview_bytes,
@@ -263,108 +267,4 @@ def online_service(owner) -> OnlineSubtitleSearchService:
         opensubtitles_api_url=owner._opensubtitles_api_url,
         opensubtitles_username=owner._opensubtitles_username,
         opensubtitles_password=owner._opensubtitles_password,
-    )
-
-
-def list_rar_members(owner_cls, archive_path: Path, tool_path: str):
-    return upload_list_rar_members(
-        archive_path,
-        tool_path,
-        decode_preview_bytes=owner_cls._decode_preview_bytes,
-        run_command=owner_cls._run_archive_command,
-    )
-
-
-def read_rar_member(owner_cls, archive_path: Path, member: str, tool_path: str):
-    return upload_read_rar_member(
-        archive_path,
-        member,
-        tool_path,
-        run_command=owner_cls._run_archive_command,
-    )
-
-
-def extract_rar_subtitle_files_with_rarfile(
-    owner_cls,
-    source_name: str,
-    archive_path: Path,
-    session_dir: Path,
-    resource_limits: ArchiveResourceLimits = DEFAULT_ARCHIVE_RESOURCE_LIMITS,
-):
-    return upload_extract_rar_subtitle_files_with_rarfile(
-        source_name,
-        archive_path,
-        session_dir,
-        rarfile_module_factory=owner_cls._rarfile_module,
-        rar_python_package=owner_cls._rar_python_package,
-        subtitle_exts=owner_cls._subtitle_exts,
-        hash_text=owner_cls._hash_text,
-        resource_limits=resource_limits,
-    )
-
-
-def extract_rar_subtitle_files(
-    owner_cls,
-    source_name: str,
-    archive_path: Path,
-    session_dir: Path,
-    resource_limits: ArchiveResourceLimits = DEFAULT_ARCHIVE_RESOURCE_LIMITS,
-):
-    return upload_extract_rar_subtitle_files(
-        source_name,
-        archive_path,
-        session_dir,
-        rar_python_available_func=owner_cls._rar_python_available,
-        extract_with_rarfile=owner_cls._extract_rar_subtitle_files_with_rarfile,
-        rar_tool_func=owner_cls._rar_tool,
-        extract_command_archive_subtitle_files_func=owner_cls._extract_command_archive_subtitle_files,
-        rar_python_package=owner_cls._rar_python_package,
-        logger_warning=logger.warning,
-        resource_limits=resource_limits,
-    )
-
-
-def extract_7z_subtitle_files(
-    owner_cls,
-    source_name: str,
-    archive_path: Path,
-    session_dir: Path,
-    resource_limits: ArchiveResourceLimits = DEFAULT_ARCHIVE_RESOURCE_LIMITS,
-):
-    return upload_extract_7z_subtitle_files(
-        source_name,
-        archive_path,
-        session_dir,
-        sevenzip_tool_func=owner_cls._sevenzip_tool,
-        extract_command_archive_subtitle_files_func=owner_cls._extract_command_archive_subtitle_files,
-        resource_limits=resource_limits,
-    )
-
-
-def extract_command_archive_subtitle_files(
-    owner_cls,
-    source_name: str,
-    archive_path: Path,
-    session_dir: Path,
-    tool_path: str,
-    resource_limits: ArchiveResourceLimits = DEFAULT_ARCHIVE_RESOURCE_LIMITS,
-):
-    return upload_extract_command_archive_subtitle_files(
-        source_name,
-        archive_path,
-        session_dir,
-        tool_path,
-        subtitle_exts=owner_cls._subtitle_exts,
-        hash_text=owner_cls._hash_text,
-        list_members=owner_cls._list_rar_members,
-        read_member=owner_cls._read_rar_member,
-        resource_limits=resource_limits,
-    )
-
-
-def extract_subtitle_files(owner_cls, upload_name: str, raw_bytes: bytes, session_dir: Path):
-    return upload_session_service_for_path(owner_cls, session_dir.parent).extract_subtitle_files(
-        upload_name,
-        raw_bytes,
-        session_dir,
     )

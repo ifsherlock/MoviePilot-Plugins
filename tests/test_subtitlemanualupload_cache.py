@@ -954,31 +954,36 @@ def test_online_download_preview_uses_upload_session_service(tmp_path):
 def test_extract_7z_subtitle_files_with_external_tool(tmp_path):
     module, _, _ = load_plugin_module()
     cls = module.SubtitleManualUpload
-    original_sevenzip_tool = cls._sevenzip_tool
-    original_run_archive_command = cls._run_archive_command
-    cls._sevenzip_tool = classmethod(lambda inner_cls: "7z")
+    original_which = module.shutil.which
+    original_run = module.subprocess.run
 
-    def fake_run_archive_command(inner_cls, args, timeout=120):
+    def fake_which(tool):
+        return "7z" if tool == "7z" else ""
+
+    def fake_run(args, stdout=None, stderr=None, check=None, timeout=None):
         command = args[1]
         if command == "l":
-            return (
+            output = (
                 "Path = sample.7z\n"
                 "Path = 说明.txt\n"
                 "Path = Jack.Reacher.2012.chs&eng.ass\n"
                 "Path = Jack.Reacher.2012.eng.ass\n"
             ).encode()
-        if command == "x":
+        elif command == "x":
             member = args[-1]
-            return f"[Script Info]\n; {member}\nDialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,你好".encode()
-        raise AssertionError(args)
+            output = f"[Script Info]\n; {member}\nDialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,你好".encode()
+        else:
+            raise AssertionError(args)
+        return types.SimpleNamespace(stdout=output, stderr=b"")
 
-    cls._run_archive_command = classmethod(fake_run_archive_command)
+    module.shutil.which = fake_which
+    module.subprocess.run = fake_run
 
     try:
         extracted = cls._extract_subtitle_files("sample.7z", b"7z\xbc\xaf\x27\x1c" + b"payload", tmp_path)
     finally:
-        cls._sevenzip_tool = original_sevenzip_tool
-        cls._run_archive_command = original_run_archive_command
+        module.shutil.which = original_which
+        module.subprocess.run = original_run
 
     assert [item["source_name"] for item in extracted] == [
         "Jack.Reacher.2012.chs&eng.ass",
