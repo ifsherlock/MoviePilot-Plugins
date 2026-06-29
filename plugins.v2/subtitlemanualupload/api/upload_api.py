@@ -227,3 +227,102 @@ class UploadApi:
         )
 
         return owner._ok(payload, message=message)
+
+    async def clear_subtitles(self, request: Any) -> Dict[str, Any]:
+        owner = self.owner
+        body = await request.json()
+        target_ids = owner._target_ids_from_body(body)
+        locked_ids = owner._locked_target_ids_from_body(body)
+        target_ids, locked_skipped = owner._filter_unlocked_target_ids(target_ids, locked_ids)
+
+        if not target_ids:
+            if locked_skipped:
+                return owner._ok(
+                    {
+                        "count": 0,
+                        "deleted": [],
+                        "failed": locked_skipped,
+                    },
+                    message=f"已跳过 {len(locked_skipped)} 个锁定目标，没有删除外挂字幕",
+                )
+            logger.warning("[SubtitleManualUpload] 清空外挂字幕失败：目标列表为空")
+            raise HTTPException(status_code=400, detail="请至少选择一个目标视频")
+
+        target_entries = owner._resolve_targets(target_ids)
+        if not target_entries:
+            logger.warning(
+                "[SubtitleManualUpload] 清空外挂字幕失败：目标视频已失效 target_ids=%s",
+                owner._brief_ids(target_ids),
+            )
+            raise HTTPException(status_code=400, detail="目标视频已失效，请重新搜索媒体并选择季度/文件")
+
+        payload, message = owner._subtitle_writer().clear_subtitles(
+            target_ids,
+            target_entries,
+            locked_skipped,
+        )
+
+        logger.info(
+            "[SubtitleManualUpload] 清空外挂字幕完成 targets=%s deleted=%s failed=%s",
+            len(target_ids),
+            len(payload.get("deleted") or []),
+            len(payload.get("failed") or []),
+        )
+
+        return owner._ok(payload, message=message)
+
+    async def delete_subtitle(self, request: Any) -> Dict[str, Any]:
+        owner = self.owner
+        body = await request.json()
+        target_id = owner._normalize_text(body.get("target_id"))
+        subtitle_path_raw = owner._normalize_text(body.get("subtitle_path"))
+        subtitle_name = owner._normalize_text(body.get("subtitle_name"))
+        owner._ensure_target_not_locked(target_id, owner._locked_target_ids_from_body(body))
+        if not target_id:
+            raise HTTPException(status_code=400, detail="请先选择目标视频")
+        if not subtitle_path_raw and not subtitle_name:
+            raise HTTPException(status_code=400, detail="请指定要删除的字幕")
+
+        target_entries = owner._resolve_targets([target_id])
+        target_entry = target_entries.get(target_id)
+        if not target_entry:
+            raise HTTPException(status_code=400, detail="目标视频已失效，请重新搜索媒体并选择季度/文件")
+
+        payload, message = owner._subtitle_writer().delete_subtitle(
+            target_id=target_id,
+            target_entry=target_entry,
+            subtitle_path_raw=subtitle_path_raw,
+            subtitle_name=subtitle_name,
+        )
+
+        logger.info(
+            "[SubtitleManualUpload] 删除单个外挂字幕完成 target=%s subtitle=%s",
+            target_id[:8],
+            (payload.get("deleted") or {}).get("name"),
+        )
+        return owner._ok(payload, message=message)
+
+    async def restore_subtitle_backup(self, request: Any) -> Dict[str, Any]:
+        owner = self.owner
+        body = await request.json()
+        target_id = owner._normalize_text(body.get("target_id"))
+        subtitle_path_raw = owner._normalize_text(body.get("subtitle_path"))
+        subtitle_name = owner._normalize_text(body.get("subtitle_name"))
+        owner._ensure_target_not_locked(target_id, owner._locked_target_ids_from_body(body))
+        if not target_id:
+            raise HTTPException(status_code=400, detail="请先选择目标视频")
+        if not subtitle_path_raw and not subtitle_name:
+            raise HTTPException(status_code=400, detail="请指定要恢复的字幕")
+
+        target_entries = owner._resolve_targets([target_id])
+        target_entry = target_entries.get(target_id)
+        if not target_entry:
+            raise HTTPException(status_code=400, detail="目标视频已失效，请重新搜索媒体并选择季度/文件")
+
+        payload, message = owner._subtitle_writer().restore_subtitle_backup(
+            target_id=target_id,
+            target_entry=target_entry,
+            subtitle_path_raw=subtitle_path_raw,
+            subtitle_name=subtitle_name,
+        )
+        return owner._ok(payload, message=message)

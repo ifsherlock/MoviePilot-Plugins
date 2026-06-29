@@ -1632,9 +1632,8 @@ def test_api_delete_subtitle_only_allows_target_subtitles(tmp_path):
     entry = {"id": "t1", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}
     plugin._remember_targets([entry])
 
-    response = asyncio.run(
-        plugin.api_delete_subtitle(FakeRequest({"target_id": "t1", "subtitle_path": str(subtitle)}))
-    )
+    delete_endpoint = next(route["endpoint"] for route in plugin.get_api() if route["path"] == "/delete_subtitle")
+    response = asyncio.run(delete_endpoint(FakeRequest({"target_id": "t1", "subtitle_path": str(subtitle)})))
 
     assert response["success"] is True
     assert not subtitle.exists()
@@ -1651,12 +1650,9 @@ def test_api_delete_subtitle_rejects_locked_target(tmp_path):
     entry = {"id": "t1", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}
     plugin._remember_targets([entry])
 
+    delete_endpoint = next(route["endpoint"] for route in plugin.get_api() if route["path"] == "/delete_subtitle")
     try:
-        asyncio.run(
-            plugin.api_delete_subtitle(
-                FakeRequest({"target_id": "t1", "subtitle_path": str(subtitle), "locked_target_ids": ["t1"]})
-            )
-        )
+        asyncio.run(delete_endpoint(FakeRequest({"target_id": "t1", "subtitle_path": str(subtitle), "locked_target_ids": ["t1"]})))
     except module.HTTPException as exc:
         assert exc.status_code == 423
         assert "锁定" in exc.detail
@@ -1682,9 +1678,8 @@ def test_clear_subtitles_skips_locked_targets_and_uses_enumerated_subtitles(tmp_
     ]
     plugin._remember_targets(entries)
 
-    response = asyncio.run(
-        plugin.api_clear_subtitles(FakeRequest({"target_ids": ["t1", "t2"], "locked_target_ids": ["t2"]}))
-    )
+    clear_endpoint = next(route["endpoint"] for route in plugin.get_api() if route["path"] == "/clear_subtitles")
+    response = asyncio.run(clear_endpoint(FakeRequest({"target_ids": ["t1", "t2"], "locked_target_ids": ["t2"]})))
 
     assert response["success"] is True
     assert response["data"]["count"] == 1
@@ -1704,12 +1699,11 @@ def test_restore_subtitle_backup_missing_returns_404(tmp_path):
     entry = {"id": "t1", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}
     plugin._remember_targets([entry])
 
+    restore_endpoint = next(
+        route["endpoint"] for route in plugin.get_api() if route["path"] == "/restore_subtitle_backup"
+    )
     try:
-        asyncio.run(
-            plugin.api_restore_subtitle_backup(
-                FakeRequest({"target_id": "t1", "subtitle_path": str(subtitle)})
-            )
-        )
+        asyncio.run(restore_endpoint(FakeRequest({"target_id": "t1", "subtitle_path": str(subtitle)})))
     except module.HTTPException as exc:
         assert exc.status_code == 404
         assert "没有找到调轴前备份" in exc.detail
