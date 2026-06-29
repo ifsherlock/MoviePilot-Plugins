@@ -7,243 +7,36 @@ kept only while existing source paths and legacy tests still reference private
 
 from __future__ import annotations
 
-import hashlib
 import json
-import sys
-import time
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from fastapi import HTTPException
-from starlette.datastructures import UploadFile
 
-from app.core.config import settings
-
-try:
-    from app.core.event import eventmanager, Event as MPEvent
-    from app.schemas.types import EventType
-except Exception:
-    class _NoopEventManager:
-        @staticmethod
-        def register(_event_type):
-            def decorator(func):
-                return func
-
-            return decorator
-
-    class _NoopEventType:
-        TransferComplete = "transfer.complete"
-
-    eventmanager = _NoopEventManager()
-    MPEvent = Any
-    EventType = _NoopEventType
-
-from .online_subtitle import OnlineSubtitleSearchService, build_search_keywords, check_online_rate_limit, extract_title_aliases
-from .config_schema import normalize_auto_transfer_subtitle_strategy
-from .subtitle_language import auto_subtitle_sort_key, detect_language_profile, is_chinese_language_suffix, normalize_language_suffix
-from .autosub_bridge import autosub_task_summary as bridge_autosub_task_summary
-from .subtitle_writer import (
-    build_destination_name as writer_build_destination_name,
-    build_write_operations as writer_build_write_operations,
-    subtitle_backup_path as writer_subtitle_backup_path,
-    timeline_rejection_message as writer_timeline_rejection_message,
-    timeline_result_blocks_auto_write as writer_timeline_result_blocks_auto_write,
-)
-from .timeline_fixer import TimelineFixResult
-from .timeline_tasks import timeline_task_summary
-from .target_resolver import (
-    apply_tmdb_detail as target_apply_tmdb_detail,
-    auto_media_for_entry as target_auto_media_for_entry,
-    auto_fill_missing_targets as target_auto_fill_missing_targets,
-    entry_filesystem_signature as target_entry_filesystem_signature,
-    entry_matches_keyword as target_entry_matches_keyword,
-    entry_path_is_valid as target_entry_path_is_valid,
-    extract_episode_hint as target_extract_episode_hint,
-    is_chinese_transfer_media as target_is_chinese_transfer_media,
-    is_stream_path as target_is_stream_path,
-    media_type_text as target_media_type_text,
-    poster_url as target_poster_url,
-    suggest_target as target_suggest_target,
-    tmdb_aliases as target_tmdb_aliases,
-    tmdb_detail_payload as target_tmdb_detail_payload,
-)
-from .upload_session import normalize_online_download_name as normalize_upload_download_name
+from .compat_core import install_compat_core_methods
 from .compat_services import (
     LEGACY_INSTANCE_SERVICE_DELEGATES,
     install_compat_archive_methods,
     install_compat_service_factories,
     install_legacy_service_delegates,
 )
+from .online_subtitle import build_search_keywords
+from .subtitle_language import auto_subtitle_sort_key, is_chinese_language_suffix
+from .subtitle_writer import (
+    build_destination_name as writer_build_destination_name,
+    build_write_operations as writer_build_write_operations,
+)
+from .target_resolver import (
+    auto_fill_missing_targets as target_auto_fill_missing_targets,
+    auto_media_for_entry as target_auto_media_for_entry,
+    is_chinese_transfer_media as target_is_chinese_transfer_media,
+    suggest_target as target_suggest_target,
+)
+from .timeline_fixer import TimelineFixResult
+from .upload_session import normalize_online_download_name as normalize_upload_download_name
+
+
 class SubtitleManualUploadCompatMixin:
-    @classmethod
-    def _host_module_value(cls, name: str, default: Any) -> Any:
-        module = sys.modules.get(cls.__module__)
-        return getattr(module, name, default) if module is not None else default
-
-    def _ok(self, data: Any = None, message: str = "ok") -> Dict[str, Any]:
-        return {"success": True, "message": message, "data": data}
-
-    @staticmethod
-    def _safe_int(value: Any, default: int = 0) -> int:
-        try:
-            return int(value)
-        except Exception:
-            return default
-
-
-
-
-
-
-
-
-    @staticmethod
-    def _normalize_text(value: Any) -> str:
-        return str(value or "").strip()
-
-
-
-
-    @staticmethod
-    def _hash_text(value: str) -> str:
-        return hashlib.sha1(value.encode("utf-8")).hexdigest()
-
-    @classmethod
-    def _brief_ids(cls, values: Iterable[Any], limit: int = 5) -> str:
-        items = [cls._normalize_text(item)[:8] for item in values if cls._normalize_text(item)]
-        if len(items) > limit:
-            return f"{','.join(items[:limit])},+{len(items) - limit}"
-        return ",".join(items)
-
-    @staticmethod
-    def _decode_preview_bytes(raw_bytes: bytes) -> str:
-        if not raw_bytes:
-            return ""
-        for encoding in ("utf-8-sig", "utf-16", "gb18030", "big5"):
-            try:
-                return raw_bytes.decode(encoding)
-            except Exception:
-                continue
-        return raw_bytes.decode("utf-8", errors="ignore")
-
-
-    @classmethod
-    def _normalize_auto_transfer_subtitle_strategy(cls, value: Any) -> str:
-        return normalize_auto_transfer_subtitle_strategy(value)
-
-
-
-    def _check_online_rate_limit(self, providers: Iterable[str]) -> None:
-        check_online_rate_limit(
-            providers,
-            records=self._online_rate_records,
-            limit_per_minute=self._online_rate_limit_per_minute,
-            now=self._host_module_value("time", time).time(),
-            normalize_text=self._normalize_text,
-            http_exception=HTTPException,
-        )
-
-    @classmethod
-    def _entry_path_is_valid(cls, entry: Dict[str, Any]) -> bool:
-        return target_entry_path_is_valid(
-            entry,
-            normalize_text=cls._normalize_text,
-            trust_transfer_history_paths=getattr(cls, "_trust_transfer_history_paths", False),
-        )
-
-    @classmethod
-    def _entry_filesystem_signature(cls, entry: Dict[str, Any]) -> str:
-        return target_entry_filesystem_signature(entry, normalize_text=cls._normalize_text)
-
-    @staticmethod
-    def _timestamp_iso(ts: Any) -> str:
-        try:
-            return datetime.fromtimestamp(float(ts)).isoformat(timespec="seconds")
-        except Exception:
-            return ""
-
-
-    def _set_rar_dependency_status(self, state: str, message: str) -> None:
-        self._rar_dependency_status = type(self)._archive_dependency_service().dependency_status(state, message)
-
-    def _prepare_rar_dependency(self) -> None:
-        type(self)._archive_dependency_service(self._set_rar_dependency_status).prepare_rar_dependency()
-
-    @classmethod
-    def _normalize_language_suffix(cls, value: Any) -> str:
-        return normalize_language_suffix(value)
-
-
-    @classmethod
-    def _detect_language_profile(cls, file_name: str, raw_bytes: bytes) -> Dict[str, str]:
-        return detect_language_profile(file_name, raw_bytes, cls._subtitle_exts)
-
-    @classmethod
-    def _extract_episode_hint(cls, file_name: str) -> Optional[Dict[str, int]]:
-        return target_extract_episode_hint(file_name, safe_int=cls._safe_int)
-
-    @classmethod
-    def _media_type_text(cls, value: Any) -> str:
-        return target_media_type_text(value)
-
-    @classmethod
-    def _poster_url(cls, poster_path: Any, prefix: str = "w500") -> str:
-        return target_poster_url(
-            poster_path,
-            prefix,
-            settings_obj=settings,
-            normalize_text=cls._normalize_text,
-        )
-
-
-
-
-    @classmethod
-    def _cache_loaded_at(cls, value: Any) -> Optional[datetime]:
-        if isinstance(value, datetime):
-            return value
-        text = cls._normalize_text(value)
-        if not text:
-            return None
-        try:
-            return datetime.fromisoformat(text)
-        except Exception:
-            return None
-
-    @classmethod
-    def _json_clone(cls, value: Any) -> Any:
-        return json.loads(json.dumps(value, ensure_ascii=False))
-
-
-    @staticmethod
-    def _timeline_task_summary(tasks: List[Dict[str, Any]]) -> Dict[str, int]:
-        return timeline_task_summary(tasks)
-
-    @staticmethod
-    def _autosub_task_summary(tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
-        return bridge_autosub_task_summary(tasks)
-
-    @classmethod
-    def _entry_matches_keyword(cls, entry: Dict[str, Any], keyword: str) -> bool:
-        return target_entry_matches_keyword(entry, keyword, normalize_text=cls._normalize_text)
-
-    @classmethod
-    def _tmdb_detail_payload(cls, detail: Any) -> Dict[str, Any]:
-        return target_tmdb_detail_payload(
-            detail,
-            extract_title_aliases_func=extract_title_aliases,
-            normalize_text=cls._normalize_text,
-        )
-
-    @classmethod
-    def _tmdb_aliases(cls, *values: Any) -> List[str]:
-        return target_tmdb_aliases(*values, extract_title_aliases_func=extract_title_aliases)
-
-    @classmethod
-    def _apply_tmdb_detail(cls, target: Dict[str, Any], detail: Dict[str, Any]) -> None:
-        target_apply_tmdb_detail(target, detail)
-
     def _auto_media_for_entry(self, entry: Dict[str, Any]) -> Dict[str, Any]:
         return target_auto_media_for_entry(
             entry,
@@ -259,14 +52,6 @@ class SubtitleManualUploadCompatMixin:
             chinese_country_codes=self._chinese_media_country_codes,
             chinese_region_names=self._chinese_media_region_names,
             chinese_category_pattern=self._chinese_media_category_pattern,
-        )
-
-    @classmethod
-    def _is_stream_path(cls, path: Any) -> bool:
-        return target_is_stream_path(
-            path,
-            normalize_text=cls._normalize_text,
-            stream_exts=cls._stream_exts,
         )
 
     def _remember_targets(self, entries: List[Dict[str, Any]]) -> None:
@@ -299,14 +84,6 @@ class SubtitleManualUploadCompatMixin:
     @classmethod
     def _embedded_subtitle_tracks_for_target(cls, target_entry: Dict[str, Any]) -> List[Dict[str, Any]]:
         return cls._subtitle_inventory().embedded_subtitle_tracks_for_target(target_entry)
-
-
-
-
-
-    @staticmethod
-    def _is_upload_file(value: Any) -> bool:
-        return isinstance(value, UploadFile)
 
     @classmethod
     def _suggest_target(
@@ -380,28 +157,11 @@ class SubtitleManualUploadCompatMixin:
             target["embedded_subtitles"] = embedded_subtitles
         return self._target_has_chinese_subtitle(target)
 
-
     def _load_session(self, session_id: str) -> Tuple[Path, Dict[str, Any]]:
         return self._upload_session_service().load_session(session_id, normalize_text=self._normalize_text)
 
     def _timeline_cache_dir(self) -> Path:
         return self.get_data_path() / "timeline_cache"
-
-    @staticmethod
-    def _timeline_result_blocks_auto_write(timeline_result: Optional[TimelineFixResult]) -> bool:
-        return writer_timeline_result_blocks_auto_write(timeline_result)
-
-    @staticmethod
-    def _timeline_rejection_message(timeline_result: TimelineFixResult) -> str:
-        return writer_timeline_rejection_message(timeline_result)
-
-    @classmethod
-    def _subtitle_backup_path(cls, subtitle_path: Path) -> Path:
-        return writer_subtitle_backup_path(subtitle_path)
-
-
-    def _online_service(self) -> OnlineSubtitleSearchService:
-        return build_online_service(self)
 
     @classmethod
     def _target_ids_from_body(cls, body: Dict[str, Any]) -> List[str]:
@@ -490,6 +250,7 @@ class SubtitleManualUploadCompatMixin:
         )
 
 
+install_compat_core_methods(SubtitleManualUploadCompatMixin)
 install_compat_service_factories(SubtitleManualUploadCompatMixin)
 install_compat_archive_methods(SubtitleManualUploadCompatMixin)
 install_legacy_service_delegates(SubtitleManualUploadCompatMixin, LEGACY_INSTANCE_SERVICE_DELEGATES)
