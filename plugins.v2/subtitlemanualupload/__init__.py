@@ -99,15 +99,26 @@ from .config_runtime import (
     sync_class_runtime_config,
 )
 from .runtime_helpers import (
+    apply_tmdb_detail as runtime_apply_tmdb_detail,
     brief_ids as runtime_brief_ids,
     cache_loaded_at as runtime_cache_loaded_at,
     decode_preview_bytes as runtime_decode_preview_bytes,
+    entry_filesystem_signature as runtime_entry_filesystem_signature,
+    entry_matches_keyword as runtime_entry_matches_keyword,
+    entry_path_is_valid as runtime_entry_path_is_valid,
+    extract_episode_hint as runtime_extract_episode_hint,
     hash_text as runtime_hash_text,
+    is_stream_path as runtime_is_stream_path,
+    is_upload_file as runtime_is_upload_file,
     json_clone as runtime_json_clone,
+    media_type_text as runtime_media_type_text,
     normalize_text as runtime_normalize_text,
     ok_response,
+    poster_url as runtime_poster_url,
     safe_int as runtime_safe_int,
     timestamp_iso as runtime_timestamp_iso,
+    tmdb_aliases as runtime_tmdb_aliases,
+    tmdb_detail_payload as runtime_tmdb_detail_payload,
 )
 from .subtitle_language import (
     DEFAULT_AUTO_FORMAT_PRIORITY,
@@ -141,20 +152,6 @@ from .target_resolver import (
     LocalMediaCatalog,
     MediaTargetResolver,
     SubtitleInventory,
-    apply_tmdb_detail as target_apply_tmdb_detail,
-    entry_filesystem_signature as target_entry_filesystem_signature,
-    entry_matches_keyword as target_entry_matches_keyword,
-    entry_path_is_valid as target_entry_path_is_valid,
-    event_value as target_event_value,
-    extract_episode_hint as target_extract_episode_hint,
-    history_type_text as target_history_type_text,
-    is_local_video_path as target_is_local_video_path,
-    is_stream_path as target_is_stream_path,
-    media_type_text as target_media_type_text,
-    number_from_tag as target_number_from_tag,
-    poster_url as target_poster_url,
-    tmdb_aliases as target_tmdb_aliases,
-    tmdb_detail_payload as target_tmdb_detail_payload,
 )
 from .timeline_tasks import timeline_task_summary
 from .upload_session import (
@@ -416,15 +413,14 @@ class SubtitleManualUpload(_PluginBase):
 
     @classmethod
     def _entry_path_is_valid(cls, entry: Dict[str, Any]) -> bool:
-        return target_entry_path_is_valid(
+        return runtime_entry_path_is_valid(
             entry,
-            normalize_text=cls._normalize_text,
             trust_transfer_history_paths=getattr(cls, "_trust_transfer_history_paths", False),
         )
 
     @classmethod
     def _entry_filesystem_signature(cls, entry: Dict[str, Any]) -> str:
-        return target_entry_filesystem_signature(entry, normalize_text=cls._normalize_text)
+        return runtime_entry_filesystem_signature(entry)
 
     @staticmethod
     def _timestamp_iso(ts: Any) -> str:
@@ -446,19 +442,18 @@ class SubtitleManualUpload(_PluginBase):
 
     @classmethod
     def _extract_episode_hint(cls, file_name: str) -> Optional[Dict[str, int]]:
-        return target_extract_episode_hint(file_name, safe_int=cls._safe_int)
+        return runtime_extract_episode_hint(file_name)
 
     @classmethod
     def _media_type_text(cls, value: Any) -> str:
-        return target_media_type_text(value)
+        return runtime_media_type_text(value)
 
     @classmethod
     def _poster_url(cls, poster_path: Any, prefix: str = "w500") -> str:
-        return target_poster_url(
+        return runtime_poster_url(
             poster_path,
             prefix,
             settings_obj=settings,
-            normalize_text=cls._normalize_text,
         )
 
     @classmethod
@@ -479,35 +474,33 @@ class SubtitleManualUpload(_PluginBase):
 
     @classmethod
     def _entry_matches_keyword(cls, entry: Dict[str, Any], keyword: str) -> bool:
-        return target_entry_matches_keyword(
+        return runtime_entry_matches_keyword(
             entry,
             keyword,
-            normalize_text=cls._normalize_text,
         )
 
     @classmethod
     def _tmdb_detail_payload(cls, detail: Any) -> Dict[str, Any]:
-        return target_tmdb_detail_payload(
+        return runtime_tmdb_detail_payload(
             detail,
             extract_title_aliases_func=extract_title_aliases,
-            normalize_text=cls._normalize_text,
         )
 
     @classmethod
     def _tmdb_aliases(cls, *values: Any) -> List[str]:
-        return target_tmdb_aliases(*values, extract_title_aliases_func=extract_title_aliases)
+        return runtime_tmdb_aliases(*values, extract_title_aliases_func=extract_title_aliases)
 
     @classmethod
     def _apply_tmdb_detail(cls, target: Dict[str, Any], detail: Dict[str, Any]) -> None:
-        target_apply_tmdb_detail(target, detail)
+        runtime_apply_tmdb_detail(target, detail)
 
     @classmethod
     def _is_stream_path(cls, path: Any) -> bool:
-        return target_is_stream_path(path, normalize_text=cls._normalize_text, stream_exts=cls._stream_exts)
+        return runtime_is_stream_path(path, stream_exts=cls._stream_exts)
 
     @staticmethod
     def _is_upload_file(value: Any) -> bool:
-        return isinstance(value, UploadFile)
+        return runtime_is_upload_file(value, upload_file_type=UploadFile)
 
     @staticmethod
     def _timeline_result_blocks_auto_write(result: TimelineFixResult) -> bool:
