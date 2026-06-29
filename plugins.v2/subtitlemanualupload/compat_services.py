@@ -32,7 +32,7 @@ except Exception:
 
     MediaType = _NoopMediaType
 
-from .auto_transfer import AutoTransferService
+from .auto_transfer import AutoTransferCollaborators, AutoTransferService
 from .autosub_bridge import AutoSubBridge
 from .online_ai import OnlineAiService
 from .online_subtitle import OnlineSubtitleSearchService, extract_title_aliases
@@ -222,12 +222,22 @@ def online_ai_service(owner) -> OnlineAiService:
 
 
 def auto_transfer_service(owner) -> AutoTransferService:
+    threading_module = owner._host_module_value("threading", threading)
+    time_module = owner._host_module_value("time", time)
+    collaborators = AutoTransferCollaborators.from_owner(
+        owner,
+        logger=logger,
+        threading_module=threading_module,
+        time_module=time_module,
+        http_exception=HTTPException,
+    )
     return AutoTransferService(
         owner,
         logger=logger,
-        threading_module=owner._host_module_value("threading", threading),
-        time_module=owner._host_module_value("time", time),
+        threading_module=threading_module,
+        time_module=time_module,
         http_exception=HTTPException,
+        collaborators=collaborators,
     )
 
 

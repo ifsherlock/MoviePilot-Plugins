@@ -1,14 +1,64 @@
 from __future__ import annotations
 
 from collections import OrderedDict
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 import json
 import shutil
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from .config_schema import normalize_auto_multi_subtitle_mode
 from .online_subtitle import build_search_keywords
+
+
+@dataclass(frozen=True)
+class AutoTransferCollaborators:
+    online_service_factory: Optional[Callable[[], Any]] = None
+    target_from_entry: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None
+    extract_subtitle_files: Optional[Callable[..., List[Dict[str, Any]]]] = None
+    write_operations_to_disk: Optional[Callable[..., Tuple[List[Dict[str, Any]], int, int]]] = None
+    submit_autosub_for_entries: Optional[Callable[..., Dict[str, Any]]] = None
+    prepare_online_ai_subtitle_overrides: Optional[Callable[..., Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]]] = None
+    normalize_online_download_name: Optional[Callable[..., str]] = None
+    detect_language_profile: Optional[Callable[[str, bytes], Dict[str, Any]]] = None
+    auto_subtitle_sort_key: Optional[Callable[[Dict[str, Any]], Tuple[int, int, int, str]]] = None
+    auto_target_has_chinese_subtitle: Optional[Callable[[Dict[str, Any], Dict[str, Any]], bool]] = None
+    check_online_rate_limit: Optional[Callable[[Iterable[str]], None]] = None
+    wait_online_rate_limit: Optional[Callable[..., None]] = None
+    logger: Any = None
+    threading_module: Any = None
+    time_module: Any = None
+    http_exception: Any = None
+
+    @classmethod
+    def from_owner(
+        cls,
+        owner: Any,
+        *,
+        logger: Any,
+        threading_module: Any,
+        time_module: Any,
+        http_exception: Any,
+    ) -> "AutoTransferCollaborators":
+        return cls(
+            online_service_factory=owner._online_service,
+            target_from_entry=owner._target_from_entry,
+            extract_subtitle_files=owner._extract_subtitle_files,
+            write_operations_to_disk=owner._write_operations_to_disk,
+            submit_autosub_for_entries=owner._submit_autosub_for_entries,
+            prepare_online_ai_subtitle_overrides=owner._prepare_online_ai_subtitle_overrides,
+            normalize_online_download_name=owner._normalize_online_download_name,
+            detect_language_profile=owner._detect_language_profile,
+            auto_subtitle_sort_key=owner._auto_subtitle_sort_key,
+            auto_target_has_chinese_subtitle=owner._auto_target_has_chinese_subtitle,
+            check_online_rate_limit=owner._check_online_rate_limit,
+            wait_online_rate_limit=owner._auto_wait_online_rate_limit,
+            logger=logger,
+            threading_module=threading_module,
+            time_module=time_module,
+            http_exception=http_exception,
+        )
 
 
 class AutoTransferService:
@@ -20,12 +70,14 @@ class AutoTransferService:
         threading_module: Any,
         time_module: Any,
         http_exception: Any,
+        collaborators: Optional[AutoTransferCollaborators] = None,
     ) -> None:
         self._owner = owner
-        self._logger = logger
-        self._threading = threading_module
-        self._time = time_module
-        self._http_exception = http_exception
+        self._collaborators = collaborators or AutoTransferCollaborators()
+        self._logger = self._collaborators.logger or logger
+        self._threading = self._collaborators.threading_module or threading_module
+        self._time = self._collaborators.time_module or time_module
+        self._http_exception = self._collaborators.http_exception or http_exception
 
     def stop(self) -> None:
         owner = self._owner
