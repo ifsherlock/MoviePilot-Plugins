@@ -124,18 +124,26 @@ from .timeline_fixer import TimelineFixResult, check_timeline_fixer_dependencies
 from .tongwen import convert_subtitle_file_to_simplified
 from .target_resolver import (
     LocalMediaCatalog,
+    MediaMetadataService,
     MediaTargetResolver,
     SubtitleInventory,
+    apply_tmdb_detail as target_apply_tmdb_detail,
+    auto_media_for_entry as target_auto_media_for_entry,
+    auto_fill_missing_targets as target_auto_fill_missing_targets,
     entry_filesystem_signature as target_entry_filesystem_signature,
     entry_matches_keyword as target_entry_matches_keyword,
     entry_path_is_valid as target_entry_path_is_valid,
     event_value as target_event_value,
     history_type_text as target_history_type_text,
+    is_chinese_transfer_media as target_is_chinese_transfer_media,
     is_local_video_path as target_is_local_video_path,
     is_stream_path as target_is_stream_path,
     media_type_text as target_media_type_text,
     number_from_tag as target_number_from_tag,
     poster_url as target_poster_url,
+    suggest_target as target_suggest_target,
+    tmdb_aliases as target_tmdb_aliases,
+    tmdb_detail_payload as target_tmdb_detail_payload,
 )
 from .upload_session import (
     DEFAULT_ARCHIVE_RESOURCE_LIMITS,
@@ -463,6 +471,24 @@ class SubtitleManualUploadCompatMixin:
             transfer_history=TransferHistory,
             http_exception=HTTPException,
             logger=logger,
+            threading_module=self._host_module_value("threading", threading),
+        )
+
+    def _media_metadata_service(self) -> MediaMetadataService:
+        return MediaMetadataService(
+            tmdb_chain_factory=TmdbChain,
+            media_type_tv=MediaType.TV,
+            media_type_movie=MediaType.MOVIE,
+            tmdb_detail_cache=self._tmdb_detail_cache,
+            logger_warning=logger.warning,
+            normalize_text=self._normalize_text,
+            safe_int=self._safe_int,
+            media_type_text_func=self._media_type_text,
+            extract_title_aliases_func=extract_title_aliases,
+            chinese_language_codes=self._chinese_media_language_codes,
+            chinese_country_codes=self._chinese_media_country_codes,
+            chinese_region_names=self._chinese_media_region_names,
+            chinese_category_pattern=self._chinese_media_category_pattern,
         )
 
     def _get_session_root(self) -> Path:
@@ -496,31 +522,7 @@ class SubtitleManualUploadCompatMixin:
         return self._target_resolver().entries_from_transfer_event(event_data)
 
     def _merge_local_entries_cache(self, entries: List[Dict[str, Any]]) -> None:
-        if not entries:
-            return
-        entries = self._filter_existing_local_entries(entries)
-        if not entries:
-            return
-        cache = self._local_entries_cache or {}
-        existing = self._filter_existing_local_entries([item for item in cache.get("entries") or [] if isinstance(item, dict)])
-        by_path = {entry.get("path"): entry for entry in entries if entry.get("path")}
-        merged = list(entries)
-        for entry in existing:
-            if entry.get("path") not in by_path:
-                merged.append(entry)
-            if len(merged) >= self._cache_max_entries:
-                break
-        media_count = len({entry.get("media_key") for entry in merged if entry.get("media_key")})
-        self._local_entries_cache = {
-            "loaded_at": datetime.now(),
-            "entries": merged[: self._cache_max_entries],
-            "media_count": media_count,
-            "persisted": False,
-        }
-        self._remember_targets(entries)
-        self._reset_media_index_cache()
-        self._invalidate_match_history_cache()
-        self._persist_local_cache()
+        self._local_media_catalog().merge_local_entries_cache(entries)
 
 
 
@@ -535,9 +537,6 @@ class SubtitleManualUploadCompatMixin:
             return datetime.fromisoformat(text)
         except Exception:
             return None
-
-    def _persist_local_cache(self) -> None:
-        self._local_media_catalog().persist_local_cache()
 
     def _restore_persisted_local_cache(self) -> bool:
         return self._local_media_catalog().restore_persisted_local_cache()
@@ -652,29 +651,7 @@ class SubtitleManualUploadCompatMixin:
         }
 
     def _start_background_cache_refresh(self) -> None:
-        if self._cache_refreshing:
-            return
-        self._cache_refreshing = True
-        self._cache_refresh_started_at = datetime.now().isoformat(timespec="seconds")
-        self._cache_refresh_completed_at = ""
-        self._cache_refresh_error = ""
-
-        def worker():
-            try:
-                self._load_local_entries(force=True)
-                self._cache_refresh_completed_at = datetime.now().isoformat(timespec="seconds")
-                self._cache_refresh_error = ""
-            except Exception as exc:
-                self._cache_refresh_error = str(exc)
-                logger.warning("[SubtitleManualUpload] 后台刷新本地资源缓存失败: %s", exc)
-            finally:
-                self._cache_refreshing = False
-
-        self._host_module_value("threading", threading).Thread(
-            target=worker,
-            name="SubtitleManualUploadCacheRefresh",
-            daemon=True,
-        ).start()
+        self._local_media_catalog().start_background_cache_refresh()
 
     def _load_local_entries(self, *, force: bool = False, allow_stale: bool = False) -> List[Dict[str, Any]]:
         return self._local_media_catalog().load_local_entries(force=force, allow_stale=allow_stale)
@@ -698,13 +675,6 @@ class SubtitleManualUploadCompatMixin:
     def _entry_matches_keyword(cls, entry: Dict[str, Any], keyword: str) -> bool:
         return target_entry_matches_keyword(entry, keyword, normalize_text=cls._normalize_text)
 
-    def _reset_media_index_cache(self) -> None:
-        self._local_media_catalog().reset_media_index_cache()
-
-
-
-
-
     def _group_entries_as_media(self, entries: List[Dict[str, Any]], limit: int) -> List[Dict[str, Any]]:
         return self._local_media_catalog().group_entries_as_media(entries, limit)
 
@@ -716,246 +686,40 @@ class SubtitleManualUploadCompatMixin:
 
 
     def _tmdb_detail_for_media(self, media: Dict[str, Any]) -> Dict[str, Any]:
-        tmdb_id = self._safe_int(media.get("tmdb_id"), 0)
-        media_type = self._media_type_text(media.get("media_type"))
-        if not tmdb_id or TmdbChain is None:
-            return {}
-        cache_key = f"{media_type}:{tmdb_id}"
-        if cache_key in self._tmdb_detail_cache:
-            return dict(self._tmdb_detail_cache[cache_key])
-        try:
-            mp_type = MediaType.TV if media_type == "tv" else MediaType.MOVIE
-            detail = TmdbChain().tmdb_info(tmdbid=tmdb_id, mtype=mp_type)
-        except TypeError:
-            try:
-                mp_type = MediaType.TV if media_type == "tv" else MediaType.MOVIE
-                detail = TmdbChain().tmdb_info(tmdb_id=tmdb_id, mtype=mp_type)
-            except Exception as exc:
-                logger.warning("[SubtitleManualUpload] 读取 TMDB 详情失败 tmdb=%s type=%s error=%s", tmdb_id, media_type, exc)
-                return {}
-        except Exception as exc:
-            logger.warning("[SubtitleManualUpload] 读取 TMDB 详情失败 tmdb=%s type=%s error=%s", tmdb_id, media_type, exc)
-            return {}
-        payload = self._tmdb_detail_payload(detail)
-        self._tmdb_detail_cache[cache_key] = payload
-        return dict(payload)
+        return self._media_metadata_service().tmdb_detail_for_media(media)
 
     @classmethod
     def _tmdb_detail_payload(cls, detail: Any) -> Dict[str, Any]:
-        if not detail:
-            return {}
-
-        def value(*keys: str) -> Any:
-            for key in keys:
-                if isinstance(detail, dict) and key in detail:
-                    return detail.get(key)
-                if hasattr(detail, key):
-                    return getattr(detail, key)
-            return None
-
-        translations = value("translations")
-        alternative_titles = value("alternative_titles")
-        aliases = cls._tmdb_aliases(translations, alternative_titles)
-        return {
-            "original_language": value("original_language") or "",
-            "origin_country": value("origin_country") or [],
-            "production_countries": value("production_countries") or [],
-            "original_title": value("original_title", "original_name") or "",
-            "en_title": cls._english_title_from_tmdb_values(translations, alternative_titles)
-            or cls._english_title_from_aliases(aliases),
-            "tmdb_aliases": aliases,
-        }
-
-    @classmethod
-    def _english_title_from_tmdb_values(cls, *values: Any) -> str:
-        candidates: List[str] = []
-
-        def add_title(value: Any) -> None:
-            for item in extract_title_aliases(value):
-                if item and re.search(r"[A-Za-z]", item) and not re.search(r"[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]", item):
-                    candidates.append(item)
-
-        def walk(value: Any) -> None:
-            if isinstance(value, (list, tuple)):
-                for item in value:
-                    walk(item)
-                return
-            if not isinstance(value, dict):
-                return
-            lang = cls._normalize_text(value.get("iso_639_1")).lower()
-            country = cls._normalize_text(value.get("iso_3166_1")).lower()
-            if lang == "en" or country in {"us", "gb", "uk"}:
-                data = value.get("data")
-                if isinstance(data, dict):
-                    add_title({key: data.get(key) for key in ("title", "name")})
-                add_title({key: value.get(key) for key in ("title", "name")})
-            for key in ["data", "titles", "results", "translations", "alternative_titles", "aliases"]:
-                walk(value.get(key))
-
-        for value in values:
-            walk(value)
-        seen = set()
-        for item in candidates:
-            key = item.lower()
-            if key in seen:
-                continue
-            seen.add(key)
-            return item
-        return ""
+        return target_tmdb_detail_payload(
+            detail,
+            extract_title_aliases_func=extract_title_aliases,
+            normalize_text=cls._normalize_text,
+        )
 
     @classmethod
     def _tmdb_aliases(cls, *values: Any) -> List[str]:
-        aliases: List[str] = []
-
-        def walk(value: Any) -> None:
-            if isinstance(value, (list, tuple)):
-                for item in value:
-                    walk(item)
-                return
-            aliases.extend(extract_title_aliases(value))
-
-        for value in values:
-            walk(value)
-        result: List[str] = []
-        seen = set()
-        for item in aliases:
-            key = item.lower()
-            if key and key not in seen:
-                seen.add(key)
-                result.append(item)
-        return result[:80]
-
-    @classmethod
-    def _english_title_from_aliases(cls, aliases: List[str]) -> str:
-        for item in aliases or []:
-            if re.search(r"[A-Za-z]", item) and not re.search(r"[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]", item):
-                return item
-        return ""
+        return target_tmdb_aliases(*values, extract_title_aliases_func=extract_title_aliases)
 
     @classmethod
     def _apply_tmdb_detail(cls, target: Dict[str, Any], detail: Dict[str, Any]) -> None:
-        for key in ["original_language", "origin_country", "production_countries", "original_title", "tmdb_aliases"]:
-            value = detail.get(key)
-            if value and not target.get(key):
-                target[key] = value
-        if detail.get("en_title") and not target.get("en_title"):
-            target["en_title"] = detail["en_title"]
-
-    @classmethod
-    def _flatten_media_values(cls, value: Any, keys: Tuple[str, ...] = ()) -> List[str]:
-        values: List[str] = []
-
-        def walk(item: Any) -> None:
-            if item is None:
-                return
-            if isinstance(item, dict):
-                for key in keys or ("iso_3166_1", "iso_639_1", "code", "value", "name", "english_name"):
-                    if key in item:
-                        walk(item.get(key))
-                return
-            if isinstance(item, (list, tuple, set)):
-                for child in item:
-                    walk(child)
-                return
-            text = cls._normalize_text(item)
-            if not text:
-                return
-            for part in re.split(r"[,/|]+", text):
-                clean = cls._normalize_text(part).lower().replace("_", "-")
-                if clean:
-                    values.append(clean)
-
-        walk(value)
-        return values
-
-    @classmethod
-    def _is_chinese_language_code(cls, value: Any) -> bool:
-        code = cls._normalize_text(value).lower().replace("_", "-")
-        base = re.split(r"[-\s]+", code, maxsplit=1)[0] if code else ""
-        return code in cls._chinese_media_language_codes or base in cls._chinese_media_language_codes
-
-    @classmethod
-    def _is_chinese_country_value(cls, value: Any) -> bool:
-        text = cls._normalize_text(value).lower().replace("_", "-")
-        base = re.split(r"[-\s]+", text, maxsplit=1)[0] if text else ""
-        return (
-            text in cls._chinese_media_country_codes
-            or base in cls._chinese_media_country_codes
-            or text in cls._chinese_media_region_names
-        )
-
-    @classmethod
-    def _chinese_category_evidence(cls, entry: Dict[str, Any]) -> str:
-        values = []
-        for key in [
-            "library_name",
-            "media_category",
-            "media_category_name",
-            "category",
-            "category_name",
-            "type_name",
-        ]:
-            raw = entry.get(key)
-            if isinstance(raw, (list, tuple, set)):
-                values.extend(cls._normalize_text(item) for item in raw)
-            else:
-                values.append(cls._normalize_text(raw))
-        text = " ".join(item for item in values if item)
-        if text and cls._chinese_media_category_pattern.search(text):
-            return "MP 分类/库名包含华语标识"
-        return ""
+        target_apply_tmdb_detail(target, detail)
 
     def _auto_media_for_entry(self, entry: Dict[str, Any]) -> Dict[str, Any]:
-        media = {
-            "media_type": entry.get("media_type"),
-            "title": entry.get("title"),
-            "year": entry.get("year"),
-            "tmdb_id": entry.get("tmdb_id"),
-            "douban_id": entry.get("douban_id"),
-            "original_language": entry.get("original_language"),
-            "origin_country": entry.get("origin_country"),
-            "production_countries": entry.get("production_countries"),
-            "original_title": entry.get("original_title") or entry.get("original_name"),
-            "en_title": entry.get("en_title"),
-            "tmdb_aliases": entry.get("tmdb_aliases"),
-        }
-        tmdb_detail = self._tmdb_detail_for_media(media)
-        if tmdb_detail:
-            self._apply_tmdb_detail(media, tmdb_detail)
-            self._apply_tmdb_detail(entry, tmdb_detail)
-        return media
+        return target_auto_media_for_entry(
+            entry,
+            tmdb_detail_for_media_func=self._tmdb_detail_for_media,
+        )
 
     def _is_chinese_transfer_media(self, entry: Dict[str, Any]) -> Tuple[bool, str]:
-        category_reason = self._chinese_category_evidence(entry)
-        if category_reason:
-            return True, category_reason
-
-        media = self._auto_media_for_entry(entry)
-        languages = self._flatten_media_values(
-            media.get("original_language"),
-            ("iso_639_1", "code", "value", "name", "english_name"),
+        return target_is_chinese_transfer_media(
+            entry,
+            auto_media_for_entry_func=self._auto_media_for_entry,
+            normalize_text=self._normalize_text,
+            chinese_language_codes=self._chinese_media_language_codes,
+            chinese_country_codes=self._chinese_media_country_codes,
+            chinese_region_names=self._chinese_media_region_names,
+            chinese_category_pattern=self._chinese_media_category_pattern,
         )
-        for language in languages:
-            if self._is_chinese_language_code(language):
-                return True, f"TMDB original_language={language}"
-
-        country_values = [
-            *self._flatten_media_values(
-                media.get("origin_country"),
-                ("iso_3166_1", "code", "value", "name", "english_name"),
-            ),
-            *self._flatten_media_values(
-                media.get("production_countries"),
-                ("iso_3166_1", "code", "value", "name", "english_name"),
-            ),
-        ]
-        for country in country_values:
-            if self._is_chinese_country_value(country):
-                return True, f"TMDB country={country}"
-
-        if media.get("tmdb_id"):
-            return False, "TMDB 未提供中文语种/地区证据"
-        return False, "中文识别证据不足"
 
     @classmethod
     def _is_stream_path(cls, path: Any) -> bool:
@@ -1149,30 +913,11 @@ class SubtitleManualUploadCompatMixin:
         subtitle_info: Dict[str, Any],
         targets: List[Dict[str, Any]],
     ) -> Optional[str]:
-        if not targets:
-            return None
-        if len(targets) == 1:
-            return targets[0]["id"]
-
-        hint = cls._extract_episode_hint(subtitle_info.get("source_name"))
-        if not hint:
-            return None
-
-        season = hint.get("season", 0)
-        episode = hint.get("episode", 0)
-
-        for target in targets:
-            if target.get("season", 0) == season and target.get("episode", 0) == episode:
-                return target["id"]
-
-        if season == 0:
-            candidate_seasons = {target.get("season", 0) for target in targets if target.get("season", 0)}
-            if len(candidate_seasons) == 1:
-                only_season = next(iter(candidate_seasons))
-                for target in targets:
-                    if target.get("season", 0) == only_season and target.get("episode", 0) == episode:
-                        return target["id"]
-        return None
+        return target_suggest_target(
+            subtitle_info,
+            targets,
+            extract_episode_hint=cls._extract_episode_hint,
+        )
 
     @classmethod
     def _auto_fill_missing_targets(
@@ -1180,35 +925,11 @@ class SubtitleManualUploadCompatMixin:
         preview_items: List[Dict[str, Any]],
         targets: List[Dict[str, Any]],
     ) -> None:
-        unresolved = [item for item in preview_items if not item.get("target_id")]
-        if not unresolved:
-            return
-        used_target_ids = {
-            item.get("target_id")
-            for item in preview_items
-            if item.get("target_id")
-        }
-        remaining_targets = [
-            target for target in targets if target.get("id") not in used_target_ids
-        ]
-        if len(unresolved) != len(remaining_targets):
-            return
-        sorted_targets = sorted(
-            remaining_targets,
-            key=lambda item: (
-                item.get("season", 0),
-                item.get("episode", 0),
-                item.get("label", ""),
-            ),
+        target_auto_fill_missing_targets(
+            preview_items,
+            targets,
+            extract_episode_hint=cls._extract_episode_hint,
         )
-        sorted_items = sorted(
-            unresolved,
-            key=lambda item: (
-                cls._extract_episode_hint(item.get("source_name") or "") or {}
-            ).get("episode", 0),
-        )
-        for item, target in zip(sorted_items, sorted_targets):
-            item["target_id"] = target["id"]
 
     @classmethod
     def _build_write_operations(
