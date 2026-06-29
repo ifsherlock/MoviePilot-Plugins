@@ -154,6 +154,21 @@ from .upload_session import (
 )
 from .online_ai import OnlineAiService
 from .auto_transfer import AutoTransferService
+from .compat_services import (
+    archive_dependency_service as make_archive_dependency_service,
+    auto_transfer_service as make_auto_transfer_service,
+    autosub_bridge as make_autosub_bridge,
+    local_media_catalog as make_local_media_catalog,
+    media_metadata_service as make_media_metadata_service,
+    online_ai_service as make_online_ai_service,
+    online_service as make_online_service,
+    subtitle_history as make_subtitle_history,
+    subtitle_inventory as make_subtitle_inventory,
+    subtitle_writer as make_subtitle_writer,
+    target_resolver as make_target_resolver,
+    timeline_task_store as make_timeline_task_store,
+    upload_session_service_for_path as make_upload_session_service_for_path,
+)
 from .compat import SubtitleManualUploadCompatMixin
 from .api.routes import build_api_routes
 
@@ -389,6 +404,51 @@ class SubtitleManualUpload(SubtitleManualUploadCompatMixin, _PluginBase):
                 "order": 48,
             }
         ]
+
+    @classmethod
+    def _archive_dependency_service(cls, status_setter=None):
+        return make_archive_dependency_service(cls, status_setter=status_setter)
+
+    @classmethod
+    def _upload_session_service_for_path(cls, data_path: Path):
+        return make_upload_session_service_for_path(cls, data_path)
+
+    @classmethod
+    def _subtitle_inventory(cls):
+        return make_subtitle_inventory(cls)
+
+    def _upload_session_service(self):
+        return self._upload_session_service_for_path(self.get_data_path())
+
+    def _subtitle_writer(self):
+        return make_subtitle_writer(self)
+
+    def _subtitle_history(self):
+        return make_subtitle_history(self)
+
+    def _autosub_bridge(self):
+        return make_autosub_bridge(self)
+
+    def _online_ai_service(self):
+        return make_online_ai_service(self)
+
+    def _auto_transfer_service(self):
+        return make_auto_transfer_service(self)
+
+    def _target_resolver(self):
+        return make_target_resolver(self)
+
+    def _local_media_catalog(self):
+        return make_local_media_catalog(self)
+
+    def _media_metadata_service(self):
+        return make_media_metadata_service(self)
+
+    def _timeline_task_store(self):
+        return make_timeline_task_store(self)
+
+    def _online_service(self):
+        return make_online_service(self)
 
     def stop_service(self):
         self._auto_transfer_service().stop()

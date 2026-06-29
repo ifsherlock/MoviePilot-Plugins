@@ -77,25 +77,6 @@ def install_legacy_service_delegates(cls, specs: Tuple[Tuple[str, str, str], ...
         setattr(cls, legacy_name, method)
 
 
-def install_compat_service_factories(cls) -> None:
-    cls._archive_dependency_service = classmethod(
-        lambda owner_cls, status_setter=None: archive_dependency_service(owner_cls, status_setter=status_setter)
-    )
-    cls._upload_session_service_for_path = classmethod(upload_session_service_for_path)
-    cls._subtitle_inventory = classmethod(subtitle_inventory)
-    cls._upload_session_service = lambda owner: owner._upload_session_service_for_path(owner.get_data_path())
-    cls._subtitle_writer = subtitle_writer
-    cls._subtitle_history = subtitle_history
-    cls._autosub_bridge = autosub_bridge
-    cls._online_ai_service = online_ai_service
-    cls._auto_transfer_service = auto_transfer_service
-    cls._target_resolver = target_resolver
-    cls._local_media_catalog = local_media_catalog
-    cls._media_metadata_service = media_metadata_service
-    cls._timeline_task_store = timeline_task_store
-    cls._online_service = online_service
-
-
 def install_compat_archive_methods(cls) -> None:
     cls._rar_tool = classmethod(lambda owner_cls: archive_dependency_service(owner_cls).rar_tool())
     cls._sevenzip_tool = classmethod(lambda owner_cls: archive_dependency_service(owner_cls).sevenzip_tool())

@@ -11,7 +11,6 @@ from .compat_core import install_compat_core_methods
 from .compat_services import (
     LEGACY_INSTANCE_SERVICE_DELEGATES,
     install_compat_archive_methods,
-    install_compat_service_factories,
     install_legacy_service_delegates,
 )
 
@@ -21,6 +20,5 @@ class SubtitleManualUploadCompatMixin:
 
 
 install_compat_core_methods(SubtitleManualUploadCompatMixin)
-install_compat_service_factories(SubtitleManualUploadCompatMixin)
 install_compat_archive_methods(SubtitleManualUploadCompatMixin)
 install_legacy_service_delegates(SubtitleManualUploadCompatMixin, LEGACY_INSTANCE_SERVICE_DELEGATES)

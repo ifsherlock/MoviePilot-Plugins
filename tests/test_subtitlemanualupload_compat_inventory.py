@@ -28,7 +28,7 @@ def test_compat_inventory_reports_deletion_gate_fields():
     dynamic_installs = inventory["dynamic_installs"]
     assert dynamic_installs
     assert any(item["installer"] == "install_compat_core_methods" for item in dynamic_installs)
-    assert any(item["installer"] == "install_compat_service_factories" for item in dynamic_installs)
+    assert not any(item["installer"] == "install_compat_service_factories" for item in dynamic_installs)
     assert any(item["installer"] == "install_compat_archive_methods" for item in dynamic_installs)
     assert any(item["installer"] == "LEGACY_INSTANCE_SERVICE_DELEGATES" for item in dynamic_installs)
 
