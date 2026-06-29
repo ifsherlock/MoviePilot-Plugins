@@ -3118,7 +3118,6 @@ def test_auto_season_package_tries_next_candidate_when_coverage_incomplete(tmp_p
 
     service = FakeSeasonService()
     plugin._online_service = lambda: service
-    plugin._auto_media_for_entry = lambda entry: {"media_type": "tv", "title": "Show", "year": "2024"}
     plugin._apply_tmdb_detail = lambda target, media: None
     fake_extract = lambda source_name, content, session_dir: [
         {"upload_id": source_name, "source_name": source_name, "stored_path": str(tmp_path / source_name), "ext": ".srt"}
@@ -3150,6 +3149,7 @@ def test_auto_season_package_tries_next_candidate_when_coverage_incomplete(tmp_p
 
     auto_service = auto_transfer_service_with(
         plugin,
+        _media_for_transfer_entry=lambda entry: {"media_type": "tv", "title": "Show", "year": "2024"},
         _extract_subtitle_files=fake_extract,
         store_auto_season_package_cache=fake_store_cache,
         auto_write_prepared_uploads_for_entries=fake_write,
@@ -3198,7 +3198,6 @@ def test_levius_season_package_requires_all_twelve_episodes(tmp_path):
 
     service = FakeSeasonService()
     plugin._online_service = lambda: service
-    plugin._auto_media_for_entry = lambda entry: {"media_type": "tv", "title": "Levius", "year": "2019"}
     plugin._apply_tmdb_detail = lambda target, media: None
     fake_extract = lambda source_name, content, session_dir: [
         {"upload_id": source_name, "source_name": source_name, "stored_path": str(tmp_path / source_name), "ext": ".srt"}
@@ -3229,6 +3228,7 @@ def test_levius_season_package_requires_all_twelve_episodes(tmp_path):
 
     auto_service = auto_transfer_service_with(
         plugin,
+        _media_for_transfer_entry=lambda entry: {"media_type": "tv", "title": "Levius", "year": "2019"},
         _extract_subtitle_files=fake_extract,
         store_auto_season_package_cache=fake_store_cache,
         auto_write_prepared_uploads_for_entries=fake_write,
@@ -3346,9 +3346,9 @@ def test_auto_transfer_skips_chinese_media_by_tmdb_language(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
     entry = make_auto_entry(tmp_path, title="流浪地球")
-    plugin._tmdb_detail_for_media = lambda media: {"original_language": "zh", "origin_country": ["CN"]}
     service = auto_transfer_service_with(
         plugin,
+        _chinese_transfer_media_evidence=lambda entry: (True, "TMDB original_language=zh"),
         auto_search_write_subtitle=lambda *args, **kwargs: (_ for _ in ()).throw(
             AssertionError("Chinese media should skip search")
         ),
@@ -3623,9 +3623,9 @@ def test_auto_transfer_chinese_title_is_not_skip_evidence_without_tmdb_match(tmp
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
     entry = make_auto_entry(tmp_path, title="灰原同学的第二轮青春游戏", media_type="tv", season=1, episode=7)
-    plugin._tmdb_detail_for_media = lambda media: {"original_language": "ja", "origin_country": ["JP"]}
     service = auto_transfer_service_with(
         plugin,
+        _chinese_transfer_media_evidence=lambda entry: (False, "no Chinese TMDB evidence"),
         auto_search_write_subtitle=lambda item, target, **kwargs: {
             "status": "written",
             "target": target.get("label"),

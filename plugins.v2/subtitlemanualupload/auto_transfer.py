@@ -21,6 +21,8 @@ class AutoTransferCollaborators:
     write_operations_to_disk: Optional[Callable[..., Tuple[List[Dict[str, Any]], int, int]]] = None
     submit_autosub_for_entries: Optional[Callable[..., Dict[str, Any]]] = None
     prepare_online_ai_subtitle_overrides: Optional[Callable[..., Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]]] = None
+    auto_media_for_entry: Optional[Callable[[Dict[str, Any]], Dict[str, Any]]] = None
+    is_chinese_transfer_media: Optional[Callable[[Dict[str, Any]], Tuple[bool, str]]] = None
     normalize_online_download_name: Optional[Callable[..., str]] = None
     detect_language_profile: Optional[Callable[[str, bytes], Dict[str, Any]]] = None
     auto_subtitle_sort_key: Optional[Callable[[Dict[str, Any]], Tuple[int, int, int, str]]] = None
@@ -57,6 +59,8 @@ class AutoTransferCollaborators:
                 *args,
                 **kwargs,
             ),
+            auto_media_for_entry=lambda entry: owner._media_metadata_service().auto_media_for_entry(entry),
+            is_chinese_transfer_media=lambda entry: owner._media_metadata_service().is_chinese_transfer_media(entry),
             normalize_online_download_name=owner._normalize_online_download_name,
             detect_language_profile=owner._detect_language_profile,
             auto_subtitle_sort_key=owner._auto_subtitle_sort_key,
@@ -119,6 +123,18 @@ class AutoTransferService:
 
     def _auto_target_has_chinese_subtitle(self, entry: Dict[str, Any], target: Dict[str, Any]) -> bool:
         return self._callback("auto_target_has_chinese_subtitle", "_auto_target_has_chinese_subtitle")(entry, target)
+
+    def _media_for_transfer_entry(self, entry: Dict[str, Any]) -> Dict[str, Any]:
+        callback = self._collaborators.auto_media_for_entry
+        if callback:
+            return callback(entry)
+        return self._owner._media_metadata_service().auto_media_for_entry(entry)
+
+    def _chinese_transfer_media_evidence(self, entry: Dict[str, Any]) -> Tuple[bool, str]:
+        callback = self._collaborators.is_chinese_transfer_media
+        if callback:
+            return callback(entry)
+        return self._owner._media_metadata_service().is_chinese_transfer_media(entry)
 
     def _auto_search_write_subtitle(self, entry: Dict[str, Any], target: Dict[str, Any]) -> Dict[str, Any]:
         return self.auto_search_write_subtitle(entry, target)
@@ -499,7 +515,7 @@ class AutoTransferService:
 
     def auto_search_keywords_for_entry(self, entry: Dict[str, Any], target: Dict[str, Any]) -> List[str]:
         owner = self._owner
-        media = owner._auto_media_for_entry(entry)
+        media = self._media_for_transfer_entry(entry)
         owner._apply_tmdb_detail(target, media)
         return build_search_keywords(media, [target], "auto")[:8]
 
@@ -765,7 +781,7 @@ class AutoTransferService:
             )
 
         if owner._auto_skip_chinese_media_on_transfer:
-            is_chinese, evidence = owner._is_chinese_transfer_media(entry)
+            is_chinese, evidence = self._chinese_transfer_media_evidence(entry)
             if is_chinese:
                 return {**base, "status": "skipped", "reason": f"中文资源自动跳过：{evidence}"}
             self._logger.info(
@@ -1094,7 +1110,7 @@ class AutoTransferService:
         if not providers:
             return {"status": "skipped", "reason": "未配置可用 API 字幕源", "written_by_target": {}}
         targets = [self._target_from_entry(entry) for entry in entries]
-        media = owner._auto_media_for_entry(entries[0])
+        media = self._media_for_transfer_entry(entries[0])
         owner._apply_tmdb_detail(targets[0], media)
         keywords = build_search_keywords(media, targets, "season")[:8]
         if not keywords:
@@ -1227,7 +1243,7 @@ class AutoTransferService:
                     target.get("label"),
                 )
             if owner._auto_skip_chinese_media_on_transfer:
-                is_chinese, evidence = owner._is_chinese_transfer_media(entry)
+                is_chinese, evidence = self._chinese_transfer_media_evidence(entry)
                 if is_chinese:
                     results[key] = {**base, "status": "skipped", "reason": f"中文资源自动跳过：{evidence}"}
                     continue
