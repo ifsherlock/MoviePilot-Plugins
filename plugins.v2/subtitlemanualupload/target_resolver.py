@@ -83,6 +83,29 @@ def number_from_tag(
     return safe_int(match.group(0), 0) if match else 0
 
 
+def extract_episode_hint(
+    file_name: str,
+    *,
+    safe_int: SafeInt = _default_safe_int,
+) -> Optional[Dict[str, int]]:
+    cleaned = str(file_name or "")
+    patterns = [
+        re.compile(r"(?i)\bS(?P<season>\d{1,2})[\s._-]*E(?P<episode>\d{1,3})\b"),
+        re.compile(r"(?i)\b(?P<season>\d{1,2})x(?P<episode>\d{1,3})\b"),
+        re.compile(r"第\s*(?P<season>\d{1,2})\s*季.*?第\s*(?P<episode>\d{1,3})\s*[集话話]"),
+        re.compile(r"第\s*(?P<episode>\d{1,3})\s*[集话話]"),
+    ]
+    for pattern in patterns:
+        match = pattern.search(cleaned)
+        if not match:
+            continue
+        season = safe_int(match.groupdict().get("season"), 0)
+        episode = safe_int(match.groupdict().get("episode"), 0)
+        if episode:
+            return {"season": season, "episode": episode}
+    return None
+
+
 def is_local_video_path(
     storage: str,
     path: str,

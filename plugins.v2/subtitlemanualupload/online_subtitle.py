@@ -27,3 +27,30 @@ except ImportError:
             if not (name.startswith("__") and name.endswith("__"))
         }
     )
+
+
+def check_online_rate_limit(
+    providers,
+    *,
+    records,
+    limit_per_minute,
+    now,
+    normalize_text,
+    http_exception,
+) -> None:
+    provider_ids = sorted({normalize_text(provider_id).lower() for provider_id in providers if normalize_text(provider_id)})
+    blocked = []
+    active_records = {}
+    for provider_id in provider_ids:
+        recent = [item for item in records.get(provider_id, []) if now - item < 60]
+        active_records[provider_id] = recent
+        if len(recent) >= limit_per_minute:
+            blocked.append(provider_id)
+    if blocked:
+        raise http_exception(
+            status_code=429,
+            detail=f"在线字幕源请求过于频繁：{','.join(blocked)} 每分钟最多 {limit_per_minute} 次，请稍后再试",
+        )
+    for provider_id, recent in active_records.items():
+        recent.append(now)
+        records[provider_id] = recent
