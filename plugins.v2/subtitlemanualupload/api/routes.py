@@ -5,11 +5,13 @@ from typing import Any, Dict, List
 
 def build_api_routes(owner: Any) -> List[Dict[str, Any]]:
     from .catalog_api import CatalogApi
+    from .online_api import OnlineApi
     from .status_api import StatusApi
     from .timeline_api import TimelineApi
     from .upload_api import UploadApi
 
     catalog_api = CatalogApi(owner)
+    online_api = OnlineApi(owner)
     status_api = StatusApi(owner)
     timeline_api = TimelineApi(owner)
     upload_api = UploadApi(owner)
@@ -135,28 +137,28 @@ def build_api_routes(owner: Any) -> List[Dict[str, Any]]:
         },
         {
             "path": "/online_status",
-            "endpoint": owner.api_online_status,
+            "endpoint": online_api.online_status,
             "methods": ["GET"],
             "auth": "bear",
             "summary": "获取在线字幕源状态",
         },
         {
             "path": "/online_manual_links",
-            "endpoint": owner.api_online_manual_links,
+            "endpoint": online_api.online_manual_links,
             "methods": ["POST"],
             "auth": "bear",
             "summary": "生成在线字幕站手动搜索链接",
         },
         {
             "path": "/online_search",
-            "endpoint": owner.api_online_search,
+            "endpoint": online_api.online_search,
             "methods": ["POST"],
             "auth": "bear",
             "summary": "搜索在线字幕",
         },
         {
             "path": "/online_search_provider",
-            "endpoint": owner.api_online_search_provider,
+            "endpoint": online_api.online_search_provider,
             "methods": ["POST"],
             "auth": "bear",
             "summary": "搜索单个在线字幕源",

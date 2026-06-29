@@ -584,6 +584,56 @@ def test_prepare_upload_uses_upload_session_service(tmp_path):
     module.shutil.rmtree(session_dir, ignore_errors=True)
 
 
+def test_online_search_endpoint_uses_online_service(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    video.write_text("video", encoding="utf-8")
+    plugin._remember_targets(
+        [
+            {
+                "id": "m1",
+                "path": str(video),
+                "basename": "Movie",
+                "filename": "Movie.mkv",
+                "target_label": "Movie",
+                "storage": "local",
+            }
+        ]
+    )
+    captured = {}
+
+    class FakeOnlineService:
+        def search(self, **kwargs):
+            captured["search"] = kwargs
+            return {"results": [{"provider": "assrt", "result_id": "r1"}], "messages": []}
+
+        def manual_links(self, keywords, providers=None):
+            captured["manual_links"] = {"keywords": keywords, "providers": providers}
+            return [{"provider": "assrt", "url": "https://example.invalid/search"}]
+
+    plugin._online_service = lambda: FakeOnlineService()
+    search_endpoint = next(route["endpoint"] for route in plugin.get_api() if route["path"] == "/online_search")
+
+    response = asyncio.run(
+        search_endpoint(
+            FakeRequest(
+                {
+                    "target_ids": ["m1"],
+                    "keyword": "Movie 2024",
+                    "providers": ["assrt"],
+                }
+            )
+        )
+    )
+
+    assert response["success"] is True
+    assert captured["search"]["providers"] == ["assrt"]
+    assert captured["search"]["keywords"][0] == "Movie 2024"
+    assert response["data"]["results"][0]["result_id"] == "r1"
+    assert response["data"]["manual_links"][0]["provider"] == "assrt"
+
+
 def test_api_apply_upload_uses_subtitle_writer_and_forwards_risky_offset(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
