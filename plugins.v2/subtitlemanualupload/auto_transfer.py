@@ -11,6 +11,10 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from .config_schema import normalize_auto_multi_subtitle_mode
 from .online_subtitle import build_search_keywords
 from .subtitle_language import auto_target_has_chinese_subtitle as language_auto_target_has_chinese_subtitle
+from .target_resolver import (
+    auto_fill_missing_targets as fill_missing_target_ids,
+    suggest_target as suggest_target_id,
+)
 
 
 @dataclass(frozen=True)
@@ -825,13 +829,13 @@ class AutoTransferService:
                     "source_name": prepared.get("source_name", ""),
                     "archive_name": prepared.get("archive_name", ""),
                     "ext": prepared.get("ext") or Path(prepared.get("source_name", "")).suffix.lower() or ".srt",
-                    "target_id": owner._suggest_target(prepared, targets),
+                    "target_id": suggest_target_id(prepared, targets, extract_episode_hint=owner._extract_episode_hint),
                     "detected_label": language_profile["label"],
                     "language_suffix": language_profile["suffix"],
                     "online_source": prepared.get("online_source", ""),
                 }
             )
-        owner._auto_fill_missing_targets(items, targets)
+        fill_missing_target_ids(items, targets, extract_episode_hint=owner._extract_episode_hint)
         return items
 
 

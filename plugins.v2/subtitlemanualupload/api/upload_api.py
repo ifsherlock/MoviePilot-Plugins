@@ -16,6 +16,10 @@ from .request_helpers import (
     locked_target_ids_from_body,
     target_ids_from_body,
 )
+from ..target_resolver import (
+    auto_fill_missing_targets as fill_missing_target_ids,
+    suggest_target as suggest_target_id,
+)
 
 
 class UploadApi:
@@ -47,14 +51,14 @@ class UploadApi:
                 "source_name": prepared["source_name"],
                 "archive_name": prepared.get("archive_name", ""),
                 "ext": prepared["ext"],
-                "target_id": owner._suggest_target(prepared, targets),
+                "target_id": suggest_target_id(prepared, targets, extract_episode_hint=owner._extract_episode_hint),
                 "detected_label": language_profile["label"],
                 "language_suffix": language_profile["suffix"],
                 "online_source": prepared.get("online_source", ""),
             }
             preview_items.append(preview_item)
 
-        owner._auto_fill_missing_targets(preview_items, targets)
+        fill_missing_target_ids(preview_items, targets, extract_episode_hint=owner._extract_episode_hint)
         target_lookup = {item["id"]: item for item in targets if item.get("id")}
         for item in preview_items:
             target = target_lookup.get(item.get("target_id"))

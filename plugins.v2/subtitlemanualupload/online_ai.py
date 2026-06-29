@@ -6,6 +6,10 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .api.online_api import download_online_results_to_uploads
 from .online_subtitle import CaptchaRequiredError
+from .target_resolver import (
+    auto_fill_missing_targets as fill_missing_target_ids,
+    suggest_target as suggest_target_id,
+)
 
 
 class OnlineAiService:
@@ -45,13 +49,13 @@ class OnlineAiService:
                     "source_name": prepared["source_name"],
                     "archive_name": prepared.get("archive_name", ""),
                     "ext": prepared["ext"],
-                    "target_id": owner._suggest_target(prepared, targets),
+                    "target_id": suggest_target_id(prepared, targets, extract_episode_hint=owner._extract_episode_hint),
                     "detected_label": language_profile["label"],
                     "language_suffix": suffix if suffix != "und" else "eng",
                     "online_source": prepared.get("online_source", ""),
                 }
             )
-        owner._auto_fill_missing_targets(items, targets)
+        fill_missing_target_ids(items, targets, extract_episode_hint=owner._extract_episode_hint)
         return items
 
     @staticmethod

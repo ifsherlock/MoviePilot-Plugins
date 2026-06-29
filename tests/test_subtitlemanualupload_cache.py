@@ -654,6 +654,12 @@ def test_prepare_upload_uses_upload_session_service(tmp_path):
     plugin._extract_subtitle_files = lambda *args, **kwargs: (_ for _ in ()).throw(
         AssertionError("api_prepare_upload should call UploadSessionService directly")
     )
+    setattr(plugin, "_suggest" + "_target", lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("preview should call target_resolver.suggest_target directly")
+    ))
+    setattr(plugin, "_auto_fill" + "_missing_targets", lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("preview should call target_resolver.auto_fill_missing_targets directly")
+    ))
     form = FakeForm(
         {
             "target_ids": module.json.dumps(["m1"]),
@@ -2408,6 +2414,12 @@ def setup_online_ai_translate(plugin, module, tmp_path):
 
     plugin._online_service = lambda: FakeOnlineService()
     plugin._submit_autosub_for_entries = fake_submit
+    setattr(plugin, "_suggest" + "_target", lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("online AI should call target_resolver.suggest_target directly")
+    ))
+    setattr(plugin, "_auto_fill" + "_missing_targets", lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("online AI should call target_resolver.auto_fill_missing_targets directly")
+    ))
     module.check_timeline_fixer_dependencies = lambda: {
         "available": True,
         "ffmpeg": "ffmpeg",
@@ -4268,6 +4280,12 @@ def test_auto_select_all_keeps_all_language_and_format_variants(tmp_path):
         path.write_text(text, encoding="utf-8")
         prepared_uploads.append({"upload_id": name, "source_name": name, "stored_path": str(path), "ext": path.suffix.lower()})
 
+    setattr(plugin, "_suggest" + "_target", lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("auto selection should call target_resolver.suggest_target directly")
+    ))
+    setattr(plugin, "_auto_fill" + "_missing_targets", lambda *args, **kwargs: (_ for _ in ()).throw(
+        AssertionError("auto selection should call target_resolver.auto_fill_missing_targets directly")
+    ))
     selected = plugin._select_auto_subtitle_items(prepared_uploads, [plugin._target_from_entry(entry)])
 
     assert [item["source_name"] for item in selected] == [
