@@ -3112,7 +3112,7 @@ def auto_transfer_service_with(plugin, **methods):
     service = plugin._auto_transfer_service()
     for name, method in methods.items():
         setattr(service, name, method)
-    plugin._auto_transfer_service = lambda: service
+    override_services(plugin, auto_transfer=service)
     return service
 
 
@@ -3151,6 +3151,22 @@ def test_auto_transfer_queue_enqueues_tv_season_tasks_without_starting_immediate
     assert len({task["group_key"] for task in snapshot["tasks"]}) == 1
 
 
+def test_stop_service_uses_auto_transfer_service_directly():
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    captured = {}
+
+    class FakeAutoTransferService:
+        def stop(self):
+            captured["stopped"] = True
+
+    override_services(plugin, auto_transfer=FakeAutoTransferService())
+
+    plugin.stop_service()
+
+    assert captured["stopped"] is True
+
+
 def test_auto_transfer_queue_stop_service_marks_pending_queue_stopped(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
@@ -3162,10 +3178,9 @@ def test_auto_transfer_queue_stop_service_marks_pending_queue_stopped(tmp_path):
     assert queued == 1
     assert skipped == 0
 
-    plugin.stop_service()
+    service.stop()
     snapshot = service.auto_transfer_queue_snapshot()
 
-    assert plugin._auto_transfer_stopping is True
     assert snapshot["summary"]["pending"] == 0
     assert snapshot["summary"]["skipped"] == 1
     assert snapshot["summary"]["active"] == 0

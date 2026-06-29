@@ -1,8 +1,8 @@
 {
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-init-shell-slimming-phased-plan.md",
   "status": {
-    "phase": "phase-6",
-    "task": "6.2",
+    "phase": "phase-7",
+    "task": "7.1",
     "next_allowed_action": "Implement the current task; after verified completion, advance to the next task or phase automatically"
   },
   "execution_rules": {
@@ -647,8 +647,39 @@
         {
           "id": "6.2",
           "title": "Update auto-transfer hook tests",
-          "status": "pending",
-          "verification": [],
+          "status": "completed",
+          "verification": [
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py::test_stop_service_uses_auto_transfer_service_directly tests/test_subtitlemanualupload_cache.py::test_auto_transfer_queue_stop_service_marks_pending_queue_stopped tests/test_subtitlemanualupload_cache.py::test_listen_transfer_complete_uses_auto_transfer_service_directly tests/test_subtitlemanualupload_cache.py::test_auto_transfer_service_handles_transfer_complete_event -q",
+              "result": "passed",
+              "evidence": "4 passed in 0.51s"
+            },
+            {
+              "command": "rg -n \"def listen_transfer_complete|def stop_service\" plugins.v2/subtitlemanualupload/__init__.py",
+              "result": "passed",
+              "evidence": "stop_service at line 655 and listen_transfer_complete at line 659; method bodies only delegate/gate to services.auto_transfer()"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile plugins.v2/subtitlemanualupload/__init__.py plugins.v2/subtitlemanualupload/auto_transfer.py",
+              "result": "passed",
+              "evidence": "compiled successfully"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py -q",
+              "result": "passed",
+              "evidence": "4 passed in 4.31s"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_init_inventory.py --details",
+              "result": "passed",
+              "evidence": "line_count=798, method_count=109, service_delegates count=39"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "222 passed in 5.96s"
+            }
+          ],
           "commit": null
         }
       ]
@@ -906,6 +937,19 @@
         "cache+online tests exited 0 with 168 passed",
         "baseline smoke exited 0 with 221 passed",
         "next task is phase-6 task 6.2"
+      ]
+    },
+    {
+      "task": "6.2",
+      "status": "completed",
+      "summary": "Migrated auto-transfer hook tests to assert direct services.auto_transfer() delegation and moved queue stop behavior coverage to AutoTransferService.stop; helper overrides now use the service registry instead of monkeypatching the main-entry private service method.",
+      "evidence": [
+        "auto-transfer stop/listen service-boundary tests exited 0 with 4 passed",
+        "hook grep confirmed stop_service and listen_transfer_complete remain in __init__.py with delegate/gate-only bodies",
+        "inventory tests exited 0 with 4 passed",
+        "inventory reported line_count=798, method_count=109, service_delegates count=39",
+        "baseline smoke exited 0 with 222 passed",
+        "phase-6 acceptance satisfied; next task is phase-7 task 7.1"
       ]
     }
   ],
