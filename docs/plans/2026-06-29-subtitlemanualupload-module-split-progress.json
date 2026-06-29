@@ -1,0 +1,1625 @@
+{
+  "plan": "docs/plans/2026-06-29-subtitlemanualupload-module-split-phased-plan.md",
+  "status": {
+    "phase": "phase-7",
+    "task": "7.4",
+    "next_allowed_action": "No implementation action remains; all plan tasks and acceptance checks are complete",
+    "final": "complete",
+    "residual_risk": "No known functional residual risk. Local execution materials remain untracked by design: docs/plans/, docs/subtitlemanualupload/, product.md. Verification may leave ignored local dependency/cache directories such as node_modules/ or __pycache__, but none are staged or committed."
+  },
+  "execution_rules": {
+    "branch": "split/subtitlemanualupload-module-split",
+    "smoke_check": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile plugins.v2/subtitlemanualupload/__init__.py; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m compileall -q plugins.v2/subtitlemanualupload",
+    "commit_each_verified_task": true,
+    "no_commit_on_failed_verification": true,
+    "never_push_merge_or_amend": true,
+    "advance_after_verified_phase": true,
+    "no_user_confirmation_between_phases": true,
+    "only_flip_status_fields": true,
+    "do_not_commit_internal_plan_or_progress_by_default": true
+  },
+  "decision_log": [
+    {
+      "decision": "Use L-level phased plan",
+      "reason": "The split crosses plugin lifecycle, config, filesystem safety, AI integration, auto-transfer, tests, and frontend API contracts.",
+      "rejected": "Flat checklist",
+      "source": "spec-to-goal-plan sizing rules"
+    },
+    {
+      "decision": "Keep public API endpoint names stable",
+      "reason": "The frontend and MoviePilot plugin registration already depend on current paths.",
+      "rejected": "Rename endpoints during refactor",
+      "source": "existing get_api registration"
+    },
+    {
+      "decision": "Keep compatibility delegates on SubtitleManualUpload while migrating",
+      "reason": "Current tests and internal callers directly use private methods on the class.",
+      "rejected": "Delete moved methods immediately",
+      "source": "tests/test_subtitlemanualupload_cache.py"
+    }
+  ],
+  "phases": [
+    {
+      "id": "phase-0",
+      "goal": "Prepare branch, clean-start, and baseline verification.",
+      "acceptance": [
+        "Branch is split/subtitlemanualupload-module-split.",
+        "Clean-start commit hash is recorded.",
+        "Baseline py_compile, compileall, and pytest result are recorded."
+      ],
+      "tasks": [
+        {
+          "id": "0.1",
+          "title": "Confirm branch and clean-start",
+          "status": "completed",
+          "verification": [
+            {
+              "command": "git branch --show-current",
+              "result": "split/subtitlemanualupload-module-split"
+            },
+            {
+              "command": "git status --short --branch",
+              "result": "Only local untracked execution materials are present: docs/plans/, docs/subtitlemanualupload/, product.md"
+            },
+            {
+              "command": "git commit --allow-empty -m \"建立字幕匹配模块拆分执行基线\"",
+              "result": "Created clean-start commit d6c867e"
+            }
+          ],
+          "commit": "d6c867e"
+        },
+        {
+          "id": "0.2",
+          "title": "Establish test baseline",
+          "status": "completed",
+          "verification": [
+            {
+              "command": "python -m py_compile plugins.v2/subtitlemanualupload/__init__.py",
+              "result": "exit 0"
+            },
+            {
+              "command": "python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "exit 0"
+            },
+            {
+              "command": "python -m pytest tests/test_subtitlemanualupload_tongwen.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_cache.py tests/test_timeline_fixer.py -q",
+              "result": "152 passed, 2 skipped in 4.43s"
+            }
+          ],
+          "commit": "134d40a"
+        }
+      ]
+    },
+    {
+      "id": "phase-1",
+      "goal": "Split config contract and subtitle language pure functions.",
+      "acceptance": [
+        "subtitle_language.py and config_schema.py compile.",
+        "Language/config targeted pytest checks pass.",
+        "__init__.py keeps compatibility delegates but no longer owns the full language/config implementation."
+      ],
+      "tasks": [
+        {
+          "id": "1.1",
+          "title": "Create subtitle_language.py",
+          "status": "completed",
+          "verification": [
+            {
+              "command": "python -m py_compile plugins.v2/subtitlemanualupload/subtitle_language.py",
+              "result": "exit 0"
+            },
+            {
+              "command": "python -m pytest tests/test_subtitlemanualupload_cache.py -q -k \"language or bilingual or autosub_lang or suffix\"",
+              "result": "8 passed, 87 deselected in 0.42s"
+            },
+            {
+              "command": "python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "exit 0"
+            },
+            {
+              "command": "rg -n \"_detect_language_profile|_language_suffix_from_filename|_normalize_language_suffix|_is_chinese_language_suffix|_auto_language_bucket|_auto_subtitle_sort_key|_autosub_lang_from_suffix\" plugins.v2/subtitlemanualupload/__init__.py",
+              "result": "Compatibility delegate methods remain; language logic calls are delegated to subtitle_language.py"
+            }
+          ],
+          "commit": "b5544ce"
+        },
+        {
+          "id": "1.2",
+          "title": "Create config_schema.py",
+          "status": "completed",
+          "verification": [
+            {
+              "command": "python -m py_compile plugins.v2/subtitlemanualupload/config_schema.py plugins.v2/subtitlemanualupload/__init__.py",
+              "result": "exit 0"
+            },
+            {
+              "command": "python -m pytest tests/test_subtitlemanualupload_cache.py -q -k \"config or strategy or provider or timeline or rar_dependency\"",
+              "result": "12 passed, 83 deselected in 0.45s"
+            },
+            {
+              "command": "get_form default field probe",
+              "result": "default_config contains online_providers, timeline_max_offset_seconds, rar_dependency_mode, opensubtitles_api_url"
+            },
+            {
+              "command": "Config.vue fallback default probe",
+              "result": "Config.vue fallback defaults match backend default_config for checked fields"
+            },
+            {
+              "command": "python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "exit 0"
+            }
+          ],
+          "commit": "0d4ba9c"
+        },
+        {
+          "id": "1.3",
+          "title": "Add and migrate language/config tests",
+          "status": "completed",
+          "verification": [
+            {
+              "command": "python -m pytest tests/test_subtitlemanualupload_tongwen.py tests/test_subtitlemanualupload_cache.py -q -k \"language or config or strategy or suffix or bilingual\"",
+              "result": "11 passed, 87 deselected in 0.52s"
+            },
+            {
+              "command": "python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "exit 0"
+            },
+            {
+              "command": "rg -n \"plugin_submodule|subtitle_language|config_schema|DEFAULT_CONFIG|_normalize_language_suffix|_detect_language_profile|_normalize_auto_transfer_subtitle_strategy\" tests/test_subtitlemanualupload_cache.py",
+              "result": "Tests now assert new subtitle_language/config_schema module behavior and keep lightweight SubtitleManualUpload compatibility checks"
+            }
+          ],
+          "commit": "d2b5140"
+        }
+      ]
+    },
+    {
+      "id": "phase-2",
+      "goal": "Split upload sessions and archive extraction safety boundary.",
+      "acceptance": [
+        "upload_session.py compiles.",
+        "Archive extraction and upload preview tests pass.",
+        "Archive size/count limits are enforced and tested."
+      ],
+      "tasks": [
+        {
+          "id": "2.1",
+          "title": "Create upload_session.py",
+          "status": "completed",
+          "verification": [
+            {
+              "command": "git log --oneline -15",
+              "result": "completed before work; latest source commit before 2.1 was d2b5140"
+            },
+            {
+              "command": "Baseline smoke check: git branch --show-current; python -m py_compile plugins.v2/subtitlemanualupload/__init__.py; python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "branch split/subtitlemanualupload-module-split; py_compile and compileall exited 0"
+            },
+            {
+              "command": "python -m py_compile plugins.v2/subtitlemanualupload/upload_session.py plugins.v2/subtitlemanualupload/__init__.py",
+              "result": "exit 0"
+            },
+            {
+              "command": "python -m pytest tests/test_subtitlemanualupload_cache.py -q -k \"extract or archive or online_download_name or session or 7z or rar\"",
+              "result": "5 passed, 92 deselected in 0.21s"
+            },
+            {
+              "command": "python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "exit 0"
+            }
+          ],
+          "commit": "8af1283"
+        },
+        {
+          "id": "2.2",
+          "title": "Move RAR/7Z detection and command extraction",
+          "status": "completed",
+          "verification": [
+            {
+              "command": "git log --oneline -15",
+              "result": "completed before work; latest source commit before 2.2 was 8af1283"
+            },
+            {
+              "command": "Baseline smoke check: git branch --show-current; python -m py_compile plugins.v2/subtitlemanualupload/__init__.py; python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "branch split/subtitlemanualupload-module-split; py_compile and compileall exited 0"
+            },
+            {
+              "command": "python -m py_compile plugins.v2/subtitlemanualupload/upload_session.py plugins.v2/subtitlemanualupload/__init__.py",
+              "result": "exit 0"
+            },
+            {
+              "command": "python -m pytest tests/test_subtitlemanualupload_cache.py -q -k \"rar or 7z or archive\"",
+              "result": "4 passed, 93 deselected in 0.19s"
+            },
+            {
+              "command": "python -m pytest tests/test_subtitlemanualupload_cache.py -q -k \"extract or archive or online_download_name or session or 7z or rar\"",
+              "result": "5 passed, 92 deselected in 0.21s"
+            },
+            {
+              "command": "python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "exit 0"
+            },
+            {
+              "command": "rg -n \"timeout=timeout|TimeoutExpired|压缩包解压超时|def _run_archive_command\" plugins.v2/subtitlemanualupload/upload_session.py plugins.v2/subtitlemanualupload/__init__.py",
+              "result": "upload_session.py keeps subprocess timeout=timeout, TimeoutExpired handling, and explicit timeout error; __init__.py delegates _run_archive_command"
+            }
+          ],
+          "commit": "c4db1e1"
+        },
+        {
+          "id": "2.3",
+          "title": "Add archive resource limits",
+          "status": "completed",
+          "verification": [
+            {
+              "command": "git log --oneline -15",
+              "result": "completed before work; latest source commit before 2.3 was c4db1e1"
+            },
+            {
+              "command": "Baseline smoke check: git branch --show-current; python -m py_compile plugins.v2/subtitlemanualupload/__init__.py; python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "branch split/subtitlemanualupload-module-split; py_compile and compileall exited 0"
+            },
+            {
+              "command": "python -m py_compile plugins.v2/subtitlemanualupload/upload_session.py plugins.v2/subtitlemanualupload/__init__.py",
+              "result": "exit 0"
+            },
+            {
+              "command": "python -m pytest tests/test_subtitlemanualupload_cache.py -q -k \"archive or extract or limit\"",
+              "result": "9 passed, 94 deselected in 0.36s"
+            },
+            {
+              "command": "python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "exit 0"
+            },
+            {
+              "command": "git diff --cached --check",
+              "result": "exit 0 before commit; staged files were __init__.py, upload_session.py, and tests/test_subtitlemanualupload_cache.py"
+            }
+          ],
+          "commit": "df0f542"
+        },
+        {
+          "id": "2.4",
+          "title": "Reconnect upload and online preview APIs",
+          "status": "completed",
+          "verification": [
+            {
+              "command": "git log --oneline -15",
+              "result": "completed before work; latest source commit before 2.4 was df0f542"
+            },
+            {
+              "command": "Baseline smoke check: git branch --show-current; python -m py_compile plugins.v2/subtitlemanualupload/__init__.py; python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "branch split/subtitlemanualupload-module-split; py_compile and compileall exited 0"
+            },
+            {
+              "command": "python -m py_compile plugins.v2/subtitlemanualupload/upload_session.py plugins.v2/subtitlemanualupload/__init__.py tests/test_subtitlemanualupload_cache.py",
+              "result": "exit 0"
+            },
+            {
+              "command": "python -m pytest tests/test_subtitlemanualupload_cache.py -q -k \"prepare_upload or online_download_preview or online_ai_submit\"",
+              "result": "8 passed, 97 deselected in 0.56s"
+            },
+            {
+              "command": "rg -n \"api_prepare_upload|api_online_download_preview\" plugins.v2/subtitlemanualupload/__init__.py",
+              "result": "get_api endpoint registrations and API handlers remain present for api_prepare_upload and api_online_download_preview"
+            },
+            {
+              "command": "python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "exit 0"
+            },
+            {
+              "command": "Phase 2 acceptance pytest: python -m pytest tests/test_subtitlemanualupload_cache.py -q -k \"archive or extract or limit or prepare_upload or online_download_preview or online_ai_submit\"",
+              "result": "17 passed, 88 deselected in 0.54s"
+            },
+            {
+              "command": "rg -n \"upload_session\\.extract_subtitle_files|upload_session\\.normalize_online_download_name|def _download_online_results_to_uploads|async def api_online_download_preview|async def api_prepare_upload|self\\._extract_subtitle_files\" plugins.v2/subtitlemanualupload/__init__.py",
+              "result": "api_prepare_upload and api_online_download_preview use UploadSessionService directly; _download_online_results_to_uploads uses UploadSessionService for online naming and extraction; remaining self._extract_subtitle_files calls are outside the 2.4 API preview scope and delegate to UploadSessionService"
+            }
+          ],
+          "commit": "7914ec8"
+        }
+      ]
+    },
+    {
+      "id": "phase-3",
+      "goal": "Split media target resolution and subtitle enumeration.",
+      "acceptance": [
+        "target_resolver.py compiles.",
+        "Target/cache/search/embedded subtitle tests pass.",
+        "API /search, /targets, and /match_history remain registered."
+      ],
+      "tasks": [
+        {
+          "id": "3.1",
+          "title": "Create target_resolver.py target model and event conversion",
+          "status": "completed",
+          "verification": [
+            {
+              "command": "git log --oneline -15",
+              "result": "completed before work; latest source commit before 3.1 was 7914ec8"
+            },
+            {
+              "command": "Baseline smoke check: git branch --show-current; python -m py_compile plugins.v2/subtitlemanualupload/__init__.py; python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "branch split/subtitlemanualupload-module-split; py_compile and compileall exited 0"
+            },
+            {
+              "command": "python -m py_compile plugins.v2/subtitlemanualupload/target_resolver.py plugins.v2/subtitlemanualupload/__init__.py",
+              "result": "exit 0"
+            },
+            {
+              "command": "python -m pytest tests/test_subtitlemanualupload_cache.py -q -k \"transfer_event or target or media or merge_seasons\"",
+              "result": "27 passed, 78 deselected in 0.76s"
+            },
+            {
+              "command": "python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "exit 0"
+            },
+            {
+              "command": "rg -n \"target_resolver|MediaTargetResolver|target_media_type_text|target_poster_url|build_entry_from_history|entries_from_transfer_event|transfer_event_paths|merge_seasons|targets_for_media|target_from_entry\" plugins.v2/subtitlemanualupload/__init__.py plugins.v2/subtitlemanualupload/target_resolver.py",
+              "result": "target_resolver.py defines MediaTargetResolver target/event methods; __init__.py imports target_resolver and delegates the 3.1 compatibility methods"
+            },
+            {
+              "command": "git diff --cached --check",
+              "result": "exit 0 before commit; staged files were __init__.py and target_resolver.py"
+            }
+          ],
+          "commit": "0e38d0b"
+        },
+        {
+          "id": "3.2",
+          "title": "Move local resource cache and media search",
+          "status": "completed",
+          "verification": [
+            {
+              "command": "git log --oneline -15",
+              "result": "completed before work; latest source commit before 3.2 was 0e38d0b"
+            },
+            {
+              "command": "Baseline smoke check: git branch --show-current; python -m py_compile plugins.v2/subtitlemanualupload/__init__.py; python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "branch split/subtitlemanualupload-module-split; py_compile and compileall exited 0"
+            },
+            {
+              "command": "python -m py_compile plugins.v2/subtitlemanualupload/target_resolver.py plugins.v2/subtitlemanualupload/__init__.py",
+              "result": "exit 0"
+            },
+            {
+              "command": "python -m pytest tests/test_subtitlemanualupload_cache.py -q -k \"cache or search or resolve_targets or local_entries\"",
+              "result": "105 passed in 2.67s"
+            },
+            {
+              "command": "python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "exit 0"
+            },
+            {
+              "command": "rg -n \"LocalMediaCatalog|def _load_local_entries|def _refresh_local_cache|def _cache_status|def _persist_local_cache|def _restore_persisted_local_cache|def _group_entries_as_media|def _search_media_candidates|def _resolve_targets|def _cached_unlocked_targets|local_entries_cache\\.json|get_data_path\\(\\)\" plugins.v2/subtitlemanualupload/__init__.py plugins.v2/subtitlemanualupload/target_resolver.py",
+              "result": "LocalMediaCatalog owns local cache/search/resolve implementation; local_entries_cache.json path is derived from owner.get_data_path()"
+            },
+            {
+              "command": "git diff --cached --check",
+              "result": "exit 0 before commit; staged files were __init__.py and target_resolver.py"
+            }
+          ],
+          "commit": "7d52f1e"
+        },
+        {
+          "id": "3.3",
+          "title": "Move external and embedded subtitle enumeration",
+          "status": "completed",
+          "verification": [
+            {
+              "command": "git log --oneline -15",
+              "result": "completed before work; latest source commit before 3.3 was 7d52f1e"
+            },
+            {
+              "command": "Baseline smoke check: git branch --show-current; python -m py_compile plugins.v2/subtitlemanualupload/__init__.py; python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "branch split/subtitlemanualupload-module-split; py_compile and compileall exited 0"
+            },
+            {
+              "command": "python -m py_compile plugins.v2/subtitlemanualupload/target_resolver.py plugins.v2/subtitlemanualupload/__init__.py",
+              "result": "exit 0"
+            },
+            {
+              "command": "python -m pytest tests/test_subtitlemanualupload_cache.py -q -k \"embedded or subtitle_files or existing_chinese\"",
+              "result": "10 passed, 95 deselected in 0.34s"
+            },
+            {
+              "command": "python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "exit 0"
+            },
+            {
+              "command": "rg -n \"class SubtitleInventory|video_path\\.parent|media_dir\\.iterdir|sub_file\\.stem != stem|sub_file\\.name\\.startswith|def remove_ext_marks\" plugins.v2/subtitlemanualupload/target_resolver.py",
+              "result": "SubtitleInventory owns subtitle enumeration; evidence shows video_path.parent/media_dir.iterdir and same-stem or same-prefix checks remain before candidates are returned"
+            },
+            {
+              "command": "git diff --cached --check",
+              "result": "exit 0 before commit; staged files were __init__.py and target_resolver.py"
+            }
+          ],
+          "commit": "9f93a73"
+        },
+        {
+          "id": "3.4",
+          "title": "Reconnect search and target APIs",
+          "status": "completed",
+          "verification": [
+            {
+              "command": "git log --oneline -15",
+              "result": "completed before work; latest source commit before 3.4 was 9f93a73"
+            },
+            {
+              "command": "Baseline smoke check: git branch --show-current; python -m py_compile plugins.v2/subtitlemanualupload/__init__.py; python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "branch split/subtitlemanualupload-module-split; py_compile and compileall exited 0"
+            },
+            {
+              "command": "python -m py_compile plugins.v2/subtitlemanualupload/__init__.py plugins.v2/subtitlemanualupload/target_resolver.py tests/test_subtitlemanualupload_cache.py",
+              "result": "exit 0"
+            },
+            {
+              "command": "python -m pytest tests/test_subtitlemanualupload_cache.py -q -k \"api_search or api_targets or match_history\"",
+              "result": "7 passed, 101 deselected in 0.50s"
+            },
+            {
+              "command": "python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "exit 0"
+            },
+            {
+              "command": "rg -n \"'/search|/targets|/match_history'\" plugins.v2/subtitlemanualupload/src/components/AppPage.vue and rg get_api paths",
+              "result": "AppPage.vue calls /search, /match_history, and /targets; get_api still registers /search, /targets, and /match_history"
+            },
+            {
+              "command": "Phase 3 acceptance pytest: python -m pytest tests/test_subtitlemanualupload_cache.py -q -k \"target or cache or search or embedded\"",
+              "result": "108 passed in 2.57s"
+            },
+            {
+              "command": "git diff --cached --check",
+              "result": "exit 0 before commit; staged files were __init__.py and tests/test_subtitlemanualupload_cache.py"
+            }
+          ],
+          "commit": "8e02449"
+        }
+      ]
+    },
+    {
+      "id": "phase-4",
+      "goal": "Split subtitle writing, deletion, backup, restore, and history operations.",
+      "acceptance": [
+        "subtitle_writer.py and subtitle_history.py compile.",
+        "Write/delete/restore/history tests pass.",
+        "Filesystem writes and deletes are centralized behind verified target paths."
+      ],
+      "tasks": [
+        {
+          "id": "4.1",
+          "title": "Create subtitle_writer.py",
+          "status": "completed",
+          "verification": [
+            {
+              "command": "git log --oneline -15",
+              "result": "completed before work; latest source commit before 4.1 was 8e02449"
+            },
+            {
+              "command": "Baseline smoke check: git branch --show-current; python -m py_compile plugins.v2/subtitlemanualupload/__init__.py; python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "branch split/subtitlemanualupload-module-split; py_compile and compileall exited 0"
+            },
+            {
+              "command": "python -m py_compile plugins.v2/subtitlemanualupload/subtitle_writer.py plugins.v2/subtitlemanualupload/__init__.py tests/test_subtitlemanualupload_cache.py",
+              "result": "exit 0"
+            },
+            {
+              "command": "python -m pytest tests/test_subtitlemanualupload_cache.py -q -k \"write_operations or apply_upload or timeline_fix_existing or backup\"",
+              "result": "4 passed, 104 deselected in 0.21s"
+            },
+            {
+              "command": "python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "exit 0"
+            },
+            {
+              "command": "python -m pytest tests/test_subtitlemanualupload_cache.py -q",
+              "result": "108 passed in 2.46s"
+            },
+            {
+              "command": "rg -n \"SubtitleWriter|writer_build_destination_name|writer_build_write_operations|def _write_operations_to_disk|def _existing_timeline_operations|def _run_existing_timeline_fix|def write_operations_to_disk|def existing_timeline_operations|def run_existing_timeline_fix\" plugins.v2/subtitlemanualupload/__init__.py plugins.v2/subtitlemanualupload/subtitle_writer.py",
+              "result": "subtitle_writer.py owns write operations, existing timeline operations, and existing timeline execution; __init__.py keeps compatibility delegates"
+            },
+            {
+              "command": "git diff --cached --check",
+              "result": "exit 0 before commit; staged files were __init__.py and subtitle_writer.py"
+            }
+          ],
+          "commit": "cb99589"
+        },
+        {
+          "id": "4.2",
+          "title": "Centralize delete and restore safety boundary",
+          "status": "completed",
+          "verification": [
+            {
+              "command": "git log --oneline -15",
+              "result": "completed before work; latest source commit before 4.2 was cb99589"
+            },
+            {
+              "command": "Baseline smoke check: git branch --show-current; python -m py_compile plugins.v2/subtitlemanualupload/__init__.py; python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "branch split/subtitlemanualupload-module-split; py_compile and compileall exited 0"
+            },
+            {
+              "command": "python -m py_compile plugins.v2/subtitlemanualupload/subtitle_writer.py plugins.v2/subtitlemanualupload/__init__.py tests/test_subtitlemanualupload_cache.py",
+              "result": "exit 0"
+            },
+            {
+              "command": "python -m pytest tests/test_subtitlemanualupload_cache.py -q -k \"clear_subtitles or delete_subtitle or restore\"",
+              "result": "4 passed, 106 deselected in 0.37s"
+            },
+            {
+              "command": "rg -n \"def clear_subtitles|def delete_subtitle|def restore_subtitle_backup|def _subtitle_path_from_target|_subtitle_files_for_target\" plugins.v2/subtitlemanualupload/subtitle_writer.py plugins.v2/subtitlemanualupload/__init__.py",
+              "result": "SubtitleWriter.clear_subtitles iterates owner._subtitle_files_for_target; delete_subtitle and restore_subtitle_backup resolve through _subtitle_path_from_target, which accepts only owner._subtitle_files_for_target entries"
+            },
+            {
+              "command": "python -m pytest tests/test_subtitlemanualupload_cache.py -q",
+              "result": "110 passed in 2.63s"
+            },
+            {
+              "command": "git diff --cached --check",
+              "result": "exit 0 before commit; staged files were __init__.py, subtitle_writer.py, and tests/test_subtitlemanualupload_cache.py"
+            }
+          ],
+          "commit": "32c3c47"
+        },
+        {
+          "id": "4.3",
+          "title": "Create subtitle_history.py",
+          "status": "completed",
+          "verification": [
+            {
+              "command": "git log --oneline -15",
+              "result": "completed before work; latest source commit before 4.3 was 32c3c47"
+            },
+            {
+              "command": "Baseline smoke check: git branch --show-current; python -m py_compile plugins.v2/subtitlemanualupload/__init__.py; python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "branch split/subtitlemanualupload-module-split; py_compile and compileall exited 0"
+            },
+            {
+              "command": "python -m py_compile plugins.v2/subtitlemanualupload/subtitle_history.py plugins.v2/subtitlemanualupload/__init__.py plugins.v2/subtitlemanualupload/subtitle_writer.py tests/test_subtitlemanualupload_cache.py",
+              "result": "exit 0"
+            },
+            {
+              "command": "python -m pytest tests/test_subtitlemanualupload_cache.py -q -k \"match_history or history or signature or timeline_fix_existing\"",
+              "result": "7 passed, 104 deselected in 0.45s"
+            },
+            {
+              "command": "python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "exit 0"
+            },
+            {
+              "command": "python -m pytest tests/test_subtitlemanualupload_cache.py -q",
+              "result": "111 passed in 2.65s"
+            },
+            {
+              "command": "rg -n \"SubtitleHistory|def _subtitle_history|def _match_history_signature|def _persist_match_history_cache|def _restore_persisted_match_history_cache|def _invalidate_match_history_cache|def _filter_match_history_items|def match_history_items|def existing_timeline_operations\" plugins.v2/subtitlemanualupload/subtitle_history.py plugins.v2/subtitlemanualupload/__init__.py plugins.v2/subtitlemanualupload/subtitle_writer.py tests/test_subtitlemanualupload_cache.py",
+              "result": "subtitle_history.py owns match history cache/filter/build and existing timeline operation parsing; __init__.py keeps compatibility delegates; subtitle_writer.py no longer defines existing_timeline_operations"
+            },
+            {
+              "command": "git diff --cached --check",
+              "result": "exit 0 before commit; staged files were __init__.py, subtitle_history.py, subtitle_writer.py, and tests/test_subtitlemanualupload_cache.py"
+            }
+          ],
+          "commit": "e4e2690"
+        },
+        {
+          "id": "4.4",
+          "title": "Reconnect upload apply and history APIs",
+          "status": "completed",
+          "verification": [
+            {
+              "command": "git log --oneline -15",
+              "result": "completed before work; latest source commit before 4.4 was e4e2690"
+            },
+            {
+              "command": "Baseline smoke check: git branch --show-current; python -m py_compile plugins.v2/subtitlemanualupload/__init__.py; python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "branch split/subtitlemanualupload-module-split; py_compile and compileall exited 0"
+            },
+            {
+              "command": "python -m py_compile plugins.v2/subtitlemanualupload/__init__.py plugins.v2/subtitlemanualupload/subtitle_writer.py tests/test_subtitlemanualupload_cache.py",
+              "result": "exit 0"
+            },
+            {
+              "command": "python -m pytest tests/test_subtitlemanualupload_cache.py -q -k \"apply_upload or timeline_fix_existing or delete_subtitle or restore_subtitle_backup\"",
+              "result": "5 passed, 107 deselected in 0.51s"
+            },
+            {
+              "command": "python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "exit 0"
+            },
+            {
+              "command": "python -m pytest tests/test_subtitlemanualupload_cache.py -q",
+              "result": "112 passed in 2.76s"
+            },
+            {
+              "command": "Phase 4 acceptance pytest: python -m pytest tests/test_subtitlemanualupload_cache.py -q -k \"write_operations or apply_upload or timeline_fix_existing or backup or clear_subtitles or delete_subtitle or restore or match_history or history or signature\"",
+              "result": "15 passed, 97 deselected in 0.60s"
+            },
+            {
+              "command": "rg -n \"apply_upload_session|api_apply_upload|_subtitle_writer\\(\\)\\.apply_upload_session|_subtitle_history\\(\\)\\.existing_timeline_operations|_subtitle_writer\\(\\)\\.(clear_subtitles|delete_subtitle|restore_subtitle_backup)|def clear_subtitles|def delete_subtitle|def restore_subtitle_backup|def existing_timeline_operations\" plugins.v2/subtitlemanualupload/__init__.py plugins.v2/subtitlemanualupload/subtitle_writer.py plugins.v2/subtitlemanualupload/subtitle_history.py tests/test_subtitlemanualupload_cache.py",
+              "result": "api_apply_upload uses SubtitleWriter.apply_upload_session; history timeline parsing uses SubtitleHistory.existing_timeline_operations; delete/restore APIs use SubtitleWriter delete/restore methods"
+            },
+            {
+              "command": "git diff --cached --check",
+              "result": "exit 0 before commit; staged files were __init__.py, subtitle_writer.py, and tests/test_subtitlemanualupload_cache.py"
+            }
+          ],
+          "commit": "b7c37ee"
+        }
+      ]
+    },
+    {
+      "id": "phase-5",
+      "goal": "Split AI bridge and online foreign subtitle AI orchestration.",
+      "acceptance": [
+        "autosub_bridge.py and online_ai.py compile.",
+        "AI submit/cancel/restart and online AI tests pass.",
+        "Online foreign subtitles are timeline-fixed before AI submission."
+      ],
+      "tasks": [
+        {
+          "id": "5.1",
+          "title": "Create autosub_bridge.py",
+          "status": "completed",
+          "verification": [
+            {
+              "command": "git log --oneline -15",
+              "result": "completed before work; latest source commit before 5.1 was b7c37ee"
+            },
+            {
+              "command": "Baseline smoke check: git branch --show-current; python -m py_compile plugins.v2/subtitlemanualupload/__init__.py; python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "branch split/subtitlemanualupload-module-split; py_compile and compileall exited 0"
+            },
+            {
+              "command": "python -m py_compile plugins.v2/subtitlemanualupload/autosub_bridge.py plugins.v2/subtitlemanualupload/__init__.py tests/test_subtitlemanualupload_cache.py tests/test_autosubv3_cancel.py",
+              "result": "exit 0"
+            },
+            {
+              "command": "python -m pytest tests/test_subtitlemanualupload_cache.py tests/test_autosubv3_cancel.py -q -k \"ai_submit or ai_cancel or ai_restart or autosub\"",
+              "result": "59 passed, 89 deselected in 1.05s"
+            },
+            {
+              "command": "python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "exit 0"
+            },
+            {
+              "command": "python -m pytest tests/test_subtitlemanualupload_cache.py tests/test_autosubv3_cancel.py -q",
+              "result": "148 passed in 3.14s"
+            },
+            {
+              "command": "rg -n \"AutoSubBridge|def _autosub_bridge|def _autosub_plugin|def _autosub_status|def _autosub_tasks_for_entries|def _submit_autosub_for_entries|def _cancel_autosub_for_entries|def _restart_autosub_for_entries|def _filter_restart_task_ids_by_targets|def _selected_external_subtitle_override_for_entries|allowed_paths|tasks_payload\\(paths=paths|submit_tasks|cancel_tasks|restart_tasks\" plugins.v2/subtitlemanualupload/autosub_bridge.py plugins.v2/subtitlemanualupload/__init__.py tests/test_subtitlemanualupload_cache.py",
+              "result": "autosub_bridge.py owns plugin discovery, status/tasks payload, submit/cancel/restart calls, explicit restart task path filtering, and matched external subtitle path allow-list checks; __init__.py keeps compatibility delegates"
+            },
+            {
+              "command": "git diff --cached --check",
+              "result": "exit 0 before commit; staged files were __init__.py and autosub_bridge.py"
+            }
+          ],
+          "commit": "f0e2fdd"
+        },
+    {
+      "id": "5.2",
+      "title": "Create online_ai.py",
+      "status": "completed",
+      "verification": [
+        {
+          "command": "git log --oneline -15",
+          "result": "completed before work; latest source commit before 5.2 was f0e2fdd"
+        },
+        {
+          "command": "Baseline smoke check: git branch --show-current; python -m py_compile plugins.v2/subtitlemanualupload/__init__.py; python -m compileall -q plugins.v2/subtitlemanualupload",
+          "result": "branch split/subtitlemanualupload-module-split; py_compile and compileall exited 0"
+        },
+        {
+          "command": "python -m py_compile plugins.v2/subtitlemanualupload/online_ai.py plugins.v2/subtitlemanualupload/__init__.py",
+          "result": "exit 0"
+        },
+        {
+          "command": "python -m pytest tests/test_subtitlemanualupload_cache.py -q -k \"online_ai or online_ai_submit or ass_to_srt or low_confidence\"",
+          "result": "11 passed, 101 deselected in 0.41s"
+        },
+        {
+          "command": "rg -n \"OnlineAiService|def _online_ai_service|def _online_ai_candidate_items|def _load_pysubs2_file|def _convert_ass_to_ai_srt|def _ai_ready_prepared_uploads|def _prepare_online_ai_subtitle_overrides|def _submit_online_ai_translate|online_ai_service\\(\\)\" plugins.v2/subtitlemanualupload/__init__.py plugins.v2/subtitlemanualupload/online_ai.py",
+          "result": "online_ai.py owns OnlineAiService; __init__.py keeps compatibility delegates for online AI candidate, ASS/SSA conversion, AI-ready uploads, subtitle override preparation, and online AI translate submission"
+        },
+        {
+          "command": "rg -n \"prepare_online_ai_subtitle_overrides|_run_timeline_fix|_timeline_result_blocks_auto_write|submit_online_ai_translate|_submit_autosub_for_entries|timeline_fixed\" plugins.v2/subtitlemanualupload/online_ai.py tests/test_subtitlemanualupload_cache.py",
+          "result": "online_ai.py prepares subtitle overrides with _run_timeline_fix and low-confidence rejection before submit_online_ai_translate calls _submit_autosub_for_entries; tests assert timeline_fixed and low-confidence blocks submit"
+        },
+        {
+          "command": "python -m compileall -q plugins.v2/subtitlemanualupload",
+          "result": "exit 0"
+        },
+        {
+          "command": "python -m pytest tests/test_subtitlemanualupload_cache.py -q",
+          "result": "112 passed in 2.79s"
+        },
+        {
+          "command": "git diff --cached --check",
+          "result": "exit 0 before commit; staged files were __init__.py and online_ai.py"
+        }
+      ],
+      "commit": "4496c32"
+    },
+    {
+      "id": "5.3",
+      "title": "Reconnect AI APIs",
+      "status": "completed",
+      "verification": [
+        {
+          "command": "git log --oneline -15",
+          "result": "completed before work; latest source commit before 5.3 was 4496c32"
+        },
+        {
+          "command": "Baseline smoke check: git branch --show-current; python -m py_compile plugins.v2/subtitlemanualupload/__init__.py; python -m compileall -q plugins.v2/subtitlemanualupload",
+          "result": "branch split/subtitlemanualupload-module-split; py_compile and compileall exited 0"
+        },
+        {
+          "command": "python -m py_compile plugins.v2/subtitlemanualupload/autosub_bridge.py plugins.v2/subtitlemanualupload/online_ai.py plugins.v2/subtitlemanualupload/__init__.py tests/test_subtitlemanualupload_cache.py tests/test_autosubv3_cancel.py",
+          "result": "exit 0"
+        },
+        {
+          "command": "python -m pytest tests/test_subtitlemanualupload_cache.py tests/test_autosubv3_cancel.py -q -k \"ai or online_ai\"",
+          "result": "50 passed, 100 deselected in 1.43s"
+        },
+        {
+          "command": "rg -n '\"path\": \"/(ai_submit|ai_tasks|ai_cancel|ai_restart|online_ai_submit|online_download_preview)\"|api_ai_submit|api_ai_tasks|api_ai_cancel|api_ai_restart|api_online_ai_submit|api_online_download_preview' plugins.v2/subtitlemanualupload/__init__.py",
+          "result": "get_api still registers /ai_submit, /ai_tasks, /ai_cancel, /ai_restart, /online_ai_submit, and /online_download_preview with matching handlers"
+        },
+        {
+          "command": "rg -n \"autosub_bridge\\.(selected_external_subtitle_override_for_entries|submit_autosub_for_entries|cancel_autosub_for_entries|restart_autosub_for_entries|autosub_tasks_for_entries|autosub_status)|online_ai_service\\.submit_online_ai_translate|bridge_autosub_task_summary\\(\\[\\]\\)\" plugins.v2/subtitlemanualupload/__init__.py",
+          "result": "AI API handlers call AutoSubBridge and OnlineAiService directly for submit/tasks/cancel/restart and online AI submission paths"
+        },
+        {
+          "command": "rg -n \"api_ai_submit should call AutoSubBridge directly|api_ai_restart should call AutoSubBridge directly|api_online_ai_submit should call OnlineAiService directly|api_online_download_preview should call OnlineAiService directly\" tests/test_subtitlemanualupload_cache.py",
+          "result": "API tests install failing sentinels on old compatibility delegates and fake service factories to prove successful API paths use bridge/online_ai services"
+        },
+        {
+          "command": "python -m compileall -q plugins.v2/subtitlemanualupload",
+          "result": "exit 0"
+        },
+        {
+          "command": "python -m pytest tests/test_subtitlemanualupload_cache.py tests/test_autosubv3_cancel.py -q",
+          "result": "150 passed in 3.03s"
+        },
+        {
+          "command": "git diff --cached --check",
+          "result": "exit 0 before commit; staged files were __init__.py and tests/test_subtitlemanualupload_cache.py"
+        }
+      ],
+      "commit": "34bd932"
+    }
+  ]
+},
+    {
+      "id": "phase-6",
+      "goal": "Split auto-transfer queue and shrink plugin entry.",
+      "acceptance": [
+        "auto_transfer.py compiles.",
+        "Auto-transfer queue/search/season-package tests pass.",
+        "__init__.py is at or below 1800 lines, or progress records a concrete compatibility reason."
+      ],
+      "tasks": [
+    {
+      "id": "6.1",
+      "title": "Create auto_transfer.py queue service",
+      "status": "completed",
+      "verification": [
+        {
+          "command": "git log --oneline -15",
+          "result": "completed before work; latest source commit before 6.1 was 34bd932"
+        },
+        {
+          "command": "Baseline smoke check: git branch --show-current; python -m py_compile plugins.v2/subtitlemanualupload/__init__.py; python -m compileall -q plugins.v2/subtitlemanualupload",
+          "result": "branch split/subtitlemanualupload-module-split; py_compile and compileall exited 0"
+        },
+        {
+          "command": "python -m py_compile plugins.v2/subtitlemanualupload/auto_transfer.py plugins.v2/subtitlemanualupload/__init__.py tests/test_subtitlemanualupload_cache.py",
+          "result": "exit 0"
+        },
+        {
+          "command": "python -m pytest tests/test_subtitlemanualupload_cache.py -q -k \"auto_transfer_queue or rate_limit\"",
+          "result": "3 passed, 112 deselected in 0.15s"
+        },
+        {
+          "command": "rg -n \"class AutoTransferService|def transfer_auto_key|def claim_transfer_auto_entries|def enqueue_transfer_auto_entries|def ensure_transfer_auto_worker|def auto_wait_online_rate_limit|def auto_transfer_queue_loop|def process_transfer_auto_task_batch|def process_transfer_auto_subtitles|def stop\\(\" plugins.v2/subtitlemanualupload/auto_transfer.py",
+          "result": "auto_transfer.py owns AutoTransferService queue, worker, rate-limit, task-batch, subtitle-processing, and stop methods"
+        },
+        {
+          "command": "rg -n \"def _auto_transfer_service|def _transfer_auto_key|def _claim_transfer_auto_entries|def _enqueue_transfer_auto_entries|def _auto_wait_online_rate_limit|def _auto_transfer_queue_loop|def _process_transfer_auto_task_batch|def _process_transfer_auto_subtitles|stop_service\" plugins.v2/subtitlemanualupload/__init__.py",
+          "result": "__init__.py keeps compatibility delegates and stop_service calls AutoTransferService.stop"
+        },
+        {
+          "command": "python -m compileall -q plugins.v2/subtitlemanualupload",
+          "result": "exit 0"
+        },
+        {
+          "command": "python -m pytest tests/test_subtitlemanualupload_cache.py -q",
+          "result": "115 passed in 2.89s"
+        },
+        {
+          "command": "git diff --cached --check",
+          "result": "exit 0 before commit; staged files were __init__.py, auto_transfer.py, and tests/test_subtitlemanualupload_cache.py"
+        }
+      ],
+      "commit": "7f74949"
+    },
+    {
+      "id": "6.2",
+      "title": "Move auto search/write strategies",
+      "status": "completed",
+      "verification": [
+        {
+          "command": "git log --oneline -15",
+          "result": "completed before work; latest source commit before 6.2 was 7f74949"
+        },
+        {
+          "command": "Baseline smoke check: git branch --show-current; python -m py_compile plugins.v2/subtitlemanualupload/__init__.py; python -m compileall -q plugins.v2/subtitlemanualupload",
+          "result": "branch split/subtitlemanualupload-module-split; py_compile and compileall exited 0"
+        },
+        {
+          "command": "python -m py_compile plugins.v2/subtitlemanualupload/auto_transfer.py plugins.v2/subtitlemanualupload/__init__.py tests/test_subtitlemanualupload_cache.py",
+          "result": "exit 0"
+        },
+        {
+          "command": "python -m pytest tests/test_subtitlemanualupload_cache.py -q -k \"auto_transfer or auto_search or season_package or existing_chinese\"",
+          "result": "30 passed, 85 deselected in 0.96s"
+        },
+        {
+          "command": "rg -n \"def auto_search_keywords_for_entry|def auto_search_providers|def auto_search_write_subtitle|def auto_submit_ai_for_entry|def auto_process_transfer_entry|def auto_process_transfer_group|def auto_search_write_season_package|def auto_write_from_season_cache|def store_auto_season_package_cache|def load_auto_season_package_cache|def select_auto_subtitle_items|def auto_write_prepared_uploads_for_entries|def auto_prepared_items_for_targets\" plugins.v2/subtitlemanualupload/auto_transfer.py",
+          "result": "auto_transfer.py owns automatic search, provider selection, write/AI fallback, strategy branching, season package cache/search/write, selection, and prepared-upload matching methods"
+        },
+        {
+          "command": "rg -n \"auto_transfer_service\\(\\)\\.(auto_search_keywords_for_entry|auto_search_providers|auto_search_write_subtitle|auto_submit_ai_for_entry|auto_process_transfer_entry|auto_process_transfer_group|auto_search_write_season_package|auto_write_from_season_cache|store_auto_season_package_cache|load_auto_season_package_cache|select_auto_subtitle_items|auto_write_prepared_uploads_for_entries|auto_prepared_items_for_targets)\" plugins.v2/subtitlemanualupload/__init__.py",
+          "result": "__init__.py keeps compatibility delegates for automatic search/write strategy methods"
+        },
+        {
+          "command": "python -m compileall -q plugins.v2/subtitlemanualupload",
+          "result": "exit 0"
+        },
+        {
+          "command": "python -m pytest tests/test_subtitlemanualupload_cache.py -q",
+          "result": "115 passed in 2.93s"
+        },
+        {
+          "command": "git diff --cached --check",
+          "result": "exit 0 before commit; staged files were __init__.py and auto_transfer.py"
+        }
+      ],
+      "commit": "8c78529"
+    },
+        {
+          "id": "6.3",
+          "title": "Reconnect transfer event and queue API",
+          "status": "completed",
+          "verification": [
+            {
+              "command": "git log --oneline -15",
+              "result": "completed before work; latest source commit before 6.3 was 8c78529"
+            },
+            {
+              "command": "Baseline smoke check: git branch --show-current; python -m py_compile plugins.v2/subtitlemanualupload/__init__.py; python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "branch split/subtitlemanualupload-module-split; py_compile and compileall exited 0"
+            },
+            {
+              "command": "python -m py_compile plugins.v2/subtitlemanualupload/__init__.py plugins.v2/subtitlemanualupload/auto_transfer.py tests/test_subtitlemanualupload_cache.py",
+              "result": "exit 0"
+            },
+            {
+              "command": "rg -n \"auto_transfer_queue|api_auto_transfer_queue|listen_transfer_complete|enqueue_transfer_auto_entries\\(|auto_transfer_queue_snapshot\\(\" plugins.v2/subtitlemanualupload/__init__.py tests/test_subtitlemanualupload_cache.py",
+              "result": "get_api still registers /auto_transfer_queue; listen_transfer_complete and api_auto_transfer_queue call AutoTransferService directly; tests include sentinel regressions"
+            },
+            {
+              "command": "python -m pytest tests/test_subtitlemanualupload_cache.py -q -k \"auto_transfer_queue or transfer_event\"",
+              "result": "4 passed, 113 deselected in 0.47s"
+            },
+            {
+              "command": "python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "exit 0"
+            },
+            {
+              "command": "git diff --cached --check",
+              "result": "exit 0 before commit; staged files were __init__.py and tests/test_subtitlemanualupload_cache.py"
+            }
+          ],
+          "commit": "383eaf4"
+        },
+        {
+          "id": "6.4",
+          "title": "Shrink __init__.py and service composition",
+          "status": "completed",
+          "verification": [
+            {
+              "command": "git log --oneline -15",
+              "result": "completed before work; latest source commit before 6.4 was 383eaf4"
+            },
+            {
+              "command": "Baseline smoke check: git branch --show-current; python -m py_compile plugins.v2/subtitlemanualupload/__init__.py; python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "branch split/subtitlemanualupload-module-split; py_compile and compileall exited 0"
+            },
+            {
+              "command": "line count: plugins.v2/subtitlemanualupload/__init__.py; plugins.v2/subtitlemanualupload/compat.py",
+              "result": "__init__.py is 1746 lines; compat.py is 1794 lines; main class now has 50 methods and compat mixin has 192 compatibility/helper methods"
+            },
+            {
+              "command": "python -m py_compile plugins.v2/subtitlemanualupload/__init__.py plugins.v2/subtitlemanualupload/compat.py",
+              "result": "exit 0"
+            },
+            {
+              "command": "python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "exit 0"
+            },
+            {
+              "command": "python -m pytest tests/test_subtitlemanualupload_tongwen.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_cache.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py -q",
+              "result": "210 passed, 2 skipped in 4.05s"
+            },
+            {
+              "command": "git diff --cached --check",
+              "result": "exit 0 before commit; staged files were __init__.py and compat.py"
+            }
+          ],
+          "commit": "20ea07c"
+        }
+      ]
+    },
+    {
+      "id": "phase-7",
+      "goal": "Verify frontend API contract, build, full regression, and final audit.",
+      "acceptance": [
+        "Frontend API calls all map to registered get_api endpoints.",
+        "pnpm build exits 0.",
+        "Full targeted pytest and compileall checks exit 0.",
+        "Final residual risk is recorded and no push/merge occurred."
+      ],
+      "tasks": [
+        {
+          "id": "7.1",
+          "title": "Static-check frontend API contract",
+          "status": "completed",
+          "verification": [
+            {
+              "command": "git log --oneline -15",
+              "result": "completed before work; latest source commit before 7.1 was 20ea07c"
+            },
+            {
+              "command": "Baseline smoke check: git branch --show-current; python -m py_compile plugins.v2/subtitlemanualupload/__init__.py; python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "branch split/subtitlemanualupload-module-split; py_compile and compileall exited 0"
+            },
+            {
+              "command": "rg -n \"pluginBase|api\\.get|api\\.post|/online_|/ai_|/prepare_upload|/apply_upload|/targets|/search\" plugins.v2/subtitlemanualupload/src/components/AppPage.vue",
+              "result": "Found AppPage.vue pluginBase and API calls for status, refresh_index, search, match_history, targets, timeline tasks/fix, AI tasks/submit/cancel/restart, auto_transfer_queue, online status/manual/provider/AI/download preview, prepare/apply upload, clear/delete/restore"
+            },
+            {
+              "command": "Static endpoint comparison script: extract get_api paths from __init__.py and API paths from AppPage.vue",
+              "result": "registered_count=23; frontend_count=22; missing=[]; registered_not_called_from_AppPage=[/online_search]"
+            },
+            {
+              "command": "Response field static review",
+              "result": "Frontend unwraps the standard success/message/data envelope and still reads fields returned by handlers: status/index/online/ai_subtitle/auto_transfer_queue, search medias/page/total/has_more, match_history items/page/total/has_more, targets media/seasons/selected_season/targets, queue summary/tasks, preview session_id/items/source, apply written/count/skipped, and AI/timeline tasks payloads"
+            },
+            {
+              "command": "git commit --allow-empty -m \"检查字幕匹配前端接口合同\"",
+              "result": "Created verification-only commit 9564ac2"
+            }
+          ],
+          "commit": "9564ac2"
+        },
+        {
+          "id": "7.2",
+          "title": "Run frontend build check",
+          "status": "completed",
+          "verification": [
+            {
+              "command": "git log --oneline -15",
+              "result": "completed before work; latest source commit before 7.2 was 9564ac2"
+            },
+            {
+              "command": "Baseline smoke check: git branch --show-current; python -m py_compile plugins.v2/subtitlemanualupload/__init__.py; python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "branch split/subtitlemanualupload-module-split; py_compile and compileall exited 0"
+            },
+            {
+              "command": "pnpm --dir plugins.v2/subtitlemanualupload install",
+              "result": "initial run installed dependencies but returned ERR_PNPM_IGNORED_BUILDS for esbuild; after using bundled Node path and approving/retrying, install exited 0"
+            },
+            {
+              "command": "pnpm --dir plugins.v2/subtitlemanualupload build",
+              "result": "vite v5.4.21 built successfully in 986ms; exit 0"
+            },
+            {
+              "command": "git status --short --branch after build cleanup",
+              "result": "Only local untracked execution materials remain: docs/plans/, docs/subtitlemanualupload/, product.md"
+            },
+            {
+              "command": "Build artifact decision",
+              "result": "dist hash churn and generated pnpm-lock.yaml/pnpm-workspace.yaml were produced by the local build/install; no frontend source changed, so generated artifacts were cleaned and not committed"
+            },
+            {
+              "command": "git commit --allow-empty -m \"验证字幕匹配前端构建\"",
+              "result": "Created verification-only commit ea92a18"
+            }
+          ],
+          "commit": "ea92a18"
+        },
+        {
+          "id": "7.3",
+          "title": "Run full regression and structure audit",
+          "status": "completed",
+          "verification": [
+            {
+              "command": "git log --oneline -15",
+              "result": "completed before work; latest source commit before 7.3 was ea92a18"
+            },
+            {
+              "command": "Baseline smoke check: git branch --show-current; python -m py_compile plugins.v2/subtitlemanualupload/__init__.py; python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "branch split/subtitlemanualupload-module-split; py_compile and compileall exited 0"
+            },
+            {
+              "command": "python -m py_compile plugins.v2/subtitlemanualupload/config_schema.py plugins.v2/subtitlemanualupload/__init__.py",
+              "result": "exit 0 after audit fix"
+            },
+            {
+              "command": "python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "exit 0"
+            },
+            {
+              "command": "python -m pytest tests/test_subtitlemanualupload_tongwen.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_cache.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py -q",
+              "result": "210 passed, 2 skipped in 3.97s"
+            },
+            {
+              "command": "Python line/method audit",
+              "result": "__init__.py 1746 lines, 50 class methods, 23 api handlers, 17 private methods; compat.py 1794 lines; auto_transfer.py 1224; target_resolver.py 1218; upload_session.py 603; subtitle_writer.py 625; config_schema.py 587"
+            },
+            {
+              "command": "Duplicate fact-source audit",
+              "result": "DEFAULT_CONFIG is assigned only in config_schema.py; provider root/API URL constants are assigned in online_subtitles/common.py and imported by config_schema.py after removing duplicate API URL definitions"
+            },
+            {
+              "command": "Deletion/write boundary audit",
+              "result": "Deletion paths remain centralized in SubtitleWriter target enumeration/history checks, UploadSession session cleanup, AutoTransfer temporary sessions, and cache/timeline cleanup; no new broad silent fallback was introduced by the audit fix"
+            },
+            {
+              "command": "git diff --cached --check",
+              "result": "exit 0 before commit; staged file was config_schema.py"
+            }
+          ],
+          "commit": "f7a5b90"
+        },
+        {
+          "id": "7.4",
+          "title": "Final commit boundary review",
+          "status": "completed",
+          "verification": [
+            {
+              "command": "git log --oneline -15",
+              "result": "completed before work; latest source/verification commit before 7.4 was f7a5b90"
+            },
+            {
+              "command": "Baseline smoke check: git branch --show-current; python -m py_compile plugins.v2/subtitlemanualupload/__init__.py; python -m compileall -q plugins.v2/subtitlemanualupload",
+              "result": "branch split/subtitlemanualupload-module-split; py_compile and compileall exited 0"
+            },
+            {
+              "command": "git status --short --branch",
+              "result": "branch split/subtitlemanualupload-module-split ahead 27 after final empty commit; only untracked local execution materials are present: docs/plans/, docs/subtitlemanualupload/, product.md"
+            },
+            {
+              "command": "git diff --stat",
+              "result": "no tracked working-tree diff"
+            },
+            {
+              "command": "git diff --cached --stat; git diff --cached --check",
+              "result": "no staged diff; whitespace check exited 0"
+            },
+            {
+              "command": "Final commit boundary decision",
+              "result": "No plan/progress/product files, build artifacts, caches, secrets, local test IPs, credentials, cookies, tokens, or AppSecrets were staged or committed; no push, merge, or amend was performed"
+            },
+            {
+              "command": "Last source commit",
+              "result": "f7a5b90审计字幕匹配结构并统一默认地址"
+            },
+            {
+              "command": "git commit --allow-empty -m \"完成字幕匹配拆分边界检查\"",
+              "result": "Created verification-only commit 9109fe4"
+            }
+          ],
+          "commit": "9109fe4"
+        }
+      ]
+    }
+  ],
+  "turn_log": [
+    {
+      "time": "2026-06-29T00:00:00+08:00",
+      "task": "0.1",
+      "status": "completed",
+      "evidence": [
+        "git log --oneline -15 completed before work",
+        "Smoke check completed before work: py_compile and compileall exited 0",
+        "Clean-start empty commit created: d6c867e"
+      ],
+      "notes": "Configured repository-local Git author as Codex <codex@local> because the newly initialized repository lacked commit identity."
+    },
+    {
+      "time": "2026-06-29T00:00:00+08:00",
+      "task": "0.2",
+      "status": "completed",
+      "evidence": [
+        "py_compile plugins.v2/subtitlemanualupload/__init__.py exited 0",
+        "compileall plugins.v2/subtitlemanualupload exited 0",
+        "pytest subtitlemanualupload baseline: 152 passed, 2 skipped in 4.43s"
+      ],
+      "notes": "Installed pytest 9.1.1 into Codex bundled Python to establish the baseline; no source files changed."
+    },
+    {
+      "time": "2026-06-29T00:43:39+08:00",
+      "task": "1.1",
+      "status": "completed",
+      "evidence": [
+        "git log --oneline -15 completed before work with bundled Git",
+        "Smoke check completed before work: py_compile and compileall exited 0",
+        "Created plugins.v2/subtitlemanualupload/subtitle_language.py and delegated language helpers from __init__.py",
+        "py_compile subtitle_language.py exited 0",
+        "pytest language/suffix subset: 8 passed, 87 deselected in 0.42s",
+        "compileall plugins.v2/subtitlemanualupload exited 0",
+        "Source commit created: b5544ce"
+      ],
+      "notes": "System PATH did not expose git, so bundled Git was used explicitly; local plan/progress/product files remain uncommitted."
+    },
+    {
+      "time": "2026-06-29T00:58:42+08:00",
+      "task": "1.2",
+      "status": "completed",
+      "evidence": [
+        "git log --oneline -15 completed before work with bundled Git",
+        "Smoke check completed before work: py_compile and compileall exited 0",
+        "Created plugins.v2/subtitlemanualupload/config_schema.py",
+        "Moved backend default config, provider/RAR/timeline/auto-transfer enums, config normalization, and get_form schema builder into config_schema.py",
+        "py_compile config_schema.py and __init__.py exited 0",
+        "pytest config/strategy/provider/timeline/rar_dependency subset: 12 passed, 83 deselected in 0.45s",
+        "get_form default probe confirmed required fields: online_providers, timeline_max_offset_seconds, rar_dependency_mode, opensubtitles_api_url",
+        "Config.vue fallback defaults matched backend default_config for checked fields",
+        "compileall plugins.v2/subtitlemanualupload exited 0",
+        "Source commit created: 0d4ba9c"
+      ],
+      "notes": "Config.vue still keeps frontend fallback defaults, but backend defaults now live in config_schema.py as the source of truth."
+    },
+    {
+      "time": "2026-06-29T01:06:08+08:00",
+      "task": "1.3",
+      "status": "completed",
+      "evidence": [
+        "git log --oneline -15 completed before work with bundled Git",
+        "Smoke check completed before work: py_compile and compileall exited 0",
+        "Migrated language tests to assert plugins.v2/subtitlemanualupload/subtitle_language.py directly while keeping class delegate checks",
+        "Added config_schema direct tests for legacy strategy aliases and preference normalization",
+        "Added Config.vue bound-field/default coverage test against config_schema.DEFAULT_CONFIG and get_form defaults",
+        "pytest language/config subset before commit: 11 passed, 87 deselected in 0.52s",
+        "compileall plugins.v2/subtitlemanualupload exited 0",
+        "Source commit created: d2b5140",
+        "Phase 1 acceptance py_compile subtitle_language.py config_schema.py exited 0",
+        "Phase 1 acceptance pytest language/config subset: 11 passed, 87 deselected in 0.35s",
+        "Phase 1 delegate search confirmed __init__.py calls build_config_form, config normalizers, and subtitle_language helpers"
+      ],
+      "notes": "Phase 1 accepted and progress advanced automatically to phase-2 / 2.1."
+    },
+    {
+      "time": "2026-06-29T01:29:28+08:00",
+      "task": "2.1",
+      "status": "completed",
+      "evidence": [
+        "git log --oneline -15 completed before work with bundled Git",
+        "Smoke check completed before work: branch split/subtitlemanualupload-module-split, py_compile and compileall exited 0",
+        "Created plugins.v2/subtitlemanualupload/upload_session.py with upload session root cleanup, subtitle/ZIP extraction, online download name normalization, archive magic suffix detection, and session JSON read/write",
+        "SubtitleManualUpload compatibility methods delegate _get_session_root, _cleanup_old_sessions, _extract_subtitle_files, _write_session, _load_session, _normalize_online_download_name, and _archive_suffix_from_content",
+        "Added session round-trip regression coverage in tests/test_subtitlemanualupload_cache.py",
+        "py_compile upload_session.py and __init__.py exited 0",
+        "pytest 2.1 subset: 5 passed, 92 deselected in 0.21s",
+        "compileall plugins.v2/subtitlemanualupload exited 0",
+        "Source commit created: 8af1283"
+      ],
+      "notes": "Progress advanced to phase-2 / 2.2. Internal plan/progress/product files remain uncommitted."
+    },
+    {
+      "time": "2026-06-29T01:42:21+08:00",
+      "task": "2.2",
+      "status": "completed",
+      "evidence": [
+        "git log --oneline -15 completed before work with bundled Git",
+        "Smoke check completed before work: branch split/subtitlemanualupload-module-split, py_compile and compileall exited 0",
+        "Moved RAR/7Z tool discovery, Python rarfile detection, archive command execution, member listing, member reading, and command/rarfile extraction helpers into upload_session.py",
+        "SubtitleManualUpload keeps compatibility delegates for _rar_tool, _sevenzip_tool, _rar_python_available, _rarfile_module, _run_archive_command, _list_rar_members, _read_rar_member, _extract_rar_subtitle_files_with_rarfile, _extract_rar_subtitle_files, _extract_7z_subtitle_files, and _extract_command_archive_subtitle_files",
+        "py_compile upload_session.py and __init__.py exited 0",
+        "pytest RAR/7Z/archive subset: 4 passed, 93 deselected in 0.19s",
+        "pytest phase-2 upload/archive subset: 5 passed, 92 deselected in 0.21s",
+        "compileall plugins.v2/subtitlemanualupload exited 0",
+        "rg timeout evidence confirmed upload_session.py keeps subprocess timeout=timeout and TimeoutExpired -> ValueError path",
+        "Source commit created: c4db1e1"
+      ],
+      "notes": "Progress advanced to phase-2 / 2.3. Internal plan/progress/product files remain uncommitted."
+    },
+    {
+      "time": "2026-06-29T02:52:36+08:00",
+      "task": "2.3",
+      "status": "completed",
+      "evidence": [
+        "git log --oneline -15 completed before work with bundled Git",
+        "Smoke check completed before work: branch split/subtitlemanualupload-module-split, py_compile and compileall exited 0",
+        "Added ArchiveResourceLimits, named size/count constants, and ArchiveResourceGuard in upload_session.py",
+        "Enforced upload content size, archive member count, per-member size, total extracted subtitle size, and subtitle file count limits across ZIP/RAR/7Z paths",
+        "RAR resource-limit errors now propagate without falling back to external command extraction",
+        "py_compile upload_session.py and __init__.py exited 0",
+        "pytest archive/extract/limit subset: 9 passed, 94 deselected in 0.36s",
+        "compileall plugins.v2/subtitlemanualupload exited 0",
+        "Source commit created: df0f542"
+      ],
+      "notes": "Progress advanced to phase-2 / 2.4. Internal plan/progress/product files remain uncommitted."
+    },
+    {
+      "time": "2026-06-29T03:02:38+08:00",
+      "task": "2.4",
+      "status": "completed",
+      "evidence": [
+        "git log --oneline -15 completed before work with bundled Git",
+        "Smoke check completed before work: branch split/subtitlemanualupload-module-split, py_compile and compileall exited 0",
+        "UploadSessionService now owns online download filename normalization as an instance method with injected normalize/decode helpers",
+        "api_prepare_upload uses UploadSessionService.get_session_root and UploadSessionService.extract_subtitle_files directly",
+        "api_online_download_preview now reuses _download_online_results_to_uploads with UploadSessionService instead of duplicating download extraction logic",
+        "_download_online_results_to_uploads uses UploadSessionService.normalize_online_download_name and UploadSessionService.extract_subtitle_files",
+        "Added API tests proving prepare_upload and online_download_preview succeed even when the old _extract_subtitle_files compatibility delegate is replaced with a failing sentinel",
+        "py_compile upload_session.py, __init__.py, and tests/test_subtitlemanualupload_cache.py exited 0",
+        "pytest prepare_upload/online_download_preview/online_ai_submit subset: 8 passed, 97 deselected in 0.56s",
+        "rg endpoint evidence confirmed api_prepare_upload and api_online_download_preview registrations and handlers remain present",
+        "compileall plugins.v2/subtitlemanualupload exited 0",
+        "Phase 2 acceptance pytest archive/extract/limit/preview subset: 17 passed, 88 deselected in 0.54s",
+        "Source commit created: 7914ec8"
+      ],
+      "notes": "Phase 2 accepted and progress advanced automatically to phase-3 / 3.1. Internal plan/progress/product files remain uncommitted."
+    },
+    {
+      "time": "2026-06-29T03:11:58+08:00",
+      "task": "3.1",
+      "status": "completed",
+      "evidence": [
+        "git log --oneline -15 completed before work with bundled Git",
+        "Smoke check completed before work: branch split/subtitlemanualupload-module-split, py_compile and compileall exited 0",
+        "Created plugins.v2/subtitlemanualupload/target_resolver.py with MediaTargetResolver and target/event model helpers",
+        "Moved media type normalization, poster URL building, history type text, local video path checks, transfer event path extraction, transfer event entry conversion, season merge, media target building, stream path detection, and target payload shaping behind target_resolver.py",
+        "SubtitleManualUpload keeps compatibility delegates for _media_type_text, _poster_url, _history_type_text, _number_from_tag, _is_local_video_path, _build_entry_from_history, _event_value, _transfer_event_paths, _entries_from_transfer_event, _merge_seasons, _targets_for_media, _is_stream_path, and _target_from_entry",
+        "py_compile target_resolver.py and __init__.py exited 0",
+        "pytest transfer_event/target/media/merge_seasons subset: 27 passed, 78 deselected in 0.76s",
+        "compileall plugins.v2/subtitlemanualupload exited 0",
+        "Source commit created: 0e38d0b"
+      ],
+      "notes": "Progress advanced to phase-3 / 3.2. Internal plan/progress/product files remain uncommitted."
+    },
+    {
+      "time": "2026-06-29T03:26:05+08:00",
+      "task": "3.2",
+      "status": "completed",
+      "evidence": [
+        "git log --oneline -15 completed before work with bundled Git",
+        "Smoke check completed before work: branch split/subtitlemanualupload-module-split, py_compile and compileall exited 0",
+        "Added LocalMediaCatalog to target_resolver.py for local resource cache, media index cache, media search grouping, target resolving, and unlocked target snapshots",
+        "SubtitleManualUpload delegates _load_local_entries, _refresh_local_cache, _cache_status, _persist_local_cache, _restore_persisted_local_cache, _group_entries_as_media, _search_media_candidates, _resolve_targets, and _cached_unlocked_targets to LocalMediaCatalog",
+        "Kept compatibility hooks for _group_entries_as_media monkeypatch callers during search candidate generation",
+        "Restored module-level os import used by cache invalidation tests",
+        "py_compile target_resolver.py and __init__.py exited 0",
+        "pytest cache/search/resolve_targets/local_entries subset: 105 passed in 2.67s",
+        "compileall plugins.v2/subtitlemanualupload exited 0",
+        "rg evidence confirmed local_entries_cache.json remains under owner.get_data_path()",
+        "Source commit created: 7d52f1e"
+      ],
+      "notes": "Progress advanced to phase-3 / 3.3. Internal plan/progress/product files remain uncommitted."
+    },
+    {
+      "time": "2026-06-29T03:38:28+08:00",
+      "task": "3.3",
+      "status": "completed",
+      "evidence": [
+        "git log --oneline -15 completed before work with bundled Git",
+        "Smoke check completed before work: branch split/subtitlemanualupload-module-split, py_compile and compileall exited 0",
+        "Added SubtitleInventory to target_resolver.py for external subtitle enumeration, embedded subtitle probing, language suffix detection, probe caching, sampling, and extension mark cleanup",
+        "SubtitleManualUpload keeps compatibility delegates for _subtitle_files_for_target, _embedded_subtitle_tracks_for_target, _embedded_subtitle_language_suffix, _embedded_subtitle_probe_cache_key, _embedded_subtitle_track_is_usable, _embedded_subtitle_sample_language_suffix, and _remove_ext_marks",
+        "Injected the main module subprocess object into SubtitleInventory so existing ffprobe/ffmpeg monkeypatch tests still exercise the migrated implementation",
+        "py_compile target_resolver.py and __init__.py exited 0",
+        "pytest embedded/subtitle_files/existing_chinese subset: 10 passed, 95 deselected in 0.34s",
+        "compileall plugins.v2/subtitlemanualupload exited 0",
+        "rg evidence confirmed subtitle deletion/enumeration candidates still come from video_path.parent/media_dir.iterdir and same-stem or same-prefix checks",
+        "Source commit created: 9f93a73"
+      ],
+      "notes": "Progress advanced to phase-3 / 3.4. Internal plan/progress/product files remain uncommitted."
+    },
+    {
+      "time": "2026-06-29T03:51:25+08:00",
+      "task": "3.4",
+      "status": "completed",
+      "evidence": [
+        "git log --oneline -15 completed before work with bundled Git",
+        "Smoke check completed before work: branch split/subtitlemanualupload-module-split, py_compile and compileall exited 0",
+        "api_search now calls LocalMediaCatalog.search_media_candidates directly instead of the compatibility _search_media_candidates delegate",
+        "api_targets now calls MediaTargetResolver.targets_for_media directly instead of the compatibility _targets_for_media delegate",
+        "_match_history_items now reads entries through LocalMediaCatalog and builds targets through MediaTargetResolver.target_from_entry",
+        "Added API handler regressions proving api_search/api_targets/api_match_history do not fall back to selected old compatibility delegates",
+        "py_compile __init__.py, target_resolver.py, and tests/test_subtitlemanualupload_cache.py exited 0",
+        "pytest api_search/api_targets/match_history subset: 7 passed, 101 deselected in 0.50s",
+        "compileall plugins.v2/subtitlemanualupload exited 0",
+        "Frontend/API endpoint evidence confirmed AppPage.vue calls /search, /match_history, /targets and get_api registers all three",
+        "Phase 3 acceptance pytest target/cache/search/embedded subset: 108 passed in 2.57s",
+        "Source commit created: 8e02449"
+      ],
+      "notes": "Phase 3 accepted and progress advanced automatically to phase-4 / 4.1. Internal plan/progress/product files remain uncommitted."
+    },
+    {
+      "time": "2026-06-29T04:03:10+08:00",
+      "task": "4.1",
+      "status": "completed",
+      "evidence": [
+        "git log --oneline -15 completed before work with bundled Git",
+        "Smoke check completed before work: branch split/subtitlemanualupload-module-split, py_compile and compileall exited 0",
+        "Created plugins.v2/subtitlemanualupload/subtitle_writer.py with SubtitleWriter plus pure helpers for destination names, write operation construction, timeline rejection checks, and subtitle backups",
+        "Moved write operation disk application, traditional-to-simplified conversion, timeline fixing, existing subtitle timeline operation collection, and existing timeline execution behind SubtitleWriter",
+        "SubtitleManualUpload keeps compatibility delegates for _build_destination_name, _build_write_operations, _write_operations_to_disk, _backup_subtitle_if_needed, _subtitle_backup_path, _maybe_convert_operation_to_simplified, _timeline_result_blocks_auto_write, _timeline_rejection_message, _run_timeline_fix, _existing_timeline_operations, and _run_existing_timeline_fix",
+        "Kept monkeypatch compatibility by having writer paths call owner delegates for timeline fixing and target payload labels where existing tests depend on them",
+        "py_compile subtitle_writer.py, __init__.py, and tests/test_subtitlemanualupload_cache.py exited 0",
+        "pytest write_operations/apply_upload/timeline_fix_existing/backup subset: 4 passed, 104 deselected in 0.21s",
+        "compileall plugins.v2/subtitlemanualupload exited 0",
+        "Full subtitlemanualupload cache regression: 108 passed in 2.46s",
+        "Source commit created: cb99589"
+      ],
+      "notes": "Progress advanced to phase-4 / 4.2. Internal plan/progress/product files remain uncommitted."
+    },
+    {
+      "time": "2026-06-29T04:29:00+08:00",
+      "task": "4.2",
+      "status": "completed",
+      "evidence": [
+        "git log --oneline -15 completed before work with bundled Git",
+        "Smoke check completed before work: branch split/subtitlemanualupload-module-split, py_compile and compileall exited 0",
+        "Moved api_clear_subtitles, api_delete_subtitle, and api_restore_subtitle_backup delete/restore policies into SubtitleWriter",
+        "SubtitleWriter.clear_subtitles deletes only subtitles enumerated by owner._subtitle_files_for_target and deduplicates enumerated paths",
+        "SubtitleWriter.delete_subtitle and restore_subtitle_backup resolve target subtitles through _subtitle_path_from_target, which only accepts owner._subtitle_files_for_target entries",
+        "Added clear-subtitles regression for locked target skip and enumerated subtitle deletion; added missing-backup restore 404 regression; renamed delete tests so the 4.2 pytest selector covers them",
+        "py_compile subtitle_writer.py, __init__.py, and tests/test_subtitlemanualupload_cache.py exited 0",
+        "pytest clear/delete/restore subset: 4 passed, 106 deselected in 0.37s",
+        "Full subtitlemanualupload cache regression: 110 passed in 2.63s",
+        "Source commit created: 32c3c47"
+      ],
+      "notes": "Progress advanced to phase-4 / 4.3. Internal plan/progress/product files remain uncommitted."
+    },
+    {
+      "time": "2026-06-29T04:52:00+08:00",
+      "task": "4.3",
+      "status": "completed",
+      "evidence": [
+        "git log --oneline -15 completed before work with bundled Git",
+        "Smoke check completed before work: branch split/subtitlemanualupload-module-split, py_compile and compileall exited 0",
+        "Created plugins.v2/subtitlemanualupload/subtitle_history.py with SubtitleHistory for match history cache file, signature, persist, restore, invalidate, filtering, item building, and existing timeline operation parsing",
+        "SubtitleManualUpload keeps compatibility delegates for _match_history_signature, _persist_match_history_cache, _restore_persisted_match_history_cache, _invalidate_match_history_cache, _filter_match_history_items, _match_history_items, and _existing_timeline_operations",
+        "Removed duplicate existing_timeline_operations implementation from SubtitleWriter so history target/subtitle parsing has one owner",
+        "Added direct SubtitleHistory persist/restore regression coverage",
+        "py_compile subtitle_history.py, __init__.py, subtitle_writer.py, and tests/test_subtitlemanualupload_cache.py exited 0",
+        "pytest match_history/history/signature/timeline_fix_existing subset: 7 passed, 104 deselected in 0.45s",
+        "compileall plugins.v2/subtitlemanualupload exited 0",
+        "Full subtitlemanualupload cache regression: 111 passed in 2.65s",
+        "Source commit created: e4e2690"
+      ],
+      "notes": "Progress advanced to phase-4 / 4.4. Internal plan/progress/product files remain uncommitted."
+    },
+    {
+      "time": "2026-06-29T05:12:00+08:00",
+      "task": "4.4",
+      "status": "completed",
+      "evidence": [
+        "git log --oneline -15 completed before work with bundled Git",
+        "Smoke check completed before work: branch split/subtitlemanualupload-module-split, py_compile and compileall exited 0",
+        "Added SubtitleWriter.build_write_operations and apply_upload_session so api_apply_upload no longer owns session write orchestration",
+        "api_apply_upload now parses request and lock state, then calls SubtitleWriter.apply_upload_session while preserving count/written/skipped response fields",
+        "History timeline operation parsing remains delegated to SubtitleHistory and delete/restore APIs remain delegated to SubtitleWriter",
+        "Added api_apply_upload regression proving the old _write_operations_to_disk compatibility delegate is not used and allow_risky_offset reaches the timeline fixer",
+        "py_compile __init__.py, subtitle_writer.py, and tests/test_subtitlemanualupload_cache.py exited 0",
+        "pytest apply_upload/timeline_fix_existing/delete_subtitle/restore_subtitle_backup subset: 5 passed, 107 deselected in 0.51s",
+        "compileall plugins.v2/subtitlemanualupload exited 0",
+        "Full subtitlemanualupload cache regression: 112 passed in 2.76s",
+        "Phase 4 acceptance pytest write/apply/history/delete/restore subset: 15 passed, 97 deselected in 0.60s",
+        "Source commit created: b7c37ee"
+      ],
+      "notes": "Phase 4 accepted and progress advanced automatically to phase-5 / 5.1. Internal plan/progress/product files remain uncommitted."
+    },
+    {
+      "time": "2026-06-29T05:30:00+08:00",
+      "task": "5.1",
+      "status": "completed",
+      "evidence": [
+        "git log --oneline -15 completed before work with bundled Git",
+        "Smoke check completed before work: branch split/subtitlemanualupload-module-split, py_compile and compileall exited 0",
+        "Created plugins.v2/subtitlemanualupload/autosub_bridge.py with AutoSubBridge for Autosub plugin lookup, status/task summary, submit, cancel, restart, restart task filtering, and external subtitle override validation",
+        "SubtitleManualUpload keeps compatibility delegates for _autosub_plugin, _autosub_status, _autosub_task_summary, _autosub_tasks_for_entries, _submit_autosub_for_entries, _cancel_autosub_for_entries, _restart_autosub_for_entries, _filter_restart_task_ids_by_targets, and _selected_external_subtitle_override_for_entries",
+        "Task filtering remains target-path scoped via allowed_paths and task payload path checks before cancel/restart operations",
+        "py_compile autosub_bridge.py, __init__.py, tests/test_subtitlemanualupload_cache.py, and tests/test_autosubv3_cancel.py exited 0",
+        "pytest AI bridge subset: 59 passed, 89 deselected in 1.05s",
+        "compileall plugins.v2/subtitlemanualupload exited 0",
+        "Full AI bridge regression: 148 passed in 3.14s",
+        "Source commit created: f0e2fdd"
+      ],
+      "notes": "Progress advanced to phase-5 / 5.2. Internal plan/progress/product files remain uncommitted."
+    },
+    {
+      "time": "2026-06-29T05:45:00+08:00",
+      "task": "5.2",
+      "status": "completed",
+      "evidence": [
+        "git log --oneline -15 completed before work with bundled Git",
+        "Smoke check completed before work: branch split/subtitlemanualupload-module-split, py_compile and compileall exited 0",
+        "Created plugins.v2/subtitlemanualupload/online_ai.py with OnlineAiService for online AI candidate selection, ASS/SSA to SRT conversion, AI-ready upload preparation, subtitle override preparation, and online AI translate submission",
+        "SubtitleManualUpload keeps compatibility delegates for _online_ai_candidate_items, _load_pysubs2_file, _convert_ass_to_ai_srt, _ai_ready_prepared_uploads, _prepare_online_ai_subtitle_overrides, and _submit_online_ai_translate",
+        "Online AI submission still checks timeline fixer availability before download, runs _run_timeline_fix before _submit_autosub_for_entries, and rejects low-confidence timeline results before AI submission",
+        "py_compile online_ai.py and __init__.py exited 0",
+        "pytest online_ai/online_ai_submit/ass_to_srt/low_confidence subset: 11 passed, 101 deselected in 0.41s",
+        "compileall plugins.v2/subtitlemanualupload exited 0",
+        "Full subtitlemanualupload cache regression: 112 passed in 2.79s",
+        "Source commit created: 4496c32"
+      ],
+      "notes": "Progress advanced to phase-5 / 5.3. Internal plan/progress/product files remain uncommitted."
+    },
+    {
+      "time": "2026-06-29T06:05:00+08:00",
+      "task": "5.3",
+      "status": "completed",
+      "evidence": [
+        "git log --oneline -15 completed before work with bundled Git",
+        "Smoke check completed before work: branch split/subtitlemanualupload-module-split, py_compile and compileall exited 0",
+        "api_ai_submit now calls AutoSubBridge.selected_external_subtitle_override_for_entries and AutoSubBridge.submit_autosub_for_entries directly",
+        "api_ai_cancel, api_ai_restart, and api_ai_tasks now call AutoSubBridge cancel/restart/tasks/status methods directly",
+        "api_online_ai_submit and api_online_download_preview submit_ai_translate path now call OnlineAiService.submit_online_ai_translate directly",
+        "Added API tests with failing sentinels on old compatibility delegates to prove successful API paths use bridge/online_ai services",
+        "py_compile autosub_bridge.py, online_ai.py, __init__.py, tests/test_subtitlemanualupload_cache.py, and tests/test_autosubv3_cancel.py exited 0",
+        "pytest ai/online_ai subset: 50 passed, 100 deselected in 1.43s",
+        "compileall plugins.v2/subtitlemanualupload exited 0",
+        "Full phase-5 affected regression: 150 passed in 3.03s",
+        "Endpoint rg confirmed /ai_submit, /ai_tasks, /ai_cancel, /ai_restart, /online_ai_submit, and /online_download_preview remain registered",
+        "Phase 5 accepted: autosub_bridge.py and online_ai.py compile, AI submit/cancel/restart and online AI tests pass, and online foreign subtitles still run timeline fix before AI submission",
+        "Source commit created: 34bd932"
+      ],
+      "notes": "Phase 5 accepted and progress advanced automatically to phase-6 / 6.1. Internal plan/progress/product files remain uncommitted."
+    },
+    {
+      "time": "2026-06-29T06:25:00+08:00",
+      "task": "6.1",
+      "status": "completed",
+      "evidence": [
+        "git log --oneline -15 completed before work with bundled Git",
+        "Smoke check completed before work: branch split/subtitlemanualupload-module-split, py_compile and compileall exited 0",
+        "Created plugins.v2/subtitlemanualupload/auto_transfer.py with AutoTransferService for queue keys, dedupe claiming, queue trimming, enqueue, worker startup, task updates, batch claiming, provider rate-limit waiting, queue snapshots, worker loop, task-batch processing, subtitle processing, and stop handling",
+        "SubtitleManualUpload keeps compatibility delegates for the 6.1 queue/rate/worker/task-batch methods and constructs AutoTransferService with injected threading/time modules",
+        "stop_service now calls AutoTransferService.stop, which marks pending queue tasks skipped, clears active state, sets _auto_transfer_stopping, and prevents new queue work from starting",
+        "Added auto_transfer_queue stop_service regression so the 6.1 pytest selector covers shutdown behavior",
+        "py_compile auto_transfer.py, __init__.py, and tests/test_subtitlemanualupload_cache.py exited 0",
+        "pytest auto_transfer_queue/rate_limit subset: 3 passed, 112 deselected in 0.15s",
+        "compileall plugins.v2/subtitlemanualupload exited 0",
+        "Full subtitlemanualupload cache regression: 115 passed in 2.89s",
+        "Source commit created: 7f74949"
+      ],
+      "notes": "Progress advanced to phase-6 / 6.2. Internal plan/progress/product files remain uncommitted."
+    },
+    {
+      "time": "2026-06-29T06:45:00+08:00",
+      "task": "6.2",
+      "status": "completed",
+      "evidence": [
+        "git log --oneline -15 completed before work with bundled Git",
+        "Smoke check completed before work: branch split/subtitlemanualupload-module-split, py_compile and compileall exited 0",
+        "AutoTransferService now owns automatic search keywords, provider selection, write/AI fallback, strategy branching, season package cache/search/write, subtitle selection, and prepared-upload matching",
+        "SubtitleManualUpload keeps compatibility delegates for the migrated automatic search/write strategy methods",
+        "py_compile auto_transfer.py, __init__.py, and tests/test_subtitlemanualupload_cache.py exited 0",
+        "pytest auto_transfer/auto_search/season_package/existing_chinese subset: 30 passed, 85 deselected in 0.96s",
+        "compileall plugins.v2/subtitlemanualupload exited 0",
+        "Full subtitlemanualupload cache regression: 115 passed in 2.93s",
+        "Source commit created: 8c78529"
+      ],
+      "notes": "Progress advanced to phase-6 / 6.3. Internal plan/progress/product files remain uncommitted."
+    },
+    {
+      "time": "2026-06-29T07:05:00+08:00",
+      "task": "6.3",
+      "status": "completed",
+      "evidence": [
+        "git log --oneline -15 completed before work with bundled Git",
+        "Smoke check completed before work: branch split/subtitlemanualupload-module-split, py_compile and compileall exited 0",
+        "listen_transfer_complete now calls AutoTransferService.enqueue_transfer_auto_entries directly after event parsing and local cache merge",
+        "api_auto_transfer_queue now calls AutoTransferService.auto_transfer_queue_snapshot directly after query limit parsing",
+        "Added sentinel regressions proving listen_transfer_complete and api_auto_transfer_queue do not call old compatibility delegates",
+        "py_compile __init__.py, auto_transfer.py, and tests/test_subtitlemanualupload_cache.py exited 0",
+        "Endpoint rg confirmed get_api still registers /auto_transfer_queue",
+        "pytest auto_transfer_queue/transfer_event subset: 4 passed, 113 deselected in 0.47s",
+        "compileall plugins.v2/subtitlemanualupload exited 0",
+        "Source commit created: 383eaf4"
+      ],
+      "notes": "Progress advanced to phase-6 / 6.4. Internal plan/progress/product files remain uncommitted."
+    },
+    {
+      "time": "2026-06-29T07:35:00+08:00",
+      "task": "6.4",
+      "status": "completed",
+      "evidence": [
+        "git log --oneline -15 completed before work with bundled Git",
+        "Smoke check completed before work: branch split/subtitlemanualupload-module-split, py_compile and compileall exited 0",
+        "Moved migrated compatibility/helper methods from SubtitleManualUpload into plugins.v2/subtitlemanualupload/compat.py and made SubtitleManualUpload inherit SubtitleManualUploadCompatMixin",
+        "__init__.py is now 1746 lines, below the 1800-line acceptance target; remaining API handlers stay in the main entry for stable get_api endpoint binding",
+        "compat.py preserves existing private-method compatibility and reads selected monkeypatchable dependencies from the host module to keep test/runtime injection behavior stable",
+        "py_compile __init__.py and compat.py exited 0",
+        "compileall plugins.v2/subtitlemanualupload exited 0",
+        "Full phase-6 acceptance pytest set: 210 passed, 2 skipped in 4.05s",
+        "Phase 6 accepted: auto-transfer is service-owned, main entry line count is within target, and every phase-6 task has a commit hash",
+        "Source commit created: 20ea07c"
+      ],
+      "notes": "Phase 6 accepted and progress advanced automatically to phase-7 / 7.1. Internal plan/progress/product files remain uncommitted."
+    },
+    {
+      "time": "2026-06-29T07:50:00+08:00",
+      "task": "7.1",
+      "status": "completed",
+      "evidence": [
+        "git log --oneline -15 completed before work with bundled Git",
+        "Smoke check completed before work: branch split/subtitlemanualupload-module-split, py_compile and compileall exited 0",
+        "Plan rg command found all AppPage.vue pluginBase api.get/api.post call sites",
+        "Static endpoint comparison found 22 frontend paths and 23 registered get_api endpoints with no missing frontend path",
+        "/online_search remains registered but is not directly called from AppPage.vue; AppPage currently uses /online_search_provider for provider-scoped searches",
+        "Response field review confirmed AppPage continues to unwrap success/message/data and use fields still returned by backend handlers",
+        "Verification-only empty commit created: 9564ac2"
+      ],
+      "notes": "Progress advanced to phase-7 / 7.2. Internal plan/progress/product files remain uncommitted."
+    },
+    {
+      "time": "2026-06-29T08:10:00+08:00",
+      "task": "7.2",
+      "status": "completed",
+      "evidence": [
+        "git log --oneline -15 completed before work with bundled Git",
+        "Smoke check completed before work: branch split/subtitlemanualupload-module-split, py_compile and compileall exited 0",
+        "Initial pnpm install downloaded dependencies but failed with ERR_PNPM_IGNORED_BUILDS for esbuild",
+        "Using bundled Node in PATH allowed pnpm approve-builds/install to complete; follow-up install exited 0",
+        "pnpm build completed with vite v5.4.21 in 986ms and exited 0",
+        "Local build generated dist hash churn and pnpm lock/workspace files; because no frontend source changed and build artifacts are not part of this work unit, generated files were cleaned and not committed",
+        "Post-clean git status contains only local untracked execution materials: docs/plans/, docs/subtitlemanualupload/, product.md",
+        "Verification-only empty commit created: ea92a18"
+      ],
+      "notes": "Progress advanced to phase-7 / 7.3. Internal plan/progress/product files remain uncommitted."
+    },
+    {
+      "time": "2026-06-29T08:30:00+08:00",
+      "task": "7.3",
+      "status": "completed",
+      "evidence": [
+        "git log --oneline -15 completed before work with bundled Git",
+        "Smoke check completed before work: branch split/subtitlemanualupload-module-split, py_compile and compileall exited 0",
+        "Full targeted Python regression passed: 210 passed, 2 skipped in 3.97s",
+        "compileall plugins.v2/subtitlemanualupload exited 0",
+        "__init__.py is 1746 lines with 50 class methods, including 23 API handlers and 17 private methods",
+        "Structure audit found config_schema.py duplicated ASSRT/OpenSubtitles API default URL literals; config_schema.py now imports those constants from the online subtitle common export path",
+        "Fact-source audit after the fix: DEFAULT_CONFIG is only assigned in config_schema.py; provider root/API URL constants are assigned in online_subtitles/common.py",
+        "Deletion/write boundary scan matched expected service boundaries and no new broad silent fallback was introduced by the audit fix",
+        "Source commit created: f7a5b90"
+      ],
+      "notes": "Progress advanced to phase-7 / 7.4. Internal plan/progress/product files remain uncommitted."
+    },
+    {
+      "time": "2026-06-29T08:45:00+08:00",
+      "task": "7.4",
+      "status": "completed",
+      "evidence": [
+        "git log --oneline -15 completed before work with bundled Git",
+        "Smoke check completed before work: branch split/subtitlemanualupload-module-split, py_compile and compileall exited 0",
+        "Final git status showed only local untracked execution materials: docs/plans/, docs/subtitlemanualupload/, product.md",
+        "git diff --stat showed no tracked working-tree diff",
+        "git diff --cached --stat and git diff --cached --check showed no staged diff and no whitespace errors",
+        "No plan/progress/product files, build outputs, caches, secrets, local test IPs, credentials, cookies, tokens, or AppSecrets were staged or committed",
+        "Last source commit recorded: f7a5b90",
+        "Verification-only empty commit created: 9109fe4",
+        "No push, merge, or amend was performed"
+      ],
+      "notes": "Phase 7 accepted and final status marked complete. Residual risk: no known functional residual risk; local execution materials remain untracked by design."
+    }
+  ]
+}
