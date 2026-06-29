@@ -4,7 +4,7 @@ import subprocess
 import threading
 import time
 from pathlib import Path
-from typing import Any, Tuple
+from typing import Any
 
 from fastapi import HTTPException
 
@@ -60,77 +60,6 @@ from .upload_session import (
     extract_rar_subtitle_files_with_rarfile as upload_extract_rar_subtitle_files_with_rarfile,
     list_rar_members as upload_list_rar_members,
     read_rar_member as upload_read_rar_member,
-)
-
-
-def _make_service_delegate(service_name: str, target_name: str):
-    def _delegate(self, *args, **kwargs):
-        return getattr(getattr(self, service_name)(), target_name)(*args, **kwargs)
-
-    return _delegate
-
-
-def install_legacy_service_delegates(cls, specs: Tuple[Tuple[str, str, str], ...]) -> None:
-    for legacy_name, service_name, target_name in specs:
-        method = _make_service_delegate(service_name, target_name)
-        method.__name__ = legacy_name
-        setattr(cls, legacy_name, method)
-
-
-LEGACY_INSTANCE_SERVICE_DELEGATES = (
-    ("_filter_existing_local_entries", "_local_media_catalog", "filter_existing_local_entries"),
-    ("_merge_local_entries_cache", "_local_media_catalog", "merge_local_entries_cache"),
-    ("_restore_persisted_local_cache", "_local_media_catalog", "restore_persisted_local_cache"),
-    ("_start_background_cache_refresh", "_local_media_catalog", "start_background_cache_refresh"),
-    ("_load_local_entries", "_local_media_catalog", "load_local_entries"),
-    ("_group_entries_as_media", "_local_media_catalog", "group_entries_as_media"),
-    ("_resolve_targets", "_local_media_catalog", "resolve_targets"),
-    ("_build_entry_from_history", "_target_resolver", "build_entry_from_history"),
-    ("_entries_from_transfer_event", "_target_resolver", "entries_from_transfer_event"),
-    ("_merge_seasons", "_target_resolver", "merge_seasons"),
-    ("_target_from_entry", "_target_resolver", "target_from_entry"),
-    ("_tmdb_detail_for_media", "_media_metadata_service", "tmdb_detail_for_media"),
-    ("_restore_persisted_match_history_cache", "_subtitle_history", "restore_persisted_match_history_cache"),
-    ("_invalidate_match_history_cache", "_subtitle_history", "invalidate_match_history_cache"),
-    ("_match_history_items", "_subtitle_history", "match_history_items"),
-    ("_timeline_task_for_target_id", "_timeline_task_store", "task_for_target_id"),
-    ("_set_timeline_task", "_timeline_task_store", "set_task"),
-    ("_timeline_tasks_for_entries", "_timeline_task_store", "tasks_for_entries"),
-    ("_autosub_plugin", "_autosub_bridge", "autosub_plugin"),
-    ("_autosub_status", "_autosub_bridge", "autosub_status"),
-    ("_autosub_tasks_for_entries", "_autosub_bridge", "autosub_tasks_for_entries"),
-    ("_get_session_root", "_upload_session_service", "get_session_root"),
-    ("_cleanup_old_sessions", "_upload_session_service", "cleanup_old_sessions"),
-    ("_write_session", "_upload_session_service", "write_session"),
-    ("_remove_ext_marks", "_subtitle_inventory", "remove_ext_marks"),
-    ("_write_operations_to_disk", "_subtitle_writer", "write_operations_to_disk"),
-    ("_run_timeline_fix", "_subtitle_writer", "run_timeline_fix"),
-    ("_transfer_auto_key", "_auto_transfer_service", "transfer_auto_key"),
-    ("_claim_transfer_auto_entries", "_auto_transfer_service", "claim_transfer_auto_entries"),
-    ("_auto_transfer_entry_key", "_auto_transfer_service", "auto_transfer_entry_key"),
-    ("_auto_transfer_group_key", "_auto_transfer_service", "auto_transfer_group_key"),
-    ("_trim_auto_transfer_tasks_locked", "_auto_transfer_service", "trim_auto_transfer_tasks_locked"),
-    ("_ensure_transfer_auto_worker", "_auto_transfer_service", "ensure_transfer_auto_worker"),
-    ("_update_auto_transfer_task", "_auto_transfer_service", "update_auto_transfer_task"),
-    ("_claim_next_auto_transfer_batch", "_auto_transfer_service", "claim_next_auto_transfer_batch"),
-    ("_auto_wait_online_rate_limit", "_auto_transfer_service", "auto_wait_online_rate_limit"),
-    ("_auto_transfer_rate_status", "_auto_transfer_service", "auto_transfer_rate_status"),
-    ("_auto_transfer_queue_summary", "_auto_transfer_service", "auto_transfer_queue_summary"),
-    ("_auto_transfer_queue_loop", "_auto_transfer_service", "auto_transfer_queue_loop"),
-    ("_auto_search_keywords_for_entry", "_auto_transfer_service", "auto_search_keywords_for_entry"),
-    ("_auto_search_providers", "_auto_transfer_service", "auto_search_providers"),
-    ("_auto_search_write_subtitle", "_auto_transfer_service", "auto_search_write_subtitle"),
-    ("_auto_submit_ai_for_entry", "_auto_transfer_service", "auto_submit_ai_for_entry"),
-    ("_auto_process_transfer_entry", "_auto_transfer_service", "auto_process_transfer_entry"),
-    ("_auto_prepared_items_for_targets", "_auto_transfer_service", "auto_prepared_items_for_targets"),
-    ("_select_auto_subtitle_items", "_auto_transfer_service", "select_auto_subtitle_items"),
-    ("_auto_write_prepared_uploads_for_entries", "_auto_transfer_service", "auto_write_prepared_uploads_for_entries"),
-    ("_store_auto_season_package_cache", "_auto_transfer_service", "store_auto_season_package_cache"),
-    ("_load_auto_season_package_cache", "_auto_transfer_service", "load_auto_season_package_cache"),
-    ("_auto_write_from_season_cache", "_auto_transfer_service", "auto_write_from_season_cache"),
-    ("_auto_search_write_season_package", "_auto_transfer_service", "auto_search_write_season_package"),
-    ("_auto_process_transfer_group", "_auto_transfer_service", "auto_process_transfer_group"),
-    ("_process_transfer_auto_task_batch", "_auto_transfer_service", "process_transfer_auto_task_batch"),
 )
 
 

@@ -754,6 +754,165 @@ class SubtitleManualUpload(SubtitleManualUploadCompatMixin, _PluginBase):
     def _online_service(self):
         return make_online_service(self)
 
+    def _filter_existing_local_entries(self, *args, **kwargs):
+        return self._local_media_catalog().filter_existing_local_entries(*args, **kwargs)
+
+    def _merge_local_entries_cache(self, *args, **kwargs):
+        return self._local_media_catalog().merge_local_entries_cache(*args, **kwargs)
+
+    def _restore_persisted_local_cache(self, *args, **kwargs):
+        return self._local_media_catalog().restore_persisted_local_cache(*args, **kwargs)
+
+    def _start_background_cache_refresh(self, *args, **kwargs):
+        return self._local_media_catalog().start_background_cache_refresh(*args, **kwargs)
+
+    def _load_local_entries(self, *args, **kwargs):
+        return self._local_media_catalog().load_local_entries(*args, **kwargs)
+
+    def _group_entries_as_media(self, *args, **kwargs):
+        return self._local_media_catalog().group_entries_as_media(*args, **kwargs)
+
+    def _resolve_targets(self, *args, **kwargs):
+        return self._local_media_catalog().resolve_targets(*args, **kwargs)
+
+    def _build_entry_from_history(self, *args, **kwargs):
+        return self._target_resolver().build_entry_from_history(*args, **kwargs)
+
+    def _entries_from_transfer_event(self, *args, **kwargs):
+        return self._target_resolver().entries_from_transfer_event(*args, **kwargs)
+
+    def _merge_seasons(self, *args, **kwargs):
+        return self._target_resolver().merge_seasons(*args, **kwargs)
+
+    def _target_from_entry(self, *args, **kwargs):
+        return self._target_resolver().target_from_entry(*args, **kwargs)
+
+    def _tmdb_detail_for_media(self, *args, **kwargs):
+        return self._media_metadata_service().tmdb_detail_for_media(*args, **kwargs)
+
+    def _restore_persisted_match_history_cache(self, *args, **kwargs):
+        return self._subtitle_history().restore_persisted_match_history_cache(*args, **kwargs)
+
+    def _invalidate_match_history_cache(self, *args, **kwargs):
+        return self._subtitle_history().invalidate_match_history_cache(*args, **kwargs)
+
+    def _match_history_items(self, *args, **kwargs):
+        return self._subtitle_history().match_history_items(*args, **kwargs)
+
+    def _timeline_task_for_target_id(self, *args, **kwargs):
+        return self._timeline_task_store().task_for_target_id(*args, **kwargs)
+
+    def _set_timeline_task(self, *args, **kwargs):
+        return self._timeline_task_store().set_task(*args, **kwargs)
+
+    def _timeline_tasks_for_entries(self, *args, **kwargs):
+        return self._timeline_task_store().tasks_for_entries(*args, **kwargs)
+
+    def _autosub_plugin(self, *args, **kwargs):
+        return self._autosub_bridge().autosub_plugin(*args, **kwargs)
+
+    def _autosub_status(self, *args, **kwargs):
+        return self._autosub_bridge().autosub_status(*args, **kwargs)
+
+    def _autosub_tasks_for_entries(self, *args, **kwargs):
+        return self._autosub_bridge().autosub_tasks_for_entries(*args, **kwargs)
+
+    def _get_session_root(self, *args, **kwargs):
+        return self._upload_session_service().get_session_root(*args, **kwargs)
+
+    def _cleanup_old_sessions(self, *args, **kwargs):
+        return self._upload_session_service().cleanup_old_sessions(*args, **kwargs)
+
+    def _write_session(self, *args, **kwargs):
+        return self._upload_session_service().write_session(*args, **kwargs)
+
+    def _remove_ext_marks(self, *args, **kwargs):
+        return self._subtitle_inventory().remove_ext_marks(*args, **kwargs)
+
+    def _write_operations_to_disk(self, *args, **kwargs):
+        return self._subtitle_writer().write_operations_to_disk(*args, **kwargs)
+
+    def _run_timeline_fix(self, *args, **kwargs):
+        return self._subtitle_writer().run_timeline_fix(*args, **kwargs)
+
+    def _transfer_auto_key(self, *args, **kwargs):
+        return self._auto_transfer_service().transfer_auto_key(*args, **kwargs)
+
+    def _claim_transfer_auto_entries(self, *args, **kwargs):
+        return self._auto_transfer_service().claim_transfer_auto_entries(*args, **kwargs)
+
+    def _auto_transfer_entry_key(self, *args, **kwargs):
+        return self._auto_transfer_service().auto_transfer_entry_key(*args, **kwargs)
+
+    def _auto_transfer_group_key(self, *args, **kwargs):
+        return self._auto_transfer_service().auto_transfer_group_key(*args, **kwargs)
+
+    def _trim_auto_transfer_tasks_locked(self, *args, **kwargs):
+        return self._auto_transfer_service().trim_auto_transfer_tasks_locked(*args, **kwargs)
+
+    def _ensure_transfer_auto_worker(self, *args, **kwargs):
+        return self._auto_transfer_service().ensure_transfer_auto_worker(*args, **kwargs)
+
+    def _update_auto_transfer_task(self, *args, **kwargs):
+        return self._auto_transfer_service().update_auto_transfer_task(*args, **kwargs)
+
+    def _claim_next_auto_transfer_batch(self, *args, **kwargs):
+        return self._auto_transfer_service().claim_next_auto_transfer_batch(*args, **kwargs)
+
+    def _auto_wait_online_rate_limit(self, *args, **kwargs):
+        return self._auto_transfer_service().auto_wait_online_rate_limit(*args, **kwargs)
+
+    def _auto_transfer_rate_status(self, *args, **kwargs):
+        return self._auto_transfer_service().auto_transfer_rate_status(*args, **kwargs)
+
+    def _auto_transfer_queue_summary(self, *args, **kwargs):
+        return self._auto_transfer_service().auto_transfer_queue_summary(*args, **kwargs)
+
+    def _auto_transfer_queue_loop(self, *args, **kwargs):
+        return self._auto_transfer_service().auto_transfer_queue_loop(*args, **kwargs)
+
+    def _auto_search_keywords_for_entry(self, *args, **kwargs):
+        return self._auto_transfer_service().auto_search_keywords_for_entry(*args, **kwargs)
+
+    def _auto_search_providers(self, *args, **kwargs):
+        return self._auto_transfer_service().auto_search_providers(*args, **kwargs)
+
+    def _auto_search_write_subtitle(self, *args, **kwargs):
+        return self._auto_transfer_service().auto_search_write_subtitle(*args, **kwargs)
+
+    def _auto_submit_ai_for_entry(self, *args, **kwargs):
+        return self._auto_transfer_service().auto_submit_ai_for_entry(*args, **kwargs)
+
+    def _auto_process_transfer_entry(self, *args, **kwargs):
+        return self._auto_transfer_service().auto_process_transfer_entry(*args, **kwargs)
+
+    def _auto_prepared_items_for_targets(self, *args, **kwargs):
+        return self._auto_transfer_service().auto_prepared_items_for_targets(*args, **kwargs)
+
+    def _select_auto_subtitle_items(self, *args, **kwargs):
+        return self._auto_transfer_service().select_auto_subtitle_items(*args, **kwargs)
+
+    def _auto_write_prepared_uploads_for_entries(self, *args, **kwargs):
+        return self._auto_transfer_service().auto_write_prepared_uploads_for_entries(*args, **kwargs)
+
+    def _store_auto_season_package_cache(self, *args, **kwargs):
+        return self._auto_transfer_service().store_auto_season_package_cache(*args, **kwargs)
+
+    def _load_auto_season_package_cache(self, *args, **kwargs):
+        return self._auto_transfer_service().load_auto_season_package_cache(*args, **kwargs)
+
+    def _auto_write_from_season_cache(self, *args, **kwargs):
+        return self._auto_transfer_service().auto_write_from_season_cache(*args, **kwargs)
+
+    def _auto_search_write_season_package(self, *args, **kwargs):
+        return self._auto_transfer_service().auto_search_write_season_package(*args, **kwargs)
+
+    def _auto_process_transfer_group(self, *args, **kwargs):
+        return self._auto_transfer_service().auto_process_transfer_group(*args, **kwargs)
+
+    def _process_transfer_auto_task_batch(self, *args, **kwargs):
+        return self._auto_transfer_service().process_transfer_auto_task_batch(*args, **kwargs)
+
     def stop_service(self):
         self._auto_transfer_service().stop()
 

@@ -26,12 +26,12 @@ def test_compat_inventory_reports_deletion_gate_fields():
     assert not [hit for hit in runtime_hits if "plugins.v2/subtitlemanualupload/compat.py:" in hit]
 
     dynamic_installs = inventory["dynamic_installs"]
-    assert dynamic_installs
+    assert dynamic_installs == []
     assert not any(item["installer"] == "install_compat_core_methods" for item in dynamic_installs)
     assert not any(item["installer"] == "install_compat_service_factories" for item in dynamic_installs)
     assert not any(item["installer"] == "install_compat_archive_methods" for item in dynamic_installs)
-    assert any(item["installer"] == "LEGACY_INSTANCE_SERVICE_DELEGATES" for item in dynamic_installs)
+    assert not any(item["installer"] == "LEGACY_INSTANCE_SERVICE_DELEGATES" for item in dynamic_installs)
 
     assert inventory["dynamic_install_count"] == len(dynamic_installs)
     assert inventory["dynamic_install_method_count"] == len({item["name"] for item in dynamic_installs})
-    assert "_auto_process_transfer_entry" in inventory["delete_blockers"]["dynamic_installs"]
+    assert inventory["delete_blockers"]["dynamic_installs"] == []
