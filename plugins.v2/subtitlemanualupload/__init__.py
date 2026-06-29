@@ -538,9 +538,6 @@ class SubtitleManualUpload(_PluginBase):
     def _build_entry_from_history(self, *args, **kwargs):
         return self._target_resolver().build_entry_from_history(*args, **kwargs)
 
-    def _entries_from_transfer_event(self, *args, **kwargs):
-        return self._target_resolver().entries_from_transfer_event(*args, **kwargs)
-
     def _merge_seasons(self, *args, **kwargs):
         return self._target_resolver().merge_seasons(*args, **kwargs)
 
@@ -656,25 +653,13 @@ class SubtitleManualUpload(_PluginBase):
         return self._auto_transfer_service().process_transfer_auto_task_batch(*args, **kwargs)
 
     def stop_service(self):
-        self._auto_transfer_service().stop()
+        self.services.auto_transfer().stop()
 
     @eventmanager.register(EventType.TransferComplete)
     def listen_transfer_complete(self, event: MPEvent):
         if not self.get_state() or not self._auto_search_on_transfer:
             return
-        event_data = getattr(event, "event_data", None) or {}
-        if not isinstance(event_data, dict):
-            return
-        entries = self._entries_from_transfer_event(event_data)
-        if not entries:
-            logger.info("[SubtitleManualUpload] 入库事件未解析到本地视频目标，跳过自动字幕搜索")
-            return
-        self.services.local_media_catalog().merge_local_entries_cache(entries)
-        queued, skipped = self.services.auto_transfer().enqueue_transfer_auto_entries(entries)
-        if skipped:
-            logger.info("[SubtitleManualUpload] 入库自动字幕处理去重跳过重复目标 count=%s", skipped)
-        if queued:
-            logger.info("[SubtitleManualUpload] 入库自动字幕任务已入队 count=%s", queued)
+        self.services.auto_transfer().handle_transfer_complete(event)
 
     def _save_config(self) -> None:
         self.update_config(build_save_config_payload(self))

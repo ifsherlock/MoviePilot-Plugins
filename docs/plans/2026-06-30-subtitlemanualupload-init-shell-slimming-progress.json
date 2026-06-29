@@ -2,7 +2,7 @@
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-init-shell-slimming-phased-plan.md",
   "status": {
     "phase": "phase-6",
-    "task": "6.1",
+    "task": "6.2",
     "next_allowed_action": "Implement the current task; after verified completion, advance to the next task or phase automatically"
   },
   "execution_rules": {
@@ -604,8 +604,44 @@
         {
           "id": "6.1",
           "title": "Extract transfer complete event handling",
-          "status": "pending",
-          "verification": [],
+          "status": "completed",
+          "verification": [
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile plugins.v2/subtitlemanualupload/__init__.py plugins.v2/subtitlemanualupload/auto_transfer.py tests/test_subtitlemanualupload_cache.py",
+              "result": "passed",
+              "evidence": "compiled successfully"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py::test_transfer_event_entries_can_merge_into_local_cache tests/test_subtitlemanualupload_cache.py::test_listen_transfer_complete_uses_auto_transfer_service_directly tests/test_subtitlemanualupload_cache.py::test_auto_transfer_service_handles_transfer_complete_event tests/test_subtitlemanualupload_cache.py::test_auto_transfer_queue_stop_service_marks_pending_queue_stopped -q",
+              "result": "passed",
+              "evidence": "4 passed in 0.53s"
+            },
+            {
+              "command": "rg -n \"def listen_transfer_complete|def stop_service\" plugins.v2/subtitlemanualupload/__init__.py",
+              "result": "passed",
+              "evidence": "stop_service and listen_transfer_complete remain in __init__.py; listen_transfer_complete only gates and delegates to services.auto_transfer().handle_transfer_complete"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py -q",
+              "result": "passed",
+              "evidence": "4 passed in 3.89s"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_init_inventory.py --details",
+              "result": "passed",
+              "evidence": "line_count=798, method_count=109, service_delegates count=39"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py -q",
+              "result": "passed",
+              "evidence": "168 passed in 4.90s"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "221 passed in 5.58s"
+            }
+          ],
           "commit": null
         },
         {
@@ -856,6 +892,20 @@
         "inventory reported line_count=813, method_count=110, service_delegates count=40",
         "baseline smoke exited 0 with 220 passed",
         "phase-5 acceptance satisfied; next task is phase-6 task 6.1"
+      ]
+    },
+    {
+      "task": "6.1",
+      "status": "completed",
+      "summary": "Moved transfer complete event parsing, local cache merge, queue enqueue, and queue logs into AutoTransferService.handle_transfer_complete; the MoviePilot hook now only gates and delegates.",
+      "evidence": [
+        "transfer event service/hook targeted tests exited 0 with 4 passed",
+        "hook grep confirmed stop_service and listen_transfer_complete remain in __init__.py",
+        "inventory tests exited 0 with 4 passed",
+        "inventory reported line_count=798, method_count=109, service_delegates count=39",
+        "cache+online tests exited 0 with 168 passed",
+        "baseline smoke exited 0 with 221 passed",
+        "next task is phase-6 task 6.2"
       ]
     }
   ],

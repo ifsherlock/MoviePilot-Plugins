@@ -450,7 +450,7 @@ def test_transfer_event_entries_can_merge_into_local_cache(tmp_path):
     mediainfo = types.SimpleNamespace(type="电视剧", title="Example Show", year="2024", tmdb_id=123)
     transferinfo = types.SimpleNamespace(file_list_new=[str(video)])
 
-    entries = plugin._entries_from_transfer_event(
+    entries = plugin.services.target_resolver().entries_from_transfer_event(
         {
             "meta": meta,
             "mediainfo": mediainfo,
@@ -3181,26 +3181,53 @@ def test_listen_transfer_complete_uses_auto_transfer_service_directly(tmp_path):
     plugin = make_plugin(module)
     plugin._enabled = True
     plugin._auto_search_on_transfer = True
-    entry = make_auto_entry(tmp_path, filename="Movie.mkv")
-    merged = {}
     captured = {}
+    event = types.SimpleNamespace(event_data={"path": str(tmp_path / "Movie.mkv")})
 
     class FakeAutoTransferService:
-        def enqueue_transfer_auto_entries(self, entries):
-            captured["entries"] = entries
-            return 1, 0
+        def handle_transfer_complete(self, received_event):
+            captured["event"] = received_event
+            return {"entries": [], "queued": 1, "skipped": 0}
+
+    override_services(plugin, auto_transfer=FakeAutoTransferService())
+
+    plugin.listen_transfer_complete(event)
+
+    assert captured["event"] is event
+
+
+def test_auto_transfer_service_handles_transfer_complete_event(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    entry = make_auto_entry(tmp_path, filename="Movie.mkv")
+    captured = {}
+
+    class FakeResolver:
+        def entries_from_transfer_event(self, event_data):
+            captured["event_data"] = event_data
+            return [entry]
 
     class FakeCatalog:
         def merge_local_entries_cache(self, entries):
-            merged["entries"] = entries
+            captured["merged"] = entries
 
-    plugin._entries_from_transfer_event = lambda event_data: [entry]
-    override_services(plugin, local_media_catalog=FakeCatalog(), auto_transfer=FakeAutoTransferService())
+        def filter_existing_local_entries(self, entries):
+            captured["filtered"] = entries
+            return entries
 
-    plugin.listen_transfer_complete(types.SimpleNamespace(event_data={"path": str(tmp_path / "Movie.mkv")}))
+    override_services(plugin, target_resolver=FakeResolver(), local_media_catalog=FakeCatalog())
+    service = plugin.services.auto_transfer()
+    service.ensure_transfer_auto_worker = lambda: captured.setdefault("worker_started", True)
+    event = types.SimpleNamespace(event_data={"path": str(tmp_path / "Movie.mkv")})
 
-    assert merged["entries"] == [entry]
-    assert captured["entries"] == [entry]
+    result = service.handle_transfer_complete(event)
+
+    assert captured["event_data"] == event.event_data
+    assert captured["merged"] == [entry]
+    assert captured["filtered"] == [entry]
+    assert captured["worker_started"] is True
+    assert result["queued"] == 1
+    assert result["skipped"] == 0
 
 
 def test_api_auto_transfer_queue_uses_auto_transfer_service_directly():

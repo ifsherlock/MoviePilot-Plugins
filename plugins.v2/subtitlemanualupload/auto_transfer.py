@@ -343,6 +343,23 @@ class AutoTransferService:
             self.ensure_transfer_auto_worker()
         return queued, skipped
 
+    def handle_transfer_complete(self, event: Any) -> Dict[str, Any]:
+        owner = self._owner
+        event_data = getattr(event, "event_data", None) or {}
+        if not isinstance(event_data, dict):
+            return {"entries": [], "queued": 0, "skipped": 0}
+        entries = owner.services.target_resolver().entries_from_transfer_event(event_data)
+        if not entries:
+            self._logger.info("[SubtitleManualUpload] 入库事件未解析到本地视频目标，跳过自动字幕搜索")
+            return {"entries": [], "queued": 0, "skipped": 0}
+        owner.services.local_media_catalog().merge_local_entries_cache(entries)
+        queued, skipped = self.enqueue_transfer_auto_entries(entries)
+        if skipped:
+            self._logger.info("[SubtitleManualUpload] 入库自动字幕处理去重跳过重复目标 count=%s", skipped)
+        if queued:
+            self._logger.info("[SubtitleManualUpload] 入库自动字幕任务已入队 count=%s", queued)
+        return {"entries": entries, "queued": queued, "skipped": skipped}
+
     def ensure_transfer_auto_worker(self) -> None:
         owner = self._owner
         with owner._transfer_auto_lock:
