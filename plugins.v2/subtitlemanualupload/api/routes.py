@@ -79,7 +79,7 @@ def build_api_routes(owner: Any) -> List[Dict[str, Any]]:
         },
         {
             "path": "/apply_upload",
-            "endpoint": owner.api_apply_upload,
+            "endpoint": upload_api.apply_upload,
             "methods": ["POST"],
             "auth": "bear",
             "summary": "应用字幕匹配结果并写入目标目录",

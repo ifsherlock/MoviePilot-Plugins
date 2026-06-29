@@ -1024,46 +1024,6 @@ class SubtitleManualUpload(SubtitleManualUploadCompatMixin, _PluginBase):
         )
         return response
 
-    async def api_apply_upload(self, request: Request) -> Dict[str, Any]:
-        body = await request.json()
-        session_id = self._normalize_text(body.get("session_id"))
-        items = body.get("items") or []
-        fix_timeline = bool(body.get("fix_timeline"))
-        allow_risky_offset = bool(body.get("allow_risky_offset"))
-        if not session_id or not isinstance(items, list) or not items:
-            logger.warning("[SubtitleManualUpload] 写入失败：缺少会话或匹配结果 session=%s", session_id or "-")
-            raise HTTPException(status_code=400, detail="缺少上传会话或匹配结果")
-        locked_ids = self._locked_target_ids_from_body(body)
-        locked_skipped: List[Dict[str, str]] = []
-        if locked_ids:
-            filtered_items = []
-            for item in items:
-                target_id = self._normalize_text((item or {}).get("target_id")) if isinstance(item, dict) else ""
-                if target_id in locked_ids:
-                    locked_skipped.append({"target_id": target_id, "reason": "目标已锁定"})
-                    continue
-                filtered_items.append(item)
-            items = filtered_items
-        if not items:
-            return self._ok(
-                {
-                    "count": 0,
-                    "written": [],
-                    "skipped": locked_skipped,
-                },
-                message="没有写入字幕，锁定项已跳过",
-            )
-
-        payload, message = self._subtitle_writer().apply_upload_session(
-            session_id=session_id,
-            items=items,
-            locked_skipped=locked_skipped,
-            fix_timeline=fix_timeline,
-            allow_risky_offset=allow_risky_offset,
-        )
-
-        return self._ok(payload, message=message)
-
     async def api_clear_subtitles(self, request: Request) -> Dict[str, Any]:
         body = await request.json()
         target_ids = self._target_ids_from_body(body)

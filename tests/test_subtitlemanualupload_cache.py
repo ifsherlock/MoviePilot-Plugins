@@ -636,8 +636,9 @@ def test_api_apply_upload_uses_subtitle_writer_and_forwards_risky_offset(tmp_pat
 
     module.fix_subtitle_timeline = fake_fix
 
+    apply_endpoint = next(route["endpoint"] for route in plugin.get_api() if route["path"] == "/apply_upload")
     response = asyncio.run(
-        plugin.api_apply_upload(
+        apply_endpoint(
             FakeRequest(
                 {
                     "session_id": "apply-writer",
