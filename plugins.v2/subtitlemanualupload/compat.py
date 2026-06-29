@@ -7,9 +7,8 @@ kept only while existing source paths and legacy tests still reference private
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from fastapi import HTTPException
 
@@ -20,7 +19,6 @@ from .compat_services import (
     install_compat_service_factories,
     install_legacy_service_delegates,
 )
-from .online_subtitle import build_search_keywords
 from .subtitle_language import auto_subtitle_sort_key, is_chinese_language_suffix
 from .subtitle_writer import (
     build_destination_name as writer_build_destination_name,
@@ -162,71 +160,6 @@ class SubtitleManualUploadCompatMixin:
 
     def _timeline_cache_dir(self) -> Path:
         return self.get_data_path() / "timeline_cache"
-
-    @classmethod
-    def _target_ids_from_body(cls, body: Dict[str, Any]) -> List[str]:
-        target_ids = body.get("target_ids") or []
-        if isinstance(target_ids, str):
-            try:
-                target_ids = json.loads(target_ids)
-            except Exception:
-                target_ids = [target_ids]
-        if not isinstance(target_ids, list):
-            return []
-        return [cls._normalize_text(item) for item in target_ids if cls._normalize_text(item)]
-
-    @classmethod
-    def _locked_target_ids_from_body(cls, body: Dict[str, Any]) -> set:
-        locked_ids = body.get("locked_target_ids") or []
-        if isinstance(locked_ids, str):
-            try:
-                locked_ids = json.loads(locked_ids)
-            except Exception:
-                locked_ids = [locked_ids]
-        if not isinstance(locked_ids, list):
-            return set()
-        return {cls._normalize_text(item) for item in locked_ids if cls._normalize_text(item)}
-
-    @classmethod
-    def _filter_unlocked_target_ids(cls, target_ids: Iterable[str], locked_ids: set) -> Tuple[List[str], List[Dict[str, str]]]:
-        unlocked: List[str] = []
-        skipped: List[Dict[str, str]] = []
-        for target_id in target_ids:
-            clean_id = cls._normalize_text(target_id)
-            if not clean_id:
-                continue
-            if clean_id in locked_ids:
-                skipped.append({"target_id": clean_id, "reason": "目标已锁定"})
-                continue
-            unlocked.append(clean_id)
-        return unlocked, skipped
-
-    @classmethod
-    def _ensure_target_not_locked(cls, target_id: str, locked_ids: set) -> None:
-        if cls._normalize_text(target_id) in locked_ids:
-            raise HTTPException(status_code=423, detail="目标已锁定，不能执行该操作")
-
-    @classmethod
-    def _results_from_body(cls, body: Dict[str, Any]) -> List[Dict[str, Any]]:
-        results = body.get("results") or body.get("selected_results") or []
-        if isinstance(results, dict):
-            results = [results]
-        if not isinstance(results, list):
-            return []
-        return [item for item in results if isinstance(item, dict)]
-
-    def _online_keywords(
-        self,
-        body: Dict[str, Any],
-        targets: List[Dict[str, Any]],
-    ) -> List[str]:
-        manual_keyword = self._normalize_text(body.get("keyword"))
-        media = body.get("media") if isinstance(body.get("media"), dict) else {}
-        scope = self._normalize_text(body.get("scope")) or "auto"
-        keywords = build_search_keywords(media, targets, scope)
-        if manual_keyword:
-            keywords = [manual_keyword, *[item for item in keywords if item != manual_keyword]]
-        return keywords[:8]
 
     def _auto_subtitle_sort_key(self, item: Dict[str, Any]) -> Tuple[int, int, int, str]:
         language_priority = list(getattr(self, "_auto_subtitle_language_priority", None) or self._default_auto_language_priority)
