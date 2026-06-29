@@ -77,7 +77,8 @@ def test_inventory_groups_main_entry_responsibilities_and_references():
     assert "_save_config" in groups["config_runtime"]["methods"]
     assert "_subtitle_writer" in groups["service_factories"]["methods"]
     assert "_set_timeline_task" in groups["service_delegates"]["methods"]
-    assert "_submit_online_ai_translate" in groups["ai_autosub_facade"]["methods"]
+    assert "_submit_online_ai_translate" not in groups["ai_autosub_facade"]["methods"]
+    assert "_submit_autosub_for_entries" in groups["ai_autosub_facade"]["methods"]
     assert inventory["source_references"].get("_subtitle_writer")
     assert inventory["test_references"].get("get_api")
 

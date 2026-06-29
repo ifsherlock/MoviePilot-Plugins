@@ -2,7 +2,7 @@
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-init-shell-slimming-phased-plan.md",
   "status": {
     "phase": "phase-7",
-    "task": "7.1",
+    "task": "7.2",
     "next_allowed_action": "Implement the current task; after verified completion, advance to the next task or phase automatically"
   },
   "execution_rules": {
@@ -696,8 +696,49 @@
         {
           "id": "7.1",
           "title": "Migrate online AI helper/facade methods",
-          "status": "pending",
-          "verification": [],
+          "status": "completed",
+          "verification": [
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile plugins.v2/subtitlemanualupload/__init__.py plugins.v2/subtitlemanualupload/online_ai.py plugins.v2/subtitlemanualupload/auto_transfer.py",
+              "result": "passed",
+              "evidence": "compiled successfully"
+            },
+            {
+              "command": "rg -n \"def _(online_ai_candidate_items|load_pysubs2_file|convert_ass_to_ai_srt|ai_ready_prepared_uploads|prepare_online_ai_subtitle_overrides|submit_online_ai_translate)\" plugins.v2/subtitlemanualupload/__init__.py",
+              "result": "passed",
+              "evidence": "no matches"
+            },
+            {
+              "command": "rg -n \"owner\\._(load_pysubs2_file|convert_ass_to_ai_srt|ai_ready_prepared_uploads|online_ai_candidate_items|prepare_online_ai_subtitle_overrides|submit_autosub_for_entries)\" plugins.v2/subtitlemanualupload/online_ai.py",
+              "result": "passed",
+              "evidence": "no matches"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py::test_online_ai_translate_downloads_fixes_and_does_not_create_preview tests/test_subtitlemanualupload_cache.py::test_online_ai_translate_rejects_low_confidence_timeline_before_submit tests/test_subtitlemanualupload_cache.py::test_online_download_preview_submit_ai_rejects_mixed_stale_targets tests/test_subtitlemanualupload_cache.py::test_online_ai_submit_endpoint_downloads_fixes_and_does_not_create_preview tests/test_subtitlemanualupload_cache.py::test_online_ai_submit_endpoint_uses_online_ai_service tests/test_subtitlemanualupload_cache.py::test_online_download_preview_submit_ai_uses_online_ai_service tests/test_subtitlemanualupload_cache.py::test_online_ai_converts_foreign_ass_to_temporary_srt tests/test_subtitlemanualupload_cache.py::test_online_ai_falls_back_to_srt_when_foreign_ass_conversion_fails -q",
+              "result": "passed",
+              "evidence": "8 passed in 0.72s"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py -q",
+              "result": "passed",
+              "evidence": "4 passed in 3.82s"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_init_inventory.py --details",
+              "result": "passed",
+              "evidence": "line_count=733, method_count=103, ai_autosub_facade count=6, service_delegates count=39"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_autosubv3_cancel.py tests/test_subtitlemanualupload_cache.py -q",
+              "result": "passed",
+              "evidence": "163 passed in 4.67s"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "222 passed in 5.68s"
+            }
+          ],
           "commit": null
         },
         {
@@ -950,6 +991,21 @@
         "inventory reported line_count=798, method_count=109, service_delegates count=39",
         "baseline smoke exited 0 with 222 passed",
         "phase-6 acceptance satisfied; next task is phase-7 task 7.1"
+      ]
+    },
+    {
+      "task": "7.1",
+      "status": "completed",
+      "summary": "Removed online AI helper/facade methods from __init__.py, changed OnlineAiService to call its own helpers and services.autosub_bridge() directly, and migrated online AI tests to service-registry overrides.",
+      "evidence": [
+        "online AI facade grep over __init__.py returned no matches",
+        "OnlineAiService owner private online-AI callback grep returned no matches",
+        "online AI targeted tests exited 0 with 8 passed",
+        "cache plus AutoSub cancel tests exited 0 with 163 passed",
+        "inventory tests exited 0 with 4 passed",
+        "inventory reported line_count=733, method_count=103, ai_autosub_facade count=6",
+        "baseline smoke exited 0 with 222 passed",
+        "next task is phase-7 task 7.2"
       ]
     }
   ],

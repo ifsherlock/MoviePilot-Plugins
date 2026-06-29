@@ -154,7 +154,6 @@ from .target_resolver import (
     SubtitleInventory,
 )
 from .timeline_tasks import timeline_task_summary
-from .online_ai import OnlineAiService
 from .auto_transfer import AutoTransferService
 from .service_registry import SubtitleManualUploadServices
 from .api.routes import build_api_routes
@@ -667,70 +666,6 @@ class SubtitleManualUpload(_PluginBase):
     @classmethod
     def _autosub_lang_from_suffix(cls, suffix: Any) -> str:
         return autosub_lang_from_suffix(suffix)
-
-    def _online_ai_candidate_items(
-        self,
-        *,
-        prepared_uploads: List[Dict[str, Any]],
-        targets: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
-        return self._online_ai_service().online_ai_candidate_items(
-            prepared_uploads=prepared_uploads,
-            targets=targets,
-        )
-
-    @classmethod
-    def _load_pysubs2_file(cls, path: Path):
-        return OnlineAiService.load_pysubs2_file(path)
-
-    def _convert_ass_to_ai_srt(
-        self,
-        *,
-        session_dir: Path,
-        prepared: Dict[str, Any],
-    ) -> Optional[Dict[str, Any]]:
-        return self._online_ai_service().convert_ass_to_ai_srt(
-            session_dir=session_dir,
-            prepared=prepared,
-        )
-
-    def _ai_ready_prepared_uploads(
-        self,
-        *,
-        session_dir: Path,
-        prepared_uploads: List[Dict[str, Any]],
-    ) -> List[Dict[str, Any]]:
-        return self._online_ai_service().ai_ready_prepared_uploads(
-            session_dir=session_dir,
-            prepared_uploads=prepared_uploads,
-        )
-
-    def _prepare_online_ai_subtitle_overrides(
-        self,
-        *,
-        session_dir: Path,
-        target_entries: List[Dict[str, Any]],
-        prepared_uploads: List[Dict[str, Any]],
-        allow_risky_offset: bool = False,
-    ) -> Tuple[Dict[str, Dict[str, str]], List[Dict[str, Any]]]:
-        return self._online_ai_service().prepare_online_ai_subtitle_overrides(
-            session_dir=session_dir,
-            target_entries=target_entries,
-            prepared_uploads=prepared_uploads,
-            allow_risky_offset=allow_risky_offset,
-        )
-
-    def _submit_online_ai_translate(
-        self,
-        target_entries: List[Dict[str, Any]],
-        selected_results: List[Dict[str, Any]],
-        allow_risky_offset: bool = False,
-    ) -> Dict[str, Any]:
-        return self._online_ai_service().submit_online_ai_translate(
-            target_entries,
-            selected_results,
-            allow_risky_offset,
-        )
 
     def _submit_autosub_for_entries(
         self,

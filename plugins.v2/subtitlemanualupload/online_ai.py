@@ -104,7 +104,7 @@ class OnlineAiService:
         upload_id = f"{prepared.get('upload_id')}-srt"
         output_path = output_dir / f"{upload_id}.srt"
         try:
-            subtitles = owner._load_pysubs2_file(source_path)
+            subtitles = self.load_pysubs2_file(source_path)
             subtitles.save(str(output_path), format_="srt")
         except Exception as exc:
             self._logger.warning(
@@ -141,7 +141,7 @@ class OnlineAiService:
             if ext == ".srt":
                 ready.append(prepared)
                 continue
-            converted = owner._convert_ass_to_ai_srt(session_dir=session_dir, prepared=prepared)
+            converted = self.convert_ass_to_ai_srt(session_dir=session_dir, prepared=prepared)
             if converted:
                 ready.append(converted)
         return ready
@@ -156,8 +156,8 @@ class OnlineAiService:
     ) -> Tuple[Dict[str, Dict[str, str]], List[Dict[str, Any]]]:
         owner = self._owner
         targets = [owner._target_from_entry(item) for item in target_entries]
-        ai_ready_uploads = owner._ai_ready_prepared_uploads(session_dir=session_dir, prepared_uploads=prepared_uploads)
-        candidate_items = owner._online_ai_candidate_items(prepared_uploads=ai_ready_uploads, targets=targets)
+        ai_ready_uploads = self.ai_ready_prepared_uploads(session_dir=session_dir, prepared_uploads=prepared_uploads)
+        candidate_items = self.online_ai_candidate_items(prepared_uploads=ai_ready_uploads, targets=targets)
         if not candidate_items:
             raise self._http_exception(status_code=400, detail="没有解析到可用于 AI 翻译的外语 SRT 字幕")
 
@@ -318,13 +318,13 @@ class OnlineAiService:
                 if invalid_files:
                     raise self._http_exception(status_code=400, detail=f"没有解析到可用字幕文件，{invalid_files[0]['reason']}")
                 raise self._http_exception(status_code=400, detail="没有解析到可用的在线字幕文件")
-            subtitle_overrides, fixed_subtitles = owner._prepare_online_ai_subtitle_overrides(
+            subtitle_overrides, fixed_subtitles = self.prepare_online_ai_subtitle_overrides(
                 session_dir=session_dir,
                 target_entries=target_entries,
                 prepared_uploads=prepared_uploads,
                 allow_risky_offset=allow_risky_offset,
             )
-            ai_result = owner._submit_autosub_for_entries(
+            ai_result = owner.services.autosub_bridge().submit_autosub_for_entries(
                 target_entries,
                 subtitle_overrides=subtitle_overrides,
                 trigger="manual",

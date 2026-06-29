@@ -2600,6 +2600,10 @@ def setup_online_ai_translate(plugin, module, tmp_path):
             },
         }
 
+    class FakeAutosubBridge:
+        def submit_autosub_for_entries(self, entries, subtitle_overrides=None, **kwargs):
+            return fake_submit(entries, subtitle_overrides=subtitle_overrides, **kwargs)
+
     def fake_fix(video_path, subtitle_path, output_path, **kwargs):
         captured["fix_kwargs"] = kwargs
         output_path.write_bytes(subtitle_path.read_bytes())
@@ -2613,8 +2617,7 @@ def setup_online_ai_translate(plugin, module, tmp_path):
             score=0.95,
         )
 
-    override_services(plugin, online_subtitles=FakeOnlineService())
-    plugin._submit_autosub_for_entries = fake_submit
+    override_services(plugin, online_subtitles=FakeOnlineService(), autosub_bridge=FakeAutosubBridge())
     setattr(plugin, "_suggest" + "_target", lambda *args, **kwargs: (_ for _ in ()).throw(
         AssertionError("online AI should call target_resolver.suggest_target directly")
     ))
@@ -2702,7 +2705,11 @@ def test_online_ai_translate_rejects_low_confidence_timeline_before_submit(tmp_p
             risk_flags=["local_alignment_unstable"],
         )
 
-    plugin._submit_autosub_for_entries = fake_submit
+    class FakeAutosubBridge:
+        def submit_autosub_for_entries(self, *args, **kwargs):
+            return fake_submit(*args, **kwargs)
+
+    override_services(plugin, autosub_bridge=FakeAutosubBridge())
     module.fix_subtitle_timeline = fake_fix
 
     try:
@@ -2739,11 +2746,12 @@ def test_online_download_preview_submit_ai_rejects_mixed_stale_targets(tmp_path)
     setup_online_ai_translate(plugin, module, tmp_path)
     called = {"submit": False}
 
-    def fake_submit(*args, **kwargs):
-        called["submit"] = True
-        return {}
+    class FakeOnlineAiService:
+        def submit_online_ai_translate(self, *args, **kwargs):
+            called["submit"] = True
+            return {}
 
-    plugin._submit_online_ai_translate = fake_submit
+    override_services(plugin, online_ai=FakeOnlineAiService())
 
     try:
         download_endpoint = next(route["endpoint"] for route in plugin.get_api() if route["path"] == "/online_download_preview")
@@ -2831,9 +2839,6 @@ def test_online_ai_submit_endpoint_uses_online_ai_service(tmp_path):
             captured["allow_risky_offset"] = allow_risky_offset
             return runtime_helpers.ok_response({"ai_translate": {"added": [{"path": entries[0]["path"]}]}, "tasks": {}})
 
-    plugin._submit_online_ai_translate = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("api_online_ai_submit should call OnlineAiService directly")
-    )
     override_services(plugin, online_ai=FakeOnlineAiService())
 
     response = asyncio.run(
@@ -2878,9 +2883,6 @@ def test_online_download_preview_submit_ai_uses_online_ai_service(tmp_path):
             captured["allow_risky_offset"] = allow_risky_offset
             return runtime_helpers.ok_response({"ai_translate": {"added": [{"path": entries[0]["path"]}]}, "tasks": {}})
 
-    plugin._submit_online_ai_translate = lambda *args, **kwargs: (_ for _ in ()).throw(
-        AssertionError("online_download_preview endpoint should call OnlineAiService directly for submit_ai_translate")
-    )
     override_services(plugin, online_ai=FakeOnlineAiService())
     download_endpoint = next(route["endpoint"] for route in plugin.get_api() if route["path"] == "/online_download_preview")
 
@@ -4620,7 +4622,8 @@ def test_online_ai_converts_foreign_ass_to_temporary_srt(tmp_path):
             assert format_ == "srt"
             Path(output_path).write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
 
-    plugin._load_pysubs2_file = lambda path: FakeSubs()
+    online_ai_service = plugin.services.online_ai()
+    online_ai_service.load_pysubs2_file = lambda path: FakeSubs()
 
     def fake_timeline(video_path, subtitle_path, output_path, allow_risky_offset=False):
         assert Path(subtitle_path).suffix.lower() == ".srt"
@@ -4637,7 +4640,7 @@ def test_online_ai_converts_foreign_ass_to_temporary_srt(tmp_path):
 
     plugin._run_timeline_fix = fake_timeline
 
-    overrides, fixed = plugin._prepare_online_ai_subtitle_overrides(
+    overrides, fixed = online_ai_service.prepare_online_ai_subtitle_overrides(
         session_dir=tmp_path,
         target_entries=[entry],
         prepared_uploads=[{"upload_id": "u1", "source_name": source.name, "stored_path": str(source), "ext": ".ass"}],
@@ -4701,7 +4704,8 @@ def test_online_ai_falls_back_to_srt_when_foreign_ass_conversion_fails(tmp_path)
     srt_source = tmp_path / "Movie.eng.srt"
     ass_source.write_text("[Script Info]\n[V4+ Styles]\n[Events]\nDialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,Hello\n", encoding="utf-8")
     srt_source.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
-    plugin._load_pysubs2_file = lambda path: (_ for _ in ()).throw(RuntimeError("bad ass"))
+    online_ai_service = plugin.services.online_ai()
+    online_ai_service.load_pysubs2_file = lambda path: (_ for _ in ()).throw(RuntimeError("bad ass"))
     observed = {}
 
     def fake_timeline(video_path, subtitle_path, output_path, allow_risky_offset=False):
@@ -4719,7 +4723,7 @@ def test_online_ai_falls_back_to_srt_when_foreign_ass_conversion_fails(tmp_path)
 
     plugin._run_timeline_fix = fake_timeline
 
-    overrides, fixed = plugin._prepare_online_ai_subtitle_overrides(
+    overrides, fixed = online_ai_service.prepare_online_ai_subtitle_overrides(
         session_dir=tmp_path,
         target_entries=[entry],
         prepared_uploads=[
