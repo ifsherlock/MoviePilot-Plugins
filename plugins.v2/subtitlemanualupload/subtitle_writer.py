@@ -461,7 +461,7 @@ class SubtitleWriter:
     ) -> None:
         owner = self._owner
         try:
-            owner._write_operations_to_disk(
+            self.write_operations_to_disk(
                 session_dir=session_dir,
                 operations=operations,
                 fix_timeline=True,
@@ -470,12 +470,13 @@ class SubtitleWriter:
             self._logger.info("[SubtitleManualUpload] 匹配历史智能调轴完成 count=%s", len(operations))
         except Exception as exc:
             self._logger.error("[SubtitleManualUpload] 匹配历史智能调轴失败: %s", exc)
+            timeline_tasks = owner.services.timeline_tasks()
             for operation in operations:
                 target_id = owner._normalize_text((operation.get("target_entry") or {}).get("id"))
-                task = owner._timeline_task_for_target_id(target_id)
+                task = timeline_tasks.task_for_target_id(target_id)
                 if task and task.get("status") in {"completed", "skipped", "failed"}:
                     continue
-                owner._set_timeline_task(operation, status="failed", message=f"历史字幕智能调轴失败: {exc}")
+                timeline_tasks.set_task(operation, status="failed", message=f"历史字幕智能调轴失败: {exc}")
         finally:
             shutil.rmtree(session_dir, ignore_errors=True)
             owner._invalidate_match_history_cache()

@@ -1,8 +1,8 @@
 {
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-init-shell-slimming-phased-plan.md",
   "status": {
-    "phase": "phase-5",
-    "task": "5.3",
+    "phase": "phase-6",
+    "task": "6.1",
     "next_allowed_action": "Implement the current task; after verified completion, advance to the next task or phase automatically"
   },
   "execution_rules": {
@@ -550,8 +550,44 @@
         {
           "id": "5.3",
           "title": "Remove obsolete one-line service delegates from __init__.py",
-          "status": "pending",
-          "verification": [],
+          "status": "completed",
+          "verification": [
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile plugins.v2/subtitlemanualupload/__init__.py plugins.v2/subtitlemanualupload/service_factories.py plugins.v2/subtitlemanualupload/target_resolver.py plugins.v2/subtitlemanualupload/subtitle_history.py plugins.v2/subtitlemanualupload/autosub_bridge.py plugins.v2/subtitlemanualupload/subtitle_writer.py plugins.v2/subtitlemanualupload/online_ai.py plugins.v2/subtitlemanualupload/auto_transfer.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_init_inventory.py",
+              "result": "passed",
+              "evidence": "compiled successfully"
+            },
+            {
+              "command": "rg -n \"def _(filter_existing_local_entries|merge_local_entries_cache|restore_persisted_local_cache|start_background_cache_refresh|load_local_entries|group_entries_as_media|resolve_targets|match_history_items|timeline_task_for_target_id|autosub_status|get_session_root|write_operations_to_disk|auto_transfer_queue_summary)\" plugins.v2/subtitlemanualupload/__init__.py",
+              "result": "passed",
+              "evidence": "no matching delegate definitions remain in __init__.py"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py::test_plugin_api_route_contract_is_stable -q",
+              "result": "passed",
+              "evidence": "1 passed in 0.10s"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py -q",
+              "result": "passed",
+              "evidence": "167 passed in 4.83s"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py -q",
+              "result": "passed",
+              "evidence": "4 passed in 3.93s"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_init_inventory.py --details",
+              "result": "passed",
+              "evidence": "line_count=813, method_count=110, service_delegates count=40, service_factories count=15"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "220 passed in 5.89s"
+            }
+          ],
           "commit": null
         }
       ]
@@ -806,6 +842,20 @@
         "inventory reported line_count=852, method_count=123, service_delegates count=53",
         "baseline smoke exited 0 with 220 passed",
         "next task is phase-5 task 5.3"
+      ]
+    },
+    {
+      "task": "5.3",
+      "status": "completed",
+      "summary": "Removed the Phase 5 obsolete service delegates from __init__.py and migrated source/tests to call the service registry or owning service methods directly.",
+      "evidence": [
+        "acceptance grep for deleted delegate definitions in __init__.py returned no matches",
+        "API route contract exited 0 with 1 passed",
+        "cache+online tests exited 0 with 167 passed",
+        "inventory tests exited 0 with 4 passed",
+        "inventory reported line_count=813, method_count=110, service_delegates count=40",
+        "baseline smoke exited 0 with 220 passed",
+        "phase-5 acceptance satisfied; next task is phase-6 task 6.1"
       ]
     }
   ],

@@ -298,7 +298,7 @@ class AutoTransferService:
 
     def enqueue_transfer_auto_entries(self, entries: List[Dict[str, Any]]) -> Tuple[int, int]:
         owner = self._owner
-        valid_entries = owner._filter_existing_local_entries(entries)
+        valid_entries = owner.services.local_media_catalog().filter_existing_local_entries(entries)
         if getattr(owner, "_auto_transfer_stopping", False):
             return 0, len(valid_entries) + (len(entries or []) - len(valid_entries))
         claimed, skipped = self.claim_transfer_auto_entries(valid_entries)
@@ -597,7 +597,7 @@ class AutoTransferService:
         last_reason = ""
         for selected in candidates[:5]:
             session_id = owner._hash_text(f"auto|{datetime.now().isoformat()}|{entry.get('id')}")[:16]
-            session_dir = owner._get_session_root() / session_id
+            session_dir = owner.services.upload_session().get_session_root() / session_id
             session_dir.mkdir(parents=True, exist_ok=True)
             try:
                 downloads = service.download([selected])
@@ -1108,7 +1108,7 @@ class AutoTransferService:
         if not cached:
             return {"status": "skipped", "reason": "没有整季字幕包缓存", "written_by_target": {}}
         session_id = owner._hash_text(f"auto-season-cache|{datetime.now().isoformat()}|{cached.get('key')}")[:16]
-        session_dir = owner._get_session_root() / session_id
+        session_dir = owner.services.upload_session().get_session_root() / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
         try:
             result = self.auto_write_prepared_uploads_for_entries(
@@ -1168,7 +1168,7 @@ class AutoTransferService:
         best_partial_result: Optional[Dict[str, Any]] = None
         for selected in candidates[:3]:
             session_id = owner._hash_text(f"auto-season|{datetime.now().isoformat()}|{entries[0].get('id')}")[:16]
-            session_dir = owner._get_session_root() / session_id
+            session_dir = owner.services.upload_session().get_session_root() / session_id
             session_dir.mkdir(parents=True, exist_ok=True)
             try:
                 downloads = service.download([selected])

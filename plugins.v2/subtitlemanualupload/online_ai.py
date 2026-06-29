@@ -306,7 +306,7 @@ class OnlineAiService:
         session_id = owner._hash_text(
             f"online-ai|{datetime.now().isoformat()}|{','.join(sorted(owner._normalize_text(item.get('id')) for item in target_entries))}"
         )[:16]
-        session_dir = owner._get_session_root() / session_id
+        session_dir = owner.services.upload_session().get_session_root() / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
         try:
             prepared_uploads, unsupported_files, invalid_files = download_online_results_to_uploads(
@@ -357,7 +357,7 @@ class OnlineAiService:
                 "ai_translate": ai_result,
                 "targets": ai_result.get("targets") or [owner._target_from_entry(entry) for entry in target_entries],
                 "tasks": ai_result.get("tasks"),
-                "timeline_tasks": owner._timeline_tasks_for_entries(target_entries),
+                "timeline_tasks": owner.services.timeline_tasks().tasks_for_entries(target_entries),
                 "fixed_subtitles": fixed_subtitles,
                 "unsupported_files": unsupported_files,
                 "invalid_files": invalid_files,

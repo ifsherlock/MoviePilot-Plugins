@@ -109,7 +109,7 @@ class AutoSubBridge:
 
     def autosub_tasks_for_entries(self, target_entries: List[Dict[str, Any]]) -> Dict[str, Any]:
         owner = self._owner
-        status = owner._autosub_status()
+        status = self.autosub_status()
         paths = [owner._normalize_text(entry.get("path")) for entry in target_entries if owner._normalize_text(entry.get("path"))]
         task_by_target: Dict[str, Any] = {}
         tasks_by_target: Dict[str, List[Dict[str, Any]]] = {}
@@ -197,7 +197,7 @@ class AutoSubBridge:
             for entry in stream_entries
         ]
         if not paths:
-            tasks = owner._autosub_tasks_for_entries(target_entries)
+            tasks = self.autosub_tasks_for_entries(target_entries)
             return {
                 "added": [],
                 "skipped": skipped_streams,
@@ -240,7 +240,7 @@ class AutoSubBridge:
             self._logger.error("[SubtitleManualUpload] AI 字幕任务提交失败: %s", exc)
             raise self._http_exception(status_code=500, detail=f"AI 字幕任务提交失败: {exc}") from exc
 
-        tasks = owner._autosub_tasks_for_entries(target_entries)
+        tasks = self.autosub_tasks_for_entries(target_entries)
         result = {
             **result,
             "added": result.get("added") or [],
@@ -277,7 +277,7 @@ class AutoSubBridge:
             self._logger.error("[SubtitleManualUpload] AI 字幕任务取消失败: %s", exc)
             raise self._http_exception(status_code=500, detail=f"AI 字幕任务取消失败: {exc}") from exc
 
-        tasks = owner._autosub_tasks_for_entries(target_entries)
+        tasks = self.autosub_tasks_for_entries(target_entries)
         self._logger.info(
             "[SubtitleManualUpload] AI 字幕任务取消完成 targets=%s cancelled=%s skipped=%s",
             len(target_entries),
@@ -306,7 +306,7 @@ class AutoSubBridge:
             raise self._http_exception(status_code=409, detail=reason)
         if not hasattr(plugin, "restart_tasks"):
             raise self._http_exception(status_code=409, detail="AI 字幕插件版本过旧，请更新到支持重新生成的联动版")
-        tasks_data = owner._autosub_tasks_for_entries(target_entries)
+        tasks_data = self.autosub_tasks_for_entries(target_entries)
         requested_task_ids = [owner._normalize_text(item) for item in (task_ids or []) if owner._normalize_text(item)]
         explicit_task_ids = bool(requested_task_ids)
         ownership_skipped: List[Dict[str, str]] = []
@@ -368,7 +368,7 @@ class AutoSubBridge:
         except Exception as exc:
             self._logger.error("[SubtitleManualUpload] AI 字幕任务重新生成失败: %s", exc)
             raise self._http_exception(status_code=500, detail=f"AI 字幕任务重新生成失败: {exc}") from exc
-        refreshed_tasks = owner._autosub_tasks_for_entries(target_entries)
+        refreshed_tasks = self.autosub_tasks_for_entries(target_entries)
         self._logger.info(
             "[SubtitleManualUpload] AI 字幕任务重新生成完成 targets=%s added=%s skipped=%s failed=%s",
             len(target_entries),

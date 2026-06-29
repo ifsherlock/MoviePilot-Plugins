@@ -368,9 +368,10 @@ def test_local_entries_cache_hits_until_forced_refresh(tmp_path):
     histories.calls = 0
     histories.data = [make_history_entry(tmp_path, "a", "a.mkv", media_key="movie-a")]
 
-    first = plugin._load_local_entries()
-    second = plugin._load_local_entries()
-    forced = plugin._load_local_entries(force=True)
+    catalog = plugin.services.local_media_catalog()
+    first = catalog.load_local_entries()
+    second = catalog.load_local_entries()
+    forced = catalog.load_local_entries(force=True)
 
     assert first == second == forced
     assert histories.calls == 2
@@ -383,7 +384,7 @@ def test_refresh_local_cache_rebuilds_entries(tmp_path):
     plugin = make_plugin(module)
     histories.calls = 0
     histories.data = [make_history_entry(tmp_path, "a", "a.mkv", media_key="movie-a")]
-    plugin._load_local_entries()
+    plugin.services.local_media_catalog().load_local_entries()
 
     histories.data = [make_history_entry(tmp_path, "b", "b.mkv", media_key="movie-b")]
     refreshed = plugin._local_media_catalog().refresh_local_cache()
@@ -398,7 +399,7 @@ def test_local_entries_cache_persists_between_plugin_instances(tmp_path):
     histories.calls = 0
     histories.data = [make_history_entry(tmp_path, "a", "a.mkv", media_key="movie-a")]
 
-    first = plugin._load_local_entries()
+    first = plugin.services.local_media_catalog().load_local_entries()
     plugin2 = module.SubtitleManualUpload.__new__(module.SubtitleManualUpload)
     plugin2._local_entries_cache = {"loaded_at": None, "entries": [], "media_count": 0, "persisted": False}
     plugin2._entry_map = module.OrderedDict()
@@ -410,7 +411,7 @@ def test_local_entries_cache_persists_between_plugin_instances(tmp_path):
     plugin2._media_index_cache_max_keys = 20
     plugin2._build_entry_from_history = lambda history: dict(history)
 
-    restored = plugin2._load_local_entries()
+    restored = plugin2.services.local_media_catalog().load_local_entries()
 
     assert restored == first
     assert histories.calls == 1
@@ -430,9 +431,10 @@ def test_stale_persisted_cache_returns_before_background_refresh(tmp_path):
         "persisted": True,
     }
     started = {"value": False}
-    plugin._start_background_cache_refresh = lambda: started.update(value=True)
+    catalog = plugin.services.local_media_catalog()
+    catalog.start_background_cache_refresh = lambda: started.update(value=True)
 
-    entries = plugin._load_local_entries(allow_stale=True)
+    entries = catalog.load_local_entries(allow_stale=True)
 
     assert [item["id"] for item in entries] == ["stale"]
     assert started["value"] is True
@@ -455,7 +457,7 @@ def test_transfer_event_entries_can_merge_into_local_cache(tmp_path):
             "transferinfo": transferinfo,
         }
     )
-    plugin._merge_local_entries_cache(entries)
+    plugin.services.local_media_catalog().merge_local_entries_cache(entries)
 
     assert len(entries) == 1
     assert entries[0]["media_type"] == "tv"
@@ -568,7 +570,7 @@ def test_upload_session_write_and_load_round_trips_payload(tmp_path):
     session_dir, loaded = load_session(plugin, module, session_id)
 
     try:
-        assert session_dir == plugin._get_session_root() / session_id
+        assert session_dir == plugin.services.upload_session().get_session_root() / session_id
         assert loaded == payload
     finally:
         module.shutil.rmtree(session_dir, ignore_errors=True)
@@ -934,9 +936,6 @@ def test_api_apply_upload_uses_subtitle_writer_and_forwards_risky_offset(tmp_pat
             "targets": [target],
         },
     )
-    plugin._write_operations_to_disk = lambda **kwargs: (_ for _ in ()).throw(
-        AssertionError("api_apply_upload should call SubtitleWriter directly")
-    )
     setattr(plugin, "_build_write" + "_operations", lambda *args, **kwargs: (_ for _ in ()).throw(
         AssertionError("api_apply_upload should call SubtitleWriter.build_write_operations directly")
     ))
@@ -1164,7 +1163,7 @@ def test_strm_target_skips_timeline_fixing(tmp_path):
     source.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
     destination = tmp_path / "Movie.chi.srt"
 
-    results, fixed_count, _ = plugin._write_operations_to_disk(
+    results, fixed_count, _ = plugin.services.writer().write_operations_to_disk(
         session_dir=session_dir,
         operations=[
             {
@@ -1185,10 +1184,10 @@ def test_strm_target_skips_timeline_fixing(tmp_path):
     assert results[0]["timeline"]["enabled"] is True
     assert results[0]["timeline"]["applied"] is False
     assert results[0]["timeline"]["base"] == "strm"
-    task = plugin._timeline_task_for_target_id("t1")
+    task = plugin.services.timeline_tasks().task_for_target_id("t1")
     assert task["status"] == "skipped"
     assert task["timeline"]["base"] == "strm"
-    assert plugin._timeline_tasks_for_entries([{"id": "t1"}])["summary"]["skipped"] == 1
+    assert plugin.services.timeline_tasks().tasks_for_entries([{"id": "t1"}])["summary"]["skipped"] == 1
 
 
 def test_timeline_task_store_summary_and_target_mapping(tmp_path):
@@ -1260,7 +1259,7 @@ def test_write_operations_passes_allow_risky_offset_to_timeline_fixer(tmp_path):
 
     module.fix_subtitle_timeline = fake_fix
 
-    results, fixed_count, _ = plugin._write_operations_to_disk(
+    results, fixed_count, _ = plugin.services.writer().write_operations_to_disk(
         session_dir=session_dir,
         operations=[
             {
@@ -1312,7 +1311,7 @@ def test_write_operations_rejects_low_confidence_timeline_result(tmp_path):
     module.fix_subtitle_timeline = fake_fix
 
     try:
-        plugin._write_operations_to_disk(
+        plugin.services.writer().write_operations_to_disk(
             session_dir=session_dir,
             operations=[
                 {
@@ -1333,7 +1332,7 @@ def test_write_operations_rejects_low_confidence_timeline_result(tmp_path):
     else:
         raise AssertionError("low confidence timeline result should block write")
     assert not destination.exists()
-    assert plugin._timeline_task_for_target_id("t1")["status"] == "failed"
+    assert plugin.services.timeline_tasks().task_for_target_id("t1")["status"] == "failed"
 
 
 def test_low_confidence_timeline_result_blocks_auto_write():
@@ -2211,7 +2210,7 @@ def test_group_entries_exposes_thumbnail_poster_url():
         }
     ]
 
-    groups = plugin._group_entries_as_media(entries, 0)
+    groups = plugin.services.local_media_catalog().group_entries_as_media(entries, 0)
 
     assert groups[0]["poster_url"] == "https://image.tmdb.org/t/p/w500/poster.jpg"
     assert groups[0]["poster_thumb_url"] == "https://image.tmdb.org/t/p/w185/poster.jpg"
@@ -2226,15 +2225,14 @@ def test_search_media_candidates_reuses_media_index_cache(tmp_path):
         make_history_entry(tmp_path, "c", "c.mkv", media_key="movie-c", media_type="movie", title="C", date="2024-01-03"),
     ]
     calls = {"count": 0}
-    original_group = plugin._group_entries_as_media
+    catalog = plugin.services.local_media_catalog()
+    original_group = catalog.group_entries_as_media
 
     def counted_group(entries, limit):
         calls["count"] += 1
         return original_group(entries, limit)
 
-    plugin._group_entries_as_media = counted_group
-
-    catalog = plugin._local_media_catalog()
+    catalog.group_entries_as_media = counted_group
     first, first_total = asyncio.run(catalog.search_media_candidates(keyword="", media_type="movie", limit=2, offset=0))
     second, second_total = asyncio.run(catalog.search_media_candidates(keyword="", media_type="movie", limit=2, offset=2))
 
@@ -2285,7 +2283,7 @@ def test_match_history_groups_targets_with_subtitles(tmp_path):
         "persisted": False,
     }
 
-    items = plugin._match_history_items(keyword="", media_type="tv")
+    items = plugin.services.history().match_history_items(keyword="", media_type="tv")
 
     assert len(items) == 1
     assert items[0]["subtitle_count"] == 2
@@ -2324,12 +2322,13 @@ def test_match_history_cache_reuses_scanned_items_until_invalidated(tmp_path):
         calls["count"] += 1
         return original(entry)
 
-    plugin._subtitle_inventory = lambda: types.SimpleNamespace(subtitle_files_for_target=counted_subtitles)
+    override_services(plugin, subtitle_inventory=types.SimpleNamespace(subtitle_files_for_target=counted_subtitles))
 
-    first = plugin._match_history_items()
-    second = plugin._match_history_items()
-    plugin._invalidate_match_history_cache()
-    third = plugin._match_history_items()
+    history = plugin.services.history()
+    first = history.match_history_items()
+    second = history.match_history_items()
+    history.invalidate_match_history_cache()
+    third = history.match_history_items()
 
     assert first == second == third
     assert calls["count"] == 2
@@ -2360,10 +2359,11 @@ def test_match_history_filters_deleted_local_targets(tmp_path):
     }
     remember_targets(plugin, module, [entry])
 
-    assert len(plugin._match_history_items()) == 1
+    history = plugin.services.history()
+    assert len(history.match_history_items()) == 1
 
     video.unlink()
-    assert plugin._match_history_items() == []
+    assert history.match_history_items() == []
     assert plugin._local_media_catalog().cache_status()["entry_count"] == 0
 
 
@@ -2390,13 +2390,14 @@ def test_match_history_cache_invalidates_when_external_subtitle_changes(tmp_path
         "persisted": False,
     }
 
-    assert plugin._match_history_items() == []
+    history = plugin.services.history()
+    assert history.match_history_items() == []
 
     (tmp_path / "Movie.chi.srt").write_text("subtitle", encoding="utf-8")
     future = module.time.time() + 10
     module.os.utime(tmp_path, (future, future))
 
-    items = plugin._match_history_items()
+    items = history.match_history_items()
     assert len(items) == 1
     assert items[0]["subtitle_count"] == 1
 
@@ -3189,9 +3190,12 @@ def test_listen_transfer_complete_uses_auto_transfer_service_directly(tmp_path):
             captured["entries"] = entries
             return 1, 0
 
+    class FakeCatalog:
+        def merge_local_entries_cache(self, entries):
+            merged["entries"] = entries
+
     plugin._entries_from_transfer_event = lambda event_data: [entry]
-    plugin._merge_local_entries_cache = lambda entries: merged.setdefault("entries", entries)
-    override_services(plugin, auto_transfer=FakeAutoTransferService())
+    override_services(plugin, local_media_catalog=FakeCatalog(), auto_transfer=FakeAutoTransferService())
 
     plugin.listen_transfer_complete(types.SimpleNamespace(event_data={"path": str(tmp_path / "Movie.mkv")}))
 

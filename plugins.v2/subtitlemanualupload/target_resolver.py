@@ -1485,7 +1485,7 @@ class LocalMediaCatalog:
             if loaded_at and (now - loaded_at).total_seconds() < owner._cache_ttl_seconds:
                 return list(cache.get("entries") or [])
         if not force and allow_stale and cache.get("entries"):
-            owner._start_background_cache_refresh()
+            self.start_background_cache_refresh()
             return list(cache.get("entries") or [])
 
         try:
@@ -1652,7 +1652,7 @@ class LocalMediaCatalog:
                 if not owner._entry_matches_keyword(entry, clean_keyword):
                     continue
                 entries.append(entry)
-            all_candidates = owner._group_entries_as_media(entries, 0)
+            all_candidates = self.group_entries_as_media(entries, 0)
             self.media_index_cache_set(cache_key, all_entries, all_candidates)
         total = len(all_candidates)
         candidates = all_candidates[offset: offset + limit]

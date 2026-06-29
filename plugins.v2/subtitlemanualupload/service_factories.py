@@ -131,7 +131,7 @@ def subtitle_writer(owner) -> SubtitleWriter:
             "convert_subtitle_file_to_simplified",
             convert_subtitle_file_to_simplified,
         ),
-        load_session=lambda session_id: owner._upload_session_service().load_session(
+        load_session=lambda session_id: owner.services.upload_session().load_session(
             session_id,
             normalize_text=owner._normalize_text,
         ),
@@ -207,9 +207,9 @@ def target_resolver(owner) -> MediaTargetResolver:
         safe_int=owner._safe_int,
         hash_text=owner._hash_text,
         extract_episode_hint=owner._extract_episode_hint,
-        subtitle_files_provider=owner._subtitle_inventory().subtitle_files_for_target,
-        load_local_entries=owner._load_local_entries,
-        group_entries_as_media=owner._group_entries_as_media,
+        subtitle_files_provider=owner.services.subtitle_inventory().subtitle_files_for_target,
+        load_local_entries=owner.services.local_media_catalog().load_local_entries,
+        group_entries_as_media=owner.services.local_media_catalog().group_entries_as_media,
         tmdb_detail_for_media=owner._tmdb_detail_for_media,
         apply_tmdb_detail=owner._apply_tmdb_detail,
         target_entry_cache=target_entry_cache(owner),

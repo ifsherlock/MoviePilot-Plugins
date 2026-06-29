@@ -293,11 +293,11 @@ class SubtitleManualUpload(_PluginBase):
             logger.warning("[SubtitleManualUpload] OpenSubtitles 用户名疑似邮箱，已忽略下载认证用户名")
         sync_class_runtime_config(type(self), self)
         reset_runtime_state(self)
-        self._restore_persisted_local_cache()
-        self._restore_persisted_match_history_cache()
+        self.services.local_media_catalog().restore_persisted_local_cache()
+        self.services.history().restore_persisted_match_history_cache()
         self._save_config()
         self._prepare_rar_dependency()
-        self._cleanup_old_sessions()
+        self.services.upload_session().cleanup_old_sessions()
 
     def get_state(self) -> bool:
         return bool(self._enabled)
@@ -535,27 +535,6 @@ class SubtitleManualUpload(_PluginBase):
     def _online_service(self):
         return self.services.online_subtitles()
 
-    def _filter_existing_local_entries(self, *args, **kwargs):
-        return self._local_media_catalog().filter_existing_local_entries(*args, **kwargs)
-
-    def _merge_local_entries_cache(self, *args, **kwargs):
-        return self._local_media_catalog().merge_local_entries_cache(*args, **kwargs)
-
-    def _restore_persisted_local_cache(self, *args, **kwargs):
-        return self._local_media_catalog().restore_persisted_local_cache(*args, **kwargs)
-
-    def _start_background_cache_refresh(self, *args, **kwargs):
-        return self._local_media_catalog().start_background_cache_refresh(*args, **kwargs)
-
-    def _load_local_entries(self, *args, **kwargs):
-        return self._local_media_catalog().load_local_entries(*args, **kwargs)
-
-    def _group_entries_as_media(self, *args, **kwargs):
-        return self._local_media_catalog().group_entries_as_media(*args, **kwargs)
-
-    def _resolve_targets(self, *args, **kwargs):
-        return self._local_media_catalog().resolve_targets(*args, **kwargs)
-
     def _build_entry_from_history(self, *args, **kwargs):
         return self._target_resolver().build_entry_from_history(*args, **kwargs)
 
@@ -577,12 +556,6 @@ class SubtitleManualUpload(_PluginBase):
     def _invalidate_match_history_cache(self, *args, **kwargs):
         return self._subtitle_history().invalidate_match_history_cache(*args, **kwargs)
 
-    def _match_history_items(self, *args, **kwargs):
-        return self._subtitle_history().match_history_items(*args, **kwargs)
-
-    def _timeline_task_for_target_id(self, *args, **kwargs):
-        return self._timeline_task_store().task_for_target_id(*args, **kwargs)
-
     def _set_timeline_task(self, *args, **kwargs):
         return self._timeline_task_store().set_task(*args, **kwargs)
 
@@ -592,14 +565,8 @@ class SubtitleManualUpload(_PluginBase):
     def _autosub_plugin(self, *args, **kwargs):
         return self._autosub_bridge().autosub_plugin(*args, **kwargs)
 
-    def _autosub_status(self, *args, **kwargs):
-        return self._autosub_bridge().autosub_status(*args, **kwargs)
-
     def _autosub_tasks_for_entries(self, *args, **kwargs):
         return self._autosub_bridge().autosub_tasks_for_entries(*args, **kwargs)
-
-    def _get_session_root(self, *args, **kwargs):
-        return self._upload_session_service().get_session_root(*args, **kwargs)
 
     def _cleanup_old_sessions(self, *args, **kwargs):
         return self._upload_session_service().cleanup_old_sessions(*args, **kwargs)
@@ -609,9 +576,6 @@ class SubtitleManualUpload(_PluginBase):
 
     def _remove_ext_marks(self, *args, **kwargs):
         return self._subtitle_inventory().remove_ext_marks(*args, **kwargs)
-
-    def _write_operations_to_disk(self, *args, **kwargs):
-        return self._subtitle_writer().write_operations_to_disk(*args, **kwargs)
 
     def _run_timeline_fix(self, *args, **kwargs):
         return self._subtitle_writer().run_timeline_fix(*args, **kwargs)
@@ -645,9 +609,6 @@ class SubtitleManualUpload(_PluginBase):
 
     def _auto_transfer_rate_status(self, *args, **kwargs):
         return self._auto_transfer_service().auto_transfer_rate_status(*args, **kwargs)
-
-    def _auto_transfer_queue_summary(self, *args, **kwargs):
-        return self._auto_transfer_service().auto_transfer_queue_summary(*args, **kwargs)
 
     def _auto_transfer_queue_loop(self, *args, **kwargs):
         return self._auto_transfer_service().auto_transfer_queue_loop(*args, **kwargs)
@@ -708,8 +669,8 @@ class SubtitleManualUpload(_PluginBase):
         if not entries:
             logger.info("[SubtitleManualUpload] 入库事件未解析到本地视频目标，跳过自动字幕搜索")
             return
-        self._merge_local_entries_cache(entries)
-        queued, skipped = self._auto_transfer_service().enqueue_transfer_auto_entries(entries)
+        self.services.local_media_catalog().merge_local_entries_cache(entries)
+        queued, skipped = self.services.auto_transfer().enqueue_transfer_auto_entries(entries)
         if skipped:
             logger.info("[SubtitleManualUpload] 入库自动字幕处理去重跳过重复目标 count=%s", skipped)
         if queued:

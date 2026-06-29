@@ -135,16 +135,17 @@ class SubtitleHistory:
                     continue
             filtered.append(item)
         cloned = owner._json_clone(filtered)
+        timeline_tasks = owner.services.timeline_tasks()
         for item in cloned:
             for target in item.get("targets") or []:
                 if isinstance(target, dict):
-                    target["timeline_task"] = owner._timeline_task_for_target_id(target.get("id"))
+                    target["timeline_task"] = timeline_tasks.task_for_target_id(target.get("id"))
         return cloned
 
     def match_history_items(self, *, keyword: str = "", media_type: str = "all") -> List[Dict[str, Any]]:
         owner = self._owner
-        media_catalog = owner._local_media_catalog()
-        target_resolver = owner._target_resolver()
+        media_catalog = owner.services.local_media_catalog()
+        target_resolver = owner.services.target_resolver()
         entries = media_catalog.load_local_entries(allow_stale=True)
         signature = self.match_history_signature(entries)
         cache = owner._match_history_cache or {}
@@ -211,7 +212,9 @@ class SubtitleHistory:
     ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
         owner = self._owner
         target_ids = [owner._normalize_text(item.get("target_id")) for item in requested_items if isinstance(item, dict)]
-        target_entries = owner._resolve_targets(target_ids)
+        services = owner.services
+        target_entries = services.local_media_catalog().resolve_targets(target_ids)
+        target_resolver = services.target_resolver()
         operations: List[Dict[str, Any]] = []
         skipped: List[Dict[str, Any]] = []
         failed: List[Dict[str, Any]] = []
@@ -227,7 +230,7 @@ class SubtitleHistory:
             if not entry:
                 skipped.append({"target_id": target_id, "reason": "目标视频已失效"})
                 continue
-            target = owner._target_from_entry(entry)
+            target = target_resolver.target_from_entry(entry)
             if target.get("is_stream"):
                 skipped.append({"target_id": target_id, "reason": "STRM 资源不启用智能调轴"})
                 continue
@@ -270,7 +273,7 @@ class SubtitleHistory:
                     "language_suffix": language_profile["suffix"],
                 }
                 try:
-                    operation = owner._subtitle_writer().build_write_operations(
+                    operation = services.writer().build_write_operations(
                         [item],
                         {upload_id: upload_info},
                         {target_id: entry},
