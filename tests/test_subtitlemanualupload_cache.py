@@ -161,6 +161,42 @@ class FakeForm:
         return list(value) if isinstance(value, list) else [value]
 
 
+def test_plugin_api_route_contract_is_stable():
+    module, _, _ = load_plugin_module()
+    plugin = module.SubtitleManualUpload.__new__(module.SubtitleManualUpload)
+
+    route_contract = [
+        (route["path"], tuple(route["methods"]), route.get("auth"), route.get("summary"))
+        for route in plugin.get_api()
+    ]
+
+    assert route_contract == [
+        ("/status", ("GET",), "bear", "获取字幕匹配插件状态"),
+        ("/refresh_index", ("POST",), "bear", "兼容旧版刷新索引入口"),
+        ("/search", ("GET",), "bear", "搜索 MoviePilot 本地资源候选"),
+        ("/targets", ("GET",), "bear", "读取选中媒体的本地文件目标"),
+        ("/match_history", ("GET",), "bear", "读取字幕匹配历史"),
+        ("/timeline_tasks", ("POST",), "bear", "查询智能调轴任务状态"),
+        ("/timeline_fix_existing", ("POST",), "bear", "对匹配历史中的外挂字幕执行智能调轴"),
+        ("/auto_transfer_queue", ("GET",), "bear", "查询入库自动字幕处理队列"),
+        ("/prepare_upload", ("POST",), "bear", "上传字幕并生成匹配预览"),
+        ("/apply_upload", ("POST",), "bear", "应用字幕匹配结果并写入目标目录"),
+        ("/clear_subtitles", ("POST",), "bear", "清空选中目标视频的外挂字幕"),
+        ("/delete_subtitle", ("POST",), "bear", "删除单个已匹配外挂字幕"),
+        ("/restore_subtitle_backup", ("POST",), "bear", "恢复智能调轴前的字幕备份"),
+        ("/ai_submit", ("POST",), "bear", "提交 AI 字幕生成任务"),
+        ("/ai_tasks", ("POST",), "bear", "查询当前资源的 AI 字幕生成任务状态"),
+        ("/ai_cancel", ("POST",), "bear", "取消 AI 字幕生成任务"),
+        ("/ai_restart", ("POST",), "bear", "重新生成 AI 字幕任务"),
+        ("/online_status", ("GET",), "bear", "获取在线字幕源状态"),
+        ("/online_manual_links", ("POST",), "bear", "生成在线字幕站手动搜索链接"),
+        ("/online_search", ("POST",), "bear", "搜索在线字幕"),
+        ("/online_search_provider", ("POST",), "bear", "搜索单个在线字幕源"),
+        ("/online_ai_submit", ("POST",), "bear", "提交在线外语字幕到 AI 翻译状态队列"),
+        ("/online_download_preview", ("POST",), "bear", "下载在线字幕并生成匹配预览"),
+    ]
+
+
 class FakeUpload:
     def __init__(self, filename, content):
         self.filename = filename
