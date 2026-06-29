@@ -3811,6 +3811,22 @@ def test_auto_subtitle_preference_config_normalizes_legacy_strings(tmp_path):
     assert ".sbv" in normalized["auto_subtitle_format_priority"]
     assert normalized["auto_ass_to_srt_for_ai"] is False
 
+    old_transfer_lock = plugin._transfer_auto_lock
+    plugin._entry_map["stale"] = {"id": "stale"}
+    plugin._media_index_cache["stale"] = {"items": []}
+    plugin._match_history_cache = {"loaded_at": "stale", "signature": "stale", "items": [{"id": "stale"}], "entry_count": 1, "persisted": True}
+    plugin._timeline_tasks["stale"] = {"status": "running"}
+    plugin._transfer_auto_recent = {"stale": 1.0}
+    plugin._auto_transfer_tasks["stale"] = {"status": "pending"}
+    plugin._auto_transfer_worker = object()
+    plugin._auto_transfer_stopping = True
+    plugin._auto_season_package_cache["stale"] = {"items": []}
+    plugin._cache_refreshing = True
+    plugin._cache_refresh_started_at = "stale"
+    plugin._cache_refresh_completed_at = "stale"
+    plugin._cache_refresh_error = "stale"
+    plugin._local_entries_cache = {"loaded_at": "stale", "entries": [{"id": "stale"}], "media_count": 1, "persisted": True}
+
     plugin.init_plugin(raw_config)
 
     assert plugin._auto_multi_subtitle_mode == "chinese_all"
@@ -3822,6 +3838,21 @@ def test_auto_subtitle_preference_config_normalizes_legacy_strings(tmp_path):
     assert module.SubtitleManualUpload._auto_subtitle_language_priority == plugin._auto_subtitle_language_priority
     assert module.SubtitleManualUpload._auto_subtitle_format_priority == plugin._auto_subtitle_format_priority
     assert module.SubtitleManualUpload._auto_ass_to_srt_for_ai == plugin._auto_ass_to_srt_for_ai
+    assert plugin._entry_map == {}
+    assert plugin._media_index_cache == {}
+    assert plugin._match_history_cache == {"loaded_at": None, "signature": "", "items": [], "entry_count": 0, "persisted": False}
+    assert plugin._timeline_tasks == {}
+    assert plugin._transfer_auto_recent == {}
+    assert plugin._transfer_auto_lock is not old_transfer_lock
+    assert plugin._auto_transfer_tasks == {}
+    assert plugin._auto_transfer_worker is None
+    assert plugin._auto_transfer_stopping is False
+    assert plugin._auto_season_package_cache == {}
+    assert plugin._cache_refreshing is False
+    assert plugin._cache_refresh_started_at == ""
+    assert plugin._cache_refresh_completed_at == ""
+    assert plugin._cache_refresh_error == ""
+    assert plugin._local_entries_cache == {"loaded_at": None, "entries": [], "media_count": 0, "persisted": False}
 
 
 def test_config_schema_default_config_covers_config_vue_bound_fields():

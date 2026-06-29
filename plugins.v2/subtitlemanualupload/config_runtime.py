@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import threading
+from collections import OrderedDict
 from typing import Any, Mapping
 
 
@@ -61,3 +63,21 @@ def apply_runtime_config(owner: Any, normalized_config: Mapping[str, Any]) -> No
 def sync_class_runtime_config(owner_cls: type, owner: Any) -> None:
     for attribute in CLASS_RUNTIME_CONFIG_FIELDS:
         setattr(owner_cls, attribute, getattr(owner, attribute))
+
+
+def reset_runtime_state(owner: Any) -> None:
+    owner._entry_map = OrderedDict()
+    owner._media_index_cache = OrderedDict()
+    owner._match_history_cache = {"loaded_at": None, "signature": "", "items": [], "entry_count": 0, "persisted": False}
+    owner._timeline_tasks = OrderedDict()
+    owner._transfer_auto_recent = {}
+    owner._transfer_auto_lock = threading.Lock()
+    owner._auto_transfer_tasks = OrderedDict()
+    owner._auto_transfer_worker = None
+    owner._auto_transfer_stopping = False
+    owner._auto_season_package_cache = OrderedDict()
+    owner._cache_refreshing = False
+    owner._cache_refresh_started_at = ""
+    owner._cache_refresh_completed_at = ""
+    owner._cache_refresh_error = ""
+    owner._local_entries_cache = {"loaded_at": None, "entries": [], "media_count": 0, "persisted": False}

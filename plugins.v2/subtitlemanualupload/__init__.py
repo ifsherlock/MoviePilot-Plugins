@@ -93,7 +93,7 @@ from .config_schema import (
     normalize_timeline_min_offset,
     normalize_timeline_vad_mode,
 )
-from .config_runtime import apply_runtime_config, sync_class_runtime_config
+from .config_runtime import apply_runtime_config, reset_runtime_state, sync_class_runtime_config
 from .subtitle_language import (
     DEFAULT_AUTO_FORMAT_PRIORITY,
     DEFAULT_AUTO_LANGUAGE_PRIORITY,
@@ -312,21 +312,7 @@ class SubtitleManualUpload(_PluginBase):
         if (config or {}).get("opensubtitles_username") and "@" in self._normalize_text((config or {}).get("opensubtitles_username")):
             logger.warning("[SubtitleManualUpload] OpenSubtitles 用户名疑似邮箱，已忽略下载认证用户名")
         sync_class_runtime_config(type(self), self)
-        self._entry_map = OrderedDict()
-        self._media_index_cache = OrderedDict()
-        self._match_history_cache = {"loaded_at": None, "signature": "", "items": [], "entry_count": 0, "persisted": False}
-        self._timeline_tasks = OrderedDict()
-        self._transfer_auto_recent = {}
-        self._transfer_auto_lock = threading.Lock()
-        self._auto_transfer_tasks = OrderedDict()
-        self._auto_transfer_worker = None
-        self._auto_transfer_stopping = False
-        self._auto_season_package_cache = OrderedDict()
-        self._cache_refreshing = False
-        self._cache_refresh_started_at = ""
-        self._cache_refresh_completed_at = ""
-        self._cache_refresh_error = ""
-        self._local_entries_cache = {"loaded_at": None, "entries": [], "media_count": 0, "persisted": False}
+        reset_runtime_state(self)
         self._restore_persisted_local_cache()
         self._restore_persisted_match_history_cache()
         self._save_config()
