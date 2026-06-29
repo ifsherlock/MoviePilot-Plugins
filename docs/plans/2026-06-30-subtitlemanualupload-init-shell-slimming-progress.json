@@ -2,7 +2,7 @@
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-init-shell-slimming-phased-plan.md",
   "status": {
     "phase": "phase-8",
-    "task": "8.1",
+    "task": "8.2",
     "next_allowed_action": "Implement the current task; after verified completion, advance to the next task or phase automatically"
   },
   "execution_rules": {
@@ -846,8 +846,39 @@
         {
           "id": "8.1",
           "title": "Run final inventory and automated acceptance checks",
-          "status": "pending",
-          "verification": [],
+          "status": "completed",
+          "verification": [
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile 'plugins.v2/subtitlemanualupload/__init__.py' 'plugins.v2/subtitlemanualupload/shell_helpers.py'",
+              "result": "passed",
+              "evidence": "compiled successfully"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_init_inventory.py --details",
+              "result": "passed",
+              "evidence": "line_count=366, method_count=12, runtime_helpers/service_delegates/ai_autosub_facade/archive_methods/auto_transfer_facade all count=0"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py -q",
+              "result": "passed",
+              "evidence": "4 passed in 1.33s"
+            },
+            {
+              "command": "rg -n \"compat\\.py|compat_core|compat_services|SubtitleManualUploadCompatMixin|install_compat_\" plugins.v2/subtitlemanualupload tests scripts -g \"*.py\"",
+              "result": "passed",
+              "evidence": "no matches"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py::test_service_wrappers_delegate_to_services_registry tests/test_subtitlemanualupload_cache.py::test_plugin_api_route_contract_is_stable -q",
+              "result": "passed",
+              "evidence": "2 passed in 0.10s"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "222 passed in 5.84s"
+            }
+          ],
           "commit": null
         },
         {
@@ -1106,6 +1137,20 @@
         "cache plus AutoSub cancel tests exited 0 with 163 passed",
         "baseline smoke exited 0 with 222 passed",
         "phase-7 acceptance satisfied; next task is phase-8 task 8.1"
+      ]
+    },
+    {
+      "task": "8.1",
+      "status": "completed",
+      "summary": "Moved the remaining dynamically installed runtime helpers, service accessors, and service delegates out of __init__.py into shell_helpers.py, leaving the main entry as a thin MoviePilot shell plus service registry access.",
+      "evidence": [
+        "inventory reported line_count=366 and method_count=12",
+        "runtime_helpers/service_delegates/ai_autosub_facade/archive_methods/auto_transfer_facade groups all reported count=0",
+        "compat layer grep over plugins, tests, and scripts returned no matches",
+        "inventory tests exited 0 with 4 passed",
+        "API route contract and service-wrapper delegation targeted tests exited 0 with 2 passed",
+        "baseline smoke exited 0 with 222 passed",
+        "phase-8 task 8.1 acceptance satisfied; next task is phase-8 task 8.2"
       ]
     }
   ],

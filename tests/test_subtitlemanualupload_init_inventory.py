@@ -55,32 +55,33 @@ def test_inventory_counts_current_plugin_class_methods():
     assert {item["name"] for item in inventory["methods"]} == {node.name for node in methods}
 
 
-def test_inventory_groups_main_entry_responsibilities_and_references():
+def test_inventory_groups_slim_main_entry_responsibilities_and_references():
     inventory_module = load_inventory_module()
     inventory = inventory_module.build_inventory(details=True)
     groups = inventory["method_groups"]
 
-    for group in (
-        "moviepilot_hooks",
-        "runtime_helpers",
-        "service_factories",
-        "service_delegates",
-        "config_runtime",
-    ):
+    for group in ("moviepilot_hooks", "service_factories", "config_runtime"):
         assert groups[group]["count"] > 0
         assert groups[group]["methods"]
 
+    assert inventory["line_count"] <= 450
+    assert inventory["method_count"] <= 25
     assert groups["archive_methods"]["count"] == 0
     assert groups["archive_methods"]["methods"] == []
+    assert groups["auto_transfer_facade"]["count"] == 0
+    assert groups["auto_transfer_facade"]["methods"] == []
     assert groups["ai_autosub_facade"]["count"] == 0
     assert groups["ai_autosub_facade"]["methods"] == []
+    assert groups["runtime_helpers"]["count"] == 0
+    assert groups["runtime_helpers"]["methods"] == []
+    assert groups["service_delegates"]["count"] == 0
+    assert groups["service_delegates"]["methods"] == []
     assert "init_plugin" in groups["moviepilot_hooks"]["methods"]
     assert "_save_config" in groups["config_runtime"]["methods"]
-    assert "_subtitle_writer" in groups["service_factories"]["methods"]
-    assert "_set_timeline_task" in groups["service_delegates"]["methods"]
+    assert groups["service_factories"]["methods"] == ["services"]
     assert "_submit_online_ai_translate" not in groups["ai_autosub_facade"]["methods"]
     assert "_submit_autosub_for_entries" not in groups["ai_autosub_facade"]["methods"]
-    assert inventory["source_references"].get("_subtitle_writer")
+    assert inventory["source_references"].get("services")
     assert inventory["test_references"].get("get_api")
 
 
