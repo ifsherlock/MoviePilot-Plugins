@@ -133,6 +133,10 @@ def plugin_submodule(module, name):
     return sys.modules[f"{module.__name__}.{name}"]
 
 
+def api_endpoint(plugin, path):
+    return next(route["endpoint"] for route in plugin.get_api() if route["path"] == path)
+
+
 class FakeRequest:
     def __init__(self, body=None, query_params=None):
         self._body = {} if body is None else body
@@ -1140,7 +1144,7 @@ def test_ai_submit_with_selected_external_subtitle_submits_matched_override(tmp_
     plugin._autosub_bridge = lambda: FakeBridge()
 
     response = asyncio.run(
-        plugin.api_ai_submit(
+        api_endpoint(plugin, "/ai_submit")(
             FakeRequest(
                 {
                     "target_ids": ["t1"],
@@ -1186,7 +1190,7 @@ def test_ai_submit_with_asr_source_policy_forwards_source_choice(tmp_path):
     plugin._autosub_bridge = lambda: FakeBridge()
 
     response = asyncio.run(
-        plugin.api_ai_submit(
+        api_endpoint(plugin, "/ai_submit")(
             FakeRequest(
                 {
                     "target_ids": ["t1"],
@@ -1287,7 +1291,7 @@ def test_api_ai_restart_accepts_task_ids_without_target_ids(tmp_path):
     )
     plugin._autosub_bridge = lambda: FakeBridge()
 
-    response = asyncio.run(plugin.api_ai_restart(FakeRequest({"task_ids": ["old-match"]})))
+    response = asyncio.run(api_endpoint(plugin, "/ai_restart")(FakeRequest({"task_ids": ["old-match"]})))
 
     assert response["success"] is True
     assert captured["entries"] == [entry]
@@ -1356,7 +1360,7 @@ def test_ai_restart_task_ids_for_locked_target_are_skipped(tmp_path):
     plugin._autosub_plugin = lambda: (FakeAutoSub(), "")
 
     response = asyncio.run(
-        plugin.api_ai_restart(
+        api_endpoint(plugin, "/ai_restart")(
             FakeRequest({"task_ids": ["locked-task"], "locked_target_ids": ["locked"]})
         )
     )
@@ -1425,7 +1429,7 @@ def test_api_ai_restart_task_ids_with_empty_target_cache_does_not_query_global_t
     plugin._entry_map.clear()
     plugin._autosub_plugin = lambda: (FakeAutoSub(), "")
 
-    response = asyncio.run(plugin.api_ai_restart(FakeRequest({"task_ids": ["global-task"]})))
+    response = asyncio.run(api_endpoint(plugin, "/ai_restart")(FakeRequest({"task_ids": ["global-task"]})))
 
     assert response["success"] is True
     assert called["tasks_payload"] is False
@@ -1455,7 +1459,7 @@ def test_api_ai_restart_all_requested_targets_locked_with_task_ids_does_not_fall
     plugin._restart_autosub_for_entries = fake_restart
 
     response = asyncio.run(
-        plugin.api_ai_restart(
+        api_endpoint(plugin, "/ai_restart")(
             FakeRequest({"target_ids": ["e1"], "task_ids": ["task-e1"], "locked_target_ids": ["e1"]})
         )
     )
@@ -1500,7 +1504,7 @@ def test_api_ai_restart_mixed_unlocked_and_locked_task_ids(tmp_path):
     plugin._autosub_plugin = lambda: (FakeAutoSub(), "")
 
     response = asyncio.run(
-        plugin.api_ai_restart(
+        api_endpoint(plugin, "/ai_restart")(
             FakeRequest(
                 {
                     "target_ids": ["e1", "e2"],
@@ -1526,7 +1530,7 @@ def test_api_ai_restart_stale_target_ids_with_task_ids_returns_400(tmp_path):
     plugin._remember_targets([{"id": "valid", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}])
 
     try:
-        asyncio.run(plugin.api_ai_restart(FakeRequest({"target_ids": ["missing"], "task_ids": ["task-1"]})))
+        asyncio.run(api_endpoint(plugin, "/ai_restart")(FakeRequest({"target_ids": ["missing"], "task_ids": ["task-1"]})))
     except module.HTTPException as exc:
         assert exc.status_code == 400
         assert "目标视频已失效" in exc.detail
@@ -1542,7 +1546,7 @@ def test_api_ai_restart_mixed_stale_target_ids_returns_400(tmp_path):
     plugin._remember_targets([{"id": "valid", "path": str(video), "basename": "Movie", "target_label": "Movie", "storage": "local"}])
 
     try:
-        asyncio.run(plugin.api_ai_restart(FakeRequest({"target_ids": ["valid", "missing"], "task_ids": ["task-1"]})))
+        asyncio.run(api_endpoint(plugin, "/ai_restart")(FakeRequest({"target_ids": ["valid", "missing"], "task_ids": ["task-1"]})))
     except module.HTTPException as exc:
         assert exc.status_code == 400
         assert "目标视频已失效" in exc.detail
@@ -1666,7 +1670,7 @@ def test_ai_tasks_empty_request_includes_tasks_by_target():
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
 
-    response = asyncio.run(plugin.api_ai_tasks(FakeRequest({})))
+    response = asyncio.run(api_endpoint(plugin, "/ai_tasks")(FakeRequest({})))
 
     assert response["success"] is True
     assert response["data"]["tasks_by_target"] == {}
@@ -2389,7 +2393,7 @@ def test_online_ai_submit_endpoint_downloads_fixes_and_does_not_create_preview(t
     entry, captured = setup_online_ai_translate(plugin, module, tmp_path)
 
     response = asyncio.run(
-        plugin.api_online_ai_submit(
+        api_endpoint(plugin, "/online_ai_submit")(
             FakeRequest(
                 {
                     "target_ids": ["m1"],
@@ -2446,7 +2450,7 @@ def test_online_ai_submit_endpoint_uses_online_ai_service(tmp_path):
     plugin._online_ai_service = lambda: FakeOnlineAiService()
 
     response = asyncio.run(
-        plugin.api_online_ai_submit(
+        api_endpoint(plugin, "/online_ai_submit")(
             FakeRequest(
                 {
                     "target_ids": ["m1"],
@@ -2516,7 +2520,7 @@ def test_online_ai_submit_stale_target_returns_400_without_name_error():
 
     try:
         asyncio.run(
-            plugin.api_online_ai_submit(
+            api_endpoint(plugin, "/online_ai_submit")(
                 FakeRequest(
                     {
                         "target_ids": ["missing"],
@@ -2543,7 +2547,7 @@ def test_online_ai_submit_mixed_stale_target_returns_400(tmp_path):
 
     try:
         asyncio.run(
-            plugin.api_online_ai_submit(
+            api_endpoint(plugin, "/online_ai_submit")(
                 FakeRequest(
                     {
                         "target_ids": ["m1", "missing"],
@@ -2565,7 +2569,7 @@ def test_online_ai_submit_can_allow_risky_offset_after_manual_confirm(tmp_path):
     _, captured = setup_online_ai_translate(plugin, module, tmp_path)
 
     response = asyncio.run(
-        plugin.api_online_ai_submit(
+        api_endpoint(plugin, "/online_ai_submit")(
             FakeRequest(
                 {
                     "target_ids": ["m1"],
@@ -2614,7 +2618,7 @@ def test_online_ai_submit_requires_timeline_fixer_before_download(tmp_path):
 
     try:
         asyncio.run(
-            plugin.api_online_ai_submit(
+            api_endpoint(plugin, "/online_ai_submit")(
                 FakeRequest(
                     {
                         "target_ids": ["m1"],

@@ -4,12 +4,14 @@ from typing import Any, Dict, List
 
 
 def build_api_routes(owner: Any) -> List[Dict[str, Any]]:
+    from .ai_api import AiApi
     from .catalog_api import CatalogApi
     from .online_api import OnlineApi
     from .status_api import StatusApi
     from .timeline_api import TimelineApi
     from .upload_api import UploadApi
 
+    ai_api = AiApi(owner)
     catalog_api = CatalogApi(owner)
     online_api = OnlineApi(owner)
     status_api = StatusApi(owner)
@@ -109,28 +111,28 @@ def build_api_routes(owner: Any) -> List[Dict[str, Any]]:
         },
         {
             "path": "/ai_submit",
-            "endpoint": owner.api_ai_submit,
+            "endpoint": ai_api.ai_submit,
             "methods": ["POST"],
             "auth": "bear",
             "summary": "提交 AI 字幕生成任务",
         },
         {
             "path": "/ai_tasks",
-            "endpoint": owner.api_ai_tasks,
+            "endpoint": ai_api.ai_tasks,
             "methods": ["POST"],
             "auth": "bear",
             "summary": "查询当前资源的 AI 字幕生成任务状态",
         },
         {
             "path": "/ai_cancel",
-            "endpoint": owner.api_ai_cancel,
+            "endpoint": ai_api.ai_cancel,
             "methods": ["POST"],
             "auth": "bear",
             "summary": "取消 AI 字幕生成任务",
         },
         {
             "path": "/ai_restart",
-            "endpoint": owner.api_ai_restart,
+            "endpoint": ai_api.ai_restart,
             "methods": ["POST"],
             "auth": "bear",
             "summary": "重新生成 AI 字幕任务",
@@ -165,7 +167,7 @@ def build_api_routes(owner: Any) -> List[Dict[str, Any]]:
         },
         {
             "path": "/online_ai_submit",
-            "endpoint": owner.api_online_ai_submit,
+            "endpoint": ai_api.online_ai_submit,
             "methods": ["POST"],
             "auth": "bear",
             "summary": "提交在线外语字幕到 AI 翻译状态队列",
