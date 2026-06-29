@@ -38,9 +38,11 @@ class UploadApi:
         source: str = "upload",
     ) -> Dict[str, Any]:
         owner = self.owner
+        services = owner.services
         unsupported_files = unsupported_files or []
         invalid_files = invalid_files or []
-        targets = [owner._target_from_entry(item) for item in target_entries]
+        target_resolver = services.target_resolver()
+        targets = [target_resolver.target_from_entry(item) for item in target_entries]
         preview_items: List[Dict[str, Any]] = []
         for prepared in prepared_uploads:
             file_path = Path(prepared["stored_path"])
@@ -60,7 +62,7 @@ class UploadApi:
 
         fill_missing_target_ids(preview_items, targets, extract_episode_hint=owner._extract_episode_hint)
         target_lookup = {item["id"]: item for item in targets if item.get("id")}
-        subtitle_writer = owner._subtitle_writer()
+        subtitle_writer = services.writer()
         for item in preview_items:
             target = target_lookup.get(item.get("target_id"))
             item["output_name"] = subtitle_writer.build_destination_name(target, item) if target else ""
@@ -73,7 +75,7 @@ class UploadApi:
             "uploads": prepared_uploads,
             "source": source,
         }
-        owner._write_session(session_id, session_payload)
+        services.upload_session().write_session(session_id, session_payload)
 
         resolved_count = len([item for item in preview_items if item.get("target_id")])
         message = f"已解析 {len(preview_items)} 个字幕文件，自动匹配 {resolved_count} 个。"
@@ -120,7 +122,7 @@ class UploadApi:
             logger.warning("[SubtitleManualUpload] 上传预览失败：目标列表为空")
             raise HTTPException(status_code=400, detail="请至少选择一个目标视频")
 
-        target_entries = list(owner._resolve_targets(target_ids).values())
+        target_entries = list(owner.services.local_media_catalog().resolve_targets(target_ids).values())
         if not target_entries:
             logger.warning(
                 "[SubtitleManualUpload] 上传预览失败：目标视频已失效 target_ids=%s",
@@ -144,7 +146,7 @@ class UploadApi:
             owner._brief_ids(target_ids),
         )
 
-        upload_session = owner._upload_session_service()
+        upload_session = owner.services.upload_session()
         session_id = owner._hash_text(f"{datetime.now().isoformat()}|{','.join(sorted(map(str, target_ids)))}")[:16]
         session_dir = upload_session.get_session_root() / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
@@ -230,7 +232,7 @@ class UploadApi:
                 message="没有写入字幕，锁定项已跳过",
             )
 
-        payload, message = owner._subtitle_writer().apply_upload_session(
+        payload, message = owner.services.writer().apply_upload_session(
             session_id=session_id,
             items=items,
             locked_skipped=locked_skipped,
@@ -260,7 +262,7 @@ class UploadApi:
             logger.warning("[SubtitleManualUpload] 清空外挂字幕失败：目标列表为空")
             raise HTTPException(status_code=400, detail="请至少选择一个目标视频")
 
-        target_entries = owner._resolve_targets(target_ids)
+        target_entries = owner.services.local_media_catalog().resolve_targets(target_ids)
         if not target_entries:
             logger.warning(
                 "[SubtitleManualUpload] 清空外挂字幕失败：目标视频已失效 target_ids=%s",
@@ -268,7 +270,7 @@ class UploadApi:
             )
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新搜索媒体并选择季度/文件")
 
-        payload, message = owner._subtitle_writer().clear_subtitles(
+        payload, message = owner.services.writer().clear_subtitles(
             target_ids,
             target_entries,
             locked_skipped,
@@ -295,12 +297,12 @@ class UploadApi:
         if not subtitle_path_raw and not subtitle_name:
             raise HTTPException(status_code=400, detail="请指定要删除的字幕")
 
-        target_entries = owner._resolve_targets([target_id])
+        target_entries = owner.services.local_media_catalog().resolve_targets([target_id])
         target_entry = target_entries.get(target_id)
         if not target_entry:
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新搜索媒体并选择季度/文件")
 
-        payload, message = owner._subtitle_writer().delete_subtitle(
+        payload, message = owner.services.writer().delete_subtitle(
             target_id=target_id,
             target_entry=target_entry,
             subtitle_path_raw=subtitle_path_raw,
@@ -326,12 +328,12 @@ class UploadApi:
         if not subtitle_path_raw and not subtitle_name:
             raise HTTPException(status_code=400, detail="请指定要恢复的字幕")
 
-        target_entries = owner._resolve_targets([target_id])
+        target_entries = owner.services.local_media_catalog().resolve_targets([target_id])
         target_entry = target_entries.get(target_id)
         if not target_entry:
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新搜索媒体并选择季度/文件")
 
-        payload, message = owner._subtitle_writer().restore_subtitle_backup(
+        payload, message = owner.services.writer().restore_subtitle_backup(
             target_id=target_id,
             target_entry=target_entry,
             subtitle_path_raw=subtitle_path_raw,

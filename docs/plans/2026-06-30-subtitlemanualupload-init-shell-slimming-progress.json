@@ -2,7 +2,7 @@
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-init-shell-slimming-phased-plan.md",
   "status": {
     "phase": "phase-5",
-    "task": "5.2",
+    "task": "5.3",
     "next_allowed_action": "Implement the current task; after verified completion, advance to the next task or phase automatically"
   },
   "execution_rules": {
@@ -507,8 +507,44 @@
         {
           "id": "5.2",
           "title": "Migrate API modules and tests to service registry access",
-          "status": "pending",
-          "verification": [],
+          "status": "completed",
+          "verification": [
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile plugins.v2/subtitlemanualupload/api/ai_api.py plugins.v2/subtitlemanualupload/api/catalog_api.py plugins.v2/subtitlemanualupload/api/online_api.py plugins.v2/subtitlemanualupload/api/status_api.py plugins.v2/subtitlemanualupload/api/timeline_api.py plugins.v2/subtitlemanualupload/api/upload_api.py tests/test_subtitlemanualupload_cache.py",
+              "result": "passed",
+              "evidence": "compiled successfully"
+            },
+            {
+              "command": "rg -n \"owner\\._(?:upload_session_service|subtitle_writer|subtitle_history|autosub_bridge|online_ai_service|auto_transfer_service|target_resolver|local_media_catalog|media_metadata_service|timeline_task_store|online_service|subtitle_inventory)\\b|owner\\._(?:load_local_entries|group_entries_as_media|resolve_targets|target_from_entry|timeline_task_for_target_id|timeline_tasks_for_entries|autosub_status|autosub_tasks_for_entries|get_session_root|write_session|write_operations_to_disk|run_timeline_fix|auto_transfer_queue_summary|start_background_cache_refresh|match_history_items|invalidate_match_history_cache|build_entry_from_history|entries_from_transfer_event|merge_local_entries_cache|remove_ext_marks|set_timeline_task)\\b\" plugins.v2/subtitlemanualupload/api -g \"*.py\"",
+              "result": "passed",
+              "evidence": "no API owner private service delegate references remain"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py::test_plugin_api_route_contract_is_stable -q",
+              "result": "passed",
+              "evidence": "1 passed in 0.13s"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py -q",
+              "result": "passed",
+              "evidence": "167 passed in 5.11s"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py -q",
+              "result": "passed",
+              "evidence": "4 passed in 4.33s"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_init_inventory.py --details",
+              "result": "passed",
+              "evidence": "line_count=852, method_count=123, service_delegates count=53, service_factories count=15"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "220 passed in 5.61s"
+            }
+          ],
           "commit": null
         },
         {
@@ -756,6 +792,20 @@
         "inventory reported line_count=852, method_count=123, service_factories count=15",
         "baseline smoke exited 0 with 220 passed",
         "next task is phase-5 task 5.2"
+      ]
+    },
+    {
+      "task": "5.2",
+      "status": "completed",
+      "summary": "Migrated API modules from main-entry private service delegates to owner.services and updated API-focused tests to override the service registry directly.",
+      "evidence": [
+        "API private service delegate grep under plugins.v2/subtitlemanualupload/api returned no matches",
+        "API route contract exited 0 with 1 passed",
+        "cache+online tests exited 0 with 167 passed",
+        "inventory tests exited 0 with 4 passed",
+        "inventory reported line_count=852, method_count=123, service_delegates count=53",
+        "baseline smoke exited 0 with 220 passed",
+        "next task is phase-5 task 5.3"
       ]
     }
   ],

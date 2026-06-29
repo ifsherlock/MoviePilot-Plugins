@@ -15,9 +15,13 @@ class StatusApi:
 
     def status(self) -> Dict[str, Any]:
         owner = self.owner
-        archive_dependency = owner._archive_dependency_service()
+        services = owner.services
+        archive_dependency = services.archive_dependency()
         rar_tool = archive_dependency.rar_tool()
         rar_python = archive_dependency.rar_python_available()
+        local_media_catalog = services.local_media_catalog()
+        auto_transfer = services.auto_transfer()
+        autosub_bridge = services.autosub_bridge()
         return owner._ok(
             {
                 "enabled": owner.get_state(),
@@ -26,7 +30,7 @@ class StatusApi:
                 "auto_transfer_subtitle_strategy": owner._auto_transfer_subtitle_strategy,
                 "traditional_to_simplified": bool(owner._traditional_to_simplified),
                 "source": "MoviePilot 本地整理记录",
-                "index": owner._local_media_catalog().cache_status(),
+                "index": local_media_catalog.cache_status(),
                 "archive_support": {
                     "zip": True,
                     "rar": bool(rar_tool),
@@ -54,15 +58,16 @@ class StatusApi:
                         owner._opensubtitles_username and owner._opensubtitles_password
                     ),
                 },
-                "auto_transfer_queue": owner._auto_transfer_queue_summary(),
-                "ai_subtitle": owner._autosub_status(),
+                "auto_transfer_queue": auto_transfer.auto_transfer_queue_summary(),
+                "ai_subtitle": autosub_bridge.autosub_status(),
             }
         )
 
     def refresh_index(self) -> Dict[str, Any]:
         owner = self.owner
-        owner._start_background_cache_refresh()
-        cache_status = owner._local_media_catalog().cache_status()
+        local_media_catalog = owner.services.local_media_catalog()
+        local_media_catalog.start_background_cache_refresh()
+        cache_status = local_media_catalog.cache_status()
         has_cache = bool((owner._local_entries_cache or {}).get("entries"))
         message = "媒体库资源清单已在后台刷新"
         if has_cache:
@@ -81,4 +86,4 @@ class StatusApi:
     def auto_transfer_queue(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         limit = min(max(owner._safe_int(request.query_params.get("limit"), 100), 1), 200)
-        return owner._ok(owner._auto_transfer_service().auto_transfer_queue_snapshot(limit=limit))
+        return owner._ok(owner.services.auto_transfer().auto_transfer_queue_snapshot(limit=limit))

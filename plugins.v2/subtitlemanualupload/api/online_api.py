@@ -28,11 +28,12 @@ def download_online_results_to_uploads(
     session_dir: Path,
     upload_session: Optional[Any] = None,
 ) -> Tuple[List[Dict[str, Any]], List[str], List[Dict[str, str]]]:
-    upload_session = upload_session or owner._upload_session_service()
+    services = owner.services
+    upload_session = upload_session or services.upload_session()
     prepared_uploads: List[Dict[str, Any]] = []
     unsupported_files: List[str] = []
     invalid_files: List[Dict[str, str]] = []
-    downloads = owner._online_service().download(selected_results)
+    downloads = services.online_subtitles().download(selected_results)
     for downloaded in downloads:
         result = downloaded.get("result") or {}
         source_name = upload_session.normalize_online_download_name(
@@ -80,7 +81,7 @@ class OnlineApi:
 
     def online_status(self) -> Dict[str, Any]:
         owner = self.owner
-        status = owner._online_service().status()
+        status = owner.services.online_subtitles().status()
         status["enabled_providers"] = owner._online_provider_ids
         status["online_engine"] = owner._online_engine
         status["provider_roots"] = owner._online_site_urls
@@ -96,19 +97,21 @@ class OnlineApi:
 
     async def online_manual_links(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
+        services = owner.services
         body = await request.json()
         target_ids = target_ids_from_body(body, owner._normalize_text)
         if not target_ids:
             raise HTTPException(status_code=400, detail="请先选择要搜索字幕的本地视频")
-        target_entries = list(owner._resolve_targets(target_ids).values())
+        target_entries = list(services.local_media_catalog().resolve_targets(target_ids).values())
         if not target_entries:
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
-        targets = [owner._target_from_entry(item) for item in target_entries]
+        target_resolver = services.target_resolver()
+        targets = [target_resolver.target_from_entry(item) for item in target_entries]
         keywords = online_keywords(body, targets, owner._normalize_text, build_search_keywords)
         if not keywords:
             raise HTTPException(status_code=400, detail="没有可用搜索关键词，请手动输入关键词")
         providers = list(owner._manual_online_provider_ids)
-        links = owner._online_service().manual_links(keywords, providers=providers)
+        links = services.online_subtitles().manual_links(keywords, providers=providers)
         logger.info(
             "[SubtitleManualUpload] 在线字幕手动链接生成 target_count=%s keywords=%s providers=%s",
             len(targets),
@@ -124,14 +127,16 @@ class OnlineApi:
 
     async def online_search(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
+        services = owner.services
         body = await request.json()
         target_ids = target_ids_from_body(body, owner._normalize_text)
         if not target_ids:
             raise HTTPException(status_code=400, detail="请先选择要搜索字幕的本地视频")
-        target_entries = list(owner._resolve_targets(target_ids).values())
+        target_entries = list(services.local_media_catalog().resolve_targets(target_ids).values())
         if not target_entries:
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
-        targets = [owner._target_from_entry(item) for item in target_entries]
+        target_resolver = services.target_resolver()
+        targets = [target_resolver.target_from_entry(item) for item in target_entries]
         keywords = online_keywords(body, targets, owner._normalize_text, build_search_keywords)
         if not keywords:
             raise HTTPException(status_code=400, detail="没有可用搜索关键词，请手动输入关键词")
@@ -146,7 +151,7 @@ class OnlineApi:
             raise HTTPException(status_code=400, detail="请至少选择一个在线字幕源")
         owner._check_online_rate_limit(providers)
         scope = owner._normalize_text(body.get("scope")) or "auto"
-        service = owner._online_service()
+        service = services.online_subtitles()
         search_result = await run_in_threadpool(
             service.search,
             keywords=keywords,
@@ -175,14 +180,16 @@ class OnlineApi:
 
     async def online_search_provider(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
+        services = owner.services
         body = await request.json()
         target_ids = target_ids_from_body(body, owner._normalize_text)
         if not target_ids:
             raise HTTPException(status_code=400, detail="请先选择要搜索字幕的本地视频")
-        target_entries = list(owner._resolve_targets(target_ids).values())
+        target_entries = list(services.local_media_catalog().resolve_targets(target_ids).values())
         if not target_entries:
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
-        targets = [owner._target_from_entry(item) for item in target_entries]
+        target_resolver = services.target_resolver()
+        targets = [target_resolver.target_from_entry(item) for item in target_entries]
         keywords = online_keywords(body, targets, owner._normalize_text, build_search_keywords)
         if not keywords:
             raise HTTPException(status_code=400, detail="没有可用搜索关键词，请手动输入关键词")
@@ -197,7 +204,7 @@ class OnlineApi:
             raise HTTPException(status_code=400, detail="未知或未启用的在线字幕源")
         owner._check_online_rate_limit(providers)
         scope = owner._normalize_text(body.get("scope")) or "auto"
-        service = owner._online_service()
+        service = services.online_subtitles()
         search_result = await run_in_threadpool(
             service.search,
             keywords=keywords,
@@ -225,6 +232,7 @@ class OnlineApi:
 
     async def online_download_preview(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
+        services = owner.services
         body = await request.json()
         target_ids = target_ids_from_body(body, owner._normalize_text)
         locked_ids = locked_target_ids_from_body(body, owner._normalize_text)
@@ -233,7 +241,7 @@ class OnlineApi:
             if locked_skipped:
                 raise HTTPException(status_code=423, detail="选中的目标均已锁定，不能下载写入在线字幕")
             raise HTTPException(status_code=400, detail="请先选择要写入字幕的本地视频")
-        target_entries = list(owner._resolve_targets(target_ids).values())
+        target_entries = list(services.local_media_catalog().resolve_targets(target_ids).values())
         if not target_entries:
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
         if len(target_entries) != len(set(target_ids)):
@@ -244,7 +252,7 @@ class OnlineApi:
         submit_ai_translate = bool(body.get("submit_ai_translate"))
         allow_risky_offset = bool(body.get("allow_risky_offset")) if isinstance(body, dict) else False
         if submit_ai_translate:
-            online_ai_service = owner._online_ai_service()
+            online_ai_service = services.online_ai()
             return await run_in_threadpool(
                 online_ai_service.submit_online_ai_translate,
                 target_entries,
@@ -253,7 +261,7 @@ class OnlineApi:
             )
         owner._check_online_rate_limit([item.get("provider") for item in selected_results if isinstance(item, dict)])
 
-        upload_session = owner._upload_session_service()
+        upload_session = services.upload_session()
         session_id = owner._hash_text(f"online|{datetime.now().isoformat()}|{','.join(sorted(map(str, target_ids)))}")[:16]
         session_dir = upload_session.get_session_root() / session_id
         session_dir.mkdir(parents=True, exist_ok=True)

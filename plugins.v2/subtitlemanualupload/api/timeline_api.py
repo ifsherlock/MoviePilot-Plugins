@@ -19,7 +19,7 @@ class TimelineApi:
         self,
         requested_items: List[Dict[str, Any]],
     ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]], List[Dict[str, Any]]]:
-        return self.owner._subtitle_history().existing_timeline_operations(requested_items)
+        return self.owner.services.history().existing_timeline_operations(requested_items)
 
     def _run_existing_timeline_fix(
         self,
@@ -27,7 +27,7 @@ class TimelineApi:
         operations: List[Dict[str, Any]],
         allow_risky_offset: bool = False,
     ) -> None:
-        self.owner._subtitle_writer().run_existing_timeline_fix(
+        self.owner.services.writer().run_existing_timeline_fix(
             session_dir,
             operations,
             allow_risky_offset=allow_risky_offset,
@@ -89,10 +89,11 @@ class TimelineApi:
                 },
                 message="没有可提交智能调轴的历史字幕",
             )
+        timeline_tasks = owner.services.timeline_tasks()
         for operation in operations:
-            owner._set_timeline_task(operation, status="pending", message="等待历史字幕智能调轴")
+            timeline_tasks.set_task(operation, status="pending", message="等待历史字幕智能调轴")
         session_id = owner._hash_text(f"existing-timeline|{datetime.now().isoformat()}|{len(operations)}")[:16]
-        session_dir = owner._get_session_root() / session_id
+        session_dir = owner.services.upload_session().get_session_root() / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
         threading.Thread(
             target=self._run_existing_timeline_fix,
@@ -101,7 +102,7 @@ class TimelineApi:
             daemon=True,
         ).start()
         target_entries = [operation["target_entry"] for operation in operations]
-        task_data = owner._timeline_tasks_for_entries(target_entries)
+        task_data = timeline_tasks.tasks_for_entries(target_entries)
         return owner._ok(
             {
                 "accepted": len(operations),
@@ -124,7 +125,7 @@ class TimelineApi:
                     "task_by_target": {},
                 }
             )
-        target_entries = list(owner._resolve_targets(target_ids).values())
+        target_entries = list(owner.services.local_media_catalog().resolve_targets(target_ids).values())
         if not target_entries:
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
-        return owner._ok(owner._timeline_tasks_for_entries(target_entries))
+        return owner._ok(owner.services.timeline_tasks().tasks_for_entries(target_entries))

@@ -241,6 +241,22 @@ def api_endpoint(plugin, path):
     return next(route["endpoint"] for route in plugin.get_api() if route["path"] == path)
 
 
+class ServiceOverrideRegistry:
+    def __init__(self, base_registry, **services):
+        self._base_registry = base_registry
+        self._services = services
+
+    def __getattr__(self, name):
+        if name in self._services:
+            return lambda *args, **kwargs: self._services[name]
+        return getattr(self._base_registry, name)
+
+
+def override_services(plugin, **services):
+    plugin._services_registry = ServiceOverrideRegistry(plugin.services, **services)
+    return plugin._services_registry
+
+
 class FakeRequest:
     def __init__(self, body=None, query_params=None):
         self._body = {} if body is None else body
@@ -865,7 +881,7 @@ def test_online_search_endpoint_uses_online_service(tmp_path):
             captured["manual_links"] = {"keywords": keywords, "providers": providers}
             return [{"provider": "assrt", "url": "https://example.invalid/search"}]
 
-    plugin._online_service = lambda: FakeOnlineService()
+    override_services(plugin, online_subtitles=FakeOnlineService())
     search_endpoint = next(route["endpoint"] for route in plugin.get_api() if route["path"] == "/online_search")
 
     response = asyncio.run(
@@ -999,7 +1015,7 @@ def test_online_download_preview_uses_upload_session_service(tmp_path):
                 }
             ]
 
-    plugin._online_service = lambda: FakeOnlineService()
+    override_services(plugin, online_subtitles=FakeOnlineService())
     download_endpoint = next(route["endpoint"] for route in plugin.get_api() if route["path"] == "/online_download_preview")
 
     response = asyncio.run(
@@ -1462,7 +1478,7 @@ def test_ai_submit_with_selected_external_subtitle_submits_matched_override(tmp_
     plugin._submit_autosub_for_entries = lambda *args, **kwargs: (_ for _ in ()).throw(
         AssertionError("api_ai_submit should call AutoSubBridge directly")
     )
-    plugin._autosub_bridge = lambda: FakeBridge()
+    override_services(plugin, autosub_bridge=FakeBridge())
 
     response = asyncio.run(
         api_endpoint(plugin, "/ai_submit")(
@@ -1508,7 +1524,7 @@ def test_ai_submit_with_asr_source_policy_forwards_source_choice(tmp_path):
     plugin._submit_autosub_for_entries = lambda *args, **kwargs: (_ for _ in ()).throw(
         AssertionError("api_ai_submit should call AutoSubBridge directly")
     )
-    plugin._autosub_bridge = lambda: FakeBridge()
+    override_services(plugin, autosub_bridge=FakeBridge())
 
     response = asyncio.run(
         api_endpoint(plugin, "/ai_submit")(
@@ -1610,7 +1626,7 @@ def test_api_ai_restart_accepts_task_ids_without_target_ids(tmp_path):
     plugin._restart_autosub_for_entries = lambda *args, **kwargs: (_ for _ in ()).throw(
         AssertionError("api_ai_restart should call AutoSubBridge directly")
     )
-    plugin._autosub_bridge = lambda: FakeBridge()
+    override_services(plugin, autosub_bridge=FakeBridge())
 
     response = asyncio.run(api_endpoint(plugin, "/ai_restart")(FakeRequest({"task_ids": ["old-match"]})))
 
@@ -2128,7 +2144,7 @@ def test_api_search_uses_local_media_catalog_service(tmp_path):
             captured.update(kwargs)
             return [{"title": "A"}], 1
 
-    plugin._local_media_catalog = lambda: FakeCatalog()
+    override_services(plugin, local_media_catalog=FakeCatalog())
 
     search_endpoint = next(route["endpoint"] for route in plugin.get_api() if route["path"] == "/search")
     response = asyncio.run(
@@ -2168,7 +2184,7 @@ def test_api_targets_uses_media_target_resolver_directly(tmp_path):
                 "selected_season": "",
             }
 
-    plugin._target_resolver = lambda: FakeResolver()
+    override_services(plugin, target_resolver=FakeResolver())
 
     targets_endpoint = next(route["endpoint"] for route in plugin.get_api() if route["path"] == "/targets")
     response = targets_endpoint(
@@ -2596,7 +2612,7 @@ def setup_online_ai_translate(plugin, module, tmp_path):
             score=0.95,
         )
 
-    plugin._online_service = lambda: FakeOnlineService()
+    override_services(plugin, online_subtitles=FakeOnlineService())
     plugin._submit_autosub_for_entries = fake_submit
     setattr(plugin, "_suggest" + "_target", lambda *args, **kwargs: (_ for _ in ()).throw(
         AssertionError("online AI should call target_resolver.suggest_target directly")
@@ -2817,7 +2833,7 @@ def test_online_ai_submit_endpoint_uses_online_ai_service(tmp_path):
     plugin._submit_online_ai_translate = lambda *args, **kwargs: (_ for _ in ()).throw(
         AssertionError("api_online_ai_submit should call OnlineAiService directly")
     )
-    plugin._online_ai_service = lambda: FakeOnlineAiService()
+    override_services(plugin, online_ai=FakeOnlineAiService())
 
     response = asyncio.run(
         api_endpoint(plugin, "/online_ai_submit")(
@@ -2864,7 +2880,7 @@ def test_online_download_preview_submit_ai_uses_online_ai_service(tmp_path):
     plugin._submit_online_ai_translate = lambda *args, **kwargs: (_ for _ in ()).throw(
         AssertionError("online_download_preview endpoint should call OnlineAiService directly for submit_ai_translate")
     )
-    plugin._online_ai_service = lambda: FakeOnlineAiService()
+    override_services(plugin, online_ai=FakeOnlineAiService())
     download_endpoint = next(route["endpoint"] for route in plugin.get_api() if route["path"] == "/online_download_preview")
 
     response = asyncio.run(
@@ -2979,7 +2995,11 @@ def test_online_ai_submit_requires_timeline_fixer_before_download(tmp_path):
             }
         ]
     )
-    plugin._online_service = lambda: (_ for _ in ()).throw(AssertionError("timeline check should run before download"))
+    class DownloadShouldNotRun:
+        def download(self, selected):
+            raise AssertionError("timeline check should run before download")
+
+    override_services(plugin, online_subtitles=DownloadShouldNotRun())
     module.check_timeline_fixer_dependencies = lambda: {
         "available": False,
         "ffmpeg": "",
@@ -3171,7 +3191,7 @@ def test_listen_transfer_complete_uses_auto_transfer_service_directly(tmp_path):
 
     plugin._entries_from_transfer_event = lambda event_data: [entry]
     plugin._merge_local_entries_cache = lambda entries: merged.setdefault("entries", entries)
-    plugin._auto_transfer_service = lambda: FakeAutoTransferService()
+    override_services(plugin, auto_transfer=FakeAutoTransferService())
 
     plugin.listen_transfer_complete(types.SimpleNamespace(event_data={"path": str(tmp_path / "Movie.mkv")}))
 
@@ -3189,7 +3209,7 @@ def test_api_auto_transfer_queue_uses_auto_transfer_service_directly():
             captured["limit"] = limit
             return {"summary": {"total": 0}, "tasks": []}
 
-    plugin._auto_transfer_service = lambda: FakeAutoTransferService()
+    override_services(plugin, auto_transfer=FakeAutoTransferService())
 
     queue_endpoint = next(route["endpoint"] for route in plugin.get_api() if route["path"] == "/auto_transfer_queue")
     response = queue_endpoint(FakeRequest(query_params={"limit": "500"}))
