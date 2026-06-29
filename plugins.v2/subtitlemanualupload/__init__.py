@@ -590,6 +590,130 @@ class SubtitleManualUpload(SubtitleManualUploadCompatMixin, _PluginBase):
         return make_archive_dependency_service(cls, status_setter=status_setter)
 
     @classmethod
+    def _rar_tool(cls) -> str:
+        return cls._archive_dependency_service().rar_tool()
+
+    @classmethod
+    def _sevenzip_tool(cls) -> str:
+        return cls._archive_dependency_service().sevenzip_tool()
+
+    @classmethod
+    def _rar_python_available(cls) -> bool:
+        return cls._archive_dependency_service().rar_python_available()
+
+    @classmethod
+    def _rarfile_module(cls):
+        return cls._archive_dependency_service().rarfile_module()
+
+    @classmethod
+    def _run_archive_command(cls, args: List[str], timeout: int = 120) -> bytes:
+        return cls._archive_dependency_service().run_archive_command(args, timeout=timeout)
+
+    @classmethod
+    def _list_rar_members(cls, archive_path: Path, tool_path: str) -> List[str]:
+        return upload_list_rar_members(
+            archive_path,
+            tool_path,
+            decode_preview_bytes=cls._decode_preview_bytes,
+            run_command=cls._run_archive_command,
+        )
+
+    @classmethod
+    def _read_rar_member(cls, archive_path: Path, member: str, tool_path: str) -> bytes:
+        return upload_read_rar_member(
+            archive_path,
+            member,
+            tool_path,
+            run_command=cls._run_archive_command,
+        )
+
+    @classmethod
+    def _extract_rar_subtitle_files_with_rarfile(
+        cls,
+        source_name: str,
+        archive_path: Path,
+        session_dir: Path,
+        resource_limits: ArchiveResourceLimits = DEFAULT_ARCHIVE_RESOURCE_LIMITS,
+    ) -> List[Dict[str, Any]]:
+        return upload_extract_rar_subtitle_files_with_rarfile(
+            source_name,
+            archive_path,
+            session_dir,
+            rarfile_module_factory=cls._rarfile_module,
+            rar_python_package=cls._rar_python_package,
+            subtitle_exts=cls._subtitle_exts,
+            hash_text=cls._hash_text,
+            resource_limits=resource_limits,
+        )
+
+    @classmethod
+    def _extract_rar_subtitle_files(
+        cls,
+        source_name: str,
+        archive_path: Path,
+        session_dir: Path,
+        resource_limits: ArchiveResourceLimits = DEFAULT_ARCHIVE_RESOURCE_LIMITS,
+    ) -> List[Dict[str, Any]]:
+        return upload_extract_rar_subtitle_files(
+            source_name,
+            archive_path,
+            session_dir,
+            rar_python_available_func=cls._rar_python_available,
+            extract_with_rarfile=cls._extract_rar_subtitle_files_with_rarfile,
+            rar_tool_func=cls._rar_tool,
+            extract_command_archive_subtitle_files_func=cls._extract_command_archive_subtitle_files,
+            rar_python_package=cls._rar_python_package,
+            logger_warning=logger.warning,
+            resource_limits=resource_limits,
+        )
+
+    @classmethod
+    def _extract_7z_subtitle_files(
+        cls,
+        source_name: str,
+        archive_path: Path,
+        session_dir: Path,
+        resource_limits: ArchiveResourceLimits = DEFAULT_ARCHIVE_RESOURCE_LIMITS,
+    ) -> List[Dict[str, Any]]:
+        return upload_extract_7z_subtitle_files(
+            source_name,
+            archive_path,
+            session_dir,
+            sevenzip_tool_func=cls._sevenzip_tool,
+            extract_command_archive_subtitle_files_func=cls._extract_command_archive_subtitle_files,
+            resource_limits=resource_limits,
+        )
+
+    @classmethod
+    def _extract_command_archive_subtitle_files(
+        cls,
+        source_name: str,
+        archive_path: Path,
+        session_dir: Path,
+        tool_path: str,
+        resource_limits: ArchiveResourceLimits = DEFAULT_ARCHIVE_RESOURCE_LIMITS,
+    ) -> List[Dict[str, Any]]:
+        return upload_extract_command_archive_subtitle_files(
+            source_name,
+            archive_path,
+            session_dir,
+            tool_path,
+            subtitle_exts=cls._subtitle_exts,
+            hash_text=cls._hash_text,
+            list_members=cls._list_rar_members,
+            read_member=cls._read_rar_member,
+            resource_limits=resource_limits,
+        )
+
+    @classmethod
+    def _extract_subtitle_files(cls, upload_name: str, raw_bytes: bytes, session_dir: Path) -> List[Dict[str, Any]]:
+        return cls._upload_session_service_for_path(session_dir.parent).extract_subtitle_files(
+            upload_name,
+            raw_bytes,
+            session_dir,
+        )
+
+    @classmethod
     def _upload_session_service_for_path(cls, data_path: Path):
         return make_upload_session_service_for_path(cls, data_path)
 

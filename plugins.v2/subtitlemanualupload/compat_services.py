@@ -77,21 +77,6 @@ def install_legacy_service_delegates(cls, specs: Tuple[Tuple[str, str, str], ...
         setattr(cls, legacy_name, method)
 
 
-def install_compat_archive_methods(cls) -> None:
-    cls._rar_tool = classmethod(lambda owner_cls: archive_dependency_service(owner_cls).rar_tool())
-    cls._sevenzip_tool = classmethod(lambda owner_cls: archive_dependency_service(owner_cls).sevenzip_tool())
-    cls._rar_python_available = classmethod(lambda owner_cls: archive_dependency_service(owner_cls).rar_python_available())
-    cls._rarfile_module = classmethod(lambda owner_cls: archive_dependency_service(owner_cls).rarfile_module())
-    cls._run_archive_command = classmethod(lambda owner_cls, args, timeout=120: archive_dependency_service(owner_cls).run_archive_command(args, timeout=timeout))
-    cls._list_rar_members = classmethod(list_rar_members)
-    cls._read_rar_member = classmethod(read_rar_member)
-    cls._extract_rar_subtitle_files_with_rarfile = classmethod(extract_rar_subtitle_files_with_rarfile)
-    cls._extract_rar_subtitle_files = classmethod(extract_rar_subtitle_files)
-    cls._extract_7z_subtitle_files = classmethod(extract_7z_subtitle_files)
-    cls._extract_command_archive_subtitle_files = classmethod(extract_command_archive_subtitle_files)
-    cls._extract_subtitle_files = classmethod(extract_subtitle_files)
-
-
 LEGACY_INSTANCE_SERVICE_DELEGATES = (
     ("_filter_existing_local_entries", "_local_media_catalog", "filter_existing_local_entries"),
     ("_merge_local_entries_cache", "_local_media_catalog", "merge_local_entries_cache"),
