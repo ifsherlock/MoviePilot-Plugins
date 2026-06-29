@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+from dataclasses import replace
 import inspect
 import io
 import importlib.util
@@ -3116,8 +3117,14 @@ def make_auto_entry(tmp_path, filename="Movie.mkv", **overrides):
 
 def auto_transfer_service_with(plugin, **methods):
     service = plugin._auto_transfer_service()
+    collaborator_overrides = {}
     for name, method in methods.items():
+        if name in {"prepare_online_ai_subtitle_overrides", "submit_autosub_for_entries"}:
+            collaborator_overrides[name] = method
+            continue
         setattr(service, name, method)
+    if collaborator_overrides:
+        service._collaborators = replace(service._collaborators, **collaborator_overrides)
     override_services(plugin, auto_transfer=service)
     return service
 
@@ -3561,8 +3568,8 @@ def test_auto_season_foreign_srt_submits_ai_as_subtitle_fallback(tmp_path):
 
     service = auto_transfer_service_with(
         plugin,
-        _prepare_online_ai_subtitle_overrides=fake_overrides,
-        _submit_autosub_for_entries=fake_submit,
+        prepare_online_ai_subtitle_overrides=fake_overrides,
+        submit_autosub_for_entries=fake_submit,
         _write_operations_to_disk=lambda **kwargs: (_ for _ in ()).throw(
             AssertionError("Foreign season package should be submitted to AI instead of written")
         ),
@@ -4390,7 +4397,7 @@ def test_auto_search_write_chinese_subtitle_enables_timeline_fix(tmp_path):
         auto_search_keywords_for_entry=fake_keywords,
         _extract_subtitle_files=fake_extract,
         _write_operations_to_disk=fake_write,
-        _submit_autosub_for_entries=lambda *args, **kwargs: (_ for _ in ()).throw(
+        submit_autosub_for_entries=lambda *args, **kwargs: (_ for _ in ()).throw(
             AssertionError("Chinese subtitle should not trigger AI")
         ),
     )
@@ -4467,8 +4474,8 @@ def test_auto_search_write_foreign_srt_submits_ai_without_writing(tmp_path):
         auto_search_keywords_for_entry=fake_keywords,
         _extract_subtitle_files=fake_extract,
         _write_operations_to_disk=fake_write,
-        _prepare_online_ai_subtitle_overrides=fake_overrides,
-        _submit_autosub_for_entries=fake_submit,
+        prepare_online_ai_subtitle_overrides=fake_overrides,
+        submit_autosub_for_entries=fake_submit,
     )
 
     result = service.auto_search_write_subtitle(entry)
@@ -4519,7 +4526,7 @@ def test_auto_search_write_prefers_chinese_ass_from_multi_subtitle_package(tmp_p
         auto_search_keywords_for_entry=fake_keywords,
         _extract_subtitle_files=fake_extract,
         _write_operations_to_disk=fake_write,
-        _submit_autosub_for_entries=lambda *args, **kwargs: (_ for _ in ()).throw(
+        submit_autosub_for_entries=lambda *args, **kwargs: (_ for _ in ()).throw(
             AssertionError("Chinese best match should not trigger AI")
         ),
     )
@@ -4556,7 +4563,7 @@ def test_auto_write_chinese_all_keeps_chinese_and_bilingual_variants(tmp_path):
     service = auto_transfer_service_with(
         plugin,
         _write_operations_to_disk=fake_write,
-        _submit_autosub_for_entries=lambda *args, **kwargs: (_ for _ in ()).throw(
+        submit_autosub_for_entries=lambda *args, **kwargs: (_ for _ in ()).throw(
             AssertionError("Chinese-all mode should ignore foreign-only subtitles when Chinese variants exist")
         ),
     )
@@ -4682,8 +4689,8 @@ def test_auto_write_foreign_ai_skip_is_not_counted_as_completed(tmp_path):
     }
     service = auto_transfer_service_with(
         plugin,
-        _prepare_online_ai_subtitle_overrides=fake_overrides,
-        _submit_autosub_for_entries=fake_submit,
+        prepare_online_ai_subtitle_overrides=fake_overrides,
+        submit_autosub_for_entries=fake_submit,
     )
 
     result = service.auto_write_prepared_uploads_for_entries(

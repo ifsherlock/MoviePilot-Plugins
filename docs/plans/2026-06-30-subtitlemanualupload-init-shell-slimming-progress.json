@@ -1,8 +1,8 @@
 {
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-init-shell-slimming-phased-plan.md",
   "status": {
-    "phase": "phase-7",
-    "task": "7.3",
+    "phase": "phase-8",
+    "task": "8.1",
     "next_allowed_action": "Implement the current task; after verified completion, advance to the next task or phase automatically"
   },
   "execution_rules": {
@@ -797,8 +797,34 @@
         {
           "id": "7.3",
           "title": "Update tests to use services instead of plugin private AI/AutoSub methods",
-          "status": "pending",
-          "verification": [],
+          "status": "completed",
+          "verification": [
+            {
+              "command": "rg -n \"plugin\\._(load_pysubs2_file|convert_ass_to_ai_srt|ai_ready_prepared_uploads|prepare_online_ai_subtitle_overrides|submit_online_ai_translate|autosub_lang_from_suffix|submit_autosub_for_entries|cancel_autosub_for_entries|restart_autosub_for_entries|filter_restart_task_ids_by_targets|selected_external_subtitle_override_for_entries)\" tests scripts",
+              "result": "passed",
+              "evidence": "no matches"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py::test_auto_season_foreign_srt_submits_ai_as_subtitle_fallback tests/test_subtitlemanualupload_cache.py::test_auto_search_write_chinese_subtitle_enables_timeline_fix tests/test_subtitlemanualupload_cache.py::test_auto_search_write_foreign_srt_submits_ai_without_writing tests/test_subtitlemanualupload_cache.py::test_auto_search_write_prefers_chinese_ass_from_multi_subtitle_package tests/test_subtitlemanualupload_cache.py::test_auto_write_chinese_all_keeps_chinese_and_bilingual_variants tests/test_subtitlemanualupload_cache.py::test_auto_write_foreign_ai_skip_is_not_counted_as_completed -q",
+              "result": "passed",
+              "evidence": "6 passed in 0.61s"
+            },
+            {
+              "command": "rg -n \"def _(online_ai_candidate_items|convert_ass_to_ai_srt|submit_online_ai_translate|submit_autosub_for_entries|restart_autosub_for_entries|selected_external_subtitle_override_for_entries)\" plugins.v2/subtitlemanualupload/__init__.py",
+              "result": "passed",
+              "evidence": "no matches"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_autosubv3_cancel.py tests/test_subtitlemanualupload_cache.py -q",
+              "result": "passed",
+              "evidence": "163 passed in 4.61s"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "222 passed in 5.77s"
+            }
+          ],
           "commit": null
         }
       ]
@@ -1067,6 +1093,19 @@
         "inventory reported line_count=664, method_count=97, ai_autosub_facade count=0",
         "baseline smoke exited 0 with 222 passed",
         "next task is phase-7 task 7.3"
+      ]
+    },
+    {
+      "task": "7.3",
+      "status": "completed",
+      "summary": "Updated AutoTransfer tests to inject online AI and AutoSub collaborators by service collaborator field names instead of private facade method names.",
+      "evidence": [
+        "test plugin private AI/AutoSub facade grep returned no matches",
+        "AutoTransfer AI collaborator targeted tests exited 0 with 6 passed",
+        "Phase 7 facade acceptance grep over __init__.py returned no matches",
+        "cache plus AutoSub cancel tests exited 0 with 163 passed",
+        "baseline smoke exited 0 with 222 passed",
+        "phase-7 acceptance satisfied; next task is phase-8 task 8.1"
       ]
     }
   ],
