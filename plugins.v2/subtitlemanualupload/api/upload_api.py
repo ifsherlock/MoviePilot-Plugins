@@ -10,6 +10,13 @@ from fastapi import HTTPException, Request
 
 from app.log import logger
 
+from .request_helpers import (
+    ensure_target_not_locked,
+    filter_unlocked_target_ids,
+    locked_target_ids_from_body,
+    target_ids_from_body,
+)
+
 
 class UploadApi:
     def __init__(self, owner: Any):
@@ -197,7 +204,7 @@ class UploadApi:
         if not session_id or not isinstance(items, list) or not items:
             logger.warning("[SubtitleManualUpload] 写入失败：缺少会话或匹配结果 session=%s", session_id or "-")
             raise HTTPException(status_code=400, detail="缺少上传会话或匹配结果")
-        locked_ids = owner._locked_target_ids_from_body(body)
+        locked_ids = locked_target_ids_from_body(body, owner._normalize_text)
         locked_skipped: List[Dict[str, str]] = []
         if locked_ids:
             filtered_items = []
@@ -231,9 +238,9 @@ class UploadApi:
     async def clear_subtitles(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         body = await request.json()
-        target_ids = owner._target_ids_from_body(body)
-        locked_ids = owner._locked_target_ids_from_body(body)
-        target_ids, locked_skipped = owner._filter_unlocked_target_ids(target_ids, locked_ids)
+        target_ids = target_ids_from_body(body, owner._normalize_text)
+        locked_ids = locked_target_ids_from_body(body, owner._normalize_text)
+        target_ids, locked_skipped = filter_unlocked_target_ids(target_ids, locked_ids, owner._normalize_text)
 
         if not target_ids:
             if locked_skipped:
@@ -277,7 +284,7 @@ class UploadApi:
         target_id = owner._normalize_text(body.get("target_id"))
         subtitle_path_raw = owner._normalize_text(body.get("subtitle_path"))
         subtitle_name = owner._normalize_text(body.get("subtitle_name"))
-        owner._ensure_target_not_locked(target_id, owner._locked_target_ids_from_body(body))
+        ensure_target_not_locked(target_id, locked_target_ids_from_body(body, owner._normalize_text), owner._normalize_text)
         if not target_id:
             raise HTTPException(status_code=400, detail="请先选择目标视频")
         if not subtitle_path_raw and not subtitle_name:
@@ -308,7 +315,7 @@ class UploadApi:
         target_id = owner._normalize_text(body.get("target_id"))
         subtitle_path_raw = owner._normalize_text(body.get("subtitle_path"))
         subtitle_name = owner._normalize_text(body.get("subtitle_name"))
-        owner._ensure_target_not_locked(target_id, owner._locked_target_ids_from_body(body))
+        ensure_target_not_locked(target_id, locked_target_ids_from_body(body, owner._normalize_text), owner._normalize_text)
         if not target_id:
             raise HTTPException(status_code=400, detail="请先选择目标视频")
         if not subtitle_path_raw and not subtitle_name:

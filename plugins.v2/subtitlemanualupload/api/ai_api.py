@@ -6,6 +6,7 @@ from fastapi import HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 
 from ..autosub_bridge import autosub_task_summary as bridge_autosub_task_summary
+from .request_helpers import filter_unlocked_target_ids, locked_target_ids_from_body, target_ids_from_body
 
 
 class AiApi:
@@ -15,9 +16,9 @@ class AiApi:
     async def ai_submit(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         body = await request.json()
-        target_ids = owner._target_ids_from_body(body)
-        locked_ids = owner._locked_target_ids_from_body(body)
-        target_ids, locked_skipped = owner._filter_unlocked_target_ids(target_ids, locked_ids)
+        target_ids = target_ids_from_body(body, owner._normalize_text)
+        locked_ids = locked_target_ids_from_body(body, owner._normalize_text)
+        target_ids, locked_skipped = filter_unlocked_target_ids(target_ids, locked_ids, owner._normalize_text)
         if not target_ids:
             if locked_skipped:
                 return owner._ok(
@@ -70,10 +71,10 @@ class AiApi:
     async def online_ai_submit(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         body = await request.json()
-        target_ids = owner._target_ids_from_body(body)
-        locked_ids = owner._locked_target_ids_from_body(body)
+        target_ids = target_ids_from_body(body, owner._normalize_text)
+        locked_ids = locked_target_ids_from_body(body, owner._normalize_text)
         allow_risky_offset = bool(body.get("allow_risky_offset")) if isinstance(body, dict) else False
-        target_ids, locked_skipped = owner._filter_unlocked_target_ids(target_ids, locked_ids)
+        target_ids, locked_skipped = filter_unlocked_target_ids(target_ids, locked_ids, owner._normalize_text)
         if not target_ids:
             if locked_skipped:
                 raise HTTPException(status_code=423, detail="选中的目标均已锁定，不能提交在线字幕 AI 翻译")
@@ -95,9 +96,9 @@ class AiApi:
     async def ai_cancel(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         body = await request.json()
-        target_ids = owner._target_ids_from_body(body)
-        locked_ids = owner._locked_target_ids_from_body(body)
-        target_ids, locked_skipped = owner._filter_unlocked_target_ids(target_ids, locked_ids)
+        target_ids = target_ids_from_body(body, owner._normalize_text)
+        locked_ids = locked_target_ids_from_body(body, owner._normalize_text)
+        target_ids, locked_skipped = filter_unlocked_target_ids(target_ids, locked_ids, owner._normalize_text)
         if not target_ids:
             if locked_skipped:
                 return owner._ok(
@@ -119,7 +120,7 @@ class AiApi:
     async def ai_restart(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         body = await request.json()
-        target_ids = owner._target_ids_from_body(body)
+        target_ids = target_ids_from_body(body, owner._normalize_text)
         requested_target_ids = list(target_ids)
         task_ids = body.get("task_ids") or []
         if isinstance(task_ids, str):
@@ -129,8 +130,8 @@ class AiApi:
             if isinstance(task_ids, list)
             else []
         )
-        locked_ids = owner._locked_target_ids_from_body(body)
-        target_ids, locked_skipped = owner._filter_unlocked_target_ids(target_ids, locked_ids)
+        locked_ids = locked_target_ids_from_body(body, owner._normalize_text)
+        target_ids, locked_skipped = filter_unlocked_target_ids(target_ids, locked_ids, owner._normalize_text)
         if not target_ids and not task_ids:
             if locked_skipped:
                 return owner._ok(
@@ -192,7 +193,7 @@ class AiApi:
     async def ai_tasks(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         body = await request.json()
-        target_ids = owner._target_ids_from_body(body)
+        target_ids = target_ids_from_body(body, owner._normalize_text)
         autosub_bridge = owner._autosub_bridge()
         if not target_ids:
             return owner._ok(

@@ -12,6 +12,7 @@ from app.log import logger
 
 from ..config_schema import host_from_url, normalize_provider_ids
 from ..online_subtitle import CaptchaRequiredError
+from .request_helpers import filter_unlocked_target_ids, locked_target_ids_from_body, target_ids_from_body
 from .upload_api import UploadApi
 
 
@@ -90,7 +91,7 @@ class OnlineApi:
     async def online_manual_links(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         body = await request.json()
-        target_ids = owner._target_ids_from_body(body)
+        target_ids = target_ids_from_body(body, owner._normalize_text)
         if not target_ids:
             raise HTTPException(status_code=400, detail="请先选择要搜索字幕的本地视频")
         target_entries = list(owner._resolve_targets(target_ids).values())
@@ -118,7 +119,7 @@ class OnlineApi:
     async def online_search(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         body = await request.json()
-        target_ids = owner._target_ids_from_body(body)
+        target_ids = target_ids_from_body(body, owner._normalize_text)
         if not target_ids:
             raise HTTPException(status_code=400, detail="请先选择要搜索字幕的本地视频")
         target_entries = list(owner._resolve_targets(target_ids).values())
@@ -169,7 +170,7 @@ class OnlineApi:
     async def online_search_provider(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         body = await request.json()
-        target_ids = owner._target_ids_from_body(body)
+        target_ids = target_ids_from_body(body, owner._normalize_text)
         if not target_ids:
             raise HTTPException(status_code=400, detail="请先选择要搜索字幕的本地视频")
         target_entries = list(owner._resolve_targets(target_ids).values())
@@ -219,9 +220,9 @@ class OnlineApi:
     async def online_download_preview(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         body = await request.json()
-        target_ids = owner._target_ids_from_body(body)
-        locked_ids = owner._locked_target_ids_from_body(body)
-        target_ids, locked_skipped = owner._filter_unlocked_target_ids(target_ids, locked_ids)
+        target_ids = target_ids_from_body(body, owner._normalize_text)
+        locked_ids = locked_target_ids_from_body(body, owner._normalize_text)
+        target_ids, locked_skipped = filter_unlocked_target_ids(target_ids, locked_ids, owner._normalize_text)
         if not target_ids:
             if locked_skipped:
                 raise HTTPException(status_code=423, detail="选中的目标均已锁定，不能下载写入在线字幕")

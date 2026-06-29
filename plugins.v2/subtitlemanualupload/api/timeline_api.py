@@ -8,6 +8,7 @@ from typing import Any, Dict, List, Tuple
 from fastapi import HTTPException, Request
 
 from ..timeline_fixer import check_timeline_fixer_dependencies
+from .request_helpers import locked_target_ids_from_body, target_ids_from_body
 
 
 class TimelineApi:
@@ -39,7 +40,7 @@ class TimelineApi:
         allow_risky_offset = bool(body.get("allow_risky_offset")) if isinstance(body, dict) else False
         if not isinstance(requested_items, list) or not requested_items:
             raise HTTPException(status_code=400, detail="请先选择要调轴的历史字幕")
-        locked_ids = owner._locked_target_ids_from_body(body if isinstance(body, dict) else {})
+        locked_ids = locked_target_ids_from_body(body if isinstance(body, dict) else {}, owner._normalize_text)
         locked_skipped: List[Dict[str, str]] = []
         if locked_ids:
             filtered_items = []
@@ -114,7 +115,7 @@ class TimelineApi:
     async def timeline_tasks(self, request: Request) -> Dict[str, Any]:
         owner = self.owner
         body = await request.json()
-        target_ids = owner._target_ids_from_body(body)
+        target_ids = target_ids_from_body(body, owner._normalize_text)
         if not target_ids:
             return owner._ok(
                 {
