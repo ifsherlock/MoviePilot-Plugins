@@ -1,9 +1,9 @@
 {
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-ui-backend-refactor-phased-plan.md",
   "status": {
-    "phase": "phase-4",
-    "task": "4.5",
-    "next_allowed_action": "Implement only task 4.5"
+    "phase": "phase-5",
+    "task": "5.1",
+    "next_allowed_action": "Implement only task 5.1"
   },
   "execution_rules": {
     "branch": "codex/subtitlemanualupload-ui-backend-refactor",
@@ -884,9 +884,60 @@
         {
           "id": "4.5",
           "title": "Extract write selection strategy",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "pre-work smoke failed on the in-progress dataclass field order error, then passed after repair with 229 passed in 8.74s"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile plugins.v2/subtitlemanualupload/auto_transfer.py plugins.v2/subtitlemanualupload/auto_transfer_write.py plugins.v2/subtitlemanualupload/auto_transfer_season.py plugins.v2/subtitlemanualupload/auto_transfer_processor.py plugins.v2/subtitlemanualupload/auto_transfer_queue.py plugins.v2/subtitlemanualupload/auto_transfer_rate_limit.py",
+              "result": "passed",
+              "evidence": "auto_transfer.py, auto_transfer_write.py, auto_transfer_season.py, auto_transfer_processor.py, auto_transfer_queue.py and auto_transfer_rate_limit.py compiled successfully"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py -k \"auto_write or auto_select or auto_search_write_chinese_subtitle_enables_timeline_fix or auto_search_write_foreign_srt_submits_ai_without_writing or auto_search_write_prefers_chinese_ass\" -q",
+              "result": "passed",
+              "evidence": "8 passed, 120 deselected in 0.38s; Chinese subtitle write, foreign SRT AI fallback, Chinese ASS preference, all/chinese_all multi-subtitle selection and timeline-fix enabling remained stable"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py -k auto_transfer -q",
+              "result": "passed",
+              "evidence": "27 passed, 101 deselected in 1.66s"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py::test_api_auto_transfer_queue_uses_auto_transfer_service_directly -q",
+              "result": "passed",
+              "evidence": "1 passed in 0.10s; /auto_transfer_queue facade path remains direct through AutoTransferService"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_backend_inventory.py --details",
+              "result": "passed",
+              "evidence": "backend inventory exited 0; auto_transfer.py line_count dropped from 700 to 546, facade_symbols_to_preserve remained AutoTransferCollaborators and AutoTransferService, and imported_symbols_missing_from_module=[]"
+            },
+            {
+              "command": "ssh nas docker exec moviepilot-v2 python -c 'from app.plugins.subtitlemanualupload.auto_transfer import AutoTransferService, AutoTransferCollaborators; from app.plugins.subtitlemanualupload.auto_transfer_write import AutoTransferWriteStrategy; print(...)'",
+              "result": "passed",
+              "evidence": "container runtime import printed AutoTransferService AutoTransferCollaborators AutoTransferWriteStrategy after hot-loading auto_transfer.py and auto_transfer_write.py"
+            },
+            {
+              "command": "ssh nas docker exec moviepilot-v2 sha256sum for installed SubtitleManualUpload auto_transfer write files",
+              "result": "passed",
+              "evidence": "installed hot-loaded files matched local SHA256: auto_transfer.py 1feaf5b076679bbec59097b9a72cc09154a9d9c19b93bba7d9c3ca2c6515f24a, auto_transfer_write.py 0d6f6e759cd67e6538378bff1e441b3b6da8c8bf5ae7a395006954203aa8afaa"
+            },
+            {
+              "command": "Codex in-app browser smoke on https://mp.jaysherlock.top:5443/#/plugin-app/SubtitleManualUpload/main",
+              "result": "passed",
+              "evidence": ".tmp-test-data/subtitlemanualupload-ui-backend-refactor-4.5/in-app-browser-queue-api-smoke.json recorded a real page request to /api/v1/plugin/SubtitleManualUpload/auto_transfer_queue with status=200, mimeType=application/json, hasSubtitlePage=true, hasLoginHint=false, consoleErrors=[] and passed=true"
+            },
+            {
+              "command": "git diff --check -- plugins.v2/subtitlemanualupload/auto_transfer.py plugins.v2/subtitlemanualupload/auto_transfer_write.py && git diff --cached --check",
+              "result": "passed",
+              "evidence": "diff checks exited 0 for task 4.5 source files; only expected LF/CRLF warnings were printed before staging"
+            }
+          ],
+          "commit": "dac02bb"
         }
       ]
     },
@@ -1280,6 +1331,19 @@
         "moviepilot-v2 hot-loaded installed files matched local SHA256 for auto_transfer.py and auto_transfer_season.py; container import printed AutoTransferService AutoTransferCollaborators AutoTransferSeasonCache",
         "in-app browser observed /api/v1/plugin/SubtitleManualUpload/auto_transfer_queue status=200 with success=true, summary/tasks/rate_limits/season_package_cache/rate_limit_scope payload fields intact, provider rate limits for assrt and opensubtitles, no console errors, and the empty queue entry stayed hidden by design",
         "next task is phase-4 task 4.5"
+      ]
+    },
+    {
+      "task": "4.5",
+      "status": "completed",
+      "summary": "Extracted prepared upload item shaping, multi-subtitle selection and Chinese-write/foreign-AI orchestration into auto_transfer_write.py. AutoTransferService keeps the original facade methods and delegates write selection while preserving Chinese-first ordering, ASS/SRT preference and timeline-fix behavior.",
+      "evidence": [
+        "backend focused smoke passed after repair with 229 passed in 8.74s; the initial pre-work failure was the in-progress AutoTransferWriteCollaborators dataclass field order and was fixed before submission",
+        "write strategy directed tests passed with 8 passed, 120 deselected; auto_transfer focused tests passed with 27 passed, 101 deselected; direct queue API facade test passed with 1 passed",
+        "backend inventory showed auto_transfer.py line_count=546, AutoTransferCollaborators and AutoTransferService preserved, and imported_symbols_missing_from_module=[]",
+        "moviepilot-v2 hot-loaded installed files matched local SHA256 for auto_transfer.py and auto_transfer_write.py; container import printed AutoTransferService AutoTransferCollaborators AutoTransferWriteStrategy",
+        "in-app browser observed the real page request /api/v1/plugin/SubtitleManualUpload/auto_transfer_queue status=200 with hasSubtitlePage=true, hasLoginHint=false, consoleErrors=[] and evidence saved under ignored .tmp-test-data/subtitlemanualupload-ui-backend-refactor-4.5/",
+        "phase-4 acceptance satisfied; next task is phase-5 task 5.1"
       ]
     }
   ],
