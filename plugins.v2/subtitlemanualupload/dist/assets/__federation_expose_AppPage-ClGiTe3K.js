@@ -248,7 +248,516 @@ function createSubtitleManualUploadApi(api, pluginBase) {
   }
 }
 
-const {ref: ref$3} = await importShared('vue');
+const {computed: computed$6,nextTick: nextTick$1,ref: ref$7} = await importShared('vue');
+
+
+const EMPTY_AI_TASK_DATA = {
+  summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, ignored: 0, no_audio: 0, failed: 0, cancelled: 0 }};
+
+const aiRestartSourceOptions = [
+  { title: '沿用原任务来源', value: 'reuse' },
+  { title: '自动选择', value: 'auto' },
+  { title: '选中外挂字幕', value: 'matched_external' },
+  { title: '本地外挂字幕', value: 'local_external' },
+  { title: '视频内嵌字幕', value: 'embedded' },
+  { title: '音轨 ASR', value: 'asr' },
+];
+
+function createEmptyAiTaskData(current = {}) {
+  return {
+    ...current,
+    summary: { ...EMPTY_AI_TASK_DATA.summary },
+    tasks: [],
+    task_by_target: {},
+    tasks_by_target: {},
+  }
+}
+
+function useAiTasks({
+  pluginApi,
+  unwrapResponse,
+  errorMessage,
+  error,
+  message,
+  status,
+  visibleTargets,
+  selectedMedia,
+  selectedSeason,
+  selectedTargets,
+  batchUploadTargets,
+  targetById,
+  isLocked,
+  lockedTargetPayload,
+  isStreamTarget,
+  formatBytes,
+}) {
+  const aiSubmitting = ref$7(false);
+  const aiCancelling = ref$7(false);
+  const aiTasksLoading = ref$7(false);
+  const aiTaskDialog = ref$7(false);
+  const aiTaskDialogTarget = ref$7(null);
+  const aiTaskScopeTargets = ref$7([]);
+  const aiTaskLoadToken = ref$7(0);
+  const aiRestartSourcePolicy = ref$7('reuse');
+  const aiRestartSubtitlePath = ref$7('');
+  const aiSelectedTaskIds = ref$7([]);
+  const aiStatusStripRef = ref$7(null);
+  const aiTaskData = ref$7(createEmptyAiTaskData());
+  let aiTaskTimer = null;
+
+  const aiStatus = computed$6(() => aiTaskData.value.status || status.value?.ai_subtitle || {});
+  const aiEnabled = computed$6(() => aiStatus.value.enabled !== false);
+  const aiAvailable = computed$6(() => aiEnabled.value && aiStatus.value.available === true);
+  const aiSummary = computed$6(() => aiTaskData.value.summary || {});
+  const aiHasActiveTasks = computed$6(() => Number(aiSummary.value.active || 0) > 0);
+  const aiBatchCancelTargets = computed$6(() => batchUploadTargets.value.filter(target => isAiTaskActive(aiTaskForTarget(target))));
+  const aiCapableBatchTargets = computed$6(() => batchUploadTargets.value.filter(target => !isStreamTarget(target)));
+  const aiBatchLabel = computed$6(() => {
+    if (selectedMedia.value?.media_type !== 'tv') return 'AI 生成字幕'
+    if (selectedTargets.value.length) return `AI 生成选中 ${selectedTargets.value.length} 集`
+    return selectedSeason.value === 'all' ? 'AI 生成全部季' : 'AI 生成本季'
+  });
+  const aiSummaryText = computed$6(() => {
+    if (!aiEnabled.value) return 'AI 联动已关闭'
+    if (!aiStatus.value.installed && !aiStatus.value.available) return aiStatus.value.message || '请先安装并启用 AI字幕生成(联动版)'
+    const parts = [];
+    if (aiSummary.value.in_progress) parts.push(`${aiSummary.value.in_progress} 个生成中`);
+    if (aiSummary.value.pending) parts.push(`${aiSummary.value.pending} 个排队`);
+    if (aiSummary.value.failed) parts.push(`${aiSummary.value.failed} 个失败`);
+    if (aiSummary.value.completed) parts.push(`${aiSummary.value.completed} 个完成`);
+    if (aiSummary.value.ignored) parts.push(`${aiSummary.value.ignored} 个忽略`);
+    if (aiSummary.value.no_audio) parts.push(`${aiSummary.value.no_audio} 个无音轨`);
+    if (aiSummary.value.cancelled) parts.push(`${aiSummary.value.cancelled} 个取消`);
+    return parts.length ? `AI：${parts.join(' / ')}` : (aiStatus.value.message || 'AI：暂无当前资源任务')
+  });
+  const aiDialogTasks = computed$6(() => {
+    const targetId = aiTaskDialogTarget.value?.id;
+    if (targetId) {
+      return (aiTaskData.value.tasks_by_target || {})[targetId] || []
+    }
+    return aiTaskData.value.tasks || []
+  });
+  const aiDialogHasExistingTasks = computed$6(() => Boolean(aiDialogTasks.value.length));
+  const aiDialogActiveTasks = computed$6(() => aiDialogTasks.value.filter(task => isAiTaskActive(task)));
+  const aiDialogHasActiveTasks = computed$6(() => aiDialogActiveTasks.value.length > 0);
+  const aiDialogRestartableTasks = computed$6(() => aiDialogTasks.value.filter(task => isAiTaskRestartable(task)));
+  const aiDialogSelectedRestartableTasks = computed$6(() => {
+    const selected = new Set(aiSelectedTaskIds.value);
+    return aiDialogRestartableTasks.value.filter(task => selected.has(task.task_id))
+  });
+  const aiDialogSelectedAllowedTasks = computed$6(() => aiDialogSelectedRestartableTasks.value.filter(isAiTaskAllowed));
+  const aiDialogActionText = computed$6(() => (aiDialogHasExistingTasks.value ? '重新生成选中' : '生成'));
+  const aiDialogSourceLabel = computed$6(() => (aiDialogHasExistingTasks.value ? '重新生成来源' : '生成来源'));
+  const aiRestartSubtitleOptions = computed$6(() => {
+    const target = aiTaskDialogTarget.value;
+    const subtitles = target?.subtitles || [];
+    return subtitles
+      .filter(subtitle => String(subtitle.ext || '').toLowerCase() === '.srt')
+      .map(subtitle => ({
+        title: `${subtitle.name} · ${formatBytes(subtitle.size)}`,
+        value: subtitle.path,
+      }))
+  });
+
+  function applyAiTaskData(data) {
+    aiTaskData.value = data || aiTaskData.value;
+    if (aiTaskData.value.status) {
+      status.value = { ...status.value, ai_subtitle: aiTaskData.value.status };
+    }
+  }
+
+  function resetAiTasks() {
+    aiTaskDialogTarget.value = null;
+    aiTaskScopeTargets.value = [];
+    aiTaskData.value = createEmptyAiTaskData(aiTaskData.value);
+    stopAiPolling();
+  }
+
+  function stopAiPolling() {
+    if (aiTaskTimer) {
+      clearTimeout(aiTaskTimer);
+      aiTaskTimer = null;
+    }
+  }
+
+  function scheduleAiPolling() {
+    stopAiPolling();
+    if (!aiHasActiveTasks.value || !currentAiTaskTargets().length) return
+    aiTaskTimer = setTimeout(() => {
+      loadAiTasks({ silent: true });
+    }, 5000);
+  }
+
+  function currentAiTaskTargets() {
+    return aiTaskScopeTargets.value.length ? aiTaskScopeTargets.value : visibleTargets.value
+  }
+
+  async function loadAiTasks(options = {}) {
+    const scopeTargets = Array.isArray(options.targets) && options.targets.length
+      ? options.targets
+      : currentAiTaskTargets();
+    const requestToken = options.requestToken || 0;
+    const requestTargetIds = scopeTargets.map(item => item.id).join('|');
+    if (!scopeTargets.length) {
+      if (requestToken && requestToken !== aiTaskLoadToken.value) return
+      aiTaskData.value = createEmptyAiTaskData(aiTaskData.value);
+      stopAiPolling();
+      return
+    }
+    if (!options.silent) aiTasksLoading.value = true;
+    try {
+      const response = await pluginApi.value.aiTasks({
+        target_ids: scopeTargets.map(item => item.id),
+      });
+      if (requestToken && requestToken !== aiTaskLoadToken.value) return
+      if (requestToken) {
+        const currentTargetIds = currentAiTaskTargets().map(item => item.id).join('|');
+        if (currentTargetIds !== requestTargetIds) return
+      }
+      applyAiTaskData(unwrapResponse(response) || aiTaskData.value);
+      aiSelectedTaskIds.value = aiSelectedTaskIds.value.filter(taskId => {
+        const task = (aiTaskData.value.tasks || []).find(item => item.task_id === taskId);
+        return task && isAiTaskAllowed(task)
+      });
+    } catch (err) {
+      if (!options.silent) {
+        error.value = errorMessage(err, '读取 AI 字幕任务失败');
+      }
+    } finally {
+      if (!options.silent) aiTasksLoading.value = false;
+      scheduleAiPolling();
+    }
+  }
+
+  function aiTaskForTarget(target) {
+    return (aiTaskData.value.task_by_target || {})[target?.id] || null
+  }
+
+  function isAiTaskActive(task) {
+    return Boolean(task && (task.active || ['pending', 'in_progress'].includes(task.status)))
+  }
+
+  function isAiTaskRestartable(task) {
+    return Boolean(task && !isAiTaskActive(task) && ['completed', 'failed', 'cancelled', 'ignored', 'no_audio'].includes(task.status))
+  }
+
+  function targetForAiTask(task) {
+    return targetById.value.get(task?.target_id) || null
+  }
+
+  function isAiTaskAllowed(task) {
+    if (!isAiTaskRestartable(task)) return false
+    const target = targetForAiTask(task);
+    if (!target) return false
+    return !isLocked(target.id) && target.writable !== false && !isStreamTarget(target)
+  }
+
+  function aiTaskColor(target) {
+    const task = aiTaskForTarget(target);
+    if (!aiAvailable.value) return undefined
+    if (!task) return 'primary'
+    if (task.status === 'pending') return 'info'
+    if (task.status === 'in_progress') return 'warning'
+    if (task.status === 'completed') return 'success'
+    if (task.status === 'failed') return 'error'
+    if (task.status === 'no_audio') return 'grey'
+    if (task.status === 'cancelled') return 'grey'
+    return 'secondary'
+  }
+
+  function aiTaskIcon(target) {
+    const task = aiTaskForTarget(target);
+    if (!task) return 'mdi-robot-outline'
+    if (task.status === 'pending') return 'mdi-clock-outline'
+    if (task.status === 'in_progress') return 'mdi-robot-happy-outline'
+    if (task.status === 'completed') return 'mdi-check-decagram-outline'
+    if (task.status === 'failed') return 'mdi-alert-circle-outline'
+    if (task.status === 'no_audio') return 'mdi-volume-off'
+    if (task.status === 'cancelled') return 'mdi-cancel'
+    return 'mdi-robot-confused-outline'
+  }
+
+  function aiTaskTitle(target) {
+    const task = aiTaskForTarget(target);
+    if (isStreamTarget(target)) return 'STRM 资源暂不支持 AI 生成字幕'
+    if (!aiEnabled.value) return 'AI 字幕联动已关闭'
+    if (!aiAvailable.value) return aiStatus.value.message || '请先安装并启用 AI字幕生成(联动版)'
+    if (!task) return '调用 AI 字幕生成'
+    return task.message || task.status_label || '查看 AI 任务状态'
+  }
+
+  function aiTaskStatusClass(target) {
+    const task = aiTaskForTarget(target);
+    return task ? `ai-${task.status}` : 'ai-idle'
+  }
+
+  function aiTaskIconForTask(task) {
+    if (!task) return 'mdi-robot-outline'
+    if (task.status === 'completed') return 'mdi-robot-happy-outline'
+    if (task.status === 'failed') return 'mdi-alert-circle-outline'
+    if (task.status === 'cancelled') return 'mdi-cancel'
+    if (task.status === 'no_audio') return 'mdi-volume-off'
+    if (task.status === 'ignored') return 'mdi-debug-step-over'
+    if (isAiTaskActive(task)) return 'mdi-progress-clock'
+    return 'mdi-robot-outline'
+  }
+
+  function aiStatusText(task) {
+    if (!task) return '未提交'
+    return task.message || task.status_label || task.status
+  }
+
+  function openAiTaskDialog(target = null) {
+    aiTaskDialogTarget.value = target;
+    aiRestartSubtitlePath.value = '';
+    aiSelectedTaskIds.value = [];
+    aiTaskDialog.value = true;
+    const scopeTargets = target
+      ? [target]
+      : (aiTaskScopeTargets.value.length ? aiTaskScopeTargets.value : visibleTargets.value);
+    aiTaskScopeTargets.value = scopeTargets;
+    const existingTasks = target
+      ? (aiTaskForTarget(target) ? [aiTaskForTarget(target)] : [])
+      : (aiTaskData.value.tasks || []).filter(task => scopeTargets.some(item => item.id === task.target_id));
+    aiRestartSourcePolicy.value = existingTasks.length ? 'reuse' : 'auto';
+    const requestToken = ++aiTaskLoadToken.value;
+    loadAiTasks({ silent: true, targets: scopeTargets, requestToken }).then(() => {
+      if (aiTaskDialog.value && requestToken === aiTaskLoadToken.value) {
+        aiRestartSourcePolicy.value = aiDialogHasExistingTasks.value ? 'reuse' : 'auto';
+      }
+    });
+  }
+
+  async function focusAiStatusStrip() {
+    await nextTick$1();
+    const el = aiStatusStripRef.value;
+    if (!el) return
+    el.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+    el.focus?.({ preventScroll: true });
+  }
+
+  async function submitAiForTargets(scopeTargets) {
+    return submitAiForTargetsWithOptions(scopeTargets)
+  }
+
+  async function submitAiForTargetsWithOptions(scopeTargets, options = {}) {
+    const streamCount = scopeTargets.filter(isStreamTarget).length;
+    const usableTargets = scopeTargets.filter(item => !isLocked(item.id) && item.writable !== false);
+    const capableTargets = usableTargets.filter(item => !isStreamTarget(item));
+    if (!usableTargets.length || !capableTargets.length) {
+      error.value = streamCount
+        ? 'STRM 资源暂不支持 AI 生成字幕，请选择本地视频文件'
+        : '没有可生成 AI 字幕的目标：选中的集数可能都已锁定';
+      return
+    }
+    if (!aiAvailable.value) {
+      error.value = aiStatus.value.message || '请先安装并启用 AI字幕生成(联动版)';
+      return
+    }
+    aiSubmitting.value = true;
+    error.value = '';
+    message.value = '';
+    try {
+      const payload = {
+        target_ids: usableTargets.map(item => item.id),
+        locked_target_ids: lockedTargetPayload(),
+      };
+      if (options.source_policy) payload.source_policy = options.source_policy;
+      if (options.source_subtitle_path) payload.source_subtitle_path = options.source_subtitle_path;
+      if (options.overwrite_policy) payload.overwrite_policy = options.overwrite_policy;
+      const response = await pluginApi.value.aiSubmit(payload);
+      const data = unwrapResponse(response) || {};
+      if (data.tasks) {
+        applyAiTaskData(data.tasks);
+      }
+      aiTaskScopeTargets.value = usableTargets;
+      message.value = response?.message || '已提交 AI 字幕生成任务';
+      await loadAiTasks({ silent: true, targets: usableTargets });
+    } catch (err) {
+      error.value = errorMessage(err, '提交 AI 字幕任务失败');
+    } finally {
+      aiSubmitting.value = false;
+    }
+  }
+
+  async function cancelAiForTargets(scopeTargets) {
+    const activeTargets = scopeTargets.filter(target => isAiTaskActive(aiTaskForTarget(target)));
+    if (!activeTargets.length) {
+      message.value = '当前范围没有可取消的 AI 字幕任务';
+      return
+    }
+    aiCancelling.value = true;
+    error.value = '';
+    message.value = '';
+    try {
+      const response = await pluginApi.value.aiCancel({
+        target_ids: activeTargets.map(item => item.id),
+        locked_target_ids: lockedTargetPayload(),
+      });
+      const data = unwrapResponse(response) || {};
+      if (data.tasks) {
+        applyAiTaskData(data.tasks);
+      }
+      aiTaskScopeTargets.value = activeTargets;
+      message.value = response?.message || '已取消 AI 字幕任务';
+      await loadAiTasks({ silent: true, targets: activeTargets });
+    } catch (err) {
+      error.value = errorMessage(err, '取消 AI 字幕任务失败');
+    } finally {
+      aiCancelling.value = false;
+    }
+  }
+
+  function openBatchAiGenerate() {
+    submitAiForTargets(batchUploadTargets.value);
+  }
+
+  function cancelBatchAiGenerate() {
+    cancelAiForTargets(batchUploadTargets.value);
+  }
+
+  function cancelDialogAiTasks() {
+    const scopeTargets = aiTaskDialogTarget.value ? [aiTaskDialogTarget.value] : visibleTargets.value;
+    cancelAiForTargets(scopeTargets);
+  }
+
+  async function regenerateDialogAiTasks() {
+    const selectedTaskIds = aiDialogSelectedAllowedTasks.value
+      .map(task => task.task_id);
+    return regenerateAiTasksByIds(selectedTaskIds)
+  }
+
+  async function regenerateSingleAiTask(task) {
+    if (!isAiTaskAllowed(task)) return
+    await regenerateAiTasksByIds([task.task_id]);
+  }
+
+  async function regenerateAiTasksByIds(taskIds = []) {
+    const scopeTargets = aiTaskDialogTarget.value
+      ? [aiTaskDialogTarget.value]
+      : (aiTaskScopeTargets.value.length ? aiTaskScopeTargets.value : visibleTargets.value);
+    const usableTargets = scopeTargets.filter(item => !isLocked(item.id) && item.writable !== false && !isStreamTarget(item));
+    if (!usableTargets.length) {
+      message.value = '没有可重新生成 AI 字幕的目标：选中的集数可能都已锁定或是 STRM';
+      return
+    }
+    if (aiRestartSourcePolicy.value === 'matched_external' && !aiRestartSubtitlePath.value) {
+      message.value = '请先选择要用于重新生成的外挂 SRT 字幕';
+      return
+    }
+    const hasExistingTasks = aiDialogHasExistingTasks.value;
+    if (hasExistingTasks && !taskIds.length) {
+      message.value = '请先勾选可重新生成的 AI 历史任务；锁定、不可写、STRM 或正在处理的任务不能重跑';
+      return
+    }
+    const sourcePolicy = !hasExistingTasks && aiRestartSourcePolicy.value === 'reuse'
+      ? 'auto'
+      : aiRestartSourcePolicy.value;
+    const overwritePolicy = hasExistingTasks
+      ? (sourcePolicy === 'reuse' ? 'backup_replace' : 'new_variant')
+      : (sourcePolicy === 'auto' ? 'skip' : 'new_variant');
+    if (!hasExistingTasks) {
+      await submitAiForTargetsWithOptions(usableTargets, {
+        source_policy: sourcePolicy,
+        source_subtitle_path: sourcePolicy === 'matched_external' ? aiRestartSubtitlePath.value : '',
+        overwrite_policy: overwritePolicy,
+      });
+      return
+    }
+    aiSubmitting.value = true;
+    error.value = '';
+    message.value = '';
+    try {
+      const response = await pluginApi.value.aiRestart({
+        target_ids: usableTargets.map(item => item.id),
+        task_ids: taskIds,
+        locked_target_ids: lockedTargetPayload(),
+        source_policy: sourcePolicy,
+        source_subtitle_path: sourcePolicy === 'matched_external' ? aiRestartSubtitlePath.value : '',
+        overwrite_policy: overwritePolicy,
+      });
+      const data = unwrapResponse(response) || {};
+      if (data.tasks) {
+        applyAiTaskData(data.tasks);
+      }
+      aiTaskScopeTargets.value = usableTargets;
+      message.value = response?.message || '已重新提交 AI 字幕生成任务';
+      await loadAiTasks({ silent: true, targets: usableTargets });
+    } catch (err) {
+      error.value = errorMessage(err, '重新生成 AI 字幕任务失败');
+    } finally {
+      aiSubmitting.value = false;
+    }
+  }
+
+  function openSingleAiGenerate(target) {
+    openAiTaskDialog(target);
+  }
+
+  return {
+    aiSubmitting,
+    aiCancelling,
+    aiTasksLoading,
+    aiTaskDialog,
+    aiTaskDialogTarget,
+    aiTaskScopeTargets,
+    aiRestartSourcePolicy,
+    aiRestartSubtitlePath,
+    aiSelectedTaskIds,
+    aiStatusStripRef,
+    aiTaskData,
+    aiStatus,
+    aiEnabled,
+    aiAvailable,
+    aiSummary,
+    aiHasActiveTasks,
+    aiBatchCancelTargets,
+    aiCapableBatchTargets,
+    aiBatchLabel,
+    aiSummaryText,
+    aiDialogTasks,
+    aiDialogHasExistingTasks,
+    aiDialogActiveTasks,
+    aiDialogHasActiveTasks,
+    aiDialogRestartableTasks,
+    aiDialogSelectedRestartableTasks,
+    aiDialogSelectedAllowedTasks,
+    aiDialogActionText,
+    aiDialogSourceLabel,
+    aiRestartSubtitleOptions,
+    applyAiTaskData,
+    resetAiTasks,
+    stopAiPolling,
+    scheduleAiPolling,
+    currentAiTaskTargets,
+    loadAiTasks,
+    aiTaskForTarget,
+    isAiTaskActive,
+    isAiTaskRestartable,
+    targetForAiTask,
+    isAiTaskAllowed,
+    aiTaskColor,
+    aiTaskIcon,
+    aiTaskTitle,
+    aiTaskStatusClass,
+    aiTaskIconForTask,
+    aiStatusText,
+    openAiTaskDialog,
+    focusAiStatusStrip,
+    submitAiForTargets,
+    submitAiForTargetsWithOptions,
+    cancelAiForTargets,
+    openBatchAiGenerate,
+    cancelBatchAiGenerate,
+    cancelDialogAiTasks,
+    regenerateDialogAiTasks,
+    regenerateSingleAiTask,
+    regenerateAiTasksByIds,
+    openSingleAiGenerate,
+  }
+}
+
+const {ref: ref$6} = await importShared('vue');
 
 
 function useMediaSearch({
@@ -260,16 +769,16 @@ function useMediaSearch({
   selectedMedia,
   clearTargetState,
 }) {
-  const searching = ref$3(false);
-  const searchKeyword = ref$3('');
-  const mediaType = ref$3('all');
-  const medias = ref$3([]);
-  const mediaPage = ref$3(1);
+  const searching = ref$6(false);
+  const searchKeyword = ref$6('');
+  const mediaType = ref$6('all');
+  const medias = ref$6([]);
+  const mediaPage = ref$6(1);
   const mediaPageSize = 24;
-  const mediaTotal = ref$3(0);
-  const mediaHasMore = ref$3(false);
-  const mediaPrefetchPages = ref$3({});
-  const failedPosterImages = ref$3({});
+  const mediaTotal = ref$6(0);
+  const mediaHasMore = ref$6(false);
+  const mediaPrefetchPages = ref$6({});
+  const failedPosterImages = ref$6({});
   let mediaSearchToken = 0;
 
   function posterImageKey(item, url) {
@@ -426,7 +935,644 @@ function useMediaSearch({
   }
 }
 
-const {computed: computed$2,ref: ref$2} = await importShared('vue');
+const onlineProviderItems = [
+  { title: 'SubHD', value: 'subhd' },
+  { title: 'Zimuku', value: 'zimuku' },
+  { title: '射手网(伪)', value: 'assrt' },
+  { title: 'OpenSubtitles', value: 'opensubtitles' },
+];
+
+function onlineResultKey(item) {
+  return `${item?.provider || 'unknown'}:${item?.result_id || item?.page_url || item?.title || ''}`
+}
+
+function providerName(providerId) {
+  const known = onlineProviderItems.find(item => item.value === providerId);
+  return known?.title || providerId || '未知来源'
+}
+
+function providerPriority(providerId) {
+  if (providerId === 'subhd') return 35
+  if (providerId === 'assrt') return 30
+  if (providerId === 'zimuku') return 25
+  if (providerId === 'opensubtitles') return 20
+  return 0
+}
+
+function onlineResultMeta(item) {
+  const parts = [];
+  if (item.language) parts.push(item.language);
+  if (item.format) parts.push(item.format);
+  if (item.season || item.episode) {
+    parts.push(`S${String(item.season || 0).padStart(2, '0')}E${String(item.episode || 0).padStart(2, '0')}`);
+  }
+  if (item.score) parts.push(`匹配 ${item.score}`);
+  return parts.join(' · ') || '等待下载后自动匹配'
+}
+
+function isOnlineResultDownloadable(item) {
+  return item?.downloadable !== false
+}
+
+function onlineResultLanguageCategory(item) {
+  const category = String(item?.language_category || '').toLowerCase();
+  if (['chinese', 'english', 'japanese', 'korean', 'other'].includes(category)) return category
+  const text = `${item?.language || ''} ${item?.title || ''} ${item?.note || ''}`.toLowerCase();
+  if (
+    text.includes('中文')
+    || text.includes('简体')
+    || text.includes('繁体')
+    || text.includes('双语')
+    || text.includes('chinese')
+    || /(^|[\s._()\[\]-])(zh|ze|chi|chs|cht|zho)(?=$|[\s._()\[\]-])/.test(text)
+  ) return 'chinese'
+  if (
+    text.includes('英文')
+    || text.includes('english')
+    || /(^|[\s._()\[\]-])(en|eng)(?=$|[\s._()\[\]-])/.test(text)
+  ) return 'english'
+  if (
+    text.includes('日文')
+    || text.includes('日语')
+    || text.includes('japanese')
+    || /(^|[\s._()\[\]-])(ja|jpn)(?=$|[\s._()\[\]-])/.test(text)
+  ) return 'japanese'
+  if (
+    text.includes('korean')
+    || /(^|[\s._()\[\]-])(ko|kor)(?=$|[\s._()\[\]-])/.test(text)
+  ) return 'korean'
+  return 'other'
+}
+
+function onlineResultLanguageFilterCategory(item) {
+  const category = onlineResultLanguageCategory(item);
+  return category === 'korean' ? 'other' : category
+}
+
+function onlineResultLanguagePriority(item) {
+  const category = onlineResultLanguageCategory(item);
+  if (category === 'chinese') return 40
+  if (category === 'english') return 30
+  if (category === 'japanese' || category === 'korean') return 20
+  return 10
+}
+
+function onlineResultIdentityPriority(item) {
+  const status = String(item?.identity_status || '').toLowerCase();
+  if (status === 'strong') return 30
+  if (status === 'weak') return 10
+  return 0
+}
+
+function isForeignOnlineResult(item) {
+  return onlineResultLanguageCategory(item) !== 'chinese'
+}
+
+function providerProgressText(state) {
+  if (state === 'searching') return '搜索中'
+  if (state === 'done') return '已完成'
+  if (state === 'timeout') return '超时'
+  if (state === 'cancelled') return '已停止'
+  if (state === 'error') return '失败'
+  return '等待'
+}
+
+function providerProgressColor(state) {
+  if (state === 'searching') return 'info'
+  if (state === 'done') return 'success'
+  if (state === 'timeout') return 'warning'
+  if (state === 'cancelled') return 'default'
+  if (state === 'error') return 'warning'
+  return 'default'
+}
+
+const {computed: computed$5,nextTick,ref: ref$5} = await importShared('vue');
+
+const ONLINE_PROVIDER_TIMEOUT_MS = 25000;
+const ONLINE_DOWNLOAD_TIMEOUT_MS = 35000;
+
+function useOnlineSubtitles({
+  pluginApi,
+  unwrapResponse,
+  errorMessage,
+  error,
+  message,
+  selectedMedia,
+  selectedTargets,
+  selectedSeason,
+  batchUploadTargets,
+  isLocked,
+  lockedTargetPayload,
+  compactTargetName,
+  aiAvailable,
+  timelineNeedsRiskyConfirm,
+  confirmRiskyTimelineOffset,
+  prepareOnlineUploadState,
+  openOnlinePreview,
+  closeUploadDialog,
+  applyAiTaskData,
+  setAiTaskScopeTargets,
+  loadAiTasks,
+  focusAiStatusStrip,
+  applyTimelineTaskData,
+  loadTimelineTasks,
+}) {
+  const onlineSearching = ref$5(false);
+  const onlineDownloading = ref$5(false);
+  const onlinePreviewDownloading = ref$5(false);
+  const onlineAiDownloading = ref$5(false);
+  const onlineError = ref$5('');
+  const onlineDialog = ref$5(false);
+  const onlineAiConfirmDialog = ref$5(false);
+  const onlineTitle = ref$5('');
+  const onlineScope = ref$5('auto');
+  const onlineKeyword = ref$5('');
+  const onlineTargets = ref$5([]);
+  const onlineStatus = ref$5({ providers: [], capabilities: {} });
+  const onlineSelectedProviders = ref$5(['assrt', 'opensubtitles']);
+  const onlineResults = ref$5([]);
+  const onlineLanguageFilter = ref$5('all');
+  const onlineProviderFilter = ref$5('all');
+  const onlineMessages = ref$5([]);
+  const onlineMessagesCollapsed = ref$5(false);
+  const onlineManualLinks = ref$5([]);
+  const onlineProviderProgress = ref$5({});
+  const selectedOnlineResultIds = ref$5([]);
+  let onlineSearchSeq = 0;
+  let onlineDownloadSeq = 0;
+
+  const hasOnlineResults = computed$5(() => onlineResults.value.length > 0);
+  const filteredOnlineResults = computed$5(() => {
+    return onlineResults.value.filter(item => {
+      const languageMatched = onlineLanguageFilter.value === 'all' || onlineResultLanguageFilterCategory(item) === onlineLanguageFilter.value;
+      const providerMatched = onlineProviderFilter.value === 'all' || item.provider === onlineProviderFilter.value;
+      return languageMatched && providerMatched
+    })
+  });
+  const onlineLanguageFilterItems = computed$5(() => {
+    const languageItems = [
+      { title: '中文', value: 'chinese' },
+      { title: '英文', value: 'english' },
+      { title: '日文', value: 'japanese' },
+      { title: '其他', value: 'other' },
+    ];
+    const counts = onlineResults.value.reduce((acc, item) => {
+      const category = onlineResultLanguageFilterCategory(item);
+      acc[category] = (acc[category] || 0) + 1;
+      return acc
+    }, {});
+    return [
+      { title: `全部 ${onlineResults.value.length}`, value: 'all' },
+      ...languageItems.map(item => ({ title: `${item.title} ${counts[item.value] || 0}`, value: item.value })),
+    ]
+  });
+  const onlineProviderFilterItems = computed$5(() => {
+    const counts = onlineResults.value.reduce((acc, item) => {
+      const provider = item.provider || 'unknown';
+      acc[provider] = (acc[provider] || 0) + 1;
+      return acc
+    }, {});
+    return [
+      { title: `全部 ${onlineResults.value.length}`, value: 'all' },
+      ...onlineProviderItems.map(item => ({ title: `${item.title} ${counts[item.value] || 0}`, value: item.value })),
+    ]
+  });
+  const selectedOnlineResults = computed$5(() => {
+    const picked = new Set(selectedOnlineResultIds.value);
+    return onlineResults.value.filter(item => picked.has(onlineResultKey(item)) && isOnlineResultDownloadable(item))
+  });
+  const canSubmitOnlineAiTranslate = computed$5(() => {
+    return aiAvailable.value && selectedOnlineResults.value.length > 0 && selectedOnlineResults.value.every(isForeignOnlineResult)
+  });
+  const onlineMessageSummary = computed$5(() => {
+    const messages = onlineMessages.value || [];
+    if (!messages.length) return ''
+    const warnings = messages.filter(item => item.level !== 'info');
+    const infos = messages.filter(item => item.level === 'info');
+    const source = warnings.length ? warnings : infos;
+    const text = source
+      .slice(0, 3)
+      .map(item => item.provider ? `${providerName(item.provider)}：${item.message}` : item.message)
+      .join('；');
+    const extra = source.length > 3 ? `；另有 ${source.length - 3} 条提示` : '';
+    return `${text}${extra}`
+  });
+  const onlineMessageType = computed$5(() => {
+    return (onlineMessages.value || []).some(item => item.level !== 'info') ? 'warning' : 'info'
+  });
+  const onlineProviderProgressItems = computed$5(() => onlineSelectedProviders.value.map(provider => ({
+    provider,
+    state: onlineProviderProgress.value[provider] || 'idle',
+  })));
+  const onlineAiConfirmText = computed$5(() => {
+    const count = selectedOnlineResults.value.length;
+    const targetCount = onlineTargets.value.length;
+    return `将把当前范围的 ${targetCount} 个目标提交给 AI字幕生成(联动版)；已选择 ${count} 个外语结果，提交后会关闭在线搜索并打开 AI 状态。`
+  });
+  const onlineBatchLabel = computed$5(() => {
+    if (selectedMedia.value?.media_type !== 'tv') return '搜索在线字幕'
+    if (selectedTargets.value.length) return `搜索选中 ${selectedTargets.value.length} 集`
+    return selectedSeason.value === 'all' ? '搜索全部季字幕包' : '搜索本季字幕包'
+  });
+
+  function ensureConfiguredApiProvidersSelected() {
+    const configured = [...(onlineStatus.value?.enabled_providers || [])]
+      .filter(provider => onlineProviderItems.some(item => item.value === provider));
+    if (onlineStatus.value?.assrt_api_configured) configured.push('assrt');
+    if (onlineStatus.value?.opensubtitles_api_configured) configured.push('opensubtitles');
+    if (!configured.length) return
+    onlineSelectedProviders.value = Array.from(new Set(configured));
+  }
+
+  async function loadOnlineStatus() {
+    try {
+      const response = await pluginApi.value.onlineStatus();
+      onlineStatus.value = unwrapResponse(response) || onlineStatus.value;
+      const enabled = onlineStatus.value.enabled_providers || [];
+      if (enabled.length) {
+        onlineSelectedProviders.value = enabled;
+      }
+      ensureConfiguredApiProvidersSelected();
+    } catch (err) {
+      onlineError.value = errorMessage(err, '加载在线字幕源状态失败');
+    }
+  }
+
+  async function openOnlineDialog(scopeTargets, title, scope) {
+    const usableTargets = scopeTargets.filter(item => !isLocked(item.id) && item.writable !== false);
+    if (!usableTargets.length) {
+      error.value = '没有可搜索的目标：选中的集数可能都已锁定';
+      return
+    }
+    onlineTitle.value = title;
+    onlineScope.value = scope;
+    onlineTargets.value = usableTargets;
+    prepareOnlineUploadState(usableTargets, title);
+    onlineKeyword.value = '';
+    onlineResults.value = [];
+    onlineLanguageFilter.value = 'all';
+    onlineProviderFilter.value = 'all';
+    onlineMessages.value = [];
+    onlineMessagesCollapsed.value = false;
+    onlineManualLinks.value = [];
+    onlineProviderProgress.value = {};
+    selectedOnlineResultIds.value = [];
+    onlineError.value = '';
+    error.value = '';
+    message.value = '';
+    onlineDialog.value = true;
+    await loadOnlineStatus();
+    await loadOnlineManualLinks();
+    await runOnlineSearch();
+  }
+
+  function openBatchOnlineSearch() {
+    const title = selectedMedia.value?.media_type === 'tv'
+      ? onlineBatchLabel.value
+      : '搜索在线字幕';
+    const scope = selectedMedia.value?.media_type === 'tv'
+      ? (selectedTargets.value.length ? 'batch' : 'season')
+      : 'movie';
+    openOnlineDialog(batchUploadTargets.value, title, scope);
+  }
+
+  function openSingleOnlineSearch(target) {
+    openOnlineDialog([target], `搜索 ${compactTargetName(target)}`, 'episode');
+  }
+
+  function onlinePayload() {
+    return {
+      target_ids: onlineTargets.value.map(item => item.id),
+      locked_target_ids: lockedTargetPayload(),
+      media: selectedMedia.value,
+      scope: onlineScope.value,
+      keyword: onlineKeyword.value.trim(),
+      providers: onlineSelectedProviders.value,
+    }
+  }
+
+  async function loadOnlineManualLinks() {
+    if (!onlineTargets.value.length) return
+    try {
+      const response = await pluginApi.value.onlineManualLinks(onlinePayload());
+      const data = unwrapResponse(response) || {};
+      onlineManualLinks.value = data.links || [];
+    } catch (err) {
+      onlineError.value = errorMessage(err, '生成手动搜索链接失败');
+    }
+  }
+
+  async function runOnlineSearch() {
+    if (!onlineTargets.value.length || onlineSearching.value) return
+    if (!onlineSelectedProviders.value.length) {
+      onlineError.value = '请至少选择一个在线字幕源';
+      return
+    }
+    const searchSeq = ++onlineSearchSeq;
+    const providers = [...onlineSelectedProviders.value];
+    const payload = onlinePayload();
+    onlineSearching.value = true;
+    onlineError.value = '';
+    onlineResults.value = [];
+    onlineLanguageFilter.value = 'all';
+    onlineProviderFilter.value = 'all';
+    onlineMessages.value = [];
+    onlineMessagesCollapsed.value = false;
+    selectedOnlineResultIds.value = [];
+    onlineProviderProgress.value = Object.fromEntries(providers.map(provider => [provider, 'searching']));
+    const finishSearch = () => {
+      if (searchSeq !== onlineSearchSeq) return
+      if (!onlineResults.value.length && !onlineMessages.value.length) {
+        onlineMessages.value = [{ level: 'info', message: '没有搜索到可自动下载的字幕，可使用右侧手动搜索链接。' }];
+      }
+      onlineSearching.value = false;
+    };
+    const searchProvider = async (provider) => {
+      try {
+        const response = await withTimeout(
+          pluginApi.value.onlineSearchProvider({
+            ...payload,
+            provider,
+            providers: [provider],
+          }),
+          ONLINE_PROVIDER_TIMEOUT_MS,
+          `${providerName(provider)} 搜索超时，已保留其它字幕源结果。`,
+        );
+        if (searchSeq !== onlineSearchSeq) return
+        const data = unwrapResponse(response) || {};
+        mergeOnlineResults(data.results || []);
+        appendOnlineMessages(data.messages || []);
+        await nextTick();
+        onlineProviderProgress.value = { ...onlineProviderProgress.value, [provider]: 'done' };
+      } catch (err) {
+        if (searchSeq !== onlineSearchSeq) return
+        onlineProviderProgress.value = {
+          ...onlineProviderProgress.value,
+          [provider]: err?.name === 'TimeoutError' ? 'timeout' : 'error',
+        };
+        appendOnlineMessages([{
+          provider,
+          level: err?.name === 'TimeoutError' ? 'info' : 'warning',
+          message: errorMessage(err, `${providerName(provider)} 在线字幕搜索失败`),
+        }]);
+      }
+    };
+    Promise.allSettled(providers.map(provider => searchProvider(provider))).then(finishSearch);
+  }
+
+  function stopOnlineSearch() {
+    if (!onlineSearching.value) return
+    onlineSearchSeq += 1;
+    onlineSearching.value = false;
+    onlineProviderProgress.value = Object.fromEntries(
+      Object.entries(onlineProviderProgress.value).map(([provider, state]) => [
+        provider,
+        state === 'searching' ? 'cancelled' : state,
+      ]),
+    );
+    appendOnlineMessages([{ level: 'info', message: '已停止等待未返回的字幕源，已显示的结果会保留。' }]);
+  }
+
+  function closeOnlineDialog() {
+    if (onlineSearching.value) {
+      stopOnlineSearch();
+    }
+    if (onlineDownloading.value) {
+      stopOnlineDownload();
+    }
+    onlineDialog.value = false;
+  }
+
+  function updateOnlineDialog(value) {
+    if (value) {
+      onlineDialog.value = true;
+      return
+    }
+    closeOnlineDialog();
+  }
+
+  function withTimeout(promise, timeoutMs, timeoutMessage) {
+    let timer = null;
+    const timeout = new Promise((resolve, reject) => {
+      timer = window.setTimeout(() => {
+        const err = new Error(timeoutMessage);
+        err.name = 'TimeoutError';
+        reject(err);
+      }, timeoutMs);
+    });
+    return Promise.race([promise, timeout]).finally(() => {
+      if (timer) window.clearTimeout(timer);
+    })
+  }
+
+  function mergeOnlineResults(items) {
+    const merged = new Map(onlineResults.value.map(item => [onlineResultKey(item), item]))
+    ;(items || []).forEach(item => {
+      if (item) merged.set(onlineResultKey(item), item);
+    });
+    onlineResults.value = Array.from(merged.values()).sort((a, b) => {
+      const provider = providerPriority(b.provider) - providerPriority(a.provider);
+      if (provider) return provider
+      const language = onlineResultLanguagePriority(b) - onlineResultLanguagePriority(a);
+      if (language) return language
+      const identity = onlineResultIdentityPriority(b) - onlineResultIdentityPriority(a);
+      if (identity) return identity
+      const score = Number(b.score || 0) - Number(a.score || 0);
+      if (score) return score
+      return providerName(a.provider).localeCompare(providerName(b.provider), 'zh-Hans-CN')
+    });
+  }
+
+  function appendOnlineMessages(items) {
+    const merged = new Map((onlineMessages.value || []).map(item => [`${item.provider || ''}:${item.level || ''}:${item.message || ''}`, item]))
+    ;(items || []).forEach(item => {
+      if (item?.message) {
+        merged.set(`${item.provider || ''}:${item.level || ''}:${item.message || ''}`, item);
+      }
+    });
+    onlineMessages.value = Array.from(merged.values());
+  }
+
+  function toggleOnlineResult(item, checked) {
+    if (!isOnlineResultDownloadable(item)) return
+    const key = onlineResultKey(item);
+    const set = new Set(selectedOnlineResultIds.value);
+    if (checked) {
+      set.add(key);
+    } else {
+      set.delete(key);
+    }
+    selectedOnlineResultIds.value = Array.from(set);
+  }
+
+  function requestOnlineAiTranslate() {
+    if (!selectedOnlineResults.value.length || onlineDownloading.value) return
+    if (!canSubmitOnlineAiTranslate.value) {
+      onlineError.value = aiAvailable.value
+        ? '请只选择外语字幕结果后再提交 AI 翻译。'
+        : 'AI 字幕生成联动当前不可用，无法提交翻译任务。';
+      return
+    }
+    onlineError.value = '';
+    onlineAiConfirmDialog.value = true;
+  }
+
+  function confirmOnlineAiTranslate() {
+    onlineAiConfirmDialog.value = false;
+    submitOnlineAiTranslate();
+  }
+
+  async function submitOnlineAiTranslate() {
+    if (!selectedOnlineResults.value.length || onlineDownloading.value) return
+    if (!canSubmitOnlineAiTranslate.value) {
+      onlineError.value = aiAvailable.value
+        ? '请只选择外语字幕结果后再提交 AI 翻译。'
+        : 'AI 字幕生成联动当前不可用，无法提交翻译任务。';
+      return
+    }
+    const allowRiskyOffset = timelineNeedsRiskyConfirm.value;
+    if (allowRiskyOffset && !confirmRiskyTimelineOffset('在线字幕提交 AI 前智能调轴')) return
+    const downloadSeq = ++onlineDownloadSeq;
+    onlineDownloading.value = true;
+    onlineAiDownloading.value = true;
+    onlineError.value = '';
+    const submittedTargets = [...onlineTargets.value];
+    try {
+      const response = await withTimeout(
+        pluginApi.value.onlineAiSubmit({
+          ...onlinePayload(),
+          results: selectedOnlineResults.value,
+          allow_risky_offset: allowRiskyOffset,
+        }),
+        ONLINE_DOWNLOAD_TIMEOUT_MS,
+        'AI 字幕任务提交仍在等待响应，已停止等待；可稍后打开 AI 状态刷新查看。',
+      );
+      if (downloadSeq !== onlineDownloadSeq) return
+      const data = unwrapResponse(response) || {};
+      const aiResult = data.ai_translate || data;
+      if (data.tasks) {
+        applyAiTaskData(data.tasks);
+      } else if (aiResult.tasks) {
+        applyAiTaskData(aiResult.tasks);
+      }
+      if (data.timeline_tasks) {
+        applyTimelineTaskData(data.timeline_tasks);
+      }
+      closeUploadDialog();
+      onlineDialog.value = false;
+      message.value = response?.message || '已提交 AI 字幕翻译任务，请查看 AI 字幕生成状态';
+      setAiTaskScopeTargets(submittedTargets);
+      await loadAiTasks({ silent: true, targets: submittedTargets });
+      await loadTimelineTasks({ silent: true, targets: submittedTargets });
+      await focusAiStatusStrip();
+    } catch (err) {
+      if (downloadSeq !== onlineDownloadSeq) return
+      onlineError.value = errorMessage(err, '提交 AI 字幕翻译失败');
+    } finally {
+      if (downloadSeq === onlineDownloadSeq) {
+        onlineDownloading.value = false;
+        onlineAiDownloading.value = false;
+      }
+    }
+  }
+
+  async function downloadOnlinePreview() {
+    if (!selectedOnlineResults.value.length || onlineDownloading.value) return
+    const downloadSeq = ++onlineDownloadSeq;
+    onlineDownloading.value = true;
+    onlinePreviewDownloading.value = true;
+    onlineError.value = '';
+    try {
+      const response = await withTimeout(
+        pluginApi.value.onlineDownloadPreview({
+          ...onlinePayload(),
+          results: selectedOnlineResults.value,
+        }),
+        ONLINE_DOWNLOAD_TIMEOUT_MS,
+        '在线字幕下载仍在源站验证中，已停止等待；可换一个结果重试，或打开手动链接下载后上传。',
+      );
+      if (downloadSeq !== onlineDownloadSeq) return
+      const data = unwrapResponse(response) || {};
+      openOnlinePreview(data, response?.message || '已下载在线字幕并生成匹配预览');
+      onlineDialog.value = false;
+    } catch (err) {
+      if (downloadSeq !== onlineDownloadSeq) return
+      onlineError.value = errorMessage(err, '在线字幕下载预览失败');
+    } finally {
+      if (downloadSeq === onlineDownloadSeq) {
+        onlineDownloading.value = false;
+        onlinePreviewDownloading.value = false;
+        onlineAiDownloading.value = false;
+      }
+    }
+  }
+
+  function stopOnlineDownload() {
+    if (!onlineDownloading.value) return
+    onlineDownloadSeq += 1;
+    onlineDownloading.value = false;
+    onlinePreviewDownloading.value = false;
+    onlineAiDownloading.value = false;
+    onlineError.value = '已停止等待在线字幕下载，当前搜索结果仍可继续选择。';
+  }
+
+  return {
+    onlineSearching,
+    onlineDownloading,
+    onlinePreviewDownloading,
+    onlineAiDownloading,
+    onlineError,
+    onlineDialog,
+    onlineAiConfirmDialog,
+    onlineTitle,
+    onlineScope,
+    onlineKeyword,
+    onlineTargets,
+    onlineStatus,
+    onlineSelectedProviders,
+    onlineResults,
+    onlineLanguageFilter,
+    onlineProviderFilter,
+    onlineMessages,
+    onlineMessagesCollapsed,
+    onlineManualLinks,
+    onlineProviderProgress,
+    selectedOnlineResultIds,
+    hasOnlineResults,
+    filteredOnlineResults,
+    onlineLanguageFilterItems,
+    onlineProviderFilterItems,
+    selectedOnlineResults,
+    canSubmitOnlineAiTranslate,
+    onlineMessageSummary,
+    onlineMessageType,
+    onlineProviderProgressItems,
+    onlineAiConfirmText,
+    onlineBatchLabel,
+    ensureConfiguredApiProvidersSelected,
+    loadOnlineStatus,
+    openOnlineDialog,
+    openBatchOnlineSearch,
+    openSingleOnlineSearch,
+    onlinePayload,
+    loadOnlineManualLinks,
+    runOnlineSearch,
+    stopOnlineSearch,
+    closeOnlineDialog,
+    updateOnlineDialog,
+    withTimeout,
+    mergeOnlineResults,
+    appendOnlineMessages,
+    toggleOnlineResult,
+    requestOnlineAiTranslate,
+    confirmOnlineAiTranslate,
+    submitOnlineAiTranslate,
+    downloadOnlinePreview,
+    stopOnlineDownload,
+  }
+}
+
+const {computed: computed$4,ref: ref$4} = await importShared('vue');
 
 
 const DEFAULT_STATUS = {
@@ -480,13 +1626,13 @@ function usePluginStatus({
   loadMatchHistory,
   runSearch,
 }) {
-  const status = ref$2({ ...DEFAULT_STATUS });
-  const loading = ref$2(false);
-  const refreshing = ref$2(false);
+  const status = ref$4({ ...DEFAULT_STATUS });
+  const loading = ref$4(false);
+  const refreshing = ref$4(false);
   let indexRefreshTimer = null;
 
-  const indexStatus = computed$2(() => status.value?.index || {});
-  const indexSummary = computed$2(() => {
+  const indexStatus = computed$4(() => status.value?.index || {});
+  const indexSummary = computed$4(() => {
     if (!indexStatus.value.ready) return '媒体库清单尚未缓存'
     const parts = [
       `${indexStatus.value.media_count || 0} 个媒体`,
@@ -495,18 +1641,18 @@ function usePluginStatus({
     if (indexStatus.value.updated_at) parts.push(`更新于 ${indexStatus.value.updated_at}`);
     return parts.join(' · ')
   });
-  const archiveStatus = computed$2(() => status.value?.archive_support || { zip: true, rar: false, rar_tool: '', rar_python: false });
-  const rarAvailable = computed$2(() => archiveStatus.value.rar === true);
-  const rarPythonAvailable = computed$2(() => archiveStatus.value.rar_python === true);
-  const rarDependencyStatus = computed$2(() => archiveStatus.value.dependency_status || {});
-  const timelineStatus = computed$2(() => status.value?.timeline_fixer || { available: false, modules: {} });
-  const timelineAvailable = computed$2(() => timelineStatus.value.available === true);
-  const timelineConfiguredMaxOffset = computed$2(() => {
+  const archiveStatus = computed$4(() => status.value?.archive_support || { zip: true, rar: false, rar_tool: '', rar_python: false });
+  const rarAvailable = computed$4(() => archiveStatus.value.rar === true);
+  const rarPythonAvailable = computed$4(() => archiveStatus.value.rar_python === true);
+  const rarDependencyStatus = computed$4(() => archiveStatus.value.dependency_status || {});
+  const timelineStatus = computed$4(() => status.value?.timeline_fixer || { available: false, modules: {} });
+  const timelineAvailable = computed$4(() => timelineStatus.value.available === true);
+  const timelineConfiguredMaxOffset = computed$4(() => {
     const value = Number(timelineStatus.value.configured_max_offset_seconds || timelineStatus.value.max_offset_seconds || 120);
     return Number.isFinite(value) && value > 0 ? value : 120
   });
-  const timelineNeedsRiskyConfirm = computed$2(() => timelineConfiguredMaxOffset.value > 120);
-  const timelineMissing = computed$2(() => {
+  const timelineNeedsRiskyConfirm = computed$4(() => timelineConfiguredMaxOffset.value > 120);
+  const timelineMissing = computed$4(() => {
     const missing = [];
     if (timelineStatus.value.ffmpeg === false) missing.push('ffmpeg');
     if (timelineStatus.value.ffprobe === false) missing.push('ffprobe');
@@ -644,7 +1790,7 @@ function usePluginStatus({
   }
 }
 
-const {computed: computed$1,ref: ref$1} = await importShared('vue');
+const {computed: computed$3,ref: ref$3} = await importShared('vue');
 
 
 function useTargets({
@@ -659,24 +1805,24 @@ function useTargets({
   afterTargetsLoaded,
   runSearch,
 }) {
-  const resolving = ref$1(false);
-  const selectedMedia = ref$1(null);
-  const detailTab = ref$1('match');
-  const seasons = ref$1([]);
-  const selectedSeason = ref$1('all');
-  const targets = ref$1([]);
-  const selectedTargetIds = ref$1([]);
-  const lockedTargetIds = ref$1([]);
-  const expandedDetailTargetIds = ref$1([]);
+  const resolving = ref$3(false);
+  const selectedMedia = ref$3(null);
+  const detailTab = ref$3('match');
+  const seasons = ref$3([]);
+  const selectedSeason = ref$3('all');
+  const targets = ref$3([]);
+  const selectedTargetIds = ref$3([]);
+  const lockedTargetIds = ref$3([]);
+  const expandedDetailTargetIds = ref$3([]);
 
-  const visibleTargets = computed$1(() => targets.value || []);
-  const selectedTargets = computed$1(() => {
+  const visibleTargets = computed$3(() => targets.value || []);
+  const selectedTargets = computed$3(() => {
     const picked = new Set(selectedTargetIds.value || []);
     return visibleTargets.value.filter(item => picked.has(item.id))
   });
-  const targetById = computed$1(() => new Map(visibleTargets.value.map(target => [target.id, target])));
-  const unlockedVisibleTargets = computed$1(() => visibleTargets.value.filter(item => !isLocked(item.id) && item.writable !== false));
-  const allVisibleSelected = computed$1(() => {
+  const targetById = computed$3(() => new Map(visibleTargets.value.map(target => [target.id, target])));
+  const unlockedVisibleTargets = computed$3(() => visibleTargets.value.filter(item => !isLocked(item.id) && item.writable !== false));
+  const allVisibleSelected = computed$3(() => {
     if (!visibleTargets.value.length) return false
     const picked = new Set(selectedTargetIds.value || []);
     return visibleTargets.value.every(item => picked.has(item.id))
@@ -834,115 +1980,520 @@ function useTargets({
   }
 }
 
-const onlineProviderItems = [
-  { title: 'SubHD', value: 'subhd' },
-  { title: 'Zimuku', value: 'zimuku' },
-  { title: '射手网(伪)', value: 'assrt' },
-  { title: 'OpenSubtitles', value: 'opensubtitles' },
-];
+const {computed: computed$2,ref: ref$2} = await importShared('vue');
 
-function onlineResultKey(item) {
-  return `${item?.provider || 'unknown'}:${item?.result_id || item?.page_url || item?.title || ''}`
-}
 
-function providerName(providerId) {
-  const known = onlineProviderItems.find(item => item.value === providerId);
-  return known?.title || providerId || '未知来源'
-}
+const EMPTY_TIMELINE_TASK_DATA = {
+  summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, skipped: 0, failed: 0 }};
 
-function providerPriority(providerId) {
-  if (providerId === 'subhd') return 35
-  if (providerId === 'assrt') return 30
-  if (providerId === 'zimuku') return 25
-  if (providerId === 'opensubtitles') return 20
-  return 0
-}
-
-function onlineResultMeta(item) {
-  const parts = [];
-  if (item.language) parts.push(item.language);
-  if (item.format) parts.push(item.format);
-  if (item.season || item.episode) {
-    parts.push(`S${String(item.season || 0).padStart(2, '0')}E${String(item.episode || 0).padStart(2, '0')}`);
+function createEmptyTimelineTaskData() {
+  return {
+    summary: { ...EMPTY_TIMELINE_TASK_DATA.summary },
+    tasks: [],
+    task_by_target: {},
   }
-  if (item.score) parts.push(`匹配 ${item.score}`);
-  return parts.join(' · ') || '等待下载后自动匹配'
 }
 
-function isOnlineResultDownloadable(item) {
-  return item?.downloadable !== false
+function useTimelineTasks({
+  pluginApi,
+  unwrapResponse,
+  errorMessage,
+  error,
+  message,
+  visibleTargets,
+  selectedSubtitleTargets,
+  lockedTargetPayload,
+  timelineAvailable,
+  timelineNeedsRiskyConfirm,
+  timelineMissing,
+  confirmRiskyTimelineOffset,
+  isStreamTarget,
+  timelineResultText,
+  loadMatchHistory,
+  scheduleHistoryTimelinePolling,
+}) {
+  const timelineFixing = ref$2(false);
+  const timelineTaskData = ref$2(createEmptyTimelineTaskData());
+  let timelineTaskTimer = null;
+
+  const selectedTimelineTargets = computed$2(() => selectedSubtitleTargets.value.filter(target => !isStreamTarget(target)));
+
+  function applyTimelineTaskData(data) {
+    timelineTaskData.value = data || timelineTaskData.value;
+  }
+
+  function resetTimelineTasks() {
+    timelineTaskData.value = createEmptyTimelineTaskData();
+    stopTimelinePolling();
+  }
+
+  function stopTimelinePolling() {
+    if (timelineTaskTimer) {
+      clearTimeout(timelineTaskTimer);
+      timelineTaskTimer = null;
+    }
+  }
+
+  function scheduleTimelinePolling() {
+    stopTimelinePolling();
+    if (!Number(timelineTaskData.value?.summary?.active || 0) || !visibleTargets.value.length) return
+    timelineTaskTimer = setTimeout(() => {
+      loadTimelineTasks({ silent: true });
+    }, 4000);
+  }
+
+  async function loadTimelineTasks(options = {}) {
+    const scopeTargets = Array.isArray(options.targets) && options.targets.length
+      ? options.targets
+      : visibleTargets.value;
+    if (!scopeTargets.length) {
+      timelineTaskData.value = createEmptyTimelineTaskData();
+      stopTimelinePolling();
+      return
+    }
+    try {
+      const response = await pluginApi.value.timelineTasks({
+        target_ids: scopeTargets.map(item => item.id),
+      });
+      applyTimelineTaskData(unwrapResponse(response) || timelineTaskData.value);
+    } catch (err) {
+      if (!options.silent) {
+        error.value = errorMessage(err, '读取智能调轴任务失败');
+      }
+    } finally {
+      scheduleTimelinePolling();
+    }
+  }
+
+  function timelineTaskForTarget(target) {
+    if (!target) return null
+    return (timelineTaskData.value.task_by_target || {})[target.id] || target.timeline_task || null
+  }
+
+  function timelineTaskText(task) {
+    if (!task) return '暂无调轴记录'
+    if (task.status === 'completed' && task.timeline) {
+      return timelineResultText({ timeline: task.timeline })
+    }
+    return task.message || task.status_label || task.status || '暂无调轴记录'
+  }
+
+  async function fixExistingTimeline(items, label = '选中字幕') {
+    if (!timelineAvailable.value) {
+      error.value = `智能调轴不可用：缺少 ${timelineMissing.value || '依赖'}`;
+      return
+    }
+    if (!items.length) {
+      error.value = '没有可调轴的历史字幕';
+      return
+    }
+    const confirmed = window.confirm(`确认对${label}提交 ${items.length} 个智能调轴任务？`);
+    if (!confirmed) return
+    const allowRiskyOffset = timelineNeedsRiskyConfirm.value;
+    if (allowRiskyOffset && !confirmRiskyTimelineOffset(`${label}智能调轴`)) return
+    timelineFixing.value = true;
+    error.value = '';
+    message.value = '';
+    try {
+      const response = await pluginApi.value.timelineFixExisting({
+        items,
+        locked_target_ids: lockedTargetPayload(),
+        allow_risky_offset: allowRiskyOffset,
+      });
+      const data = unwrapResponse(response) || {};
+      message.value = response?.message || `已提交 ${data.accepted || 0} 个智能调轴任务`;
+      await loadMatchHistory();
+      scheduleHistoryTimelinePolling();
+    } catch (err) {
+      error.value = errorMessage(err, '提交历史字幕智能调轴失败');
+    } finally {
+      timelineFixing.value = false;
+    }
+  }
+
+  function fixSelectedDetailTimeline() {
+    fixExistingTimeline(
+      selectedTimelineTargets.value.map(target => ({ target_id: target.id })),
+      '选中集数',
+    );
+  }
+
+  return {
+    timelineFixing,
+    timelineTaskData,
+    selectedTimelineTargets,
+    applyTimelineTaskData,
+    resetTimelineTasks,
+    stopTimelinePolling,
+    scheduleTimelinePolling,
+    loadTimelineTasks,
+    timelineTaskForTarget,
+    timelineTaskText,
+    fixExistingTimeline,
+    fixSelectedDetailTimeline,
+  }
 }
 
-function onlineResultLanguageCategory(item) {
-  const category = String(item?.language_category || '').toLowerCase();
-  if (['chinese', 'english', 'japanese', 'korean', 'other'].includes(category)) return category
-  const text = `${item?.language || ''} ${item?.title || ''} ${item?.note || ''}`.toLowerCase();
-  if (
-    text.includes('中文')
-    || text.includes('简体')
-    || text.includes('繁体')
-    || text.includes('双语')
-    || text.includes('chinese')
-    || /(^|[\s._()\[\]-])(zh|ze|chi|chs|cht|zho)(?=$|[\s._()\[\]-])/.test(text)
-  ) return 'chinese'
-  if (
-    text.includes('英文')
-    || text.includes('english')
-    || /(^|[\s._()\[\]-])(en|eng)(?=$|[\s._()\[\]-])/.test(text)
-  ) return 'english'
-  if (
-    text.includes('日文')
-    || text.includes('日语')
-    || text.includes('japanese')
-    || /(^|[\s._()\[\]-])(ja|jpn)(?=$|[\s._()\[\]-])/.test(text)
-  ) return 'japanese'
-  if (
-    text.includes('korean')
-    || /(^|[\s._()\[\]-])(ko|kor)(?=$|[\s._()\[\]-])/.test(text)
-  ) return 'korean'
-  return 'other'
-}
+const {computed: computed$1,ref: ref$1} = await importShared('vue');
 
-function onlineResultLanguageFilterCategory(item) {
-  const category = onlineResultLanguageCategory(item);
-  return category === 'korean' ? 'other' : category
-}
 
-function onlineResultLanguagePriority(item) {
-  const category = onlineResultLanguageCategory(item);
-  if (category === 'chinese') return 40
-  if (category === 'english') return 30
-  if (category === 'japanese' || category === 'korean') return 20
-  return 10
-}
+function useUploadPreview({
+  pluginApi,
+  unwrapResponse,
+  errorMessage,
+  error,
+  message,
+  selectedTargets,
+  visibleTargets,
+  selectedMedia,
+  selectedSeason,
+  isLocked,
+  lockedTargetPayload,
+  loadTargets,
+  timelineAvailable,
+  timelineNeedsRiskyConfirm,
+  confirmRiskyTimelineOffset,
+  isStreamTarget,
+  compactTargetName,
+  seasonLabel,
+  buildOutputName,
+}) {
+  const preparing = ref$1(false);
+  const applying = ref$1(false);
+  const dragging = ref$1(false);
+  const uploadDialog = ref$1(false);
+  const rarHelpDialog = ref$1(false);
+  const uploadTitle = ref$1('');
+  const uploadScopeTargets = ref$1([]);
+  const files = ref$1([]);
+  const preview = ref$1(null);
+  const fileInputRef = ref$1(null);
+  const fixTimeline = ref$1(false);
+  const batchLanguageSuffix = ref$1('');
+  const copyMessage = ref$1('');
+  const copyError = ref$1('');
+  const lastWritten = ref$1([]);
 
-function onlineResultIdentityPriority(item) {
-  const status = String(item?.identity_status || '').toLowerCase();
-  if (status === 'strong') return 30
-  if (status === 'weak') return 10
-  return 0
-}
+  const uploadTargets = computed$1(() => uploadScopeTargets.value.filter(item => !isLocked(item.id) && item.writable !== false));
+  const batchUploadTargets = computed$1(() => {
+    const base = selectedTargets.value.length ? selectedTargets.value : visibleTargets.value;
+    return base.filter(item => !isLocked(item.id) && item.writable !== false)
+  });
+  const targetSelectItems = computed$1(() => uploadTargets.value.map(target => ({
+    title: compactTargetName(target),
+    value: target.id,
+  })));
+  const canPrepare = computed$1(() => uploadTargets.value.length > 0 && files.value.length > 0);
+  const canApply = computed$1(() => {
+    const items = selectedPreviewItems.value;
+    return items.length > 0 && items.every(item => item.target_id)
+  });
+  const hasPreviewItems = computed$1(() => (preview.value?.items || []).length > 0);
+  const selectedPreviewItems = computed$1(() => (preview.value?.items || []).filter(item => item.selected !== false));
+  const selectedPreviewTargets = computed$1(() => {
+    const targetMap = new Map(uploadTargets.value.map(target => [target.id, target]));
+    return selectedPreviewItems.value
+      .map(item => targetMap.get(item.target_id))
+      .filter(Boolean)
+  });
+  const allSelectedPreviewTargetsAreStream = computed$1(() => {
+    const items = selectedPreviewTargets.value;
+    return items.length > 0 && items.every(isStreamTarget)
+  });
+  const hasSelectedPreviewStreamTargets = computed$1(() => selectedPreviewTargets.value.some(isStreamTarget));
+  const timelineEnabledForApply = computed$1(() => fixTimeline.value && timelineAvailable.value && !allSelectedPreviewTargetsAreStream.value);
 
-function isForeignOnlineResult(item) {
-  return onlineResultLanguageCategory(item) !== 'chinese'
-}
+  function clearUploadPreviewState() {
+    preview.value = null;
+    lastWritten.value = [];
+  }
 
-function providerProgressText(state) {
-  if (state === 'searching') return '搜索中'
-  if (state === 'done') return '已完成'
-  if (state === 'timeout') return '超时'
-  if (state === 'cancelled') return '已停止'
-  if (state === 'error') return '失败'
-  return '等待'
-}
+  function clearUploadDialogState() {
+    files.value = [];
+    preview.value = null;
+    batchLanguageSuffix.value = '';
+  }
 
-function providerProgressColor(state) {
-  if (state === 'searching') return 'info'
-  if (state === 'done') return 'success'
-  if (state === 'timeout') return 'warning'
-  if (state === 'cancelled') return 'default'
-  if (state === 'error') return 'warning'
-  return 'default'
+  function normalizePreviewItems() {
+    if (!preview.value?.items) return
+    const preferSingleCandidate = preview.value.source === 'online' && preview.value.items.length > 1;
+    preview.value.items.forEach((item, index) => {
+      const target = uploadTargets.value.find(targetItem => targetItem.id === item.target_id);
+      item.output_name = item.output_name || buildOutputName(target, item);
+      item.selected = item.selected !== false && (!preferSingleCandidate || index === 0);
+    });
+  }
+
+  function openUploadDialog(scopeTargets, title) {
+    const usableTargets = scopeTargets.filter(item => !isLocked(item.id) && item.writable !== false);
+    if (!usableTargets.length) {
+      error.value = '没有可上传的目标：选中的集数可能都已锁定';
+      return false
+    }
+    uploadScopeTargets.value = usableTargets;
+    uploadTitle.value = title;
+    if (usableTargets.every(isStreamTarget)) {
+      fixTimeline.value = false;
+    }
+    files.value = [];
+    preview.value = null;
+    batchLanguageSuffix.value = '';
+    lastWritten.value = [];
+    error.value = '';
+    message.value = '';
+    uploadDialog.value = true;
+    return true
+  }
+
+  function openBatchUpload() {
+    const title = selectedTargets.value.length
+      ? `批量上传选中 ${batchUploadTargets.value.length} 集`
+      : `批量上传 ${selectedSeason.value === 'all' ? '全部季' : seasonLabel(selectedSeason.value)}`;
+    openUploadDialog(batchUploadTargets.value, title);
+  }
+
+  function openSingleUpload(target) {
+    openUploadDialog([target], `上传 ${compactTargetName(target)}`);
+  }
+
+  function prepareOnlineUploadState(scopeTargets, title) {
+    uploadScopeTargets.value = scopeTargets;
+    uploadTitle.value = `${title} · 在线字幕`;
+    lastWritten.value = [];
+    preview.value = null;
+    files.value = [];
+  }
+
+  function openOnlinePreview(data, responseMessage) {
+    preview.value = data;
+    batchLanguageSuffix.value = '';
+    normalizePreviewItems();
+    uploadDialog.value = true;
+    message.value = responseMessage || '已下载在线字幕并生成匹配预览';
+  }
+
+  async function onPickFiles(event) {
+    const pickedFiles = Array.from(event?.target?.files || []);
+    mergeFiles(pickedFiles);
+    if (fileInputRef.value) {
+      fileInputRef.value.value = '';
+    }
+    await prepareUploadAfterFiles(pickedFiles);
+  }
+
+  function mergeFiles(inputFiles) {
+    const existing = new Map(files.value.map(item => [`${item.name}-${item.size}`, item]));
+    for (const file of inputFiles) {
+      const key = `${file.name}-${file.size}`;
+      if (!existing.has(key)) {
+        existing.set(key, file);
+      }
+    }
+    files.value = Array.from(existing.values());
+    lastWritten.value = [];
+  }
+
+  function removeFile(file) {
+    files.value = files.value.filter(item => !(item.name === file.name && item.size === file.size));
+  }
+
+  function openFileDialog() {
+    fileInputRef.value?.click();
+  }
+
+  async function handleDrop(event) {
+    event.preventDefault();
+    dragging.value = false;
+    const dropped = Array.from(event.dataTransfer?.files || []);
+    mergeFiles(dropped);
+    await prepareUploadAfterFiles(dropped);
+  }
+
+  function handleDragOver(event) {
+    event.preventDefault();
+    dragging.value = true;
+  }
+
+  function handleDragLeave(event) {
+    event.preventDefault();
+    dragging.value = false;
+  }
+
+  async function prepareUpload() {
+    if (!canPrepare.value || preparing.value) return
+    preparing.value = true;
+    error.value = '';
+    try {
+      const targetIds = uploadTargets.value.map(item => item.id);
+      const formData = new FormData();
+      formData.append('target_ids', JSON.stringify(targetIds));
+      files.value.forEach(file => {
+        formData.append('files', file);
+      });
+      const response = await pluginApi.value.prepareUpload(formData);
+      preview.value = unwrapResponse(response);
+      batchLanguageSuffix.value = '';
+      normalizePreviewItems();
+      message.value = response?.message || '已生成匹配预览';
+    } catch (err) {
+      error.value = errorMessage(err, '上传预解析失败');
+    } finally {
+      preparing.value = false;
+    }
+  }
+
+  async function prepareUploadAfterFiles(inputFiles) {
+    if (!inputFiles.length || hasPreviewItems.value || !canPrepare.value) return
+    await prepareUpload();
+  }
+
+  function updatePreviewTarget(uploadId, targetId) {
+    const item = (preview.value?.items || []).find(previewItem => previewItem.upload_id === uploadId);
+    if (!item) return
+    const target = uploadTargets.value.find(targetItem => targetItem.id === targetId);
+    item.target_id = targetId;
+    item.output_name = buildOutputName(target, item);
+  }
+
+  function updateLanguageSuffix(uploadId, value) {
+    const item = (preview.value?.items || []).find(previewItem => previewItem.upload_id === uploadId);
+    if (!item) return
+    item.language_suffix = String(value || '').trim() || 'und';
+    const target = uploadTargets.value.find(targetItem => targetItem.id === item.target_id);
+    item.output_name = buildOutputName(target, item);
+  }
+
+  function togglePreviewItem(uploadId, checked) {
+    const item = (preview.value?.items || []).find(previewItem => previewItem.upload_id === uploadId);
+    if (!item) return
+    item.selected = Boolean(checked);
+  }
+
+  function applyBatchLanguageSuffix() {
+    const suffix = batchLanguageSuffix.value.trim();
+    if (!suffix || !preview.value?.items?.length) return
+    selectedPreviewItems.value.forEach(item => {
+      item.language_suffix = suffix;
+      const target = uploadTargets.value.find(targetItem => targetItem.id === item.target_id);
+      item.output_name = buildOutputName(target, item);
+    });
+  }
+
+  function resetUploadPreview() {
+    files.value = [];
+    preview.value = null;
+    batchLanguageSuffix.value = '';
+    lastWritten.value = [];
+    error.value = '';
+    message.value = '';
+  }
+
+  function openRarHelp() {
+    copyMessage.value = '';
+    copyError.value = '';
+    rarHelpDialog.value = true;
+  }
+
+  async function copyHelpText(text, label) {
+    copyMessage.value = '';
+    copyError.value = '';
+    try {
+      await navigator.clipboard.writeText(text);
+      copyMessage.value = `${label} 已复制`;
+    } catch (err) {
+      copyError.value = '复制失败，请手动选择命令文本复制';
+    }
+  }
+
+  async function applyUpload() {
+    if (!canApply.value || !preview.value) return
+    const allowRiskyOffset = timelineEnabledForApply.value && timelineNeedsRiskyConfirm.value;
+    if (allowRiskyOffset && !confirmRiskyTimelineOffset('写入字幕智能调轴')) return
+    applying.value = true;
+    error.value = '';
+    try {
+      const payload = {
+        session_id: preview.value.session_id,
+        fix_timeline: timelineEnabledForApply.value,
+        allow_risky_offset: allowRiskyOffset,
+        locked_target_ids: lockedTargetPayload(),
+        items: selectedPreviewItems.value.map(item => ({
+          upload_id: item.upload_id,
+          target_id: item.target_id,
+          ext: item.ext,
+          language_suffix: item.language_suffix,
+        })),
+      };
+      const response = await pluginApi.value.applyUpload(payload);
+      const data = unwrapResponse(response) || {};
+      const written = data.written || [];
+      const successMessage = response?.message || `已写入 ${data.count || 0} 个字幕文件`;
+      files.value = [];
+      preview.value = null;
+      uploadDialog.value = false;
+      await loadTargets(selectedMedia.value, selectedSeason.value);
+      message.value = successMessage;
+      lastWritten.value = written;
+    } catch (err) {
+      error.value = errorMessage(err, '写入字幕失败');
+    } finally {
+      applying.value = false;
+    }
+  }
+
+  return {
+    preparing,
+    applying,
+    dragging,
+    uploadDialog,
+    rarHelpDialog,
+    uploadTitle,
+    uploadScopeTargets,
+    files,
+    preview,
+    fileInputRef,
+    fixTimeline,
+    batchLanguageSuffix,
+    copyMessage,
+    copyError,
+    lastWritten,
+    uploadTargets,
+    batchUploadTargets,
+    targetSelectItems,
+    canPrepare,
+    canApply,
+    hasPreviewItems,
+    selectedPreviewItems,
+    selectedPreviewTargets,
+    allSelectedPreviewTargetsAreStream,
+    hasSelectedPreviewStreamTargets,
+    timelineEnabledForApply,
+    clearUploadPreviewState,
+    clearUploadDialogState,
+    normalizePreviewItems,
+    openUploadDialog,
+    openBatchUpload,
+    openSingleUpload,
+    prepareOnlineUploadState,
+    openOnlinePreview,
+    onPickFiles,
+    mergeFiles,
+    removeFile,
+    openFileDialog,
+    handleDrop,
+    handleDragOver,
+    handleDragLeave,
+    prepareUpload,
+    prepareUploadAfterFiles,
+    updatePreviewTarget,
+    updateLanguageSuffix,
+    togglePreviewItem,
+    applyBatchLanguageSuffix,
+    resetUploadPreview,
+    openRarHelp,
+    copyHelpText,
+    applyUpload,
+  }
 }
 
 function isStreamTarget(target) {
@@ -1187,12 +2738,9 @@ const _hoisted_115 = { class: "rar-help-step" };
 const _hoisted_116 = ["onClick"];
 const _hoisted_117 = { class: "command-block" };
 
-const {computed,nextTick,onBeforeUnmount,onMounted,ref} = await importShared('vue');
+const {computed,onBeforeUnmount,onMounted,ref} = await importShared('vue');
 
 const matchHistoryPageSize = 20;
-const ONLINE_PROVIDER_TIMEOUT_MS = 25000;
-const ONLINE_DOWNLOAD_TIMEOUT_MS = 35000;
-
 const rarContainerInstallCommand = `docker exec -it moviepilot bash
 apt-get update
 apt-get install -y p7zip-full unrar-free`;
@@ -1241,20 +2789,9 @@ const props = __props;
 
 const pluginBase = computed(() => `plugin/${props.pluginId || 'SubtitleManualUpload'}`);
 const pluginApi = computed(() => createSubtitleManualUploadApi(props.api, pluginBase));
-const preparing = ref(false);
-const applying = ref(false);
 const clearing = ref(false);
-const aiSubmitting = ref(false);
-const aiCancelling = ref(false);
-const aiTasksLoading = ref(false);
-const onlineSearching = ref(false);
-const onlineDownloading = ref(false);
-const onlinePreviewDownloading = ref(false);
-const onlineAiDownloading = ref(false);
-const dragging = ref(false);
 const message = ref('');
 const error = ref('');
-const onlineError = ref('');
 const rootTab = ref('match');
 const matchHistoryLoading = ref(false);
 const matchHistoryItems = ref([]);
@@ -1265,7 +2802,6 @@ const expandedHistoryIds = ref([]);
 const expandedHistorySeasonKeys = ref([]);
 const expandedHistoryTargetIds = ref([]);
 const selectedHistoryTargetIds = ref({});
-const timelineFixing = ref(false);
 const autoTransferQueue = ref({
   summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, skipped: 0, failed: 0 },
   tasks: [],
@@ -1273,60 +2809,9 @@ const autoTransferQueue = ref({
   season_package_cache: [],
 });
 const autoQueueDialog = ref(false);
-const uploadDialog = ref(false);
-const rarHelpDialog = ref(false);
-const uploadTitle = ref('');
-const uploadScopeTargets = ref([]);
-const files = ref([]);
-const preview = ref(null);
-const fileInputRef = ref(null);
-const fixTimeline = ref(false);
-const batchLanguageSuffix = ref('');
-const copyMessage = ref('');
-const copyError = ref('');
-const lastWritten = ref([]);
-const onlineDialog = ref(false);
-const onlineAiConfirmDialog = ref(false);
-const onlineTitle = ref('');
-const onlineScope = ref('auto');
-const onlineKeyword = ref('');
-const onlineTargets = ref([]);
-const onlineStatus = ref({ providers: [], capabilities: {} });
-const onlineSelectedProviders = ref(['assrt', 'opensubtitles']);
-const onlineResults = ref([]);
-const onlineLanguageFilter = ref('all');
-const onlineProviderFilter = ref('all');
-const onlineMessages = ref([]);
-const onlineMessagesCollapsed = ref(false);
-const onlineManualLinks = ref([]);
-const onlineProviderProgress = ref({});
-const selectedOnlineResultIds = ref([]);
-const aiTaskDialog = ref(false);
-const aiTaskDialogTarget = ref(null);
-const aiTaskScopeTargets = ref([]);
-const aiTaskLoadToken = ref(0);
-const aiRestartSourcePolicy = ref('reuse');
-const aiRestartSubtitlePath = ref('');
-const aiSelectedTaskIds = ref([]);
-const aiStatusStripRef = ref(null);
-const aiTaskData = ref({
-  status: null,
-  summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, ignored: 0, no_audio: 0, failed: 0, cancelled: 0 },
-  tasks: [],
-  task_by_target: {},
-  tasks_by_target: {},
-});
-const timelineTaskData = ref({
-  summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, skipped: 0, failed: 0 },
-  tasks: [],
-  task_by_target: {},
-});
-let aiTaskTimer = null;
-let timelineTaskTimer = null;
 let historyTimelineTimer = null;
 let autoQueueTimer = null;
-let onlineSearchSeq = 0;
-let onlineDownloadSeq = 0;
+
 const {
   resolving,
   selectedMedia,
@@ -1360,24 +2845,9 @@ const {
   message,
   mediaLabel,
   clearRelatedState() {
-    preview.value = null;
-    lastWritten.value = [];
-    aiTaskDialogTarget.value = null;
-    aiTaskScopeTargets.value = [];
-    aiTaskData.value = {
-      ...aiTaskData.value,
-      summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, ignored: 0, no_audio: 0, failed: 0, cancelled: 0 },
-      tasks: [],
-      task_by_target: {},
-      tasks_by_target: {},
-    };
-    timelineTaskData.value = {
-      summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, skipped: 0, failed: 0 },
-      tasks: [],
-      task_by_target: {},
-    };
-    stopAiPolling();
-    stopTimelinePolling();
+    clearUploadPreviewState();
+    resetAiTasks();
+    resetTimelineTasks();
   },
   beforeLoadTargets() {
     preview.value = null;
@@ -1450,15 +2920,6 @@ const {
   runSearch,
 });
 
-const aiRestartSourceOptions = [
-  { title: '沿用原任务来源', value: 'reuse' },
-  { title: '自动选择', value: 'auto' },
-  { title: '选中外挂字幕', value: 'matched_external' },
-  { title: '本地外挂字幕', value: 'local_external' },
-  { title: '视频内嵌字幕', value: 'embedded' },
-  { title: '音轨 ASR', value: 'asr' },
-];
-
 const rarHelpItems = [
   {
     badge: '方案一',
@@ -1478,148 +2939,240 @@ const rarHelpItems = [
   },
 ];
 
-const uploadTargets = computed(() => uploadScopeTargets.value.filter(item => !isLocked(item.id) && item.writable !== false));
-const batchUploadTargets = computed(() => {
-  const base = selectedTargets.value.length ? selectedTargets.value : visibleTargets.value;
-  return base.filter(item => !isLocked(item.id) && item.writable !== false)
+const {
+  preparing,
+  applying,
+  dragging,
+  uploadDialog,
+  rarHelpDialog,
+  uploadTitle,
+  files,
+  preview,
+  fileInputRef,
+  fixTimeline,
+  batchLanguageSuffix,
+  copyMessage,
+  copyError,
+  lastWritten,
+  uploadTargets,
+  batchUploadTargets,
+  targetSelectItems,
+  canApply,
+  hasPreviewItems,
+  selectedPreviewTargets,
+  allSelectedPreviewTargetsAreStream,
+  hasSelectedPreviewStreamTargets,
+  timelineEnabledForApply,
+  clearUploadPreviewState,
+  prepareOnlineUploadState,
+  openOnlinePreview,
+  openBatchUpload,
+  openSingleUpload,
+  onPickFiles,
+  removeFile,
+  openFileDialog,
+  handleDrop,
+  handleDragOver,
+  handleDragLeave,
+  updatePreviewTarget,
+  updateLanguageSuffix,
+  togglePreviewItem,
+  applyBatchLanguageSuffix,
+  resetUploadPreview,
+  openRarHelp,
+  copyHelpText,
+  applyUpload,
+} = useUploadPreview({
+  pluginApi,
+  unwrapResponse,
+  errorMessage,
+  error,
+  message,
+  selectedTargets,
+  visibleTargets,
+  selectedMedia,
+  selectedSeason,
+  isLocked,
+  lockedTargetPayload,
+  loadTargets,
+  timelineAvailable,
+  timelineNeedsRiskyConfirm,
+  confirmRiskyTimelineOffset,
+  isStreamTarget,
+  compactTargetName,
+  seasonLabel,
+  buildOutputName,
 });
-const targetSelectItems = computed(() => uploadTargets.value.map(target => ({
-  title: compactTargetName(target),
-  value: target.id,
-})));
-const canPrepare = computed(() => uploadTargets.value.length > 0 && files.value.length > 0);
-const canApply = computed(() => {
-  const items = selectedPreviewItems.value;
-  return items.length > 0 && items.every(item => item.target_id)
+
+const selectedSubtitleTargets = computed(() => selectedTargets.value.filter(target => !isLocked(target.id) && (target.subtitles || []).length));
+
+const {
+  timelineFixing,
+  selectedTimelineTargets,
+  applyTimelineTaskData,
+  resetTimelineTasks,
+  stopTimelinePolling,
+  loadTimelineTasks,
+  timelineTaskForTarget,
+  timelineTaskText,
+  fixExistingTimeline,
+  fixSelectedDetailTimeline,
+} = useTimelineTasks({
+  pluginApi,
+  unwrapResponse,
+  errorMessage,
+  error,
+  message,
+  visibleTargets,
+  selectedSubtitleTargets,
+  lockedTargetPayload,
+  timelineAvailable,
+  timelineNeedsRiskyConfirm,
+  timelineMissing,
+  confirmRiskyTimelineOffset,
+  isStreamTarget,
+  timelineResultText,
+  loadMatchHistory,
+  scheduleHistoryTimelinePolling,
 });
-const hasPreviewItems = computed(() => (preview.value?.items || []).length > 0);
-const selectedPreviewItems = computed(() => (preview.value?.items || []).filter(item => item.selected !== false));
-const hasOnlineResults = computed(() => onlineResults.value.length > 0);
-const filteredOnlineResults = computed(() => {
-  return onlineResults.value.filter(item => {
-    const languageMatched = onlineLanguageFilter.value === 'all' || onlineResultLanguageFilterCategory(item) === onlineLanguageFilter.value;
-    const providerMatched = onlineProviderFilter.value === 'all' || item.provider === onlineProviderFilter.value;
-    return languageMatched && providerMatched
-  })
+
+const {
+  aiSubmitting,
+  aiCancelling,
+  aiTasksLoading,
+  aiTaskDialog,
+  aiTaskDialogTarget,
+  aiTaskScopeTargets,
+  aiRestartSourcePolicy,
+  aiRestartSubtitlePath,
+  aiSelectedTaskIds,
+  aiStatusStripRef,
+  aiTaskData,
+  aiStatus,
+  aiEnabled,
+  aiAvailable,
+  aiHasActiveTasks,
+  aiBatchCancelTargets,
+  aiCapableBatchTargets,
+  aiBatchLabel,
+  aiSummaryText,
+  aiDialogTasks,
+  aiDialogHasExistingTasks,
+  aiDialogHasActiveTasks,
+  aiDialogSelectedAllowedTasks,
+  aiDialogActionText,
+  aiDialogSourceLabel,
+  aiRestartSubtitleOptions,
+  applyAiTaskData,
+  resetAiTasks,
+  stopAiPolling,
+  loadAiTasks,
+  aiTaskForTarget,
+  aiTaskColor,
+  aiTaskIcon,
+  aiTaskTitle,
+  aiTaskStatusClass,
+  aiTaskIconForTask,
+  aiStatusText,
+  focusAiStatusStrip,
+  openBatchAiGenerate,
+  cancelBatchAiGenerate,
+  cancelDialogAiTasks,
+  regenerateDialogAiTasks,
+  regenerateSingleAiTask,
+  openSingleAiGenerate,
+} = useAiTasks({
+  pluginApi,
+  unwrapResponse,
+  errorMessage,
+  error,
+  message,
+  status,
+  visibleTargets,
+  selectedMedia,
+  selectedSeason,
+  selectedTargets,
+  batchUploadTargets,
+  targetById,
+  isLocked,
+  lockedTargetPayload,
+  isStreamTarget,
+  formatBytes,
 });
-const onlineLanguageFilterItems = computed(() => {
-  const languageItems = [
-    { title: '中文', value: 'chinese' },
-    { title: '英文', value: 'english' },
-    { title: '日文', value: 'japanese' },
-    { title: '其他', value: 'other' },
-  ];
-  const counts = onlineResults.value.reduce((acc, item) => {
-    const category = onlineResultLanguageFilterCategory(item);
-    acc[category] = (acc[category] || 0) + 1;
-    return acc
-  }, {});
-  return [
-    { title: `全部 ${onlineResults.value.length}`, value: 'all' },
-    ...languageItems.map(item => ({ title: `${item.title} ${counts[item.value] || 0}`, value: item.value })),
-  ]
+
+const {
+  onlineSearching,
+  onlineDownloading,
+  onlinePreviewDownloading,
+  onlineAiDownloading,
+  onlineError,
+  onlineDialog,
+  onlineAiConfirmDialog,
+  onlineTitle,
+  onlineKeyword,
+  onlineTargets,
+  onlineSelectedProviders,
+  onlineResults,
+  onlineLanguageFilter,
+  onlineProviderFilter,
+  onlineMessages,
+  onlineMessagesCollapsed,
+  onlineManualLinks,
+  selectedOnlineResultIds,
+  hasOnlineResults,
+  filteredOnlineResults,
+  onlineLanguageFilterItems,
+  onlineProviderFilterItems,
+  selectedOnlineResults,
+  canSubmitOnlineAiTranslate,
+  onlineMessageSummary,
+  onlineMessageType,
+  onlineProviderProgressItems,
+  onlineAiConfirmText,
+  onlineBatchLabel,
+  openBatchOnlineSearch,
+  openSingleOnlineSearch,
+  runOnlineSearch,
+  stopOnlineSearch,
+  closeOnlineDialog,
+  updateOnlineDialog,
+  toggleOnlineResult,
+  requestOnlineAiTranslate,
+  confirmOnlineAiTranslate,
+  downloadOnlinePreview,
+  stopOnlineDownload,
+} = useOnlineSubtitles({
+  pluginApi,
+  unwrapResponse,
+  errorMessage,
+  error,
+  message,
+  selectedMedia,
+  selectedTargets,
+  selectedSeason,
+  batchUploadTargets,
+  isLocked,
+  lockedTargetPayload,
+  compactTargetName,
+  aiAvailable,
+  timelineNeedsRiskyConfirm,
+  confirmRiskyTimelineOffset,
+  prepareOnlineUploadState,
+  openOnlinePreview,
+  closeUploadDialog() {
+    preview.value = null;
+    uploadDialog.value = false;
+  },
+  applyAiTaskData,
+  setAiTaskScopeTargets(targetsToSet) {
+    aiTaskScopeTargets.value = targetsToSet;
+  },
+  loadAiTasks,
+  focusAiStatusStrip,
+  applyTimelineTaskData,
+  loadTimelineTasks,
 });
-const onlineProviderFilterItems = computed(() => {
-  const counts = onlineResults.value.reduce((acc, item) => {
-    const provider = item.provider || 'unknown';
-    acc[provider] = (acc[provider] || 0) + 1;
-    return acc
-  }, {});
-  return [
-    { title: `全部 ${onlineResults.value.length}`, value: 'all' },
-    ...onlineProviderItems.map(item => ({ title: `${item.title} ${counts[item.value] || 0}`, value: item.value })),
-  ]
-});
-const selectedOnlineResults = computed(() => {
-  const picked = new Set(selectedOnlineResultIds.value);
-  return onlineResults.value.filter(item => picked.has(onlineResultKey(item)) && isOnlineResultDownloadable(item))
-});
-const canSubmitOnlineAiTranslate = computed(() => {
-  return aiAvailable.value && selectedOnlineResults.value.length > 0 && selectedOnlineResults.value.every(isForeignOnlineResult)
-});
-const onlineMessageSummary = computed(() => {
-  const messages = onlineMessages.value || [];
-  if (!messages.length) return ''
-  const warnings = messages.filter(item => item.level !== 'info');
-  const infos = messages.filter(item => item.level === 'info');
-  const source = warnings.length ? warnings : infos;
-  const text = source
-    .slice(0, 3)
-    .map(item => item.provider ? `${providerName(item.provider)}：${item.message}` : item.message)
-    .join('；');
-  const extra = source.length > 3 ? `；另有 ${source.length - 3} 条提示` : '';
-  return `${text}${extra}`
-});
-const onlineMessageType = computed(() => {
-  return (onlineMessages.value || []).some(item => item.level !== 'info') ? 'warning' : 'info'
-});
-const onlineProviderProgressItems = computed(() => onlineSelectedProviders.value.map(provider => ({
-  provider,
-  state: onlineProviderProgress.value[provider] || 'idle',
-})));
-const onlineAiConfirmText = computed(() => {
-  const count = selectedOnlineResults.value.length;
-  const targetCount = onlineTargets.value.length;
-  return `将把当前范围的 ${targetCount} 个目标提交给 AI字幕生成(联动版)；已选择 ${count} 个外语结果，提交后会关闭在线搜索并打开 AI 状态。`
-});
-const onlineBatchLabel = computed(() => {
-  if (selectedMedia.value?.media_type !== 'tv') return '搜索在线字幕'
-  if (selectedTargets.value.length) return `搜索选中 ${selectedTargets.value.length} 集`
-  return selectedSeason.value === 'all' ? '搜索全部季字幕包' : '搜索本季字幕包'
-});
-const aiStatus = computed(() => aiTaskData.value.status || status.value?.ai_subtitle || {});
-const aiEnabled = computed(() => aiStatus.value.enabled !== false);
-const aiAvailable = computed(() => aiEnabled.value && aiStatus.value.available === true);
-const aiSummary = computed(() => aiTaskData.value.summary || {});
-const aiHasActiveTasks = computed(() => Number(aiSummary.value.active || 0) > 0);
-const aiBatchCancelTargets = computed(() => batchUploadTargets.value.filter(target => isAiTaskActive(aiTaskForTarget(target))));
-const aiCapableBatchTargets = computed(() => batchUploadTargets.value.filter(target => !isStreamTarget(target)));
-const aiBatchLabel = computed(() => {
-  if (selectedMedia.value?.media_type !== 'tv') return 'AI 生成字幕'
-  if (selectedTargets.value.length) return `AI 生成选中 ${selectedTargets.value.length} 集`
-  return selectedSeason.value === 'all' ? 'AI 生成全部季' : 'AI 生成本季'
-});
-const aiSummaryText = computed(() => {
-  if (!aiEnabled.value) return 'AI 联动已关闭'
-  if (!aiStatus.value.installed && !aiStatus.value.available) return aiStatus.value.message || '请先安装并启用 AI字幕生成(联动版)'
-  const parts = [];
-  if (aiSummary.value.in_progress) parts.push(`${aiSummary.value.in_progress} 个生成中`);
-  if (aiSummary.value.pending) parts.push(`${aiSummary.value.pending} 个排队`);
-  if (aiSummary.value.failed) parts.push(`${aiSummary.value.failed} 个失败`);
-  if (aiSummary.value.completed) parts.push(`${aiSummary.value.completed} 个完成`);
-  if (aiSummary.value.ignored) parts.push(`${aiSummary.value.ignored} 个忽略`);
-  if (aiSummary.value.no_audio) parts.push(`${aiSummary.value.no_audio} 个无音轨`);
-  if (aiSummary.value.cancelled) parts.push(`${aiSummary.value.cancelled} 个取消`);
-  return parts.length ? `AI：${parts.join(' / ')}` : (aiStatus.value.message || 'AI：暂无当前资源任务')
-});
-const aiDialogTasks = computed(() => {
-  const targetId = aiTaskDialogTarget.value?.id;
-  if (targetId) {
-    return (aiTaskData.value.tasks_by_target || {})[targetId] || []
-  }
-  return aiTaskData.value.tasks || []
-});
-const aiDialogHasExistingTasks = computed(() => Boolean(aiDialogTasks.value.length));
-const aiDialogActiveTasks = computed(() => aiDialogTasks.value.filter(task => isAiTaskActive(task)));
-const aiDialogHasActiveTasks = computed(() => aiDialogActiveTasks.value.length > 0);
-const aiDialogRestartableTasks = computed(() => aiDialogTasks.value.filter(task => isAiTaskRestartable(task)));
-const aiDialogSelectedRestartableTasks = computed(() => {
-  const selected = new Set(aiSelectedTaskIds.value);
-  return aiDialogRestartableTasks.value.filter(task => selected.has(task.task_id))
-});
-const aiDialogSelectedAllowedTasks = computed(() => aiDialogSelectedRestartableTasks.value.filter(isAiTaskAllowed));
-const aiDialogActionText = computed(() => (aiDialogHasExistingTasks.value ? '重新生成选中' : '生成'));
-const aiDialogSourceLabel = computed(() => (aiDialogHasExistingTasks.value ? '重新生成来源' : '生成来源'));
-const aiRestartSubtitleOptions = computed(() => {
-  const target = aiTaskDialogTarget.value;
-  const subtitles = target?.subtitles || [];
-  return subtitles
-    .filter(subtitle => String(subtitle.ext || '').toLowerCase() === '.srt')
-    .map(subtitle => ({
-      title: `${subtitle.name} · ${formatBytes(subtitle.size)}`,
-      value: subtitle.path,
-    }))
-});
+
 const autoQueueSummary = computed(() => autoTransferQueue.value?.summary || status.value?.auto_transfer_queue || {});
 const autoQueueTasks = computed(() => autoTransferQueue.value?.tasks || []);
 const autoQueueActive = computed(() => Number(autoQueueSummary.value.active || 0) > 0);
@@ -1632,18 +3185,6 @@ const autoQueueSummaryText = computed(() => {
   if (autoQueueSummary.value.skipped) parts.push(`${autoQueueSummary.value.skipped} 个跳过`);
   return parts.length ? parts.join(' / ') : '暂无入库自动字幕任务'
 });
-const selectedPreviewTargets = computed(() => {
-  const targetMap = new Map(uploadTargets.value.map(target => [target.id, target]));
-  return selectedPreviewItems.value
-    .map(item => targetMap.get(item.target_id))
-    .filter(Boolean)
-});
-const allSelectedPreviewTargetsAreStream = computed(() => {
-  const items = selectedPreviewTargets.value;
-  return items.length > 0 && items.every(isStreamTarget)
-});
-const hasSelectedPreviewStreamTargets = computed(() => selectedPreviewTargets.value.some(isStreamTarget));
-const timelineEnabledForApply = computed(() => fixTimeline.value && timelineAvailable.value && !allSelectedPreviewTargetsAreStream.value);
 const seasonCards = computed(() => {
   if (selectedMedia.value?.media_type !== 'tv') return []
   const total = seasons.value.reduce((sum, item) => sum + Number(item.local_count || 0), 0);
@@ -1676,8 +3217,6 @@ const matchHistoryRows = computed(() => visibleTargets.value.map(target => {
     hasTimelineRunning: applying.value && selectedPreviewTargets.value.some(item => item.id === target.id) && timelineEnabledForApply.value,
   }
 }));
-const selectedSubtitleTargets = computed(() => selectedTargets.value.filter(target => !isLocked(target.id) && (target.subtitles || []).length));
-const selectedTimelineTargets = computed(() => selectedSubtitleTargets.value.filter(target => !isStreamTarget(target)));
 const selectedRestorableTargets = computed(() => selectedSubtitleTargets.value.filter(target => (target.subtitles || []).some(subtitle => subtitle.backup_available)));
 const matchHistorySummary = computed(() => {
   if (!matchHistoryTotal.value) return '暂无已匹配字幕记录'
@@ -1877,39 +3416,6 @@ function historySelectedTimelineTargets(item) {
   return historyTimelineTargets(item).filter(target => selected.has(target.id))
 }
 
-async function fixExistingTimeline(items, label = '选中字幕') {
-  if (!timelineAvailable.value) {
-    error.value = `智能调轴不可用：缺少 ${timelineMissing.value || '依赖'}`;
-    return
-  }
-  if (!items.length) {
-    error.value = '没有可调轴的历史字幕';
-    return
-  }
-  const confirmed = window.confirm(`确认对${label}提交 ${items.length} 个智能调轴任务？`);
-  if (!confirmed) return
-  const allowRiskyOffset = timelineNeedsRiskyConfirm.value;
-  if (allowRiskyOffset && !confirmRiskyTimelineOffset(`${label}智能调轴`)) return
-  timelineFixing.value = true;
-  error.value = '';
-  message.value = '';
-  try {
-    const response = await pluginApi.value.timelineFixExisting({
-      items,
-      locked_target_ids: lockedTargetPayload(),
-      allow_risky_offset: allowRiskyOffset,
-    });
-    const data = unwrapResponse(response) || {};
-    message.value = response?.message || `已提交 ${data.accepted || 0} 个智能调轴任务`;
-    await loadMatchHistory();
-    scheduleHistoryTimelinePolling();
-  } catch (err) {
-    error.value = errorMessage(err, '提交历史字幕智能调轴失败');
-  } finally {
-    timelineFixing.value = false;
-  }
-}
-
 function fixHistorySelectedTimeline(item) {
   const targets = historySelectedTimelineTargets(item);
   fixExistingTimeline(targets.map(target => ({ target_id: target.id })), '选中集数');
@@ -1931,13 +3437,6 @@ function detailRowForTarget(target) {
     timelineTask: timelineTaskForTarget(target),
     written: [],
   }
-}
-
-function fixSelectedDetailTimeline() {
-  fixExistingTimeline(
-    selectedTimelineTargets.value.map(target => ({ target_id: target.id })),
-    '选中集数',
-  );
 }
 
 async function restoreSubtitleBackup(target, subtitle) {
@@ -2001,400 +3500,6 @@ function confirmRiskyTimelineOffset(actionLabel = '智能调轴') {
   )
 }
 
-function ensureConfiguredApiProvidersSelected() {
-  const configured = [...(onlineStatus.value?.enabled_providers || [])]
-    .filter(provider => onlineProviderItems.some(item => item.value === provider));
-  if (onlineStatus.value?.assrt_api_configured) configured.push('assrt');
-  if (onlineStatus.value?.opensubtitles_api_configured) configured.push('opensubtitles');
-  if (!configured.length) return
-  onlineSelectedProviders.value = Array.from(new Set(configured));
-}
-
-function stopAiPolling() {
-  if (aiTaskTimer) {
-    clearTimeout(aiTaskTimer);
-    aiTaskTimer = null;
-  }
-}
-
-function stopTimelinePolling() {
-  if (timelineTaskTimer) {
-    clearTimeout(timelineTaskTimer);
-    timelineTaskTimer = null;
-  }
-}
-
-function scheduleAiPolling() {
-  stopAiPolling();
-  if (!aiHasActiveTasks.value || !currentAiTaskTargets().length) return
-  aiTaskTimer = setTimeout(() => {
-    loadAiTasks({ silent: true });
-  }, 5000);
-}
-
-function scheduleTimelinePolling() {
-  stopTimelinePolling();
-  if (!Number(timelineTaskData.value?.summary?.active || 0) || !visibleTargets.value.length) return
-  timelineTaskTimer = setTimeout(() => {
-    loadTimelineTasks({ silent: true });
-  }, 4000);
-}
-
-function currentAiTaskTargets() {
-  return aiTaskScopeTargets.value.length ? aiTaskScopeTargets.value : visibleTargets.value
-}
-
-async function loadAiTasks(options = {}) {
-  const scopeTargets = Array.isArray(options.targets) && options.targets.length
-    ? options.targets
-    : currentAiTaskTargets();
-  const requestToken = options.requestToken || 0;
-  const requestTargetIds = scopeTargets.map(item => item.id).join('|');
-  if (!scopeTargets.length) {
-    if (requestToken && requestToken !== aiTaskLoadToken.value) return
-    aiTaskData.value = {
-      ...aiTaskData.value,
-      summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, ignored: 0, no_audio: 0, failed: 0, cancelled: 0 },
-      tasks: [],
-      task_by_target: {},
-      tasks_by_target: {},
-    };
-    stopAiPolling();
-    return
-  }
-  if (!options.silent) aiTasksLoading.value = true;
-  try {
-    const response = await pluginApi.value.aiTasks({
-      target_ids: scopeTargets.map(item => item.id),
-    });
-    if (requestToken && requestToken !== aiTaskLoadToken.value) return
-    if (requestToken) {
-      const currentTargetIds = currentAiTaskTargets().map(item => item.id).join('|');
-      if (currentTargetIds !== requestTargetIds) return
-    }
-    aiTaskData.value = unwrapResponse(response) || aiTaskData.value;
-    aiSelectedTaskIds.value = aiSelectedTaskIds.value.filter(taskId => {
-      const task = (aiTaskData.value.tasks || []).find(item => item.task_id === taskId);
-      return task && isAiTaskAllowed(task)
-    });
-    if (aiTaskData.value.status) {
-      status.value = { ...status.value, ai_subtitle: aiTaskData.value.status };
-    }
-  } catch (err) {
-    if (!options.silent) {
-      error.value = errorMessage(err, '读取 AI 字幕任务失败');
-    }
-  } finally {
-    if (!options.silent) aiTasksLoading.value = false;
-    scheduleAiPolling();
-  }
-}
-
-async function loadTimelineTasks(options = {}) {
-  const scopeTargets = Array.isArray(options.targets) && options.targets.length
-    ? options.targets
-    : visibleTargets.value;
-  if (!scopeTargets.length) {
-    timelineTaskData.value = {
-      summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, skipped: 0, failed: 0 },
-      tasks: [],
-      task_by_target: {},
-    };
-    stopTimelinePolling();
-    return
-  }
-  try {
-    const response = await pluginApi.value.timelineTasks({
-      target_ids: scopeTargets.map(item => item.id),
-    });
-    timelineTaskData.value = unwrapResponse(response) || timelineTaskData.value;
-  } catch (err) {
-    if (!options.silent) {
-      error.value = errorMessage(err, '读取智能调轴任务失败');
-    }
-  } finally {
-    scheduleTimelinePolling();
-  }
-}
-
-function aiTaskForTarget(target) {
-  return (aiTaskData.value.task_by_target || {})[target?.id] || null
-}
-
-function timelineTaskForTarget(target) {
-  if (!target) return null
-  return (timelineTaskData.value.task_by_target || {})[target.id] || target.timeline_task || null
-}
-
-function isAiTaskActive(task) {
-  return Boolean(task && (task.active || ['pending', 'in_progress'].includes(task.status)))
-}
-
-function isAiTaskRestartable(task) {
-  return Boolean(task && !isAiTaskActive(task) && ['completed', 'failed', 'cancelled', 'ignored', 'no_audio'].includes(task.status))
-}
-
-function targetForAiTask(task) {
-  return targetById.value.get(task?.target_id) || null
-}
-
-function isAiTaskAllowed(task) {
-  if (!isAiTaskRestartable(task)) return false
-  const target = targetForAiTask(task);
-  if (!target) return false
-  return !isLocked(target.id) && target.writable !== false && !isStreamTarget(target)
-}
-
-function aiTaskColor(target) {
-  const task = aiTaskForTarget(target);
-  if (!aiAvailable.value) return undefined
-  if (!task) return 'primary'
-  if (task.status === 'pending') return 'info'
-  if (task.status === 'in_progress') return 'warning'
-  if (task.status === 'completed') return 'success'
-  if (task.status === 'failed') return 'error'
-  if (task.status === 'no_audio') return 'grey'
-  if (task.status === 'cancelled') return 'grey'
-  return 'secondary'
-}
-
-function aiTaskIcon(target) {
-  const task = aiTaskForTarget(target);
-  if (!task) return 'mdi-robot-outline'
-  if (task.status === 'pending') return 'mdi-clock-outline'
-  if (task.status === 'in_progress') return 'mdi-robot-happy-outline'
-  if (task.status === 'completed') return 'mdi-check-decagram-outline'
-  if (task.status === 'failed') return 'mdi-alert-circle-outline'
-  if (task.status === 'no_audio') return 'mdi-volume-off'
-  if (task.status === 'cancelled') return 'mdi-cancel'
-  return 'mdi-robot-confused-outline'
-}
-
-function aiTaskTitle(target) {
-  const task = aiTaskForTarget(target);
-  if (isStreamTarget(target)) return 'STRM 资源暂不支持 AI 生成字幕'
-  if (!aiEnabled.value) return 'AI 字幕联动已关闭'
-  if (!aiAvailable.value) return aiStatus.value.message || '请先安装并启用 AI字幕生成(联动版)'
-  if (!task) return '调用 AI 字幕生成'
-  return task.message || task.status_label || '查看 AI 任务状态'
-}
-
-function aiTaskStatusClass(target) {
-  const task = aiTaskForTarget(target);
-  return task ? `ai-${task.status}` : 'ai-idle'
-}
-
-function aiTaskIconForTask(task) {
-  if (!task) return 'mdi-robot-outline'
-  if (task.status === 'completed') return 'mdi-robot-happy-outline'
-  if (task.status === 'failed') return 'mdi-alert-circle-outline'
-  if (task.status === 'cancelled') return 'mdi-cancel'
-  if (task.status === 'no_audio') return 'mdi-volume-off'
-  if (task.status === 'ignored') return 'mdi-debug-step-over'
-  if (isAiTaskActive(task)) return 'mdi-progress-clock'
-  return 'mdi-robot-outline'
-}
-
-function aiStatusText(task) {
-  if (!task) return '未提交'
-  return task.message || task.status_label || task.status
-}
-
-function timelineTaskText(task) {
-  if (!task) return '暂无调轴记录'
-  if (task.status === 'completed' && task.timeline) {
-    return timelineResultText({ timeline: task.timeline })
-  }
-  return task.message || task.status_label || task.status || '暂无调轴记录'
-}
-
-function openAiTaskDialog(target = null) {
-  aiTaskDialogTarget.value = target;
-  aiRestartSubtitlePath.value = '';
-  aiSelectedTaskIds.value = [];
-  aiTaskDialog.value = true;
-  const scopeTargets = target
-    ? [target]
-    : (aiTaskScopeTargets.value.length ? aiTaskScopeTargets.value : visibleTargets.value);
-  aiTaskScopeTargets.value = scopeTargets;
-  const existingTasks = target
-    ? (aiTaskForTarget(target) ? [aiTaskForTarget(target)] : [])
-    : (aiTaskData.value.tasks || []).filter(task => scopeTargets.some(item => item.id === task.target_id));
-  aiRestartSourcePolicy.value = existingTasks.length ? 'reuse' : 'auto';
-  const requestToken = ++aiTaskLoadToken.value;
-  loadAiTasks({ silent: true, targets: scopeTargets, requestToken }).then(() => {
-    if (aiTaskDialog.value && requestToken === aiTaskLoadToken.value) {
-      aiRestartSourcePolicy.value = aiDialogHasExistingTasks.value ? 'reuse' : 'auto';
-    }
-  });
-}
-
-async function focusAiStatusStrip() {
-  await nextTick();
-  const el = aiStatusStripRef.value;
-  if (!el) return
-  el.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
-  el.focus?.({ preventScroll: true });
-}
-
-async function submitAiForTargets(scopeTargets) {
-  return submitAiForTargetsWithOptions(scopeTargets)
-}
-
-async function submitAiForTargetsWithOptions(scopeTargets, options = {}) {
-  const streamCount = scopeTargets.filter(isStreamTarget).length;
-  const usableTargets = scopeTargets.filter(item => !isLocked(item.id) && item.writable !== false);
-  const capableTargets = usableTargets.filter(item => !isStreamTarget(item));
-  if (!usableTargets.length || !capableTargets.length) {
-    error.value = streamCount
-      ? 'STRM 资源暂不支持 AI 生成字幕，请选择本地视频文件'
-      : '没有可生成 AI 字幕的目标：选中的集数可能都已锁定';
-    return
-  }
-  if (!aiAvailable.value) {
-    error.value = aiStatus.value.message || '请先安装并启用 AI字幕生成(联动版)';
-    return
-  }
-  aiSubmitting.value = true;
-  error.value = '';
-  message.value = '';
-  try {
-    const payload = {
-      target_ids: usableTargets.map(item => item.id),
-      locked_target_ids: lockedTargetPayload(),
-    };
-    if (options.source_policy) payload.source_policy = options.source_policy;
-    if (options.source_subtitle_path) payload.source_subtitle_path = options.source_subtitle_path;
-    if (options.overwrite_policy) payload.overwrite_policy = options.overwrite_policy;
-    const response = await pluginApi.value.aiSubmit(payload);
-    const data = unwrapResponse(response) || {};
-    if (data.tasks) {
-      aiTaskData.value = data.tasks;
-    }
-    aiTaskScopeTargets.value = usableTargets;
-    message.value = response?.message || '已提交 AI 字幕生成任务';
-    await loadAiTasks({ silent: true, targets: usableTargets });
-  } catch (err) {
-    error.value = errorMessage(err, '提交 AI 字幕任务失败');
-  } finally {
-    aiSubmitting.value = false;
-  }
-}
-
-async function cancelAiForTargets(scopeTargets) {
-  const activeTargets = scopeTargets.filter(target => isAiTaskActive(aiTaskForTarget(target)));
-  if (!activeTargets.length) {
-    message.value = '当前范围没有可取消的 AI 字幕任务';
-    return
-  }
-  aiCancelling.value = true;
-  error.value = '';
-  message.value = '';
-  try {
-    const response = await pluginApi.value.aiCancel({
-      target_ids: activeTargets.map(item => item.id),
-      locked_target_ids: lockedTargetPayload(),
-    });
-    const data = unwrapResponse(response) || {};
-    if (data.tasks) {
-      aiTaskData.value = data.tasks;
-    }
-    aiTaskScopeTargets.value = activeTargets;
-    message.value = response?.message || '已取消 AI 字幕任务';
-    await loadAiTasks({ silent: true, targets: activeTargets });
-  } catch (err) {
-    error.value = errorMessage(err, '取消 AI 字幕任务失败');
-  } finally {
-    aiCancelling.value = false;
-  }
-}
-
-function openBatchAiGenerate() {
-  submitAiForTargets(batchUploadTargets.value);
-}
-
-function cancelBatchAiGenerate() {
-  cancelAiForTargets(batchUploadTargets.value);
-}
-
-function cancelDialogAiTasks() {
-  const scopeTargets = aiTaskDialogTarget.value ? [aiTaskDialogTarget.value] : visibleTargets.value;
-  cancelAiForTargets(scopeTargets);
-}
-
-async function regenerateDialogAiTasks() {
-  const selectedTaskIds = aiDialogSelectedAllowedTasks.value
-    .map(task => task.task_id);
-  return regenerateAiTasksByIds(selectedTaskIds)
-}
-
-async function regenerateSingleAiTask(task) {
-  if (!isAiTaskAllowed(task)) return
-  await regenerateAiTasksByIds([task.task_id]);
-}
-
-async function regenerateAiTasksByIds(taskIds = []) {
-  const scopeTargets = aiTaskDialogTarget.value
-    ? [aiTaskDialogTarget.value]
-    : (aiTaskScopeTargets.value.length ? aiTaskScopeTargets.value : visibleTargets.value);
-  const usableTargets = scopeTargets.filter(item => !isLocked(item.id) && item.writable !== false && !isStreamTarget(item));
-  if (!usableTargets.length) {
-    message.value = '没有可重新生成 AI 字幕的目标：选中的集数可能都已锁定或是 STRM';
-    return
-  }
-  if (aiRestartSourcePolicy.value === 'matched_external' && !aiRestartSubtitlePath.value) {
-    message.value = '请先选择要用于重新生成的外挂 SRT 字幕';
-    return
-  }
-  const hasExistingTasks = aiDialogHasExistingTasks.value;
-  if (hasExistingTasks && !taskIds.length) {
-    message.value = '请先勾选可重新生成的 AI 历史任务；锁定、不可写、STRM 或正在处理的任务不能重跑';
-    return
-  }
-  const sourcePolicy = !hasExistingTasks && aiRestartSourcePolicy.value === 'reuse'
-    ? 'auto'
-    : aiRestartSourcePolicy.value;
-  const overwritePolicy = hasExistingTasks
-    ? (sourcePolicy === 'reuse' ? 'backup_replace' : 'new_variant')
-    : (sourcePolicy === 'auto' ? 'skip' : 'new_variant');
-  if (!hasExistingTasks) {
-    await submitAiForTargetsWithOptions(usableTargets, {
-      source_policy: sourcePolicy,
-      source_subtitle_path: sourcePolicy === 'matched_external' ? aiRestartSubtitlePath.value : '',
-      overwrite_policy: overwritePolicy,
-    });
-    return
-  }
-  aiSubmitting.value = true;
-  error.value = '';
-  message.value = '';
-  try {
-    const response = await pluginApi.value.aiRestart({
-      target_ids: usableTargets.map(item => item.id),
-      task_ids: taskIds,
-      locked_target_ids: lockedTargetPayload(),
-      source_policy: sourcePolicy,
-      source_subtitle_path: sourcePolicy === 'matched_external' ? aiRestartSubtitlePath.value : '',
-      overwrite_policy: overwritePolicy,
-    });
-    const data = unwrapResponse(response) || {};
-    if (data.tasks) {
-      aiTaskData.value = data.tasks;
-    }
-    aiTaskScopeTargets.value = usableTargets;
-    message.value = response?.message || '已重新提交 AI 字幕生成任务';
-    await loadAiTasks({ silent: true, targets: usableTargets });
-  } catch (err) {
-    error.value = errorMessage(err, '重新生成 AI 字幕任务失败');
-  } finally {
-    aiSubmitting.value = false;
-  }
-}
-
-function openSingleAiGenerate(target) {
-  openAiTaskDialog(target);
-}
-
 function stopAutoQueuePolling() {
   if (autoQueueTimer) {
     clearTimeout(autoQueueTimer);
@@ -2441,20 +3546,6 @@ function scheduleHistoryTimelinePolling() {
     await loadMatchHistory();
     scheduleHistoryTimelinePolling();
   }, 3000);
-}
-
-async function loadOnlineStatus() {
-  try {
-    const response = await pluginApi.value.onlineStatus();
-    onlineStatus.value = unwrapResponse(response) || onlineStatus.value;
-    const enabled = onlineStatus.value.enabled_providers || [];
-    if (enabled.length) {
-      onlineSelectedProviders.value = enabled;
-    }
-    ensureConfiguredApiProvidersSelected();
-  } catch (err) {
-    onlineError.value = errorMessage(err, '加载在线字幕源状态失败');
-  }
 }
 
 function submitRootSearch() {
@@ -2535,547 +3626,6 @@ async function deleteSubtitle(target, subtitle) {
     error.value = errorMessage(err, '删除外挂字幕失败');
   } finally {
     clearing.value = false;
-  }
-}
-
-function openUploadDialog(scopeTargets, title) {
-  const usableTargets = scopeTargets.filter(item => !isLocked(item.id) && item.writable !== false);
-  if (!usableTargets.length) {
-    error.value = '没有可上传的目标：选中的集数可能都已锁定';
-    return
-  }
-  uploadScopeTargets.value = usableTargets;
-  uploadTitle.value = title;
-  if (usableTargets.every(isStreamTarget)) {
-    fixTimeline.value = false;
-  }
-  files.value = [];
-  preview.value = null;
-  batchLanguageSuffix.value = '';
-  lastWritten.value = [];
-  error.value = '';
-  message.value = '';
-  uploadDialog.value = true;
-}
-
-function openBatchUpload() {
-  const title = selectedTargets.value.length
-    ? `批量上传选中 ${batchUploadTargets.value.length} 集`
-    : `批量上传 ${selectedSeason.value === 'all' ? '全部季' : seasonLabel(selectedSeason.value)}`;
-  openUploadDialog(batchUploadTargets.value, title);
-}
-
-function openSingleUpload(target) {
-  openUploadDialog([target], `上传 ${compactTargetName(target)}`);
-}
-
-async function openOnlineDialog(scopeTargets, title, scope) {
-  const usableTargets = scopeTargets.filter(item => !isLocked(item.id) && item.writable !== false);
-  if (!usableTargets.length) {
-    error.value = '没有可搜索的目标：选中的集数可能都已锁定';
-    return
-  }
-  onlineTitle.value = title;
-  onlineScope.value = scope;
-  onlineTargets.value = usableTargets;
-  uploadScopeTargets.value = usableTargets;
-  uploadTitle.value = `${title} · 在线字幕`;
-  onlineKeyword.value = '';
-  onlineResults.value = [];
-  onlineLanguageFilter.value = 'all';
-  onlineProviderFilter.value = 'all';
-  onlineMessages.value = [];
-  onlineMessagesCollapsed.value = false;
-  onlineManualLinks.value = [];
-  onlineProviderProgress.value = {};
-  selectedOnlineResultIds.value = [];
-  onlineError.value = '';
-  error.value = '';
-  message.value = '';
-  lastWritten.value = [];
-  preview.value = null;
-  files.value = [];
-  onlineDialog.value = true;
-  await loadOnlineStatus();
-  await loadOnlineManualLinks();
-  await runOnlineSearch();
-}
-
-function openBatchOnlineSearch() {
-  const title = selectedMedia.value?.media_type === 'tv'
-    ? onlineBatchLabel.value
-    : '搜索在线字幕';
-  const scope = selectedMedia.value?.media_type === 'tv'
-    ? (selectedTargets.value.length ? 'batch' : 'season')
-    : 'movie';
-  openOnlineDialog(batchUploadTargets.value, title, scope);
-}
-
-function openSingleOnlineSearch(target) {
-  openOnlineDialog([target], `搜索 ${compactTargetName(target)}`, 'episode');
-}
-
-function onlinePayload() {
-  return {
-    target_ids: onlineTargets.value.map(item => item.id),
-    locked_target_ids: lockedTargetPayload(),
-    media: selectedMedia.value,
-    scope: onlineScope.value,
-    keyword: onlineKeyword.value.trim(),
-    providers: onlineSelectedProviders.value,
-  }
-}
-
-async function loadOnlineManualLinks() {
-  if (!onlineTargets.value.length) return
-  try {
-    const response = await pluginApi.value.onlineManualLinks(onlinePayload());
-    const data = unwrapResponse(response) || {};
-    onlineManualLinks.value = data.links || [];
-  } catch (err) {
-    onlineError.value = errorMessage(err, '生成手动搜索链接失败');
-  }
-}
-
-async function runOnlineSearch() {
-  if (!onlineTargets.value.length || onlineSearching.value) return
-  if (!onlineSelectedProviders.value.length) {
-    onlineError.value = '请至少选择一个在线字幕源';
-    return
-  }
-  const searchSeq = ++onlineSearchSeq;
-  const providers = [...onlineSelectedProviders.value];
-  const payload = onlinePayload();
-  onlineSearching.value = true;
-  onlineError.value = '';
-  onlineResults.value = [];
-  onlineLanguageFilter.value = 'all';
-  onlineProviderFilter.value = 'all';
-  onlineMessages.value = [];
-  onlineMessagesCollapsed.value = false;
-  selectedOnlineResultIds.value = [];
-  onlineProviderProgress.value = Object.fromEntries(providers.map(provider => [provider, 'searching']));
-  const finishSearch = () => {
-    if (searchSeq !== onlineSearchSeq) return
-    if (!onlineResults.value.length && !onlineMessages.value.length) {
-      onlineMessages.value = [{ level: 'info', message: '没有搜索到可自动下载的字幕，可使用右侧手动搜索链接。' }];
-    }
-    onlineSearching.value = false;
-  };
-  const searchProvider = async (provider) => {
-    try {
-      const response = await withTimeout(
-        pluginApi.value.onlineSearchProvider({
-          ...payload,
-          provider,
-          providers: [provider],
-        }),
-        ONLINE_PROVIDER_TIMEOUT_MS,
-        `${providerName(provider)} 搜索超时，已保留其它字幕源结果。`,
-      );
-      if (searchSeq !== onlineSearchSeq) return
-      const data = unwrapResponse(response) || {};
-      mergeOnlineResults(data.results || []);
-      appendOnlineMessages(data.messages || []);
-      await nextTick();
-      onlineProviderProgress.value = { ...onlineProviderProgress.value, [provider]: 'done' };
-    } catch (err) {
-      if (searchSeq !== onlineSearchSeq) return
-      onlineProviderProgress.value = {
-        ...onlineProviderProgress.value,
-        [provider]: err?.name === 'TimeoutError' ? 'timeout' : 'error',
-      };
-      appendOnlineMessages([{
-        provider,
-        level: err?.name === 'TimeoutError' ? 'info' : 'warning',
-        message: errorMessage(err, `${providerName(provider)} 在线字幕搜索失败`),
-      }]);
-    }
-  };
-  Promise.allSettled(providers.map(provider => searchProvider(provider))).then(finishSearch);
-}
-
-function stopOnlineSearch() {
-  if (!onlineSearching.value) return
-  onlineSearchSeq += 1;
-  onlineSearching.value = false;
-  onlineProviderProgress.value = Object.fromEntries(
-    Object.entries(onlineProviderProgress.value).map(([provider, state]) => [
-      provider,
-      state === 'searching' ? 'cancelled' : state,
-    ]),
-  );
-  appendOnlineMessages([{ level: 'info', message: '已停止等待未返回的字幕源，已显示的结果会保留。' }]);
-}
-
-function closeOnlineDialog() {
-  if (onlineSearching.value) {
-    stopOnlineSearch();
-  }
-  if (onlineDownloading.value) {
-    stopOnlineDownload();
-  }
-  onlineDialog.value = false;
-}
-
-function updateOnlineDialog(value) {
-  if (value) {
-    onlineDialog.value = true;
-    return
-  }
-  closeOnlineDialog();
-}
-
-function withTimeout(promise, timeoutMs, message) {
-  let timer = null;
-  const timeout = new Promise((resolve, reject) => {
-    timer = window.setTimeout(() => {
-      const err = new Error(message);
-      err.name = 'TimeoutError';
-      reject(err);
-    }, timeoutMs);
-  });
-  return Promise.race([promise, timeout]).finally(() => {
-    if (timer) window.clearTimeout(timer);
-  })
-}
-
-function mergeOnlineResults(items) {
-  const merged = new Map(onlineResults.value.map(item => [onlineResultKey(item), item]))
-  ;(items || []).forEach(item => {
-    if (item) merged.set(onlineResultKey(item), item);
-  });
-  onlineResults.value = Array.from(merged.values()).sort((a, b) => {
-    const provider = providerPriority(b.provider) - providerPriority(a.provider);
-    if (provider) return provider
-    const language = onlineResultLanguagePriority(b) - onlineResultLanguagePriority(a);
-    if (language) return language
-    const identity = onlineResultIdentityPriority(b) - onlineResultIdentityPriority(a);
-    if (identity) return identity
-    const score = Number(b.score || 0) - Number(a.score || 0);
-    if (score) return score
-    return providerName(a.provider).localeCompare(providerName(b.provider), 'zh-Hans-CN')
-  });
-}
-
-function appendOnlineMessages(items) {
-  const merged = new Map((onlineMessages.value || []).map(item => [`${item.provider || ''}:${item.level || ''}:${item.message || ''}`, item]))
-  ;(items || []).forEach(item => {
-    if (item?.message) {
-      merged.set(`${item.provider || ''}:${item.level || ''}:${item.message || ''}`, item);
-    }
-  });
-  onlineMessages.value = Array.from(merged.values());
-}
-
-function toggleOnlineResult(item, checked) {
-  if (!isOnlineResultDownloadable(item)) return
-  const key = onlineResultKey(item);
-  const set = new Set(selectedOnlineResultIds.value);
-  if (checked) {
-    set.add(key);
-  } else {
-    set.delete(key);
-  }
-  selectedOnlineResultIds.value = Array.from(set);
-}
-
-function requestOnlineAiTranslate() {
-  if (!selectedOnlineResults.value.length || onlineDownloading.value) return
-  if (!canSubmitOnlineAiTranslate.value) {
-    onlineError.value = aiAvailable.value
-      ? '请只选择外语字幕结果后再提交 AI 翻译。'
-      : 'AI 字幕生成联动当前不可用，无法提交翻译任务。';
-    return
-  }
-  onlineError.value = '';
-  onlineAiConfirmDialog.value = true;
-}
-
-function confirmOnlineAiTranslate() {
-  onlineAiConfirmDialog.value = false;
-  submitOnlineAiTranslate();
-}
-
-async function submitOnlineAiTranslate() {
-  if (!selectedOnlineResults.value.length || onlineDownloading.value) return
-  if (!canSubmitOnlineAiTranslate.value) {
-    onlineError.value = aiAvailable.value
-      ? '请只选择外语字幕结果后再提交 AI 翻译。'
-      : 'AI 字幕生成联动当前不可用，无法提交翻译任务。';
-    return
-  }
-  const allowRiskyOffset = timelineNeedsRiskyConfirm.value;
-  if (allowRiskyOffset && !confirmRiskyTimelineOffset('在线字幕提交 AI 前智能调轴')) return
-  const downloadSeq = ++onlineDownloadSeq;
-  onlineDownloading.value = true;
-  onlineAiDownloading.value = true;
-  onlineError.value = '';
-  const submittedTargets = [...onlineTargets.value];
-  try {
-    const response = await withTimeout(
-      pluginApi.value.onlineAiSubmit({
-        ...onlinePayload(),
-        results: selectedOnlineResults.value,
-        allow_risky_offset: allowRiskyOffset,
-      }),
-      ONLINE_DOWNLOAD_TIMEOUT_MS,
-      'AI 字幕任务提交仍在等待响应，已停止等待；可稍后打开 AI 状态刷新查看。',
-    );
-    if (downloadSeq !== onlineDownloadSeq) return
-    const data = unwrapResponse(response) || {};
-    const aiResult = data.ai_translate || data;
-    if (data.tasks) {
-      aiTaskData.value = data.tasks;
-    } else if (aiResult.tasks) {
-      aiTaskData.value = aiResult.tasks;
-    }
-    if (data.timeline_tasks) {
-      timelineTaskData.value = data.timeline_tasks;
-    }
-    preview.value = null;
-    uploadDialog.value = false;
-    onlineDialog.value = false;
-    message.value = response?.message || '已提交 AI 字幕翻译任务，请查看 AI 字幕生成状态';
-    aiTaskScopeTargets.value = submittedTargets;
-    await loadAiTasks({ silent: true, targets: submittedTargets });
-    await loadTimelineTasks({ silent: true, targets: submittedTargets });
-    await focusAiStatusStrip();
-  } catch (err) {
-    if (downloadSeq !== onlineDownloadSeq) return
-    onlineError.value = errorMessage(err, '提交 AI 字幕翻译失败');
-  } finally {
-    if (downloadSeq === onlineDownloadSeq) {
-      onlineDownloading.value = false;
-      onlineAiDownloading.value = false;
-    }
-  }
-}
-
-async function downloadOnlinePreview() {
-  if (!selectedOnlineResults.value.length || onlineDownloading.value) return
-  const downloadSeq = ++onlineDownloadSeq;
-  onlineDownloading.value = true;
-  onlinePreviewDownloading.value = true;
-  onlineError.value = '';
-  try {
-    const response = await withTimeout(
-      pluginApi.value.onlineDownloadPreview({
-        ...onlinePayload(),
-        results: selectedOnlineResults.value,
-      }),
-      ONLINE_DOWNLOAD_TIMEOUT_MS,
-      '在线字幕下载仍在源站验证中，已停止等待；可换一个结果重试，或打开手动链接下载后上传。',
-    );
-    if (downloadSeq !== onlineDownloadSeq) return
-    const data = unwrapResponse(response) || {};
-    preview.value = data;
-    batchLanguageSuffix.value = '';
-    if (preview.value?.items) {
-      const preferSingleCandidate = preview.value.source === 'online' && preview.value.items.length > 1;
-      preview.value.items.forEach((item, index) => {
-        const target = uploadTargets.value.find(targetItem => targetItem.id === item.target_id);
-        item.output_name = item.output_name || buildOutputName(target, item);
-        item.selected = item.selected !== false && (!preferSingleCandidate || index === 0);
-      });
-    }
-    onlineDialog.value = false;
-    uploadDialog.value = true;
-    message.value = response?.message || '已下载在线字幕并生成匹配预览';
-  } catch (err) {
-    if (downloadSeq !== onlineDownloadSeq) return
-    onlineError.value = errorMessage(err, '在线字幕下载预览失败');
-  } finally {
-    if (downloadSeq === onlineDownloadSeq) {
-      onlineDownloading.value = false;
-      onlinePreviewDownloading.value = false;
-      onlineAiDownloading.value = false;
-    }
-  }
-}
-
-function stopOnlineDownload() {
-  if (!onlineDownloading.value) return
-  onlineDownloadSeq += 1;
-  onlineDownloading.value = false;
-  onlinePreviewDownloading.value = false;
-  onlineAiDownloading.value = false;
-  onlineError.value = '已停止等待在线字幕下载，当前搜索结果仍可继续选择。';
-}
-
-async function onPickFiles(event) {
-  const pickedFiles = Array.from(event?.target?.files || []);
-  mergeFiles(pickedFiles);
-  if (fileInputRef.value) {
-    fileInputRef.value.value = '';
-  }
-  await prepareUploadAfterFiles(pickedFiles);
-}
-
-function mergeFiles(inputFiles) {
-  const existing = new Map(files.value.map(item => [`${item.name}-${item.size}`, item]));
-  for (const file of inputFiles) {
-    const key = `${file.name}-${file.size}`;
-    if (!existing.has(key)) {
-      existing.set(key, file);
-    }
-  }
-  files.value = Array.from(existing.values());
-  lastWritten.value = [];
-}
-
-function removeFile(file) {
-  files.value = files.value.filter(item => !(item.name === file.name && item.size === file.size));
-}
-
-function openFileDialog() {
-  fileInputRef.value?.click();
-}
-
-async function handleDrop(event) {
-  event.preventDefault();
-  dragging.value = false;
-  const dropped = Array.from(event.dataTransfer?.files || []);
-  mergeFiles(dropped);
-  await prepareUploadAfterFiles(dropped);
-}
-
-function handleDragOver(event) {
-  event.preventDefault();
-  dragging.value = true;
-}
-
-function handleDragLeave(event) {
-  event.preventDefault();
-  dragging.value = false;
-}
-
-async function prepareUpload() {
-  if (!canPrepare.value || preparing.value) return
-  preparing.value = true;
-  error.value = '';
-  try {
-    const targetIds = uploadTargets.value.map(item => item.id);
-    const formData = new FormData();
-    formData.append('target_ids', JSON.stringify(targetIds));
-    files.value.forEach(file => {
-      formData.append('files', file);
-    });
-    const response = await pluginApi.value.prepareUpload(formData);
-    preview.value = unwrapResponse(response);
-    batchLanguageSuffix.value = '';
-    if (preview.value?.items) {
-      const preferSingleCandidate = preview.value.source === 'online' && preview.value.items.length > 1;
-      preview.value.items.forEach((item, index) => {
-        const target = uploadTargets.value.find(targetItem => targetItem.id === item.target_id);
-        item.output_name = item.output_name || buildOutputName(target, item);
-        item.selected = item.selected !== false && (!preferSingleCandidate || index === 0);
-      });
-    }
-    message.value = response?.message || '已生成匹配预览';
-  } catch (err) {
-    error.value = errorMessage(err, '上传预解析失败');
-  } finally {
-    preparing.value = false;
-  }
-}
-
-async function prepareUploadAfterFiles(inputFiles) {
-  if (!inputFiles.length || hasPreviewItems.value || !canPrepare.value) return
-  await prepareUpload();
-}
-
-function updatePreviewTarget(uploadId, targetId) {
-  const item = (preview.value?.items || []).find(previewItem => previewItem.upload_id === uploadId);
-  if (!item) return
-  const target = uploadTargets.value.find(targetItem => targetItem.id === targetId);
-  item.target_id = targetId;
-  item.output_name = buildOutputName(target, item);
-}
-
-function updateLanguageSuffix(uploadId, value) {
-  const item = (preview.value?.items || []).find(previewItem => previewItem.upload_id === uploadId);
-  if (!item) return
-  item.language_suffix = String(value || '').trim() || 'und';
-  const target = uploadTargets.value.find(targetItem => targetItem.id === item.target_id);
-  item.output_name = buildOutputName(target, item);
-}
-
-function togglePreviewItem(uploadId, checked) {
-  const item = (preview.value?.items || []).find(previewItem => previewItem.upload_id === uploadId);
-  if (!item) return
-  item.selected = Boolean(checked);
-}
-
-function applyBatchLanguageSuffix() {
-  const suffix = batchLanguageSuffix.value.trim();
-  if (!suffix || !preview.value?.items?.length) return
-  selectedPreviewItems.value.forEach(item => {
-    item.language_suffix = suffix;
-    const target = uploadTargets.value.find(targetItem => targetItem.id === item.target_id);
-    item.output_name = buildOutputName(target, item);
-  });
-}
-
-function resetUploadPreview() {
-  files.value = [];
-  preview.value = null;
-  batchLanguageSuffix.value = '';
-  lastWritten.value = [];
-  error.value = '';
-  message.value = '';
-}
-
-function openRarHelp() {
-  copyMessage.value = '';
-  copyError.value = '';
-  rarHelpDialog.value = true;
-}
-
-async function copyHelpText(text, label) {
-  copyMessage.value = '';
-  copyError.value = '';
-  try {
-    await navigator.clipboard.writeText(text);
-    copyMessage.value = `${label} 已复制`;
-  } catch (err) {
-    copyError.value = '复制失败，请手动选择命令文本复制';
-  }
-}
-
-async function applyUpload() {
-  if (!canApply.value || !preview.value) return
-  const allowRiskyOffset = timelineEnabledForApply.value && timelineNeedsRiskyConfirm.value;
-  if (allowRiskyOffset && !confirmRiskyTimelineOffset('写入字幕智能调轴')) return
-  applying.value = true;
-  error.value = '';
-  try {
-    const payload = {
-      session_id: preview.value.session_id,
-      fix_timeline: timelineEnabledForApply.value,
-      allow_risky_offset: allowRiskyOffset,
-      locked_target_ids: lockedTargetPayload(),
-      items: selectedPreviewItems.value.map(item => ({
-        upload_id: item.upload_id,
-        target_id: item.target_id,
-        ext: item.ext,
-        language_suffix: item.language_suffix,
-      })),
-    };
-    const response = await pluginApi.value.applyUpload(payload);
-    const data = unwrapResponse(response) || {};
-    const written = data.written || [];
-    const successMessage = response?.message || `已写入 ${data.count || 0} 个字幕文件`;
-    files.value = [];
-    preview.value = null;
-    uploadDialog.value = false;
-    await loadTargets(selectedMedia.value, selectedSeason.value);
-    message.value = successMessage;
-    lastWritten.value = written;
-  } catch (err) {
-    error.value = errorMessage(err, '写入字幕失败');
-  } finally {
-    applying.value = false;
   }
 }
 
@@ -3172,7 +3722,7 @@ return (_ctx, _cache) => {
         ]))
       : _createCommentVNode("", true),
     (!__props.hideTitle)
-      ? (_openBlock(), _createElementBlock("div", _hoisted_3, [...(_cache[32] || (_cache[32] = [
+      ? (_openBlock(), _createElementBlock("div", _hoisted_3, [...(_cache[37] || (_cache[37] = [
           _createElementVNode("div", null, [
             _createElementVNode("h1", null, "字幕匹配"),
             _createElementVNode("p", null, "从 MoviePilot 本地库选择资源，上传字幕后确认匹配与改名结果。")
@@ -3219,7 +3769,7 @@ return (_ctx, _cache) => {
                       loading: _unref(refreshing),
                       onClick: _unref(refreshIndex)
                     }, {
-                      default: _withCtx(() => [...(_cache[33] || (_cache[33] = [
+                      default: _withCtx(() => [...(_cache[38] || (_cache[38] = [
                         _createTextVNode(" 刷新媒体库清单 ", -1)
                       ]))]),
                       _: 1
@@ -3254,7 +3804,7 @@ return (_ctx, _cache) => {
                       loading: rootTab.value === 'history' ? matchHistoryLoading.value : _unref(searching),
                       onClick: submitRootSearch
                     }, {
-                      default: _withCtx(() => [...(_cache[34] || (_cache[34] = [
+                      default: _withCtx(() => [...(_cache[39] || (_cache[39] = [
                         _createTextVNode(" 搜索 ", -1)
                       ]))]),
                       _: 1
@@ -3308,7 +3858,7 @@ return (_ctx, _cache) => {
                       loading: _unref(searching),
                       onClick: _unref(loadMoreMedia)
                     }, {
-                      default: _withCtx(() => [...(_cache[35] || (_cache[35] = [
+                      default: _withCtx(() => [...(_cache[40] || (_cache[40] = [
                         _createTextVNode(" 加载下一页 ", -1)
                       ]))]),
                       _: 1
@@ -3397,7 +3947,7 @@ return (_ctx, _cache) => {
                                 loading: clearing.value,
                                 onClick: _withModifiers($event => (clearHistorySelectedSubtitles(item)), ["stop"])
                               }, {
-                                default: _withCtx(() => [...(_cache[36] || (_cache[36] = [
+                                default: _withCtx(() => [...(_cache[41] || (_cache[41] = [
                                   _createTextVNode(" 删除选中 ", -1)
                                 ]))]),
                                 _: 1
@@ -3407,11 +3957,11 @@ return (_ctx, _cache) => {
                                 color: "warning",
                                 variant: "tonal",
                                 "prepend-icon": "mdi-timeline-clock-outline",
-                                disabled: !historySelectedTimelineTargets(item).length || timelineFixing.value || !_unref(timelineAvailable),
-                                loading: timelineFixing.value,
+                                disabled: !historySelectedTimelineTargets(item).length || _unref(timelineFixing) || !_unref(timelineAvailable),
+                                loading: _unref(timelineFixing),
                                 onClick: _withModifiers($event => (fixHistorySelectedTimeline(item)), ["stop"])
                               }, {
-                                default: _withCtx(() => [...(_cache[37] || (_cache[37] = [
+                                default: _withCtx(() => [...(_cache[42] || (_cache[42] = [
                                   _createTextVNode(" 调轴选中 ", -1)
                                 ]))]),
                                 _: 1
@@ -3486,9 +4036,9 @@ return (_ctx, _cache) => {
                                               variant: "tonal",
                                               "prepend-icon": "mdi-magnify",
                                               disabled: _unref(isTargetActionDisabled)(target),
-                                              onClick: _withModifiers($event => (openSingleOnlineSearch(target)), ["stop"])
+                                              onClick: _withModifiers($event => (_unref(openSingleOnlineSearch)(target)), ["stop"])
                                             }, {
-                                              default: _withCtx(() => [...(_cache[38] || (_cache[38] = [
+                                              default: _withCtx(() => [...(_cache[43] || (_cache[43] = [
                                                 _createTextVNode(" 重新搜索 ", -1)
                                               ]))]),
                                               _: 1
@@ -3499,7 +4049,7 @@ return (_ctx, _cache) => {
                                                 _createElementVNode("div", _hoisted_37, _toDisplayString(target.relative_path), 1),
                                                 (target.timeline_task)
                                                   ? (_openBlock(), _createElementBlock("div", _hoisted_38, [
-                                                      _createElementVNode("span", null, "调轴：" + _toDisplayString(timelineTaskText(target.timeline_task)), 1),
+                                                      _createElementVNode("span", null, "调轴：" + _toDisplayString(_unref(timelineTaskText)(target.timeline_task)), 1),
                                                       (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(_unref(timelineMetaItems)(target.timeline_task.timeline), (meta) => {
                                                         return (_openBlock(), _createElementBlock("span", {
                                                           key: `${target.id}-${meta}`,
@@ -3523,11 +4073,11 @@ return (_ctx, _cache) => {
                                                           size: "small",
                                                           variant: "tonal",
                                                           color: "warning",
-                                                          loading: timelineFixing.value,
-                                                          disabled: timelineFixing.value || !_unref(timelineAvailable) || _unref(isStreamTarget)(target),
+                                                          loading: _unref(timelineFixing),
+                                                          disabled: _unref(timelineFixing) || !_unref(timelineAvailable) || _unref(isStreamTarget)(target),
                                                           onClick: _withModifiers($event => (fixHistorySubtitleTimeline(target, subtitle)), ["stop"])
                                                         }, {
-                                                          default: _withCtx(() => [...(_cache[39] || (_cache[39] = [
+                                                          default: _withCtx(() => [...(_cache[44] || (_cache[44] = [
                                                             _createTextVNode(" 调轴 ", -1)
                                                           ]))]),
                                                           _: 1
@@ -3539,7 +4089,7 @@ return (_ctx, _cache) => {
                                                           loading: clearing.value,
                                                           onClick: _withModifiers($event => (deleteSubtitle(target, subtitle)), ["stop"])
                                                         }, {
-                                                          default: _withCtx(() => [...(_cache[40] || (_cache[40] = [
+                                                          default: _withCtx(() => [...(_cache[45] || (_cache[45] = [
                                                             _createTextVNode(" 删除 ", -1)
                                                           ]))]),
                                                           _: 1
@@ -3576,7 +4126,7 @@ return (_ctx, _cache) => {
                       loading: matchHistoryLoading.value,
                       onClick: loadMoreMatchHistory
                     }, {
-                      default: _withCtx(() => [...(_cache[41] || (_cache[41] = [
+                      default: _withCtx(() => [...(_cache[46] || (_cache[46] = [
                         _createTextVNode(" 加载下一页 ", -1)
                       ]))]),
                       _: 1
@@ -3629,7 +4179,7 @@ return (_ctx, _cache) => {
                       loading: _unref(resolving),
                       onClick: _cache[9] || (_cache[9] = $event => (_unref(loadTargets)(_unref(selectedMedia), _unref(selectedSeason))))
                     }, {
-                      default: _withCtx(() => [...(_cache[42] || (_cache[42] = [
+                      default: _withCtx(() => [...(_cache[47] || (_cache[47] = [
                         _createTextVNode(" 刷新列表 ", -1)
                       ]))]),
                       _: 1
@@ -3649,17 +4199,17 @@ return (_ctx, _cache) => {
                         }), 128))
                       ]))
                     : _createCommentVNode("", true),
-                  (aiEnabled.value)
+                  (_unref(aiEnabled))
                     ? (_openBlock(), _createElementBlock("button", {
                         key: 1,
                         ref_key: "aiStatusStripRef",
                         ref: aiStatusStripRef,
-                        class: _normalizeClass(["ai-status-strip", { unavailable: !aiAvailable.value, active: aiHasActiveTasks.value }]),
+                        class: _normalizeClass(["ai-status-strip", { unavailable: !_unref(aiAvailable), active: _unref(aiHasActiveTasks) }]),
                         type: "button",
-                        onClick: _cache[10] || (_cache[10] = $event => (openAiTaskDialog()))
+                        onClick: _cache[10] || (_cache[10] = $event => (_ctx.openAiTaskDialog()))
                       }, [
                         _createElementVNode("span", _hoisted_54, [
-                          (aiTasksLoading.value || aiHasActiveTasks.value)
+                          (_unref(aiTasksLoading) || _unref(aiHasActiveTasks))
                             ? (_openBlock(), _createBlock(_component_VProgressCircular, {
                                 key: 0,
                                 size: "16",
@@ -3672,8 +4222,8 @@ return (_ctx, _cache) => {
                                 size: "18"
                               }))
                         ]),
-                        _createElementVNode("strong", null, _toDisplayString(aiSummaryText.value), 1),
-                        _createElementVNode("em", null, _toDisplayString(aiAvailable.value ? '点击查看当前资源任务' : aiStatus.value.message), 1)
+                        _createElementVNode("strong", null, _toDisplayString(_unref(aiSummaryText)), 1),
+                        _createElementVNode("em", null, _toDisplayString(_unref(aiAvailable) ? '点击查看当前资源任务' : _unref(aiStatus).message), 1)
                       ], 2))
                     : _createCommentVNode("", true),
                   _createElementVNode("div", _hoisted_55, [
@@ -3690,58 +4240,58 @@ return (_ctx, _cache) => {
                       _createVNode(_component_VBtn, {
                         color: "primary",
                         disabled: !_unref(unlockedVisibleTargets).length,
-                        onClick: openBatchUpload
+                        onClick: _unref(openBatchUpload)
                       }, {
                         default: _withCtx(() => [
                           _createTextVNode(_toDisplayString(_unref(selectedTargets).length ? '上传选中字幕' : '批量上传整季字幕'), 1)
                         ]),
                         _: 1
-                      }, 8, ["disabled"]),
-                      (aiEnabled.value)
+                      }, 8, ["disabled", "onClick"]),
+                      (_unref(aiEnabled))
                         ? (_openBlock(), _createBlock(_component_VBtn, {
                             key: 0,
                             color: "warning",
                             variant: "tonal",
                             "prepend-icon": "mdi-robot-outline",
-                            disabled: !aiCapableBatchTargets.value.length || !aiAvailable.value,
-                            loading: aiSubmitting.value,
-                            onClick: openBatchAiGenerate
+                            disabled: !_unref(aiCapableBatchTargets).length || !_unref(aiAvailable),
+                            loading: _unref(aiSubmitting),
+                            onClick: _unref(openBatchAiGenerate)
                           }, {
                             default: _withCtx(() => [
-                              _createTextVNode(_toDisplayString(aiBatchLabel.value), 1)
+                              _createTextVNode(_toDisplayString(_unref(aiBatchLabel)), 1)
                             ]),
                             _: 1
-                          }, 8, ["disabled", "loading"]))
+                          }, 8, ["disabled", "loading", "onClick"]))
                         : _createCommentVNode("", true),
-                      (aiEnabled.value && aiBatchCancelTargets.value.length)
+                      (_unref(aiEnabled) && _unref(aiBatchCancelTargets).length)
                         ? (_openBlock(), _createBlock(_component_VBtn, {
                             key: 1,
                             color: "error",
                             variant: "tonal",
                             "prepend-icon": "mdi-cancel",
-                            loading: aiCancelling.value,
-                            onClick: cancelBatchAiGenerate
+                            loading: _unref(aiCancelling),
+                            onClick: _unref(cancelBatchAiGenerate)
                           }, {
-                            default: _withCtx(() => [...(_cache[43] || (_cache[43] = [
+                            default: _withCtx(() => [...(_cache[48] || (_cache[48] = [
                               _createTextVNode(" 取消 AI ", -1)
                             ]))]),
                             _: 1
-                          }, 8, ["loading"]))
+                          }, 8, ["loading", "onClick"]))
                         : _createCommentVNode("", true),
                       _createVNode(_component_VBtn, {
                         class: "online-batch-btn",
                         color: "success",
                         variant: "flat",
                         "prepend-icon": "mdi-cloud-search-outline",
-                        disabled: !batchUploadTargets.value.length,
-                        loading: onlineSearching.value,
-                        onClick: openBatchOnlineSearch
+                        disabled: !_unref(batchUploadTargets).length,
+                        loading: _unref(onlineSearching),
+                        onClick: _unref(openBatchOnlineSearch)
                       }, {
                         default: _withCtx(() => [
-                          _createTextVNode(_toDisplayString(onlineBatchLabel.value), 1)
+                          _createTextVNode(_toDisplayString(_unref(onlineBatchLabel)), 1)
                         ]),
                         _: 1
-                      }, 8, ["disabled", "loading"]),
+                      }, 8, ["disabled", "loading", "onClick"]),
                       _createVNode(_component_VBtn, {
                         color: "error",
                         variant: "tonal",
@@ -3749,7 +4299,7 @@ return (_ctx, _cache) => {
                         loading: clearing.value,
                         onClick: clearSelectedSubtitles
                       }, {
-                        default: _withCtx(() => [...(_cache[44] || (_cache[44] = [
+                        default: _withCtx(() => [...(_cache[49] || (_cache[49] = [
                           _createTextVNode(" 清空选中外挂字幕 ", -1)
                         ]))]),
                         _: 1
@@ -3758,15 +4308,15 @@ return (_ctx, _cache) => {
                         color: "warning",
                         variant: "tonal",
                         "prepend-icon": "mdi-timeline-clock",
-                        disabled: !selectedTimelineTargets.value.length || timelineFixing.value || !_unref(timelineAvailable),
-                        loading: timelineFixing.value,
-                        onClick: fixSelectedDetailTimeline
+                        disabled: !_unref(selectedTimelineTargets).length || _unref(timelineFixing) || !_unref(timelineAvailable),
+                        loading: _unref(timelineFixing),
+                        onClick: _unref(fixSelectedDetailTimeline)
                       }, {
-                        default: _withCtx(() => [...(_cache[45] || (_cache[45] = [
+                        default: _withCtx(() => [...(_cache[50] || (_cache[50] = [
                           _createTextVNode(" 批量调轴 ", -1)
                         ]))]),
                         _: 1
-                      }, 8, ["disabled", "loading"]),
+                      }, 8, ["disabled", "loading", "onClick"]),
                       _createVNode(_component_VBtn, {
                         color: "secondary",
                         variant: "tonal",
@@ -3775,7 +4325,7 @@ return (_ctx, _cache) => {
                         loading: clearing.value,
                         onClick: restoreSelectedBackups
                       }, {
-                        default: _withCtx(() => [...(_cache[46] || (_cache[46] = [
+                        default: _withCtx(() => [...(_cache[51] || (_cache[51] = [
                           _createTextVNode(" 批量恢复 ", -1)
                         ]))]),
                         _: 1
@@ -3829,7 +4379,7 @@ return (_ctx, _cache) => {
                                           _createVNode(_component_VList, { density: "compact" }, {
                                             default: _withCtx(() => [
                                               _createVNode(_component_VListSubheader, null, {
-                                                default: _withCtx(() => [...(_cache[47] || (_cache[47] = [
+                                                default: _withCtx(() => [...(_cache[52] || (_cache[52] = [
                                                   _createTextVNode("已有外挂字幕", -1)
                                                 ]))]),
                                                 _: 1
@@ -3857,16 +4407,16 @@ return (_ctx, _cache) => {
                                     icon: "mdi-closed-caption-outline",
                                     title: "暂无外挂字幕"
                                   })),
-                              (aiEnabled.value)
+                              (_unref(aiEnabled))
                                 ? (_openBlock(), _createBlock(_component_VBtn, {
                                     key: 2,
-                                    class: _normalizeClass(["ai-row-btn", aiTaskStatusClass(target)]),
+                                    class: _normalizeClass(["ai-row-btn", _unref(aiTaskStatusClass)(target)]),
                                     variant: "text",
-                                    icon: aiTaskIcon(target),
-                                    color: aiTaskColor(target),
-                                    title: aiTaskTitle(target),
-                                    disabled: _unref(isTargetActionDisabled)(target) || _unref(isStreamTarget)(target) || (!aiAvailable.value && !aiTaskForTarget(target)),
-                                    onClick: $event => (openSingleAiGenerate(target))
+                                    icon: _unref(aiTaskIcon)(target),
+                                    color: _unref(aiTaskColor)(target),
+                                    title: _unref(aiTaskTitle)(target),
+                                    disabled: _unref(isTargetActionDisabled)(target) || _unref(isStreamTarget)(target) || (!_unref(aiAvailable) && !_unref(aiTaskForTarget)(target)),
+                                    onClick: $event => (_unref(openSingleAiGenerate)(target))
                                   }, null, 8, ["class", "icon", "color", "title", "disabled", "onClick"]))
                                 : _createCommentVNode("", true),
                               _createVNode(_component_VBtn, {
@@ -3874,7 +4424,7 @@ return (_ctx, _cache) => {
                                 icon: "mdi-magnify",
                                 title: "搜索此集在线字幕",
                                 disabled: _unref(isTargetActionDisabled)(target),
-                                onClick: $event => (openSingleOnlineSearch(target))
+                                onClick: $event => (_unref(openSingleOnlineSearch)(target))
                               }, null, 8, ["disabled", "onClick"]),
                               _createVNode(_component_VBtn, {
                                 variant: "text",
@@ -3888,9 +4438,9 @@ return (_ctx, _cache) => {
                                 variant: "tonal",
                                 size: "small",
                                 disabled: _unref(isTargetActionDisabled)(target),
-                                onClick: $event => (openSingleUpload(target))
+                                onClick: $event => (_unref(openSingleUpload)(target))
                               }, {
-                                default: _withCtx(() => [...(_cache[48] || (_cache[48] = [
+                                default: _withCtx(() => [...(_cache[53] || (_cache[53] = [
                                   _createTextVNode(" 单集上传 ", -1)
                                 ]))]),
                                 _: 1
@@ -3900,10 +4450,10 @@ return (_ctx, _cache) => {
                                     _createElementVNode("div", _hoisted_63, [
                                       _createElementVNode("span", null, _toDisplayString((target.subtitles || []).length ? `${target.subtitles.length} 个外挂字幕` : '暂无外挂字幕'), 1),
                                       (detailRowForTarget(target).task)
-                                        ? (_openBlock(), _createElementBlock("span", _hoisted_64, "AI：" + _toDisplayString(aiStatusText(detailRowForTarget(target).task)), 1))
+                                        ? (_openBlock(), _createElementBlock("span", _hoisted_64, "AI：" + _toDisplayString(_unref(aiStatusText)(detailRowForTarget(target).task)), 1))
                                         : _createCommentVNode("", true),
                                       _createElementVNode("span", null, _toDisplayString(timelineResultForTarget(detailRowForTarget(target))), 1),
-                                      (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(_unref(timelineMetaItems)(timelineTaskForTarget(target)?.timeline), (meta) => {
+                                      (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(_unref(timelineMetaItems)(_unref(timelineTaskForTarget)(target)?.timeline), (meta) => {
                                         return (_openBlock(), _createElementBlock("span", {
                                           key: `${target.id}-detail-${meta}`,
                                           class: "timeline-meta"
@@ -3929,11 +4479,11 @@ return (_ctx, _cache) => {
                                                   size: "small",
                                                   variant: "tonal",
                                                   color: "warning",
-                                                  loading: timelineFixing.value,
-                                                  disabled: timelineFixing.value || !_unref(timelineAvailable) || _unref(isTargetActionDisabled)(target) || _unref(isStreamTarget)(target),
+                                                  loading: _unref(timelineFixing),
+                                                  disabled: _unref(timelineFixing) || !_unref(timelineAvailable) || _unref(isTargetActionDisabled)(target) || _unref(isStreamTarget)(target),
                                                   onClick: _withModifiers($event => (fixHistorySubtitleTimeline(target, subtitle)), ["stop"])
                                                 }, {
-                                                  default: _withCtx(() => [...(_cache[49] || (_cache[49] = [
+                                                  default: _withCtx(() => [...(_cache[54] || (_cache[54] = [
                                                     _createTextVNode(" 调轴 ", -1)
                                                   ]))]),
                                                   _: 1
@@ -3946,7 +4496,7 @@ return (_ctx, _cache) => {
                                                   disabled: !subtitle.backup_available || _unref(isTargetActionDisabled)(target),
                                                   onClick: _withModifiers($event => (restoreSubtitleBackup(target, subtitle)), ["stop"])
                                                 }, {
-                                                  default: _withCtx(() => [...(_cache[50] || (_cache[50] = [
+                                                  default: _withCtx(() => [...(_cache[55] || (_cache[55] = [
                                                     _createTextVNode(" 恢复 ", -1)
                                                   ]))]),
                                                   _: 1
@@ -3959,7 +4509,7 @@ return (_ctx, _cache) => {
                                                   disabled: _unref(isTargetActionDisabled)(target),
                                                   onClick: _withModifiers($event => (deleteSubtitle(target, subtitle)), ["stop"])
                                                 }, {
-                                                  default: _withCtx(() => [...(_cache[51] || (_cache[51] = [
+                                                  default: _withCtx(() => [...(_cache[56] || (_cache[56] = [
                                                     _createTextVNode(" 删除 ", -1)
                                                   ]))]),
                                                   _: 1
@@ -3975,10 +4525,10 @@ return (_ctx, _cache) => {
                           }), 128))
                         ]))
                       : (_openBlock(), _createElementBlock("div", _hoisted_70, _toDisplayString(_unref(resolving) ? '正在读取本地视频目标...' : '这个资源没有本地视频文件。'), 1)),
-                    (lastWritten.value.length)
+                    (_unref(lastWritten).length)
                       ? (_openBlock(), _createElementBlock("div", _hoisted_71, [
-                          _cache[52] || (_cache[52] = _createElementVNode("div", { class: "section-kicker" }, "写入结果", -1)),
-                          (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(lastWritten.value, (item) => {
+                          _cache[57] || (_cache[57] = _createElementVNode("div", { class: "section-kicker" }, "写入结果", -1)),
+                          (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(_unref(lastWritten), (item) => {
                             return (_openBlock(), _createElementBlock("div", {
                               key: item.output_path,
                               class: "result-row"
@@ -4024,7 +4574,7 @@ return (_ctx, _cache) => {
             _createVNode(_component_VCardTitle, { class: "dialog-title" }, {
               default: _withCtx(() => [
                 _createElementVNode("div", null, [
-                  _cache[53] || (_cache[53] = _createElementVNode("span", null, "入库自动字幕队列", -1)),
+                  _cache[58] || (_cache[58] = _createElementVNode("span", null, "入库自动字幕队列", -1)),
                   _createElementVNode("p", null, _toDisplayString(autoQueueSummaryText.value), 1)
                 ]),
                 _createElementVNode("div", _hoisted_73, [
@@ -4033,7 +4583,7 @@ return (_ctx, _cache) => {
                     "prepend-icon": "mdi-refresh",
                     onClick: loadAutoTransferQueue
                   }, {
-                    default: _withCtx(() => [...(_cache[54] || (_cache[54] = [
+                    default: _withCtx(() => [...(_cache[59] || (_cache[59] = [
                       _createTextVNode(" 刷新 ", -1)
                     ]))]),
                     _: 1
@@ -4085,8 +4635,8 @@ return (_ctx, _cache) => {
       _: 1
     }, 8, ["modelValue"]),
     _createVNode(_component_VDialog, {
-      modelValue: aiTaskDialog.value,
-      "onUpdate:modelValue": _cache[17] || (_cache[17] = $event => ((aiTaskDialog).value = $event)),
+      modelValue: _unref(aiTaskDialog),
+      "onUpdate:modelValue": _cache[17] || (_cache[17] = $event => (_isRef(aiTaskDialog) ? (aiTaskDialog).value = $event : null)),
       "max-width": "860"
     }, {
       default: _withCtx(() => [
@@ -4098,53 +4648,53 @@ return (_ctx, _cache) => {
             _createVNode(_component_VCardTitle, { class: "dialog-title" }, {
               default: _withCtx(() => [
                 _createElementVNode("div", null, [
-                  _createElementVNode("span", null, _toDisplayString(aiTaskDialogTarget.value ? `AI 状态 · ${_unref(compactTargetName)(aiTaskDialogTarget.value)}` : 'AI 字幕生成状态'), 1),
-                  _createElementVNode("p", null, _toDisplayString(aiSummaryText.value) + " · 状态来自 AI字幕生成(联动版) 队列", 1)
+                  _createElementVNode("span", null, _toDisplayString(_unref(aiTaskDialogTarget) ? `AI 状态 · ${_unref(compactTargetName)(_unref(aiTaskDialogTarget))}` : 'AI 字幕生成状态'), 1),
+                  _createElementVNode("p", null, _toDisplayString(_unref(aiSummaryText)) + " · 状态来自 AI字幕生成(联动版) 队列", 1)
                 ]),
                 _createElementVNode("div", _hoisted_77, [
-                  (aiDialogHasActiveTasks.value)
+                  (_unref(aiDialogHasActiveTasks))
                     ? (_openBlock(), _createBlock(_component_VBtn, {
                         key: 0,
                         variant: "tonal",
                         color: "error",
                         "prepend-icon": "mdi-cancel",
-                        loading: aiCancelling.value,
-                        onClick: cancelDialogAiTasks
+                        loading: _unref(aiCancelling),
+                        onClick: _unref(cancelDialogAiTasks)
                       }, {
-                        default: _withCtx(() => [...(_cache[55] || (_cache[55] = [
+                        default: _withCtx(() => [...(_cache[60] || (_cache[60] = [
                           _createTextVNode(" 取消任务 ", -1)
                         ]))]),
                         _: 1
-                      }, 8, ["loading"]))
+                      }, 8, ["loading", "onClick"]))
                     : _createCommentVNode("", true),
-                  (aiAvailable.value && (aiTaskDialogTarget.value || aiDialogTasks.value.length))
+                  (_unref(aiAvailable) && (_unref(aiTaskDialogTarget) || _unref(aiDialogTasks).length))
                     ? (_openBlock(), _createBlock(_component_VBtn, {
                         key: 1,
                         variant: "tonal",
                         color: "warning",
                         "prepend-icon": "mdi-robot-happy-outline",
-                        disabled: aiDialogHasExistingTasks.value && !aiDialogSelectedAllowedTasks.value.length,
-                        loading: aiSubmitting.value,
-                        onClick: regenerateDialogAiTasks
+                        disabled: _unref(aiDialogHasExistingTasks) && !_unref(aiDialogSelectedAllowedTasks).length,
+                        loading: _unref(aiSubmitting),
+                        onClick: _unref(regenerateDialogAiTasks)
                       }, {
                         default: _withCtx(() => [
-                          _createTextVNode(_toDisplayString(aiDialogActionText.value), 1)
+                          _createTextVNode(_toDisplayString(_unref(aiDialogActionText)), 1)
                         ]),
                         _: 1
-                      }, 8, ["disabled", "loading"]))
+                      }, 8, ["disabled", "loading", "onClick"]))
                     : _createCommentVNode("", true),
                   _createVNode(_component_VBtn, {
                     variant: "tonal",
                     color: "primary",
                     "prepend-icon": "mdi-refresh",
-                    loading: aiTasksLoading.value,
-                    onClick: loadAiTasks
+                    loading: _unref(aiTasksLoading),
+                    onClick: _unref(loadAiTasks)
                   }, {
-                    default: _withCtx(() => [...(_cache[56] || (_cache[56] = [
+                    default: _withCtx(() => [...(_cache[61] || (_cache[61] = [
                       _createTextVNode(" 刷新 ", -1)
                     ]))]),
                     _: 1
-                  }, 8, ["loading"]),
+                  }, 8, ["loading", "onClick"]),
                   _createVNode(_component_VBtn, {
                     icon: "mdi-close",
                     variant: "text",
@@ -4157,60 +4707,60 @@ return (_ctx, _cache) => {
             _createVNode(_component_VDivider),
             _createVNode(_component_VCardText, null, {
               default: _withCtx(() => [
-                (!aiAvailable.value)
+                (!_unref(aiAvailable))
                   ? (_openBlock(), _createBlock(_component_VAlert, {
                       key: 0,
                       class: "mb-4",
                       type: "warning",
                       variant: "tonal",
-                      text: aiStatus.value.message || '请先安装并启用 AI字幕生成(联动版)'
+                      text: _unref(aiStatus).message || '请先安装并启用 AI字幕生成(联动版)'
                     }, null, 8, ["text"]))
                   : _createCommentVNode("", true),
-                (aiAvailable.value && (aiTaskDialogTarget.value || aiDialogTasks.value.length))
+                (_unref(aiAvailable) && (_unref(aiTaskDialogTarget) || _unref(aiDialogTasks).length))
                   ? (_openBlock(), _createElementBlock("div", _hoisted_78, [
                       _createVNode(_component_VSelect, {
-                        modelValue: aiRestartSourcePolicy.value,
-                        "onUpdate:modelValue": _cache[14] || (_cache[14] = $event => ((aiRestartSourcePolicy).value = $event)),
-                        items: aiRestartSourceOptions,
-                        label: aiDialogSourceLabel.value,
+                        modelValue: _unref(aiRestartSourcePolicy),
+                        "onUpdate:modelValue": _cache[14] || (_cache[14] = $event => (_isRef(aiRestartSourcePolicy) ? (aiRestartSourcePolicy).value = $event : null)),
+                        items: _unref(aiRestartSourceOptions),
+                        label: _unref(aiDialogSourceLabel),
                         density: "comfortable",
                         hint: "改选来源会写入来源变体后缀，如 .aiasr.srt 或 .aiembedded.srt",
                         "persistent-hint": ""
-                      }, null, 8, ["modelValue", "label"]),
-                      (aiRestartSourcePolicy.value === 'matched_external')
+                      }, null, 8, ["modelValue", "items", "label"]),
+                      (_unref(aiRestartSourcePolicy) === 'matched_external')
                         ? (_openBlock(), _createBlock(_component_VSelect, {
                             key: 0,
-                            modelValue: aiRestartSubtitlePath.value,
-                            "onUpdate:modelValue": _cache[15] || (_cache[15] = $event => ((aiRestartSubtitlePath).value = $event)),
+                            modelValue: _unref(aiRestartSubtitlePath),
+                            "onUpdate:modelValue": _cache[15] || (_cache[15] = $event => (_isRef(aiRestartSubtitlePath) ? (aiRestartSubtitlePath).value = $event : null)),
                             class: "mt-3",
-                            items: aiRestartSubtitleOptions.value,
+                            items: _unref(aiRestartSubtitleOptions),
                             label: "外挂字幕",
                             density: "comfortable",
-                            hint: aiRestartSubtitleOptions.value.length ? '使用这条外挂 SRT 作为 AI 翻译来源' : '当前集没有可用于 AI 翻译的 SRT 外挂字幕',
+                            hint: _unref(aiRestartSubtitleOptions).length ? '使用这条外挂 SRT 作为 AI 翻译来源' : '当前集没有可用于 AI 翻译的 SRT 外挂字幕',
                             "persistent-hint": "",
-                            disabled: !aiRestartSubtitleOptions.value.length
+                            disabled: !_unref(aiRestartSubtitleOptions).length
                           }, null, 8, ["modelValue", "items", "hint", "disabled"]))
                         : _createCommentVNode("", true)
                     ]))
                   : _createCommentVNode("", true),
-                (aiDialogTasks.value.length)
+                (_unref(aiDialogTasks).length)
                   ? (_openBlock(), _createElementBlock("div", _hoisted_79, [
-                      (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(aiDialogTasks.value, (task) => {
+                      (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(_unref(aiDialogTasks), (task) => {
                         return (_openBlock(), _createElementBlock("div", {
                           key: task.task_id,
                           class: _normalizeClass(["ai-task-row", `ai-${task.status}`])
                         }, [
                           _createVNode(_component_VCheckbox, {
-                            modelValue: aiSelectedTaskIds.value,
-                            "onUpdate:modelValue": _cache[16] || (_cache[16] = $event => ((aiSelectedTaskIds).value = $event)),
+                            modelValue: _unref(aiSelectedTaskIds),
+                            "onUpdate:modelValue": _cache[16] || (_cache[16] = $event => (_isRef(aiSelectedTaskIds) ? (aiSelectedTaskIds).value = $event : null)),
                             value: task.task_id,
                             density: "compact",
                             "hide-details": "",
-                            disabled: !isAiTaskAllowed(task)
+                            disabled: !_ctx.isAiTaskAllowed(task)
                           }, null, 8, ["modelValue", "value", "disabled"]),
                           _createElementVNode("div", _hoisted_80, [
                             _createVNode(_component_VIcon, {
-                              icon: aiTaskIconForTask(task)
+                              icon: _unref(aiTaskIconForTask)(task)
                             }, null, 8, ["icon"])
                           ]),
                           _createElementVNode("div", _hoisted_81, [
@@ -4219,7 +4769,7 @@ return (_ctx, _cache) => {
                             (task.output_name)
                               ? (_openBlock(), _createElementBlock("span", _hoisted_82, "输出：" + _toDisplayString(task.output_name), 1))
                               : _createCommentVNode("", true),
-                            _createElementVNode("p", null, _toDisplayString(aiStatusText(task)), 1)
+                            _createElementVNode("p", null, _toDisplayString(_unref(aiStatusText)(task)), 1)
                           ]),
                           _createElementVNode("div", _hoisted_83, [
                             _createVNode(_component_VChip, {
@@ -4236,11 +4786,11 @@ return (_ctx, _cache) => {
                               size: "small",
                               variant: "tonal",
                               color: "warning",
-                              disabled: !isAiTaskAllowed(task),
-                              loading: aiSubmitting.value,
-                              onClick: $event => (regenerateSingleAiTask(task))
+                              disabled: !_ctx.isAiTaskAllowed(task),
+                              loading: _unref(aiSubmitting),
+                              onClick: $event => (_unref(regenerateSingleAiTask)(task))
                             }, {
-                              default: _withCtx(() => [...(_cache[57] || (_cache[57] = [
+                              default: _withCtx(() => [...(_cache[62] || (_cache[62] = [
                                 _createTextVNode(" 重新生成 ", -1)
                               ]))]),
                               _: 1
@@ -4260,9 +4810,9 @@ return (_ctx, _cache) => {
       _: 1
     }, 8, ["modelValue"]),
     _createVNode(_component_VDialog, {
-      "model-value": onlineDialog.value,
+      "model-value": _unref(onlineDialog),
       "max-width": "1080",
-      "onUpdate:modelValue": updateOnlineDialog
+      "onUpdate:modelValue": _unref(updateOnlineDialog)
     }, {
       default: _withCtx(() => [
         _createVNode(_component_VCard, {
@@ -4273,51 +4823,51 @@ return (_ctx, _cache) => {
             _createVNode(_component_VCardTitle, { class: "dialog-title" }, {
               default: _withCtx(() => [
                 _createElementVNode("div", null, [
-                  _createElementVNode("span", null, _toDisplayString(onlineTitle.value || '在线字幕搜索'), 1),
-                  _createElementVNode("p", null, _toDisplayString(onlineTargets.value.length) + " 个目标 · 下载会进入匹配预览，提交 AI 翻译会直接进入 AI 状态", 1)
+                  _createElementVNode("span", null, _toDisplayString(_unref(onlineTitle) || '在线字幕搜索'), 1),
+                  _createElementVNode("p", null, _toDisplayString(_unref(onlineTargets).length) + " 个目标 · 下载会进入匹配预览，提交 AI 翻译会直接进入 AI 状态", 1)
                 ]),
                 _createElementVNode("div", _hoisted_85, [
                   _createVNode(_component_VBtn, {
                     color: "success",
-                    disabled: !selectedOnlineResults.value.length || onlineAiDownloading.value,
-                    loading: onlinePreviewDownloading.value,
-                    onClick: downloadOnlinePreview
+                    disabled: !_unref(selectedOnlineResults).length || _unref(onlineAiDownloading),
+                    loading: _unref(onlinePreviewDownloading),
+                    onClick: _unref(downloadOnlinePreview)
                   }, {
-                    default: _withCtx(() => [...(_cache[58] || (_cache[58] = [
+                    default: _withCtx(() => [...(_cache[63] || (_cache[63] = [
                       _createTextVNode(" 下载并生成预览 ", -1)
                     ]))]),
                     _: 1
-                  }, 8, ["disabled", "loading"]),
+                  }, 8, ["disabled", "loading", "onClick"]),
                   _createVNode(_component_VBtn, {
                     color: "primary",
                     variant: "tonal",
-                    disabled: !canSubmitOnlineAiTranslate.value || onlinePreviewDownloading.value,
-                    loading: onlineAiDownloading.value,
-                    onClick: requestOnlineAiTranslate
+                    disabled: !_unref(canSubmitOnlineAiTranslate) || _unref(onlinePreviewDownloading),
+                    loading: _unref(onlineAiDownloading),
+                    onClick: _unref(requestOnlineAiTranslate)
                   }, {
-                    default: _withCtx(() => [...(_cache[59] || (_cache[59] = [
+                    default: _withCtx(() => [...(_cache[64] || (_cache[64] = [
                       _createTextVNode(" 提交 AI 翻译 ", -1)
                     ]))]),
                     _: 1
-                  }, 8, ["disabled", "loading"]),
-                  (onlineDownloading.value)
+                  }, 8, ["disabled", "loading", "onClick"]),
+                  (_unref(onlineDownloading))
                     ? (_openBlock(), _createBlock(_component_VBtn, {
                         key: 0,
                         color: "warning",
                         variant: "tonal",
-                        onClick: stopOnlineDownload
+                        onClick: _unref(stopOnlineDownload)
                       }, {
-                        default: _withCtx(() => [...(_cache[60] || (_cache[60] = [
+                        default: _withCtx(() => [...(_cache[65] || (_cache[65] = [
                           _createTextVNode(" 停止等待 ", -1)
                         ]))]),
                         _: 1
-                      }))
+                      }, 8, ["onClick"]))
                     : _createCommentVNode("", true),
                   _createVNode(_component_VBtn, {
                     icon: "mdi-close",
                     variant: "text",
-                    onClick: closeOnlineDialog
-                  })
+                    onClick: _unref(closeOnlineDialog)
+                  }, null, 8, ["onClick"])
                 ])
               ]),
               _: 1
@@ -4326,19 +4876,19 @@ return (_ctx, _cache) => {
             _createVNode(_component_VCardActions, { class: "online-search-actions" }, {
               default: _withCtx(() => [
                 _createVNode(_component_VTextField, {
-                  modelValue: onlineKeyword.value,
-                  "onUpdate:modelValue": _cache[18] || (_cache[18] = $event => ((onlineKeyword).value = $event)),
+                  modelValue: _unref(onlineKeyword),
+                  "onUpdate:modelValue": _cache[18] || (_cache[18] = $event => (_isRef(onlineKeyword) ? (onlineKeyword).value = $event : null)),
                   label: "手动关键词（可选）",
                   placeholder: "留空按资源名、季集号自动生成",
                   variant: "outlined",
                   density: "comfortable",
                   "hide-details": "",
                   clearable: "",
-                  onKeyup: _withKeys(runOnlineSearch, ["enter"])
-                }, null, 8, ["modelValue"]),
+                  onKeyup: _withKeys(_unref(runOnlineSearch), ["enter"])
+                }, null, 8, ["modelValue", "onKeyup"]),
                 _createVNode(_component_VSelect, {
-                  modelValue: onlineSelectedProviders.value,
-                  "onUpdate:modelValue": _cache[19] || (_cache[19] = $event => ((onlineSelectedProviders).value = $event)),
+                  modelValue: _unref(onlineSelectedProviders),
+                  "onUpdate:modelValue": _cache[19] || (_cache[19] = $event => (_isRef(onlineSelectedProviders) ? (onlineSelectedProviders).value = $event : null)),
                   items: _unref(onlineProviderItems),
                   label: "字幕源",
                   variant: "outlined",
@@ -4349,27 +4899,27 @@ return (_ctx, _cache) => {
                 }, null, 8, ["modelValue", "items"]),
                 _createVNode(_component_VBtn, {
                   color: "primary",
-                  disabled: !onlineSelectedProviders.value.length,
-                  loading: onlineSearching.value,
-                  onClick: runOnlineSearch
+                  disabled: !_unref(onlineSelectedProviders).length,
+                  loading: _unref(onlineSearching),
+                  onClick: _unref(runOnlineSearch)
                 }, {
-                  default: _withCtx(() => [...(_cache[61] || (_cache[61] = [
+                  default: _withCtx(() => [...(_cache[66] || (_cache[66] = [
                     _createTextVNode(" 搜索 ", -1)
                   ]))]),
                   _: 1
-                }, 8, ["disabled", "loading"]),
-                (onlineSearching.value)
+                }, 8, ["disabled", "loading", "onClick"]),
+                (_unref(onlineSearching))
                   ? (_openBlock(), _createBlock(_component_VBtn, {
                       key: 0,
                       color: "warning",
                       variant: "tonal",
-                      onClick: stopOnlineSearch
+                      onClick: _unref(stopOnlineSearch)
                     }, {
-                      default: _withCtx(() => [...(_cache[62] || (_cache[62] = [
+                      default: _withCtx(() => [...(_cache[67] || (_cache[67] = [
                         _createTextVNode(" 停止等待 ", -1)
                       ]))]),
                       _: 1
-                    }))
+                    }, 8, ["onClick"]))
                   : _createCommentVNode("", true)
               ]),
               _: 1
@@ -4377,32 +4927,32 @@ return (_ctx, _cache) => {
             _createVNode(_component_VDivider),
             _createVNode(_component_VCardText, null, {
               default: _withCtx(() => [
-                (onlineError.value)
+                (_unref(onlineError))
                   ? (_openBlock(), _createBlock(_component_VAlert, {
                       key: 0,
                       class: "mb-4",
                       type: "error",
                       variant: "tonal",
-                      text: onlineError.value
+                      text: _unref(onlineError)
                     }, null, 8, ["text"]))
                   : _createCommentVNode("", true),
-                (onlineMessages.value.length && !onlineMessagesCollapsed.value)
+                (_unref(onlineMessages).length && !_unref(onlineMessagesCollapsed))
                   ? (_openBlock(), _createBlock(_component_VAlert, {
                       key: 1,
                       class: "online-message-summary",
-                      type: onlineMessageType.value,
+                      type: _unref(onlineMessageType),
                       variant: "tonal",
                       density: "compact"
                     }, {
                       default: _withCtx(() => [
                         _createElementVNode("div", _hoisted_86, [
-                          _createElementVNode("span", null, _toDisplayString(onlineMessageSummary.value), 1),
+                          _createElementVNode("span", null, _toDisplayString(_unref(onlineMessageSummary)), 1),
                           _createVNode(_component_VBtn, {
                             size: "x-small",
                             variant: "text",
                             onClick: _cache[20] || (_cache[20] = $event => (onlineMessagesCollapsed.value = true))
                           }, {
-                            default: _withCtx(() => [...(_cache[63] || (_cache[63] = [
+                            default: _withCtx(() => [...(_cache[68] || (_cache[68] = [
                               _createTextVNode(" 收起 ", -1)
                             ]))]),
                             _: 1
@@ -4415,23 +4965,23 @@ return (_ctx, _cache) => {
                 _createElementVNode("div", _hoisted_87, [
                   _createElementVNode("section", _hoisted_88, [
                     _createElementVNode("div", _hoisted_89, [
-                      _cache[64] || (_cache[64] = _createElementVNode("div", null, [
+                      _cache[69] || (_cache[69] = _createElementVNode("div", null, [
                         _createElementVNode("div", { class: "section-kicker" }, "自动搜索"),
                         _createElementVNode("h3", null, "选择要下载的字幕")
                       ], -1)),
-                      _createElementVNode("span", null, _toDisplayString(hasOnlineResults.value ? `${filteredOnlineResults.value.length}/${onlineResults.value.length} 条结果` : '暂无结果'), 1)
+                      _createElementVNode("span", null, _toDisplayString(_unref(hasOnlineResults) ? `${_unref(filteredOnlineResults).length}/${_unref(onlineResults).length} 条结果` : '暂无结果'), 1)
                     ]),
-                    (hasOnlineResults.value)
+                    (_unref(hasOnlineResults))
                       ? (_openBlock(), _createBlock(_component_VChipGroup, {
                           key: 0,
-                          modelValue: onlineLanguageFilter.value,
-                          "onUpdate:modelValue": _cache[21] || (_cache[21] = $event => ((onlineLanguageFilter).value = $event)),
+                          modelValue: _unref(onlineLanguageFilter),
+                          "onUpdate:modelValue": _cache[21] || (_cache[21] = $event => (_isRef(onlineLanguageFilter) ? (onlineLanguageFilter).value = $event : null)),
                           class: "online-provider-filter",
                           mandatory: "",
                           "selected-class": "online-provider-filter-active"
                         }, {
                           default: _withCtx(() => [
-                            (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(onlineLanguageFilterItems.value, (item) => {
+                            (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(_unref(onlineLanguageFilterItems), (item) => {
                               return (_openBlock(), _createBlock(_component_VChip, {
                                 key: item.value,
                                 value: item.value,
@@ -4448,17 +4998,17 @@ return (_ctx, _cache) => {
                           _: 1
                         }, 8, ["modelValue"]))
                       : _createCommentVNode("", true),
-                    (hasOnlineResults.value)
+                    (_unref(hasOnlineResults))
                       ? (_openBlock(), _createBlock(_component_VChipGroup, {
                           key: 1,
-                          modelValue: onlineProviderFilter.value,
-                          "onUpdate:modelValue": _cache[22] || (_cache[22] = $event => ((onlineProviderFilter).value = $event)),
+                          modelValue: _unref(onlineProviderFilter),
+                          "onUpdate:modelValue": _cache[22] || (_cache[22] = $event => (_isRef(onlineProviderFilter) ? (onlineProviderFilter).value = $event : null)),
                           class: "online-provider-filter",
                           mandatory: "",
                           "selected-class": "online-provider-filter-active"
                         }, {
                           default: _withCtx(() => [
-                            (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(onlineProviderFilterItems.value, (item) => {
+                            (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(_unref(onlineProviderFilterItems), (item) => {
                               return (_openBlock(), _createBlock(_component_VChip, {
                                 key: item.value,
                                 value: item.value,
@@ -4475,9 +5025,9 @@ return (_ctx, _cache) => {
                           _: 1
                         }, 8, ["modelValue"]))
                       : _createCommentVNode("", true),
-                    (onlineProviderProgressItems.value.length)
+                    (_unref(onlineProviderProgressItems).length)
                       ? (_openBlock(), _createElementBlock("div", _hoisted_90, [
-                          (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(onlineProviderProgressItems.value, (item) => {
+                          (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(_unref(onlineProviderProgressItems), (item) => {
                             return (_openBlock(), _createBlock(_component_VChip, {
                               key: item.provider,
                               size: "small",
@@ -4492,25 +5042,25 @@ return (_ctx, _cache) => {
                           }), 128))
                         ]))
                       : _createCommentVNode("", true),
-                    (onlineSearching.value && !filteredOnlineResults.value.length)
+                    (_unref(onlineSearching) && !_unref(filteredOnlineResults).length)
                       ? (_openBlock(), _createElementBlock("div", _hoisted_91, " 正在从 API 搜索字幕，先返回的结果会先显示... "))
                       : _createCommentVNode("", true),
-                    (filteredOnlineResults.value.length)
+                    (_unref(filteredOnlineResults).length)
                       ? (_openBlock(), _createElementBlock("div", _hoisted_92, [
-                          (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(filteredOnlineResults.value, (item) => {
+                          (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(_unref(filteredOnlineResults), (item) => {
                             return (_openBlock(), _createElementBlock("div", {
                               key: _unref(onlineResultKey)(item),
                               class: _normalizeClass(["online-result-card", {
-                    active: selectedOnlineResultIds.value.includes(_unref(onlineResultKey)(item)),
+                    active: _unref(selectedOnlineResultIds).includes(_unref(onlineResultKey)(item)),
                     disabled: !_unref(isOnlineResultDownloadable)(item),
                   }])
                             }, [
                               _createVNode(_component_VCheckbox, {
-                                "model-value": selectedOnlineResultIds.value.includes(_unref(onlineResultKey)(item)),
+                                "model-value": _unref(selectedOnlineResultIds).includes(_unref(onlineResultKey)(item)),
                                 density: "compact",
                                 "hide-details": "",
                                 disabled: !_unref(isOnlineResultDownloadable)(item),
-                                "onUpdate:modelValue": value => toggleOnlineResult(item, value)
+                                "onUpdate:modelValue": value => _unref(toggleOnlineResult)(item, value)
                               }, null, 8, ["model-value", "disabled", "onUpdate:modelValue"]),
                               _createElementVNode("div", _hoisted_93, [
                                 _createElementVNode("div", _hoisted_94, _toDisplayString(item.title), 1),
@@ -4540,15 +5090,15 @@ return (_ctx, _cache) => {
                             ], 2))
                           }), 128))
                         ]))
-                      : (!onlineSearching.value)
-                        ? (_openBlock(), _createElementBlock("div", _hoisted_100, _toDisplayString(hasOnlineResults.value ? '当前平台筛选下没有结果。' : '没有可自动下载的字幕结果。可以换关键词重试，或使用右侧手动搜索。'), 1))
+                      : (!_unref(onlineSearching))
+                        ? (_openBlock(), _createElementBlock("div", _hoisted_100, _toDisplayString(_unref(hasOnlineResults) ? '当前平台筛选下没有结果。' : '没有可自动下载的字幕结果。可以换关键词重试，或使用右侧手动搜索。'), 1))
                         : _createCommentVNode("", true)
                   ]),
                   _createElementVNode("aside", _hoisted_101, [
-                    _cache[65] || (_cache[65] = _createElementVNode("div", { class: "section-kicker" }, "手动搜索", -1)),
-                    _cache[66] || (_cache[66] = _createElementVNode("h3", null, "跳转字幕站", -1)),
-                    _cache[67] || (_cache[67] = _createElementVNode("p", null, "自动搜索失败或源站需要验证时，可打开链接下载字幕包后回到本页上传。", -1)),
-                    (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(onlineManualLinks.value, (provider) => {
+                    _cache[70] || (_cache[70] = _createElementVNode("div", { class: "section-kicker" }, "手动搜索", -1)),
+                    _cache[71] || (_cache[71] = _createElementVNode("h3", null, "跳转字幕站", -1)),
+                    _cache[72] || (_cache[72] = _createElementVNode("p", null, "自动搜索失败或源站需要验证时，可打开链接下载字幕包后回到本页上传。", -1)),
+                    (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(_unref(onlineManualLinks), (provider) => {
                       return (_openBlock(), _createElementBlock("div", {
                         key: provider.provider,
                         class: "manual-provider"
@@ -4578,10 +5128,10 @@ return (_ctx, _cache) => {
         })
       ]),
       _: 1
-    }, 8, ["model-value"]),
+    }, 8, ["model-value", "onUpdate:modelValue"]),
     _createVNode(_component_VDialog, {
-      modelValue: onlineAiConfirmDialog.value,
-      "onUpdate:modelValue": _cache[24] || (_cache[24] = $event => ((onlineAiConfirmDialog).value = $event)),
+      modelValue: _unref(onlineAiConfirmDialog),
+      "onUpdate:modelValue": _cache[24] || (_cache[24] = $event => (_isRef(onlineAiConfirmDialog) ? (onlineAiConfirmDialog).value = $event : null)),
       "max-width": "520"
     }, {
       default: _withCtx(() => [
@@ -4590,8 +5140,8 @@ return (_ctx, _cache) => {
             _createVNode(_component_VCardTitle, { class: "dialog-title compact" }, {
               default: _withCtx(() => [
                 _createElementVNode("div", null, [
-                  _cache[68] || (_cache[68] = _createElementVNode("span", null, "确认提交 AI 翻译", -1)),
-                  _createElementVNode("p", null, _toDisplayString(onlineAiConfirmText.value), 1)
+                  _cache[73] || (_cache[73] = _createElementVNode("span", null, "确认提交 AI 翻译", -1)),
+                  _createElementVNode("p", null, _toDisplayString(_unref(onlineAiConfirmText)), 1)
                 ])
               ]),
               _: 1
@@ -4613,7 +5163,7 @@ return (_ctx, _cache) => {
                   variant: "text",
                   onClick: _cache[23] || (_cache[23] = $event => (onlineAiConfirmDialog.value = false))
                 }, {
-                  default: _withCtx(() => [...(_cache[69] || (_cache[69] = [
+                  default: _withCtx(() => [...(_cache[74] || (_cache[74] = [
                     _createTextVNode("取消", -1)
                   ]))]),
                   _: 1
@@ -4621,14 +5171,14 @@ return (_ctx, _cache) => {
                 _createVNode(_component_VBtn, {
                   color: "primary",
                   variant: "flat",
-                  loading: onlineAiDownloading.value,
-                  onClick: confirmOnlineAiTranslate
+                  loading: _unref(onlineAiDownloading),
+                  onClick: _unref(confirmOnlineAiTranslate)
                 }, {
-                  default: _withCtx(() => [...(_cache[70] || (_cache[70] = [
+                  default: _withCtx(() => [...(_cache[75] || (_cache[75] = [
                     _createTextVNode(" 确认提交 ", -1)
                   ]))]),
                   _: 1
-                }, 8, ["loading"])
+                }, 8, ["loading", "onClick"])
               ]),
               _: 1
             })
@@ -4639,8 +5189,8 @@ return (_ctx, _cache) => {
       _: 1
     }, 8, ["modelValue"]),
     _createVNode(_component_VDialog, {
-      modelValue: uploadDialog.value,
-      "onUpdate:modelValue": _cache[29] || (_cache[29] = $event => ((uploadDialog).value = $event)),
+      modelValue: _unref(uploadDialog),
+      "onUpdate:modelValue": _cache[34] || (_cache[34] = $event => (_isRef(uploadDialog) ? (uploadDialog).value = $event : null)),
       "max-width": "980"
     }, {
       default: _withCtx(() => [
@@ -4651,7 +5201,7 @@ return (_ctx, _cache) => {
           default: _withCtx(() => [
             _createVNode(_component_VCardTitle, { class: "dialog-title" }, {
               default: _withCtx(() => [
-                _createElementVNode("span", null, _toDisplayString(uploadTitle.value || '上传字幕'), 1),
+                _createElementVNode("span", null, _toDisplayString(_unref(uploadTitle) || '上传字幕'), 1),
                 _createVNode(_component_VBtn, {
                   icon: "mdi-close",
                   variant: "text",
@@ -4667,59 +5217,59 @@ return (_ctx, _cache) => {
                   variant: "text",
                   onClick: _cache[26] || (_cache[26] = $event => (uploadDialog.value = false))
                 }, {
-                  default: _withCtx(() => [...(_cache[71] || (_cache[71] = [
+                  default: _withCtx(() => [...(_cache[76] || (_cache[76] = [
                     _createTextVNode("关闭", -1)
                   ]))]),
                   _: 1
                 }),
                 _createVNode(_component_VSpacer),
-                (hasPreviewItems.value)
+                (_unref(hasPreviewItems))
                   ? (_openBlock(), _createBlock(_component_VBtn, {
                       key: 0,
                       variant: "tonal",
-                      onClick: resetUploadPreview
+                      onClick: _unref(resetUploadPreview)
                     }, {
-                      default: _withCtx(() => [...(_cache[72] || (_cache[72] = [
+                      default: _withCtx(() => [...(_cache[77] || (_cache[77] = [
                         _createTextVNode(" 重新选择文件 ", -1)
                       ]))]),
                       _: 1
-                    }))
+                    }, 8, ["onClick"]))
                   : _createCommentVNode("", true),
-                (hasPreviewItems.value)
+                (_unref(hasPreviewItems))
                   ? (_openBlock(), _createBlock(_component_VTooltip, {
                       key: 1,
                       location: "top",
-                      text: allSelectedPreviewTargetsAreStream.value ? 'STRM 资源暂不支持智能调轴。' : (hasSelectedPreviewStreamTargets.value ? 'STRM 目标会跳过调轴，其余本地视频正常处理。' : '写入前会分析视频/字幕时间轴，可能占用 CPU 并造成短暂卡顿。')
+                      text: _unref(allSelectedPreviewTargetsAreStream) ? 'STRM 资源暂不支持智能调轴。' : (_unref(hasSelectedPreviewStreamTargets) ? 'STRM 目标会跳过调轴，其余本地视频正常处理。' : '写入前会分析视频/字幕时间轴，可能占用 CPU 并造成短暂卡顿。')
                     }, {
                       activator: _withCtx(({ props: tooltipProps }) => [
                         _createElementVNode("div", _mergeProps(tooltipProps, { class: "timeline-action" }), [
                           _createVNode(_component_VSwitch, {
-                            modelValue: fixTimeline.value,
-                            "onUpdate:modelValue": _cache[27] || (_cache[27] = $event => ((fixTimeline).value = $event)),
+                            modelValue: _unref(fixTimeline),
+                            "onUpdate:modelValue": _cache[27] || (_cache[27] = $event => (_isRef(fixTimeline) ? (fixTimeline).value = $event : null)),
                             color: "primary",
                             density: "comfortable",
                             "hide-details": "",
-                            disabled: !_unref(timelineAvailable) || allSelectedPreviewTargetsAreStream.value,
-                            label: hasSelectedPreviewStreamTargets.value ? '智能调轴（STRM跳过）' : '智能调轴'
+                            disabled: !_unref(timelineAvailable) || _unref(allSelectedPreviewTargetsAreStream),
+                            label: _unref(hasSelectedPreviewStreamTargets) ? '智能调轴（STRM跳过）' : '智能调轴'
                           }, null, 8, ["modelValue", "disabled", "label"])
                         ], 16)
                       ]),
                       _: 1
                     }, 8, ["text"]))
                   : _createCommentVNode("", true),
-                (hasPreviewItems.value)
+                (_unref(hasPreviewItems))
                   ? (_openBlock(), _createBlock(_component_VBtn, {
                       key: 2,
                       color: "success",
-                      disabled: !canApply.value,
-                      loading: applying.value,
-                      onClick: applyUpload
+                      disabled: !_unref(canApply),
+                      loading: _unref(applying),
+                      onClick: _unref(applyUpload)
                     }, {
-                      default: _withCtx(() => [...(_cache[73] || (_cache[73] = [
+                      default: _withCtx(() => [...(_cache[78] || (_cache[78] = [
                         _createTextVNode(" 写入字幕 ", -1)
                       ]))]),
                       _: 1
-                    }, 8, ["disabled", "loading"]))
+                    }, 8, ["disabled", "loading", "onClick"]))
                   : _createCommentVNode("", true)
               ]),
               _: 1
@@ -4727,29 +5277,29 @@ return (_ctx, _cache) => {
             _createVNode(_component_VDivider),
             _createVNode(_component_VCardText, null, {
               default: _withCtx(() => [
-                (!hasPreviewItems.value)
+                (!_unref(hasPreviewItems))
                   ? (_openBlock(), _createElementBlock("div", {
                       key: 0,
-                      class: _normalizeClass(["dropzone", { dragging: dragging.value }]),
-                      onDrop: handleDrop,
-                      onDragover: handleDragOver,
-                      onDragleave: handleDragLeave
+                      class: _normalizeClass(["dropzone", { dragging: _unref(dragging) }]),
+                      onDrop: _cache[29] || (_cache[29] = (...args) => (_unref(handleDrop) && _unref(handleDrop)(...args))),
+                      onDragover: _cache[30] || (_cache[30] = (...args) => (_unref(handleDragOver) && _unref(handleDragOver)(...args))),
+                      onDragleave: _cache[31] || (_cache[31] = (...args) => (_unref(handleDragLeave) && _unref(handleDragLeave)(...args)))
                     }, [
-                      _cache[75] || (_cache[75] = _createElementVNode("div", { class: "dropzone-icon" }, "SRT / ASS / ZIP / RAR / 7Z", -1)),
-                      _cache[76] || (_cache[76] = _createElementVNode("div", { class: "dropzone-title" }, "把字幕或压缩包拖到这里", -1)),
-                      _cache[77] || (_cache[77] = _createElementVNode("div", { class: "dropzone-text" }, " 支持字幕文件、ZIP、RAR、7Z；RAR/7Z 需容器内解压器支持。 ", -1)),
+                      _cache[80] || (_cache[80] = _createElementVNode("div", { class: "dropzone-icon" }, "SRT / ASS / ZIP / RAR / 7Z", -1)),
+                      _cache[81] || (_cache[81] = _createElementVNode("div", { class: "dropzone-title" }, "把字幕或压缩包拖到这里", -1)),
+                      _cache[82] || (_cache[82] = _createElementVNode("div", { class: "dropzone-text" }, " 支持字幕文件、ZIP、RAR、7Z；RAR/7Z 需容器内解压器支持。 ", -1)),
                       _createVNode(_component_VBtn, {
                         color: "primary",
                         variant: "flat",
-                        disabled: preparing.value,
-                        loading: preparing.value,
-                        onClick: openFileDialog
+                        disabled: _unref(preparing),
+                        loading: _unref(preparing),
+                        onClick: _unref(openFileDialog)
                       }, {
-                        default: _withCtx(() => [...(_cache[74] || (_cache[74] = [
+                        default: _withCtx(() => [...(_cache[79] || (_cache[79] = [
                           _createTextVNode(" 选择文件 ", -1)
                         ]))]),
                         _: 1
-                      }, 8, ["disabled", "loading"]),
+                      }, 8, ["disabled", "loading", "onClick"]),
                       _createElementVNode("input", {
                         ref_key: "fileInputRef",
                         ref: fileInputRef,
@@ -4757,11 +5307,11 @@ return (_ctx, _cache) => {
                         type: "file",
                         multiple: "",
                         accept: ".srt,.ass,.ssa,.sbv,.sub,.vtt,.webvtt,.zip,.rar,.7z",
-                        onChange: onPickFiles
+                        onChange: _cache[28] || (_cache[28] = (...args) => (_unref(onPickFiles) && _unref(onPickFiles)(...args)))
                       }, null, 544)
                     ], 34))
                   : _createCommentVNode("", true),
-                (!hasPreviewItems.value)
+                (!_unref(hasPreviewItems))
                   ? (_openBlock(), _createElementBlock("div", _hoisted_105, [
                       _createElementVNode("span", {
                         class: _normalizeClass({ ok: _unref(rarPythonAvailable) })
@@ -4775,16 +5325,16 @@ return (_ctx, _cache) => {
                       _createElementVNode("button", {
                         class: "support-help",
                         type: "button",
-                        onClick: openRarHelp
+                        onClick: _cache[32] || (_cache[32] = (...args) => (_unref(openRarHelp) && _unref(openRarHelp)(...args)))
                       }, " RAR 不能解压？查看处理方式 "),
                       _createElementVNode("span", {
                         class: _normalizeClass({ ok: _unref(timelineAvailable) })
                       }, " 智能调轴：" + _toDisplayString(_unref(timelineAvailable) ? '可用' : `缺少 ${_unref(timelineMissing) || '依赖'}`), 3)
                     ]))
                   : _createCommentVNode("", true),
-                (!hasPreviewItems.value && files.value.length)
+                (!_unref(hasPreviewItems) && _unref(files).length)
                   ? (_openBlock(), _createElementBlock("div", _hoisted_106, [
-                      (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(files.value, (file) => {
+                      (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(_unref(files), (file) => {
                         return (_openBlock(), _createElementBlock("div", {
                           key: `${file.name}-${file.size}`,
                           class: "file-row"
@@ -4797,9 +5347,9 @@ return (_ctx, _cache) => {
                             size: "small",
                             variant: "text",
                             color: "error",
-                            onClick: $event => (removeFile(file))
+                            onClick: $event => (_unref(removeFile)(file))
                           }, {
-                            default: _withCtx(() => [...(_cache[78] || (_cache[78] = [
+                            default: _withCtx(() => [...(_cache[83] || (_cache[83] = [
                               _createTextVNode("移除", -1)
                             ]))]),
                             _: 1
@@ -4808,38 +5358,38 @@ return (_ctx, _cache) => {
                       }), 128))
                     ]))
                   : _createCommentVNode("", true),
-                (hasPreviewItems.value)
+                (_unref(hasPreviewItems))
                   ? (_openBlock(), _createElementBlock("div", _hoisted_107, [
                       _createElementVNode("div", _hoisted_108, [
-                        _cache[80] || (_cache[80] = _createElementVNode("div", null, [
+                        _cache[85] || (_cache[85] = _createElementVNode("div", null, [
                           _createElementVNode("div", { class: "section-kicker" }, "字幕匹配"),
                           _createElementVNode("h3", null, "确认集数与输出文件名")
                         ], -1)),
                         _createElementVNode("div", _hoisted_109, [
                           _createVNode(_component_VTextField, {
-                            modelValue: batchLanguageSuffix.value,
-                            "onUpdate:modelValue": _cache[28] || (_cache[28] = $event => ((batchLanguageSuffix).value = $event)),
+                            modelValue: _unref(batchLanguageSuffix),
+                            "onUpdate:modelValue": _cache[33] || (_cache[33] = $event => (_isRef(batchLanguageSuffix) ? (batchLanguageSuffix).value = $event : null)),
                             label: "批量语言后缀",
                             placeholder: "chi / eng / jpn",
                             variant: "outlined",
                             density: "comfortable",
                             "hide-details": "",
-                            onKeyup: _withKeys(applyBatchLanguageSuffix, ["enter"])
-                          }, null, 8, ["modelValue"]),
+                            onKeyup: _withKeys(_unref(applyBatchLanguageSuffix), ["enter"])
+                          }, null, 8, ["modelValue", "onKeyup"]),
                           _createVNode(_component_VBtn, {
                             variant: "tonal",
                             color: "primary",
-                            disabled: !batchLanguageSuffix.value.trim(),
-                            onClick: applyBatchLanguageSuffix
+                            disabled: !_unref(batchLanguageSuffix).trim(),
+                            onClick: _unref(applyBatchLanguageSuffix)
                           }, {
-                            default: _withCtx(() => [...(_cache[79] || (_cache[79] = [
+                            default: _withCtx(() => [...(_cache[84] || (_cache[84] = [
                               _createTextVNode(" 应用到全部 ", -1)
                             ]))]),
                             _: 1
-                          }, 8, ["disabled"])
+                          }, 8, ["disabled", "onClick"])
                         ])
                       ]),
-                      (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(preview.value.items, (item) => {
+                      (_openBlock(true), _createElementBlock(_Fragment, null, _renderList(_unref(preview).items, (item) => {
                         return (_openBlock(), _createElementBlock("div", {
                           key: item.upload_id,
                           class: _normalizeClass(["preview-row", { disabled: item.selected === false }])
@@ -4848,7 +5398,7 @@ return (_ctx, _cache) => {
                             "model-value": item.selected !== false,
                             density: "compact",
                             "hide-details": "",
-                            "onUpdate:modelValue": value => togglePreviewItem(item.upload_id, value)
+                            "onUpdate:modelValue": value => _unref(togglePreviewItem)(item.upload_id, value)
                           }, null, 8, ["model-value", "onUpdate:modelValue"]),
                           _createElementVNode("div", _hoisted_110, [
                             _createElementVNode("strong", null, _toDisplayString(item.source_name), 1),
@@ -4856,13 +5406,13 @@ return (_ctx, _cache) => {
                           ]),
                           _createVNode(_component_VSelect, {
                             "model-value": item.target_id,
-                            items: targetSelectItems.value,
+                            items: _unref(targetSelectItems),
                             label: "对应集数",
                             variant: "outlined",
                             density: "comfortable",
                             "hide-details": "",
                             disabled: item.selected === false,
-                            "onUpdate:modelValue": value => updatePreviewTarget(item.upload_id, value)
+                            "onUpdate:modelValue": value => _unref(updatePreviewTarget)(item.upload_id, value)
                           }, null, 8, ["model-value", "items", "disabled", "onUpdate:modelValue"]),
                           _createVNode(_component_VTextField, {
                             "model-value": item.language_suffix,
@@ -4871,11 +5421,11 @@ return (_ctx, _cache) => {
                             density: "comfortable",
                             "hide-details": "",
                             disabled: item.selected === false,
-                            "onUpdate:modelValue": value => updateLanguageSuffix(item.upload_id, value)
+                            "onUpdate:modelValue": value => _unref(updateLanguageSuffix)(item.upload_id, value)
                           }, null, 8, ["model-value", "disabled", "onUpdate:modelValue"]),
                           _createElementVNode("div", _hoisted_111, [
-                            _cache[81] || (_cache[81] = _createElementVNode("span", null, "改名为", -1)),
-                            _createElementVNode("strong", null, _toDisplayString(item.output_name || _unref(buildOutputName)(uploadTargets.value.find(target => target.id === item.target_id), item) || '待选择目标'), 1)
+                            _cache[86] || (_cache[86] = _createElementVNode("span", null, "改名为", -1)),
+                            _createElementVNode("strong", null, _toDisplayString(item.output_name || _unref(buildOutputName)(_unref(uploadTargets).find(target => target.id === item.target_id), item) || '待选择目标'), 1)
                           ])
                         ], 2))
                       }), 128))
@@ -4891,8 +5441,8 @@ return (_ctx, _cache) => {
       _: 1
     }, 8, ["modelValue"]),
     _createVNode(_component_VDialog, {
-      modelValue: rarHelpDialog.value,
-      "onUpdate:modelValue": _cache[31] || (_cache[31] = $event => ((rarHelpDialog).value = $event)),
+      modelValue: _unref(rarHelpDialog),
+      "onUpdate:modelValue": _cache[36] || (_cache[36] = $event => (_isRef(rarHelpDialog) ? (rarHelpDialog).value = $event : null)),
       "max-width": "820"
     }, {
       default: _withCtx(() => [
@@ -4903,11 +5453,11 @@ return (_ctx, _cache) => {
           default: _withCtx(() => [
             _createVNode(_component_VCardTitle, { class: "dialog-title" }, {
               default: _withCtx(() => [
-                _cache[82] || (_cache[82] = _createElementVNode("span", null, "RAR 解压器说明", -1)),
+                _cache[87] || (_cache[87] = _createElementVNode("span", null, "RAR 解压器说明", -1)),
                 _createVNode(_component_VBtn, {
                   icon: "mdi-close",
                   variant: "text",
-                  onClick: _cache[30] || (_cache[30] = $event => (rarHelpDialog.value = false))
+                  onClick: _cache[35] || (_cache[35] = $event => (rarHelpDialog.value = false))
                 })
               ]),
               _: 1
@@ -4915,7 +5465,7 @@ return (_ctx, _cache) => {
             _createVNode(_component_VDivider),
             _createVNode(_component_VCardText, null, {
               default: _withCtx(() => [
-                _cache[83] || (_cache[83] = _createElementVNode("div", { class: "rar-help-summary" }, [
+                _cache[88] || (_cache[88] = _createElementVNode("div", { class: "rar-help-summary" }, [
                   _createElementVNode("p", null, [
                     _createElementVNode("strong", null, "说明："),
                     _createElementVNode("code", null, "rarfile"),
@@ -4958,7 +5508,7 @@ return (_ctx, _cache) => {
                         _createElementVNode("button", {
                           type: "button",
                           class: "rar-help-copy",
-                          onClick: $event => (copyHelpText(item.command, item.copyLabel))
+                          onClick: $event => (_unref(copyHelpText)(item.command, item.copyLabel))
                         }, _toDisplayString(item.button), 9, _hoisted_116)
                       ]),
                       _createElementVNode("p", null, _toDisplayString(item.description), 1),
@@ -4968,21 +5518,21 @@ return (_ctx, _cache) => {
                     ])
                   }), 64))
                 ]),
-                (copyMessage.value)
+                (_unref(copyMessage))
                   ? (_openBlock(), _createBlock(_component_VAlert, {
                       key: 0,
                       class: "mt-4",
                       type: "success",
                       variant: "tonal",
-                      text: copyMessage.value
+                      text: _unref(copyMessage)
                     }, null, 8, ["text"]))
-                  : (copyError.value)
+                  : (_unref(copyError))
                     ? (_openBlock(), _createBlock(_component_VAlert, {
                         key: 1,
                         class: "mt-4",
                         type: "warning",
                         variant: "tonal",
-                        text: copyError.value
+                        text: _unref(copyError)
                       }, null, 8, ["text"]))
                     : _createCommentVNode("", true),
                 (_unref(rarDependencyStatus).message)
@@ -5014,6 +5564,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-c73c38e5"]]);
+const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-16c53779"]]);
 
 export { AppPage as default };

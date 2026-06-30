@@ -1,9 +1,13 @@
 <script setup>
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { createSubtitleManualUploadApi } from '../api/subtitleManualUploadApi'
+import { aiRestartSourceOptions, useAiTasks } from '../composables/useAiTasks'
 import { useMediaSearch } from '../composables/useMediaSearch'
+import { useOnlineSubtitles } from '../composables/useOnlineSubtitles'
 import { usePluginStatus } from '../composables/usePluginStatus'
 import { useTargets } from '../composables/useTargets'
+import { useTimelineTasks } from '../composables/useTimelineTasks'
+import { useUploadPreview } from '../composables/useUploadPreview'
 import {
   buildOutputName,
   compactTargetName,
@@ -22,16 +26,11 @@ import {
   unwrapResponse,
 } from '../utils/formatters'
 import {
-  isForeignOnlineResult,
   isOnlineResultDownloadable,
   onlineProviderItems,
-  onlineResultIdentityPriority,
   onlineResultKey,
-  onlineResultLanguageFilterCategory,
-  onlineResultLanguagePriority,
   onlineResultMeta,
   providerName,
-  providerPriority,
   providerProgressColor,
   providerProgressText,
 } from '../utils/onlineResult'
@@ -58,20 +57,9 @@ const props = defineProps({
 
 const pluginBase = computed(() => `plugin/${props.pluginId || 'SubtitleManualUpload'}`)
 const pluginApi = computed(() => createSubtitleManualUploadApi(props.api, pluginBase))
-const preparing = ref(false)
-const applying = ref(false)
 const clearing = ref(false)
-const aiSubmitting = ref(false)
-const aiCancelling = ref(false)
-const aiTasksLoading = ref(false)
-const onlineSearching = ref(false)
-const onlineDownloading = ref(false)
-const onlinePreviewDownloading = ref(false)
-const onlineAiDownloading = ref(false)
-const dragging = ref(false)
 const message = ref('')
 const error = ref('')
-const onlineError = ref('')
 const rootTab = ref('match')
 const matchHistoryLoading = ref(false)
 const matchHistoryItems = ref([])
@@ -83,7 +71,6 @@ const expandedHistoryIds = ref([])
 const expandedHistorySeasonKeys = ref([])
 const expandedHistoryTargetIds = ref([])
 const selectedHistoryTargetIds = ref({})
-const timelineFixing = ref(false)
 const autoTransferQueue = ref({
   summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, skipped: 0, failed: 0 },
   tasks: [],
@@ -91,62 +78,8 @@ const autoTransferQueue = ref({
   season_package_cache: [],
 })
 const autoQueueDialog = ref(false)
-const uploadDialog = ref(false)
-const rarHelpDialog = ref(false)
-const uploadTitle = ref('')
-const uploadScopeTargets = ref([])
-const files = ref([])
-const preview = ref(null)
-const fileInputRef = ref(null)
-const fixTimeline = ref(false)
-const batchLanguageSuffix = ref('')
-const copyMessage = ref('')
-const copyError = ref('')
-const lastWritten = ref([])
-const onlineDialog = ref(false)
-const onlineAiConfirmDialog = ref(false)
-const onlineTitle = ref('')
-const onlineScope = ref('auto')
-const onlineKeyword = ref('')
-const onlineTargets = ref([])
-const onlineStatus = ref({ providers: [], capabilities: {} })
-const onlineSelectedProviders = ref(['assrt', 'opensubtitles'])
-const onlineResults = ref([])
-const onlineLanguageFilter = ref('all')
-const onlineProviderFilter = ref('all')
-const onlineMessages = ref([])
-const onlineMessagesCollapsed = ref(false)
-const onlineManualLinks = ref([])
-const onlineProviderProgress = ref({})
-const selectedOnlineResultIds = ref([])
-const aiTaskDialog = ref(false)
-const aiTaskDialogTarget = ref(null)
-const aiTaskScopeTargets = ref([])
-const aiTaskLoadToken = ref(0)
-const aiRestartSourcePolicy = ref('reuse')
-const aiRestartSubtitlePath = ref('')
-const aiSelectedTaskIds = ref([])
-const aiStatusStripRef = ref(null)
-const aiTaskData = ref({
-  status: null,
-  summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, ignored: 0, no_audio: 0, failed: 0, cancelled: 0 },
-  tasks: [],
-  task_by_target: {},
-  tasks_by_target: {},
-})
-const timelineTaskData = ref({
-  summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, skipped: 0, failed: 0 },
-  tasks: [],
-  task_by_target: {},
-})
-let aiTaskTimer = null
-let timelineTaskTimer = null
 let historyTimelineTimer = null
 let autoQueueTimer = null
-let onlineSearchSeq = 0
-let onlineDownloadSeq = 0
-const ONLINE_PROVIDER_TIMEOUT_MS = 25000
-const ONLINE_DOWNLOAD_TIMEOUT_MS = 35000
 
 const {
   resolving,
@@ -183,24 +116,9 @@ const {
   message,
   mediaLabel,
   clearRelatedState() {
-    preview.value = null
-    lastWritten.value = []
-    aiTaskDialogTarget.value = null
-    aiTaskScopeTargets.value = []
-    aiTaskData.value = {
-      ...aiTaskData.value,
-      summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, ignored: 0, no_audio: 0, failed: 0, cancelled: 0 },
-      tasks: [],
-      task_by_target: {},
-      tasks_by_target: {},
-    }
-    timelineTaskData.value = {
-      summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, skipped: 0, failed: 0 },
-      tasks: [],
-      task_by_target: {},
-    }
-    stopAiPolling()
-    stopTimelinePolling()
+    clearUploadPreviewState()
+    resetAiTasks()
+    resetTimelineTasks()
   },
   beforeLoadTargets() {
     preview.value = null
@@ -278,15 +196,6 @@ const {
   runSearch,
 })
 
-const aiRestartSourceOptions = [
-  { title: '沿用原任务来源', value: 'reuse' },
-  { title: '自动选择', value: 'auto' },
-  { title: '选中外挂字幕', value: 'matched_external' },
-  { title: '本地外挂字幕', value: 'local_external' },
-  { title: '视频内嵌字幕', value: 'embedded' },
-  { title: '音轨 ASR', value: 'asr' },
-]
-
 const rarContainerInstallCommand = `docker exec -it moviepilot bash
 apt-get update
 apt-get install -y p7zip-full unrar-free`
@@ -327,148 +236,245 @@ const rarHelpItems = [
   },
 ]
 
-const uploadTargets = computed(() => uploadScopeTargets.value.filter(item => !isLocked(item.id) && item.writable !== false))
-const batchUploadTargets = computed(() => {
-  const base = selectedTargets.value.length ? selectedTargets.value : visibleTargets.value
-  return base.filter(item => !isLocked(item.id) && item.writable !== false)
+const {
+  preparing,
+  applying,
+  dragging,
+  uploadDialog,
+  rarHelpDialog,
+  uploadTitle,
+  uploadScopeTargets,
+  files,
+  preview,
+  fileInputRef,
+  fixTimeline,
+  batchLanguageSuffix,
+  copyMessage,
+  copyError,
+  lastWritten,
+  uploadTargets,
+  batchUploadTargets,
+  targetSelectItems,
+  canApply,
+  hasPreviewItems,
+  selectedPreviewItems,
+  selectedPreviewTargets,
+  allSelectedPreviewTargetsAreStream,
+  hasSelectedPreviewStreamTargets,
+  timelineEnabledForApply,
+  clearUploadPreviewState,
+  prepareOnlineUploadState,
+  openOnlinePreview,
+  openBatchUpload,
+  openSingleUpload,
+  onPickFiles,
+  removeFile,
+  openFileDialog,
+  handleDrop,
+  handleDragOver,
+  handleDragLeave,
+  updatePreviewTarget,
+  updateLanguageSuffix,
+  togglePreviewItem,
+  applyBatchLanguageSuffix,
+  resetUploadPreview,
+  openRarHelp,
+  copyHelpText,
+  applyUpload,
+} = useUploadPreview({
+  pluginApi,
+  unwrapResponse,
+  errorMessage,
+  error,
+  message,
+  selectedTargets,
+  visibleTargets,
+  selectedMedia,
+  selectedSeason,
+  isLocked,
+  lockedTargetPayload,
+  loadTargets,
+  timelineAvailable,
+  timelineNeedsRiskyConfirm,
+  confirmRiskyTimelineOffset,
+  isStreamTarget,
+  compactTargetName,
+  seasonLabel,
+  buildOutputName,
 })
-const targetSelectItems = computed(() => uploadTargets.value.map(target => ({
-  title: compactTargetName(target),
-  value: target.id,
-})))
-const canPrepare = computed(() => uploadTargets.value.length > 0 && files.value.length > 0)
-const canApply = computed(() => {
-  const items = selectedPreviewItems.value
-  return items.length > 0 && items.every(item => item.target_id)
+
+const selectedSubtitleTargets = computed(() => selectedTargets.value.filter(target => !isLocked(target.id) && (target.subtitles || []).length))
+
+const {
+  timelineFixing,
+  timelineTaskData,
+  selectedTimelineTargets,
+  applyTimelineTaskData,
+  resetTimelineTasks,
+  stopTimelinePolling,
+  loadTimelineTasks,
+  timelineTaskForTarget,
+  timelineTaskText,
+  fixExistingTimeline,
+  fixSelectedDetailTimeline,
+} = useTimelineTasks({
+  pluginApi,
+  unwrapResponse,
+  errorMessage,
+  error,
+  message,
+  visibleTargets,
+  selectedSubtitleTargets,
+  lockedTargetPayload,
+  timelineAvailable,
+  timelineNeedsRiskyConfirm,
+  timelineMissing,
+  confirmRiskyTimelineOffset,
+  isStreamTarget,
+  timelineResultText,
+  loadMatchHistory,
+  scheduleHistoryTimelinePolling,
 })
-const hasPreviewItems = computed(() => (preview.value?.items || []).length > 0)
-const selectedPreviewItems = computed(() => (preview.value?.items || []).filter(item => item.selected !== false))
-const hasOnlineResults = computed(() => onlineResults.value.length > 0)
-const filteredOnlineResults = computed(() => {
-  return onlineResults.value.filter(item => {
-    const languageMatched = onlineLanguageFilter.value === 'all' || onlineResultLanguageFilterCategory(item) === onlineLanguageFilter.value
-    const providerMatched = onlineProviderFilter.value === 'all' || item.provider === onlineProviderFilter.value
-    return languageMatched && providerMatched
-  })
+
+const {
+  aiSubmitting,
+  aiCancelling,
+  aiTasksLoading,
+  aiTaskDialog,
+  aiTaskDialogTarget,
+  aiTaskScopeTargets,
+  aiRestartSourcePolicy,
+  aiRestartSubtitlePath,
+  aiSelectedTaskIds,
+  aiStatusStripRef,
+  aiTaskData,
+  aiStatus,
+  aiEnabled,
+  aiAvailable,
+  aiHasActiveTasks,
+  aiBatchCancelTargets,
+  aiCapableBatchTargets,
+  aiBatchLabel,
+  aiSummaryText,
+  aiDialogTasks,
+  aiDialogHasExistingTasks,
+  aiDialogHasActiveTasks,
+  aiDialogSelectedAllowedTasks,
+  aiDialogActionText,
+  aiDialogSourceLabel,
+  aiRestartSubtitleOptions,
+  applyAiTaskData,
+  resetAiTasks,
+  stopAiPolling,
+  loadAiTasks,
+  aiTaskForTarget,
+  isAiTaskActive,
+  aiTaskColor,
+  aiTaskIcon,
+  aiTaskTitle,
+  aiTaskStatusClass,
+  aiTaskIconForTask,
+  aiStatusText,
+  focusAiStatusStrip,
+  openBatchAiGenerate,
+  cancelBatchAiGenerate,
+  cancelDialogAiTasks,
+  regenerateDialogAiTasks,
+  regenerateSingleAiTask,
+  openSingleAiGenerate,
+} = useAiTasks({
+  pluginApi,
+  unwrapResponse,
+  errorMessage,
+  error,
+  message,
+  status,
+  visibleTargets,
+  selectedMedia,
+  selectedSeason,
+  selectedTargets,
+  batchUploadTargets,
+  targetById,
+  isLocked,
+  lockedTargetPayload,
+  isStreamTarget,
+  formatBytes,
 })
-const onlineLanguageFilterItems = computed(() => {
-  const languageItems = [
-    { title: '中文', value: 'chinese' },
-    { title: '英文', value: 'english' },
-    { title: '日文', value: 'japanese' },
-    { title: '其他', value: 'other' },
-  ]
-  const counts = onlineResults.value.reduce((acc, item) => {
-    const category = onlineResultLanguageFilterCategory(item)
-    acc[category] = (acc[category] || 0) + 1
-    return acc
-  }, {})
-  return [
-    { title: `全部 ${onlineResults.value.length}`, value: 'all' },
-    ...languageItems.map(item => ({ title: `${item.title} ${counts[item.value] || 0}`, value: item.value })),
-  ]
+
+const {
+  onlineSearching,
+  onlineDownloading,
+  onlinePreviewDownloading,
+  onlineAiDownloading,
+  onlineError,
+  onlineDialog,
+  onlineAiConfirmDialog,
+  onlineTitle,
+  onlineKeyword,
+  onlineTargets,
+  onlineStatus,
+  onlineSelectedProviders,
+  onlineResults,
+  onlineLanguageFilter,
+  onlineProviderFilter,
+  onlineMessages,
+  onlineMessagesCollapsed,
+  onlineManualLinks,
+  selectedOnlineResultIds,
+  hasOnlineResults,
+  filteredOnlineResults,
+  onlineLanguageFilterItems,
+  onlineProviderFilterItems,
+  selectedOnlineResults,
+  canSubmitOnlineAiTranslate,
+  onlineMessageSummary,
+  onlineMessageType,
+  onlineProviderProgressItems,
+  onlineAiConfirmText,
+  onlineBatchLabel,
+  openBatchOnlineSearch,
+  openSingleOnlineSearch,
+  runOnlineSearch,
+  stopOnlineSearch,
+  closeOnlineDialog,
+  updateOnlineDialog,
+  toggleOnlineResult,
+  requestOnlineAiTranslate,
+  confirmOnlineAiTranslate,
+  downloadOnlinePreview,
+  stopOnlineDownload,
+} = useOnlineSubtitles({
+  pluginApi,
+  unwrapResponse,
+  errorMessage,
+  error,
+  message,
+  selectedMedia,
+  selectedTargets,
+  selectedSeason,
+  batchUploadTargets,
+  isLocked,
+  lockedTargetPayload,
+  compactTargetName,
+  aiAvailable,
+  timelineNeedsRiskyConfirm,
+  confirmRiskyTimelineOffset,
+  prepareOnlineUploadState,
+  openOnlinePreview,
+  closeUploadDialog() {
+    preview.value = null
+    uploadDialog.value = false
+  },
+  applyAiTaskData,
+  setAiTaskScopeTargets(targetsToSet) {
+    aiTaskScopeTargets.value = targetsToSet
+  },
+  loadAiTasks,
+  focusAiStatusStrip,
+  applyTimelineTaskData,
+  loadTimelineTasks,
 })
-const onlineProviderFilterItems = computed(() => {
-  const counts = onlineResults.value.reduce((acc, item) => {
-    const provider = item.provider || 'unknown'
-    acc[provider] = (acc[provider] || 0) + 1
-    return acc
-  }, {})
-  return [
-    { title: `全部 ${onlineResults.value.length}`, value: 'all' },
-    ...onlineProviderItems.map(item => ({ title: `${item.title} ${counts[item.value] || 0}`, value: item.value })),
-  ]
-})
-const selectedOnlineResults = computed(() => {
-  const picked = new Set(selectedOnlineResultIds.value)
-  return onlineResults.value.filter(item => picked.has(onlineResultKey(item)) && isOnlineResultDownloadable(item))
-})
-const canSubmitOnlineAiTranslate = computed(() => {
-  return aiAvailable.value && selectedOnlineResults.value.length > 0 && selectedOnlineResults.value.every(isForeignOnlineResult)
-})
-const onlineMessageSummary = computed(() => {
-  const messages = onlineMessages.value || []
-  if (!messages.length) return ''
-  const warnings = messages.filter(item => item.level !== 'info')
-  const infos = messages.filter(item => item.level === 'info')
-  const source = warnings.length ? warnings : infos
-  const text = source
-    .slice(0, 3)
-    .map(item => item.provider ? `${providerName(item.provider)}：${item.message}` : item.message)
-    .join('；')
-  const extra = source.length > 3 ? `；另有 ${source.length - 3} 条提示` : ''
-  return `${text}${extra}`
-})
-const onlineMessageType = computed(() => {
-  return (onlineMessages.value || []).some(item => item.level !== 'info') ? 'warning' : 'info'
-})
-const onlineProviderProgressItems = computed(() => onlineSelectedProviders.value.map(provider => ({
-  provider,
-  state: onlineProviderProgress.value[provider] || 'idle',
-})))
-const onlineAiConfirmText = computed(() => {
-  const count = selectedOnlineResults.value.length
-  const targetCount = onlineTargets.value.length
-  return `将把当前范围的 ${targetCount} 个目标提交给 AI字幕生成(联动版)；已选择 ${count} 个外语结果，提交后会关闭在线搜索并打开 AI 状态。`
-})
-const onlineBatchLabel = computed(() => {
-  if (selectedMedia.value?.media_type !== 'tv') return '搜索在线字幕'
-  if (selectedTargets.value.length) return `搜索选中 ${selectedTargets.value.length} 集`
-  return selectedSeason.value === 'all' ? '搜索全部季字幕包' : '搜索本季字幕包'
-})
-const aiStatus = computed(() => aiTaskData.value.status || status.value?.ai_subtitle || {})
-const aiEnabled = computed(() => aiStatus.value.enabled !== false)
-const aiAvailable = computed(() => aiEnabled.value && aiStatus.value.available === true)
-const aiSummary = computed(() => aiTaskData.value.summary || {})
-const aiHasActiveTasks = computed(() => Number(aiSummary.value.active || 0) > 0)
-const aiBatchCancelTargets = computed(() => batchUploadTargets.value.filter(target => isAiTaskActive(aiTaskForTarget(target))))
-const aiCapableBatchTargets = computed(() => batchUploadTargets.value.filter(target => !isStreamTarget(target)))
-const aiBatchLabel = computed(() => {
-  if (selectedMedia.value?.media_type !== 'tv') return 'AI 生成字幕'
-  if (selectedTargets.value.length) return `AI 生成选中 ${selectedTargets.value.length} 集`
-  return selectedSeason.value === 'all' ? 'AI 生成全部季' : 'AI 生成本季'
-})
-const aiSummaryText = computed(() => {
-  if (!aiEnabled.value) return 'AI 联动已关闭'
-  if (!aiStatus.value.installed && !aiStatus.value.available) return aiStatus.value.message || '请先安装并启用 AI字幕生成(联动版)'
-  const parts = []
-  if (aiSummary.value.in_progress) parts.push(`${aiSummary.value.in_progress} 个生成中`)
-  if (aiSummary.value.pending) parts.push(`${aiSummary.value.pending} 个排队`)
-  if (aiSummary.value.failed) parts.push(`${aiSummary.value.failed} 个失败`)
-  if (aiSummary.value.completed) parts.push(`${aiSummary.value.completed} 个完成`)
-  if (aiSummary.value.ignored) parts.push(`${aiSummary.value.ignored} 个忽略`)
-  if (aiSummary.value.no_audio) parts.push(`${aiSummary.value.no_audio} 个无音轨`)
-  if (aiSummary.value.cancelled) parts.push(`${aiSummary.value.cancelled} 个取消`)
-  return parts.length ? `AI：${parts.join(' / ')}` : (aiStatus.value.message || 'AI：暂无当前资源任务')
-})
-const aiDialogTasks = computed(() => {
-  const targetId = aiTaskDialogTarget.value?.id
-  if (targetId) {
-    return (aiTaskData.value.tasks_by_target || {})[targetId] || []
-  }
-  return aiTaskData.value.tasks || []
-})
-const aiDialogHasExistingTasks = computed(() => Boolean(aiDialogTasks.value.length))
-const aiDialogActiveTasks = computed(() => aiDialogTasks.value.filter(task => isAiTaskActive(task)))
-const aiDialogHasActiveTasks = computed(() => aiDialogActiveTasks.value.length > 0)
-const aiDialogRestartableTasks = computed(() => aiDialogTasks.value.filter(task => isAiTaskRestartable(task)))
-const aiDialogSelectedRestartableTasks = computed(() => {
-  const selected = new Set(aiSelectedTaskIds.value)
-  return aiDialogRestartableTasks.value.filter(task => selected.has(task.task_id))
-})
-const aiDialogSelectedAllowedTasks = computed(() => aiDialogSelectedRestartableTasks.value.filter(isAiTaskAllowed))
-const aiDialogActionText = computed(() => (aiDialogHasExistingTasks.value ? '重新生成选中' : '生成'))
-const aiDialogSourceLabel = computed(() => (aiDialogHasExistingTasks.value ? '重新生成来源' : '生成来源'))
-const aiRestartSubtitleOptions = computed(() => {
-  const target = aiTaskDialogTarget.value
-  const subtitles = target?.subtitles || []
-  return subtitles
-    .filter(subtitle => String(subtitle.ext || '').toLowerCase() === '.srt')
-    .map(subtitle => ({
-      title: `${subtitle.name} · ${formatBytes(subtitle.size)}`,
-      value: subtitle.path,
-    }))
-})
+
 const autoQueueSummary = computed(() => autoTransferQueue.value?.summary || status.value?.auto_transfer_queue || {})
 const autoQueueTasks = computed(() => autoTransferQueue.value?.tasks || [])
 const autoQueueActive = computed(() => Number(autoQueueSummary.value.active || 0) > 0)
@@ -481,18 +487,6 @@ const autoQueueSummaryText = computed(() => {
   if (autoQueueSummary.value.skipped) parts.push(`${autoQueueSummary.value.skipped} 个跳过`)
   return parts.length ? parts.join(' / ') : '暂无入库自动字幕任务'
 })
-const selectedPreviewTargets = computed(() => {
-  const targetMap = new Map(uploadTargets.value.map(target => [target.id, target]))
-  return selectedPreviewItems.value
-    .map(item => targetMap.get(item.target_id))
-    .filter(Boolean)
-})
-const allSelectedPreviewTargetsAreStream = computed(() => {
-  const items = selectedPreviewTargets.value
-  return items.length > 0 && items.every(isStreamTarget)
-})
-const hasSelectedPreviewStreamTargets = computed(() => selectedPreviewTargets.value.some(isStreamTarget))
-const timelineEnabledForApply = computed(() => fixTimeline.value && timelineAvailable.value && !allSelectedPreviewTargetsAreStream.value)
 const seasonCards = computed(() => {
   if (selectedMedia.value?.media_type !== 'tv') return []
   const total = seasons.value.reduce((sum, item) => sum + Number(item.local_count || 0), 0)
@@ -525,8 +519,6 @@ const matchHistoryRows = computed(() => visibleTargets.value.map(target => {
     hasTimelineRunning: applying.value && selectedPreviewTargets.value.some(item => item.id === target.id) && timelineEnabledForApply.value,
   }
 }))
-const selectedSubtitleTargets = computed(() => selectedTargets.value.filter(target => !isLocked(target.id) && (target.subtitles || []).length))
-const selectedTimelineTargets = computed(() => selectedSubtitleTargets.value.filter(target => !isStreamTarget(target)))
 const selectedRestorableTargets = computed(() => selectedSubtitleTargets.value.filter(target => (target.subtitles || []).some(subtitle => subtitle.backup_available)))
 const matchHistorySummary = computed(() => {
   if (!matchHistoryTotal.value) return '暂无已匹配字幕记录'
@@ -726,39 +718,6 @@ function historySelectedTimelineTargets(item) {
   return historyTimelineTargets(item).filter(target => selected.has(target.id))
 }
 
-async function fixExistingTimeline(items, label = '选中字幕') {
-  if (!timelineAvailable.value) {
-    error.value = `智能调轴不可用：缺少 ${timelineMissing.value || '依赖'}`
-    return
-  }
-  if (!items.length) {
-    error.value = '没有可调轴的历史字幕'
-    return
-  }
-  const confirmed = window.confirm(`确认对${label}提交 ${items.length} 个智能调轴任务？`)
-  if (!confirmed) return
-  const allowRiskyOffset = timelineNeedsRiskyConfirm.value
-  if (allowRiskyOffset && !confirmRiskyTimelineOffset(`${label}智能调轴`)) return
-  timelineFixing.value = true
-  error.value = ''
-  message.value = ''
-  try {
-    const response = await pluginApi.value.timelineFixExisting({
-      items,
-      locked_target_ids: lockedTargetPayload(),
-      allow_risky_offset: allowRiskyOffset,
-    })
-    const data = unwrapResponse(response) || {}
-    message.value = response?.message || `已提交 ${data.accepted || 0} 个智能调轴任务`
-    await loadMatchHistory()
-    scheduleHistoryTimelinePolling()
-  } catch (err) {
-    error.value = errorMessage(err, '提交历史字幕智能调轴失败')
-  } finally {
-    timelineFixing.value = false
-  }
-}
-
 function fixHistorySelectedTimeline(item) {
   const targets = historySelectedTimelineTargets(item)
   fixExistingTimeline(targets.map(target => ({ target_id: target.id })), '选中集数')
@@ -780,13 +739,6 @@ function detailRowForTarget(target) {
     timelineTask: timelineTaskForTarget(target),
     written: [],
   }
-}
-
-function fixSelectedDetailTimeline() {
-  fixExistingTimeline(
-    selectedTimelineTargets.value.map(target => ({ target_id: target.id })),
-    '选中集数',
-  )
 }
 
 async function restoreSubtitleBackup(target, subtitle) {
@@ -850,400 +802,6 @@ function confirmRiskyTimelineOffset(actionLabel = '智能调轴') {
   )
 }
 
-function ensureConfiguredApiProvidersSelected() {
-  const configured = [...(onlineStatus.value?.enabled_providers || [])]
-    .filter(provider => onlineProviderItems.some(item => item.value === provider))
-  if (onlineStatus.value?.assrt_api_configured) configured.push('assrt')
-  if (onlineStatus.value?.opensubtitles_api_configured) configured.push('opensubtitles')
-  if (!configured.length) return
-  onlineSelectedProviders.value = Array.from(new Set(configured))
-}
-
-function stopAiPolling() {
-  if (aiTaskTimer) {
-    clearTimeout(aiTaskTimer)
-    aiTaskTimer = null
-  }
-}
-
-function stopTimelinePolling() {
-  if (timelineTaskTimer) {
-    clearTimeout(timelineTaskTimer)
-    timelineTaskTimer = null
-  }
-}
-
-function scheduleAiPolling() {
-  stopAiPolling()
-  if (!aiHasActiveTasks.value || !currentAiTaskTargets().length) return
-  aiTaskTimer = setTimeout(() => {
-    loadAiTasks({ silent: true })
-  }, 5000)
-}
-
-function scheduleTimelinePolling() {
-  stopTimelinePolling()
-  if (!Number(timelineTaskData.value?.summary?.active || 0) || !visibleTargets.value.length) return
-  timelineTaskTimer = setTimeout(() => {
-    loadTimelineTasks({ silent: true })
-  }, 4000)
-}
-
-function currentAiTaskTargets() {
-  return aiTaskScopeTargets.value.length ? aiTaskScopeTargets.value : visibleTargets.value
-}
-
-async function loadAiTasks(options = {}) {
-  const scopeTargets = Array.isArray(options.targets) && options.targets.length
-    ? options.targets
-    : currentAiTaskTargets()
-  const requestToken = options.requestToken || 0
-  const requestTargetIds = scopeTargets.map(item => item.id).join('|')
-  if (!scopeTargets.length) {
-    if (requestToken && requestToken !== aiTaskLoadToken.value) return
-    aiTaskData.value = {
-      ...aiTaskData.value,
-      summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, ignored: 0, no_audio: 0, failed: 0, cancelled: 0 },
-      tasks: [],
-      task_by_target: {},
-      tasks_by_target: {},
-    }
-    stopAiPolling()
-    return
-  }
-  if (!options.silent) aiTasksLoading.value = true
-  try {
-    const response = await pluginApi.value.aiTasks({
-      target_ids: scopeTargets.map(item => item.id),
-    })
-    if (requestToken && requestToken !== aiTaskLoadToken.value) return
-    if (requestToken) {
-      const currentTargetIds = currentAiTaskTargets().map(item => item.id).join('|')
-      if (currentTargetIds !== requestTargetIds) return
-    }
-    aiTaskData.value = unwrapResponse(response) || aiTaskData.value
-    aiSelectedTaskIds.value = aiSelectedTaskIds.value.filter(taskId => {
-      const task = (aiTaskData.value.tasks || []).find(item => item.task_id === taskId)
-      return task && isAiTaskAllowed(task)
-    })
-    if (aiTaskData.value.status) {
-      status.value = { ...status.value, ai_subtitle: aiTaskData.value.status }
-    }
-  } catch (err) {
-    if (!options.silent) {
-      error.value = errorMessage(err, '读取 AI 字幕任务失败')
-    }
-  } finally {
-    if (!options.silent) aiTasksLoading.value = false
-    scheduleAiPolling()
-  }
-}
-
-async function loadTimelineTasks(options = {}) {
-  const scopeTargets = Array.isArray(options.targets) && options.targets.length
-    ? options.targets
-    : visibleTargets.value
-  if (!scopeTargets.length) {
-    timelineTaskData.value = {
-      summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, skipped: 0, failed: 0 },
-      tasks: [],
-      task_by_target: {},
-    }
-    stopTimelinePolling()
-    return
-  }
-  try {
-    const response = await pluginApi.value.timelineTasks({
-      target_ids: scopeTargets.map(item => item.id),
-    })
-    timelineTaskData.value = unwrapResponse(response) || timelineTaskData.value
-  } catch (err) {
-    if (!options.silent) {
-      error.value = errorMessage(err, '读取智能调轴任务失败')
-    }
-  } finally {
-    scheduleTimelinePolling()
-  }
-}
-
-function aiTaskForTarget(target) {
-  return (aiTaskData.value.task_by_target || {})[target?.id] || null
-}
-
-function timelineTaskForTarget(target) {
-  if (!target) return null
-  return (timelineTaskData.value.task_by_target || {})[target.id] || target.timeline_task || null
-}
-
-function isAiTaskActive(task) {
-  return Boolean(task && (task.active || ['pending', 'in_progress'].includes(task.status)))
-}
-
-function isAiTaskRestartable(task) {
-  return Boolean(task && !isAiTaskActive(task) && ['completed', 'failed', 'cancelled', 'ignored', 'no_audio'].includes(task.status))
-}
-
-function targetForAiTask(task) {
-  return targetById.value.get(task?.target_id) || null
-}
-
-function isAiTaskAllowed(task) {
-  if (!isAiTaskRestartable(task)) return false
-  const target = targetForAiTask(task)
-  if (!target) return false
-  return !isLocked(target.id) && target.writable !== false && !isStreamTarget(target)
-}
-
-function aiTaskColor(target) {
-  const task = aiTaskForTarget(target)
-  if (!aiAvailable.value) return undefined
-  if (!task) return 'primary'
-  if (task.status === 'pending') return 'info'
-  if (task.status === 'in_progress') return 'warning'
-  if (task.status === 'completed') return 'success'
-  if (task.status === 'failed') return 'error'
-  if (task.status === 'no_audio') return 'grey'
-  if (task.status === 'cancelled') return 'grey'
-  return 'secondary'
-}
-
-function aiTaskIcon(target) {
-  const task = aiTaskForTarget(target)
-  if (!task) return 'mdi-robot-outline'
-  if (task.status === 'pending') return 'mdi-clock-outline'
-  if (task.status === 'in_progress') return 'mdi-robot-happy-outline'
-  if (task.status === 'completed') return 'mdi-check-decagram-outline'
-  if (task.status === 'failed') return 'mdi-alert-circle-outline'
-  if (task.status === 'no_audio') return 'mdi-volume-off'
-  if (task.status === 'cancelled') return 'mdi-cancel'
-  return 'mdi-robot-confused-outline'
-}
-
-function aiTaskTitle(target) {
-  const task = aiTaskForTarget(target)
-  if (isStreamTarget(target)) return 'STRM 资源暂不支持 AI 生成字幕'
-  if (!aiEnabled.value) return 'AI 字幕联动已关闭'
-  if (!aiAvailable.value) return aiStatus.value.message || '请先安装并启用 AI字幕生成(联动版)'
-  if (!task) return '调用 AI 字幕生成'
-  return task.message || task.status_label || '查看 AI 任务状态'
-}
-
-function aiTaskStatusClass(target) {
-  const task = aiTaskForTarget(target)
-  return task ? `ai-${task.status}` : 'ai-idle'
-}
-
-function aiTaskIconForTask(task) {
-  if (!task) return 'mdi-robot-outline'
-  if (task.status === 'completed') return 'mdi-robot-happy-outline'
-  if (task.status === 'failed') return 'mdi-alert-circle-outline'
-  if (task.status === 'cancelled') return 'mdi-cancel'
-  if (task.status === 'no_audio') return 'mdi-volume-off'
-  if (task.status === 'ignored') return 'mdi-debug-step-over'
-  if (isAiTaskActive(task)) return 'mdi-progress-clock'
-  return 'mdi-robot-outline'
-}
-
-function aiStatusText(task) {
-  if (!task) return '未提交'
-  return task.message || task.status_label || task.status
-}
-
-function timelineTaskText(task) {
-  if (!task) return '暂无调轴记录'
-  if (task.status === 'completed' && task.timeline) {
-    return timelineResultText({ timeline: task.timeline })
-  }
-  return task.message || task.status_label || task.status || '暂无调轴记录'
-}
-
-function openAiTaskDialog(target = null) {
-  aiTaskDialogTarget.value = target
-  aiRestartSubtitlePath.value = ''
-  aiSelectedTaskIds.value = []
-  aiTaskDialog.value = true
-  const scopeTargets = target
-    ? [target]
-    : (aiTaskScopeTargets.value.length ? aiTaskScopeTargets.value : visibleTargets.value)
-  aiTaskScopeTargets.value = scopeTargets
-  const existingTasks = target
-    ? (aiTaskForTarget(target) ? [aiTaskForTarget(target)] : [])
-    : (aiTaskData.value.tasks || []).filter(task => scopeTargets.some(item => item.id === task.target_id))
-  aiRestartSourcePolicy.value = existingTasks.length ? 'reuse' : 'auto'
-  const requestToken = ++aiTaskLoadToken.value
-  loadAiTasks({ silent: true, targets: scopeTargets, requestToken }).then(() => {
-    if (aiTaskDialog.value && requestToken === aiTaskLoadToken.value) {
-      aiRestartSourcePolicy.value = aiDialogHasExistingTasks.value ? 'reuse' : 'auto'
-    }
-  })
-}
-
-async function focusAiStatusStrip() {
-  await nextTick()
-  const el = aiStatusStripRef.value
-  if (!el) return
-  el.scrollIntoView?.({ behavior: 'smooth', block: 'center' })
-  el.focus?.({ preventScroll: true })
-}
-
-async function submitAiForTargets(scopeTargets) {
-  return submitAiForTargetsWithOptions(scopeTargets)
-}
-
-async function submitAiForTargetsWithOptions(scopeTargets, options = {}) {
-  const streamCount = scopeTargets.filter(isStreamTarget).length
-  const usableTargets = scopeTargets.filter(item => !isLocked(item.id) && item.writable !== false)
-  const capableTargets = usableTargets.filter(item => !isStreamTarget(item))
-  if (!usableTargets.length || !capableTargets.length) {
-    error.value = streamCount
-      ? 'STRM 资源暂不支持 AI 生成字幕，请选择本地视频文件'
-      : '没有可生成 AI 字幕的目标：选中的集数可能都已锁定'
-    return
-  }
-  if (!aiAvailable.value) {
-    error.value = aiStatus.value.message || '请先安装并启用 AI字幕生成(联动版)'
-    return
-  }
-  aiSubmitting.value = true
-  error.value = ''
-  message.value = ''
-  try {
-    const payload = {
-      target_ids: usableTargets.map(item => item.id),
-      locked_target_ids: lockedTargetPayload(),
-    }
-    if (options.source_policy) payload.source_policy = options.source_policy
-    if (options.source_subtitle_path) payload.source_subtitle_path = options.source_subtitle_path
-    if (options.overwrite_policy) payload.overwrite_policy = options.overwrite_policy
-    const response = await pluginApi.value.aiSubmit(payload)
-    const data = unwrapResponse(response) || {}
-    if (data.tasks) {
-      aiTaskData.value = data.tasks
-    }
-    aiTaskScopeTargets.value = usableTargets
-    message.value = response?.message || '已提交 AI 字幕生成任务'
-    await loadAiTasks({ silent: true, targets: usableTargets })
-  } catch (err) {
-    error.value = errorMessage(err, '提交 AI 字幕任务失败')
-  } finally {
-    aiSubmitting.value = false
-  }
-}
-
-async function cancelAiForTargets(scopeTargets) {
-  const activeTargets = scopeTargets.filter(target => isAiTaskActive(aiTaskForTarget(target)))
-  if (!activeTargets.length) {
-    message.value = '当前范围没有可取消的 AI 字幕任务'
-    return
-  }
-  aiCancelling.value = true
-  error.value = ''
-  message.value = ''
-  try {
-    const response = await pluginApi.value.aiCancel({
-      target_ids: activeTargets.map(item => item.id),
-      locked_target_ids: lockedTargetPayload(),
-    })
-    const data = unwrapResponse(response) || {}
-    if (data.tasks) {
-      aiTaskData.value = data.tasks
-    }
-    aiTaskScopeTargets.value = activeTargets
-    message.value = response?.message || '已取消 AI 字幕任务'
-    await loadAiTasks({ silent: true, targets: activeTargets })
-  } catch (err) {
-    error.value = errorMessage(err, '取消 AI 字幕任务失败')
-  } finally {
-    aiCancelling.value = false
-  }
-}
-
-function openBatchAiGenerate() {
-  submitAiForTargets(batchUploadTargets.value)
-}
-
-function cancelBatchAiGenerate() {
-  cancelAiForTargets(batchUploadTargets.value)
-}
-
-function cancelDialogAiTasks() {
-  const scopeTargets = aiTaskDialogTarget.value ? [aiTaskDialogTarget.value] : visibleTargets.value
-  cancelAiForTargets(scopeTargets)
-}
-
-async function regenerateDialogAiTasks() {
-  const selectedTaskIds = aiDialogSelectedAllowedTasks.value
-    .map(task => task.task_id)
-  return regenerateAiTasksByIds(selectedTaskIds)
-}
-
-async function regenerateSingleAiTask(task) {
-  if (!isAiTaskAllowed(task)) return
-  await regenerateAiTasksByIds([task.task_id])
-}
-
-async function regenerateAiTasksByIds(taskIds = []) {
-  const scopeTargets = aiTaskDialogTarget.value
-    ? [aiTaskDialogTarget.value]
-    : (aiTaskScopeTargets.value.length ? aiTaskScopeTargets.value : visibleTargets.value)
-  const usableTargets = scopeTargets.filter(item => !isLocked(item.id) && item.writable !== false && !isStreamTarget(item))
-  if (!usableTargets.length) {
-    message.value = '没有可重新生成 AI 字幕的目标：选中的集数可能都已锁定或是 STRM'
-    return
-  }
-  if (aiRestartSourcePolicy.value === 'matched_external' && !aiRestartSubtitlePath.value) {
-    message.value = '请先选择要用于重新生成的外挂 SRT 字幕'
-    return
-  }
-  const hasExistingTasks = aiDialogHasExistingTasks.value
-  if (hasExistingTasks && !taskIds.length) {
-    message.value = '请先勾选可重新生成的 AI 历史任务；锁定、不可写、STRM 或正在处理的任务不能重跑'
-    return
-  }
-  const sourcePolicy = !hasExistingTasks && aiRestartSourcePolicy.value === 'reuse'
-    ? 'auto'
-    : aiRestartSourcePolicy.value
-  const overwritePolicy = hasExistingTasks
-    ? (sourcePolicy === 'reuse' ? 'backup_replace' : 'new_variant')
-    : (sourcePolicy === 'auto' ? 'skip' : 'new_variant')
-  if (!hasExistingTasks) {
-    await submitAiForTargetsWithOptions(usableTargets, {
-      source_policy: sourcePolicy,
-      source_subtitle_path: sourcePolicy === 'matched_external' ? aiRestartSubtitlePath.value : '',
-      overwrite_policy: overwritePolicy,
-    })
-    return
-  }
-  aiSubmitting.value = true
-  error.value = ''
-  message.value = ''
-  try {
-    const response = await pluginApi.value.aiRestart({
-      target_ids: usableTargets.map(item => item.id),
-      task_ids: taskIds,
-      locked_target_ids: lockedTargetPayload(),
-      source_policy: sourcePolicy,
-      source_subtitle_path: sourcePolicy === 'matched_external' ? aiRestartSubtitlePath.value : '',
-      overwrite_policy: overwritePolicy,
-    })
-    const data = unwrapResponse(response) || {}
-    if (data.tasks) {
-      aiTaskData.value = data.tasks
-    }
-    aiTaskScopeTargets.value = usableTargets
-    message.value = response?.message || '已重新提交 AI 字幕生成任务'
-    await loadAiTasks({ silent: true, targets: usableTargets })
-  } catch (err) {
-    error.value = errorMessage(err, '重新生成 AI 字幕任务失败')
-  } finally {
-    aiSubmitting.value = false
-  }
-}
-
-function openSingleAiGenerate(target) {
-  openAiTaskDialog(target)
-}
-
 function stopAutoQueuePolling() {
   if (autoQueueTimer) {
     clearTimeout(autoQueueTimer)
@@ -1290,20 +848,6 @@ function scheduleHistoryTimelinePolling() {
     await loadMatchHistory()
     scheduleHistoryTimelinePolling()
   }, 3000)
-}
-
-async function loadOnlineStatus() {
-  try {
-    const response = await pluginApi.value.onlineStatus()
-    onlineStatus.value = unwrapResponse(response) || onlineStatus.value
-    const enabled = onlineStatus.value.enabled_providers || []
-    if (enabled.length) {
-      onlineSelectedProviders.value = enabled
-    }
-    ensureConfiguredApiProvidersSelected()
-  } catch (err) {
-    onlineError.value = errorMessage(err, '加载在线字幕源状态失败')
-  }
 }
 
 function submitRootSearch() {
@@ -1384,547 +928,6 @@ async function deleteSubtitle(target, subtitle) {
     error.value = errorMessage(err, '删除外挂字幕失败')
   } finally {
     clearing.value = false
-  }
-}
-
-function openUploadDialog(scopeTargets, title) {
-  const usableTargets = scopeTargets.filter(item => !isLocked(item.id) && item.writable !== false)
-  if (!usableTargets.length) {
-    error.value = '没有可上传的目标：选中的集数可能都已锁定'
-    return
-  }
-  uploadScopeTargets.value = usableTargets
-  uploadTitle.value = title
-  if (usableTargets.every(isStreamTarget)) {
-    fixTimeline.value = false
-  }
-  files.value = []
-  preview.value = null
-  batchLanguageSuffix.value = ''
-  lastWritten.value = []
-  error.value = ''
-  message.value = ''
-  uploadDialog.value = true
-}
-
-function openBatchUpload() {
-  const title = selectedTargets.value.length
-    ? `批量上传选中 ${batchUploadTargets.value.length} 集`
-    : `批量上传 ${selectedSeason.value === 'all' ? '全部季' : seasonLabel(selectedSeason.value)}`
-  openUploadDialog(batchUploadTargets.value, title)
-}
-
-function openSingleUpload(target) {
-  openUploadDialog([target], `上传 ${compactTargetName(target)}`)
-}
-
-async function openOnlineDialog(scopeTargets, title, scope) {
-  const usableTargets = scopeTargets.filter(item => !isLocked(item.id) && item.writable !== false)
-  if (!usableTargets.length) {
-    error.value = '没有可搜索的目标：选中的集数可能都已锁定'
-    return
-  }
-  onlineTitle.value = title
-  onlineScope.value = scope
-  onlineTargets.value = usableTargets
-  uploadScopeTargets.value = usableTargets
-  uploadTitle.value = `${title} · 在线字幕`
-  onlineKeyword.value = ''
-  onlineResults.value = []
-  onlineLanguageFilter.value = 'all'
-  onlineProviderFilter.value = 'all'
-  onlineMessages.value = []
-  onlineMessagesCollapsed.value = false
-  onlineManualLinks.value = []
-  onlineProviderProgress.value = {}
-  selectedOnlineResultIds.value = []
-  onlineError.value = ''
-  error.value = ''
-  message.value = ''
-  lastWritten.value = []
-  preview.value = null
-  files.value = []
-  onlineDialog.value = true
-  await loadOnlineStatus()
-  await loadOnlineManualLinks()
-  await runOnlineSearch()
-}
-
-function openBatchOnlineSearch() {
-  const title = selectedMedia.value?.media_type === 'tv'
-    ? onlineBatchLabel.value
-    : '搜索在线字幕'
-  const scope = selectedMedia.value?.media_type === 'tv'
-    ? (selectedTargets.value.length ? 'batch' : 'season')
-    : 'movie'
-  openOnlineDialog(batchUploadTargets.value, title, scope)
-}
-
-function openSingleOnlineSearch(target) {
-  openOnlineDialog([target], `搜索 ${compactTargetName(target)}`, 'episode')
-}
-
-function onlinePayload() {
-  return {
-    target_ids: onlineTargets.value.map(item => item.id),
-    locked_target_ids: lockedTargetPayload(),
-    media: selectedMedia.value,
-    scope: onlineScope.value,
-    keyword: onlineKeyword.value.trim(),
-    providers: onlineSelectedProviders.value,
-  }
-}
-
-async function loadOnlineManualLinks() {
-  if (!onlineTargets.value.length) return
-  try {
-    const response = await pluginApi.value.onlineManualLinks(onlinePayload())
-    const data = unwrapResponse(response) || {}
-    onlineManualLinks.value = data.links || []
-  } catch (err) {
-    onlineError.value = errorMessage(err, '生成手动搜索链接失败')
-  }
-}
-
-async function runOnlineSearch() {
-  if (!onlineTargets.value.length || onlineSearching.value) return
-  if (!onlineSelectedProviders.value.length) {
-    onlineError.value = '请至少选择一个在线字幕源'
-    return
-  }
-  const searchSeq = ++onlineSearchSeq
-  const providers = [...onlineSelectedProviders.value]
-  const payload = onlinePayload()
-  onlineSearching.value = true
-  onlineError.value = ''
-  onlineResults.value = []
-  onlineLanguageFilter.value = 'all'
-  onlineProviderFilter.value = 'all'
-  onlineMessages.value = []
-  onlineMessagesCollapsed.value = false
-  selectedOnlineResultIds.value = []
-  onlineProviderProgress.value = Object.fromEntries(providers.map(provider => [provider, 'searching']))
-  const finishSearch = () => {
-    if (searchSeq !== onlineSearchSeq) return
-    if (!onlineResults.value.length && !onlineMessages.value.length) {
-      onlineMessages.value = [{ level: 'info', message: '没有搜索到可自动下载的字幕，可使用右侧手动搜索链接。' }]
-    }
-    onlineSearching.value = false
-  }
-  const searchProvider = async (provider) => {
-    try {
-      const response = await withTimeout(
-        pluginApi.value.onlineSearchProvider({
-          ...payload,
-          provider,
-          providers: [provider],
-        }),
-        ONLINE_PROVIDER_TIMEOUT_MS,
-        `${providerName(provider)} 搜索超时，已保留其它字幕源结果。`,
-      )
-      if (searchSeq !== onlineSearchSeq) return
-      const data = unwrapResponse(response) || {}
-      mergeOnlineResults(data.results || [])
-      appendOnlineMessages(data.messages || [])
-      await nextTick()
-      onlineProviderProgress.value = { ...onlineProviderProgress.value, [provider]: 'done' }
-    } catch (err) {
-      if (searchSeq !== onlineSearchSeq) return
-      onlineProviderProgress.value = {
-        ...onlineProviderProgress.value,
-        [provider]: err?.name === 'TimeoutError' ? 'timeout' : 'error',
-      }
-      appendOnlineMessages([{
-        provider,
-        level: err?.name === 'TimeoutError' ? 'info' : 'warning',
-        message: errorMessage(err, `${providerName(provider)} 在线字幕搜索失败`),
-      }])
-    }
-  }
-  Promise.allSettled(providers.map(provider => searchProvider(provider))).then(finishSearch)
-}
-
-function stopOnlineSearch() {
-  if (!onlineSearching.value) return
-  onlineSearchSeq += 1
-  onlineSearching.value = false
-  onlineProviderProgress.value = Object.fromEntries(
-    Object.entries(onlineProviderProgress.value).map(([provider, state]) => [
-      provider,
-      state === 'searching' ? 'cancelled' : state,
-    ]),
-  )
-  appendOnlineMessages([{ level: 'info', message: '已停止等待未返回的字幕源，已显示的结果会保留。' }])
-}
-
-function closeOnlineDialog() {
-  if (onlineSearching.value) {
-    stopOnlineSearch()
-  }
-  if (onlineDownloading.value) {
-    stopOnlineDownload()
-  }
-  onlineDialog.value = false
-}
-
-function updateOnlineDialog(value) {
-  if (value) {
-    onlineDialog.value = true
-    return
-  }
-  closeOnlineDialog()
-}
-
-function withTimeout(promise, timeoutMs, message) {
-  let timer = null
-  const timeout = new Promise((resolve, reject) => {
-    timer = window.setTimeout(() => {
-      const err = new Error(message)
-      err.name = 'TimeoutError'
-      reject(err)
-    }, timeoutMs)
-  })
-  return Promise.race([promise, timeout]).finally(() => {
-    if (timer) window.clearTimeout(timer)
-  })
-}
-
-function mergeOnlineResults(items) {
-  const merged = new Map(onlineResults.value.map(item => [onlineResultKey(item), item]))
-  ;(items || []).forEach(item => {
-    if (item) merged.set(onlineResultKey(item), item)
-  })
-  onlineResults.value = Array.from(merged.values()).sort((a, b) => {
-    const provider = providerPriority(b.provider) - providerPriority(a.provider)
-    if (provider) return provider
-    const language = onlineResultLanguagePriority(b) - onlineResultLanguagePriority(a)
-    if (language) return language
-    const identity = onlineResultIdentityPriority(b) - onlineResultIdentityPriority(a)
-    if (identity) return identity
-    const score = Number(b.score || 0) - Number(a.score || 0)
-    if (score) return score
-    return providerName(a.provider).localeCompare(providerName(b.provider), 'zh-Hans-CN')
-  })
-}
-
-function appendOnlineMessages(items) {
-  const merged = new Map((onlineMessages.value || []).map(item => [`${item.provider || ''}:${item.level || ''}:${item.message || ''}`, item]))
-  ;(items || []).forEach(item => {
-    if (item?.message) {
-      merged.set(`${item.provider || ''}:${item.level || ''}:${item.message || ''}`, item)
-    }
-  })
-  onlineMessages.value = Array.from(merged.values())
-}
-
-function toggleOnlineResult(item, checked) {
-  if (!isOnlineResultDownloadable(item)) return
-  const key = onlineResultKey(item)
-  const set = new Set(selectedOnlineResultIds.value)
-  if (checked) {
-    set.add(key)
-  } else {
-    set.delete(key)
-  }
-  selectedOnlineResultIds.value = Array.from(set)
-}
-
-function requestOnlineAiTranslate() {
-  if (!selectedOnlineResults.value.length || onlineDownloading.value) return
-  if (!canSubmitOnlineAiTranslate.value) {
-    onlineError.value = aiAvailable.value
-      ? '请只选择外语字幕结果后再提交 AI 翻译。'
-      : 'AI 字幕生成联动当前不可用，无法提交翻译任务。'
-    return
-  }
-  onlineError.value = ''
-  onlineAiConfirmDialog.value = true
-}
-
-function confirmOnlineAiTranslate() {
-  onlineAiConfirmDialog.value = false
-  submitOnlineAiTranslate()
-}
-
-async function submitOnlineAiTranslate() {
-  if (!selectedOnlineResults.value.length || onlineDownloading.value) return
-  if (!canSubmitOnlineAiTranslate.value) {
-    onlineError.value = aiAvailable.value
-      ? '请只选择外语字幕结果后再提交 AI 翻译。'
-      : 'AI 字幕生成联动当前不可用，无法提交翻译任务。'
-    return
-  }
-  const allowRiskyOffset = timelineNeedsRiskyConfirm.value
-  if (allowRiskyOffset && !confirmRiskyTimelineOffset('在线字幕提交 AI 前智能调轴')) return
-  const downloadSeq = ++onlineDownloadSeq
-  onlineDownloading.value = true
-  onlineAiDownloading.value = true
-  onlineError.value = ''
-  const submittedTargets = [...onlineTargets.value]
-  try {
-    const response = await withTimeout(
-      pluginApi.value.onlineAiSubmit({
-        ...onlinePayload(),
-        results: selectedOnlineResults.value,
-        allow_risky_offset: allowRiskyOffset,
-      }),
-      ONLINE_DOWNLOAD_TIMEOUT_MS,
-      'AI 字幕任务提交仍在等待响应，已停止等待；可稍后打开 AI 状态刷新查看。',
-    )
-    if (downloadSeq !== onlineDownloadSeq) return
-    const data = unwrapResponse(response) || {}
-    const aiResult = data.ai_translate || data
-    if (data.tasks) {
-      aiTaskData.value = data.tasks
-    } else if (aiResult.tasks) {
-      aiTaskData.value = aiResult.tasks
-    }
-    if (data.timeline_tasks) {
-      timelineTaskData.value = data.timeline_tasks
-    }
-    preview.value = null
-    uploadDialog.value = false
-    onlineDialog.value = false
-    message.value = response?.message || '已提交 AI 字幕翻译任务，请查看 AI 字幕生成状态'
-    aiTaskScopeTargets.value = submittedTargets
-    await loadAiTasks({ silent: true, targets: submittedTargets })
-    await loadTimelineTasks({ silent: true, targets: submittedTargets })
-    await focusAiStatusStrip()
-  } catch (err) {
-    if (downloadSeq !== onlineDownloadSeq) return
-    onlineError.value = errorMessage(err, '提交 AI 字幕翻译失败')
-  } finally {
-    if (downloadSeq === onlineDownloadSeq) {
-      onlineDownloading.value = false
-      onlineAiDownloading.value = false
-    }
-  }
-}
-
-async function downloadOnlinePreview() {
-  if (!selectedOnlineResults.value.length || onlineDownloading.value) return
-  const downloadSeq = ++onlineDownloadSeq
-  onlineDownloading.value = true
-  onlinePreviewDownloading.value = true
-  onlineError.value = ''
-  try {
-    const response = await withTimeout(
-      pluginApi.value.onlineDownloadPreview({
-        ...onlinePayload(),
-        results: selectedOnlineResults.value,
-      }),
-      ONLINE_DOWNLOAD_TIMEOUT_MS,
-      '在线字幕下载仍在源站验证中，已停止等待；可换一个结果重试，或打开手动链接下载后上传。',
-    )
-    if (downloadSeq !== onlineDownloadSeq) return
-    const data = unwrapResponse(response) || {}
-    preview.value = data
-    batchLanguageSuffix.value = ''
-    if (preview.value?.items) {
-      const preferSingleCandidate = preview.value.source === 'online' && preview.value.items.length > 1
-      preview.value.items.forEach((item, index) => {
-        const target = uploadTargets.value.find(targetItem => targetItem.id === item.target_id)
-        item.output_name = item.output_name || buildOutputName(target, item)
-        item.selected = item.selected !== false && (!preferSingleCandidate || index === 0)
-      })
-    }
-    onlineDialog.value = false
-    uploadDialog.value = true
-    message.value = response?.message || '已下载在线字幕并生成匹配预览'
-  } catch (err) {
-    if (downloadSeq !== onlineDownloadSeq) return
-    onlineError.value = errorMessage(err, '在线字幕下载预览失败')
-  } finally {
-    if (downloadSeq === onlineDownloadSeq) {
-      onlineDownloading.value = false
-      onlinePreviewDownloading.value = false
-      onlineAiDownloading.value = false
-    }
-  }
-}
-
-function stopOnlineDownload() {
-  if (!onlineDownloading.value) return
-  onlineDownloadSeq += 1
-  onlineDownloading.value = false
-  onlinePreviewDownloading.value = false
-  onlineAiDownloading.value = false
-  onlineError.value = '已停止等待在线字幕下载，当前搜索结果仍可继续选择。'
-}
-
-async function onPickFiles(event) {
-  const pickedFiles = Array.from(event?.target?.files || [])
-  mergeFiles(pickedFiles)
-  if (fileInputRef.value) {
-    fileInputRef.value.value = ''
-  }
-  await prepareUploadAfterFiles(pickedFiles)
-}
-
-function mergeFiles(inputFiles) {
-  const existing = new Map(files.value.map(item => [`${item.name}-${item.size}`, item]))
-  for (const file of inputFiles) {
-    const key = `${file.name}-${file.size}`
-    if (!existing.has(key)) {
-      existing.set(key, file)
-    }
-  }
-  files.value = Array.from(existing.values())
-  lastWritten.value = []
-}
-
-function removeFile(file) {
-  files.value = files.value.filter(item => !(item.name === file.name && item.size === file.size))
-}
-
-function openFileDialog() {
-  fileInputRef.value?.click()
-}
-
-async function handleDrop(event) {
-  event.preventDefault()
-  dragging.value = false
-  const dropped = Array.from(event.dataTransfer?.files || [])
-  mergeFiles(dropped)
-  await prepareUploadAfterFiles(dropped)
-}
-
-function handleDragOver(event) {
-  event.preventDefault()
-  dragging.value = true
-}
-
-function handleDragLeave(event) {
-  event.preventDefault()
-  dragging.value = false
-}
-
-async function prepareUpload() {
-  if (!canPrepare.value || preparing.value) return
-  preparing.value = true
-  error.value = ''
-  try {
-    const targetIds = uploadTargets.value.map(item => item.id)
-    const formData = new FormData()
-    formData.append('target_ids', JSON.stringify(targetIds))
-    files.value.forEach(file => {
-      formData.append('files', file)
-    })
-    const response = await pluginApi.value.prepareUpload(formData)
-    preview.value = unwrapResponse(response)
-    batchLanguageSuffix.value = ''
-    if (preview.value?.items) {
-      const preferSingleCandidate = preview.value.source === 'online' && preview.value.items.length > 1
-      preview.value.items.forEach((item, index) => {
-        const target = uploadTargets.value.find(targetItem => targetItem.id === item.target_id)
-        item.output_name = item.output_name || buildOutputName(target, item)
-        item.selected = item.selected !== false && (!preferSingleCandidate || index === 0)
-      })
-    }
-    message.value = response?.message || '已生成匹配预览'
-  } catch (err) {
-    error.value = errorMessage(err, '上传预解析失败')
-  } finally {
-    preparing.value = false
-  }
-}
-
-async function prepareUploadAfterFiles(inputFiles) {
-  if (!inputFiles.length || hasPreviewItems.value || !canPrepare.value) return
-  await prepareUpload()
-}
-
-function updatePreviewTarget(uploadId, targetId) {
-  const item = (preview.value?.items || []).find(previewItem => previewItem.upload_id === uploadId)
-  if (!item) return
-  const target = uploadTargets.value.find(targetItem => targetItem.id === targetId)
-  item.target_id = targetId
-  item.output_name = buildOutputName(target, item)
-}
-
-function updateLanguageSuffix(uploadId, value) {
-  const item = (preview.value?.items || []).find(previewItem => previewItem.upload_id === uploadId)
-  if (!item) return
-  item.language_suffix = String(value || '').trim() || 'und'
-  const target = uploadTargets.value.find(targetItem => targetItem.id === item.target_id)
-  item.output_name = buildOutputName(target, item)
-}
-
-function togglePreviewItem(uploadId, checked) {
-  const item = (preview.value?.items || []).find(previewItem => previewItem.upload_id === uploadId)
-  if (!item) return
-  item.selected = Boolean(checked)
-}
-
-function applyBatchLanguageSuffix() {
-  const suffix = batchLanguageSuffix.value.trim()
-  if (!suffix || !preview.value?.items?.length) return
-  selectedPreviewItems.value.forEach(item => {
-    item.language_suffix = suffix
-    const target = uploadTargets.value.find(targetItem => targetItem.id === item.target_id)
-    item.output_name = buildOutputName(target, item)
-  })
-}
-
-function resetUploadPreview() {
-  files.value = []
-  preview.value = null
-  batchLanguageSuffix.value = ''
-  lastWritten.value = []
-  error.value = ''
-  message.value = ''
-}
-
-function openRarHelp() {
-  copyMessage.value = ''
-  copyError.value = ''
-  rarHelpDialog.value = true
-}
-
-async function copyHelpText(text, label) {
-  copyMessage.value = ''
-  copyError.value = ''
-  try {
-    await navigator.clipboard.writeText(text)
-    copyMessage.value = `${label} 已复制`
-  } catch (err) {
-    copyError.value = '复制失败，请手动选择命令文本复制'
-  }
-}
-
-async function applyUpload() {
-  if (!canApply.value || !preview.value) return
-  const allowRiskyOffset = timelineEnabledForApply.value && timelineNeedsRiskyConfirm.value
-  if (allowRiskyOffset && !confirmRiskyTimelineOffset('写入字幕智能调轴')) return
-  applying.value = true
-  error.value = ''
-  try {
-    const payload = {
-      session_id: preview.value.session_id,
-      fix_timeline: timelineEnabledForApply.value,
-      allow_risky_offset: allowRiskyOffset,
-      locked_target_ids: lockedTargetPayload(),
-      items: selectedPreviewItems.value.map(item => ({
-        upload_id: item.upload_id,
-        target_id: item.target_id,
-        ext: item.ext,
-        language_suffix: item.language_suffix,
-      })),
-    }
-    const response = await pluginApi.value.applyUpload(payload)
-    const data = unwrapResponse(response) || {}
-    const written = data.written || []
-    const successMessage = response?.message || `已写入 ${data.count || 0} 个字幕文件`
-    files.value = []
-    preview.value = null
-    uploadDialog.value = false
-    await loadTargets(selectedMedia.value, selectedSeason.value)
-    message.value = successMessage
-    lastWritten.value = written
-  } catch (err) {
-    error.value = errorMessage(err, '写入字幕失败')
-  } finally {
-    applying.value = false
   }
 }
 
