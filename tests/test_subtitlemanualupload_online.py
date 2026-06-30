@@ -176,6 +176,35 @@ def test_online_subtitle_models_are_reexported_from_common():
     }
 
 
+def test_online_clients_are_reexported_from_common():
+    module = load_online_module()
+    clients_module = sys.modules[module.OnlinePageClient.__module__]
+    package_name = clients_module.__name__.rsplit(".", 1)[0]
+    common_module = sys.modules[f"{package_name}.common"]
+
+    for name in (
+        "OnlinePageClient",
+        "OnlineDirectDownloader",
+        "normalize_online_engine",
+        "_decode_bytes",
+        "_format_network_error",
+        "_is_retryable_network_error",
+    ):
+        assert getattr(common_module, name) is getattr(clients_module, name)
+
+    assert module.normalize_online_engine("mp") == "mp_browser"
+    assert module.OnlinePageClient().status()["engine"] == "api"
+    assert clients_module._decode_bytes("字幕".encode("gb18030"), None) == "字幕"
+
+    class ResetError(Exception):
+        reason = "Connection reset by peer"
+
+    error = ResetError()
+
+    assert clients_module._is_retryable_network_error(error) is True
+    assert "连接被重置" in clients_module._format_network_error("https://example.invalid/search", error)
+
+
 def test_opensubtitles_search_all_prefers_tmdb_then_title_then_imdb():
     module = load_online_module()
     provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key")
