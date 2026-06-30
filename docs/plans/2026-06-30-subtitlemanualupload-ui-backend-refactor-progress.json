@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-ui-backend-refactor-phased-plan.md",
   "status": {
     "phase": "phase-3",
-    "task": "3.3",
-    "next_allowed_action": "Implement only task 3.3"
+    "task": "3.4",
+    "next_allowed_action": "Implement only task 3.4"
   },
   "execution_rules": {
     "branch": "codex/subtitlemanualupload-ui-backend-refactor",
@@ -450,9 +450,65 @@
         {
           "id": "3.3",
           "title": "Extract upload, online subtitle and AI task dialogs",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            {
+              "command": "git log --oneline -15",
+              "result": "passed",
+              "evidence": "latest completed work before task 3.3 was dd3c89b / 84f438f for task 3.2, matching the progress ledger"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "228 passed in 8.29s after the dialog extraction and AI dialog title action layout fix"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_frontend_inventory.py tests/test_subtitlemanualupload_style_ownership.py -q",
+              "result": "passed",
+              "evidence": "4 passed in 0.71s"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_frontend_inventory.py --details",
+              "result": "passed",
+              "evidence": "frontend inventory exited 0 with AppPage line_count=2855, endpoint_count=25, stable defineExpose keys, and AiTaskDialog.vue, OnlineSubtitleDialog.vue and UploadDialog.vue included in component template/style inventory"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_style_ownership.py --summary",
+              "result": "passed",
+              "evidence": "style ownership summary exited 0 with selector_count=142 and unmapped_selectors=[] after moving workflow dialog markup and styles"
+            },
+            {
+              "command": "$env:PATH='C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin;' + $env:PATH; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\bin\\pnpm.cmd' build",
+              "result": "passed",
+              "evidence": "vite build exited 0 in plugins.v2/subtitlemanualupload with 45 modules transformed; generated remoteEntry.js, __federation_expose_AppPage-B6B6W19W.js and __federation_expose_AppPage-Bpb_N3Nm.css"
+            },
+            {
+              "command": "rg -n \"pluginApi|createSubtitleManualUploadApi|fetch\\(|axios|\\.value\\.(search|targets|status|aiTasks|online|prepareUpload|applyUpload)\" plugins.v2/subtitlemanualupload/src/components/AiTaskDialog.vue plugins.v2/subtitlemanualupload/src/components/OnlineSubtitleDialog.vue plugins.v2/subtitlemanualupload/src/components/UploadDialog.vue",
+              "result": "passed",
+              "evidence": "no direct API calls were found in the three extracted dialog components"
+            },
+            {
+              "command": "git diff --check -- plugins.v2/subtitlemanualupload/src plugins.v2/subtitlemanualupload/dist scripts/subtitlemanualupload_style_ownership.py tests/test_subtitlemanualupload_frontend_inventory.py tests/test_subtitlemanualupload_style_ownership.py && git diff --cached --check",
+              "result": "passed",
+              "evidence": "diff checks exited 0; only expected LF/CRLF warnings were printed before staging"
+            },
+            {
+              "command": "ssh nas docker exec moviepilot-v2 sha256sum for installed SubtitleManualUpload dist assets",
+              "result": "passed",
+              "evidence": "test container assets matched the local build: remoteEntry.js 88829dee0c136967ee26ecfd79de68f441a6fee554d7ad5d803997dff000ae1a, __federation_expose_AppPage-B6B6W19W.js 3a5cc7dcb3a79fe4250399ca149436b7f6ec1b71517e8d5793c0fc7119e8054f, __federation_expose_AppPage-Bpb_N3Nm.css e0ef30c10fd9db29bdff0670567aaedbc26c7a3671356c444bd4251688f25958"
+            },
+            {
+              "command": "Codex in-app browser visible smoke on https://mp.jaysherlock.top:5443/#/plugin-app/SubtitleManualUpload/main",
+              "result": "passed",
+              "evidence": "in-app-browser-smoke-fixed.json recorded checks hasPageAndDetail=true, aiDialogLayoutOk=true, dialogsOk=true, historyOk=true, responsiveOk=true, freshAssetsMatch=true and noConsoleErrors=true; screenshots saved under ignored .tmp-test-data/subtitlemanualupload-ui-backend-refactor-3.3/"
+            },
+            {
+              "command": "Codex in-app browser AI dialog title action layout check",
+              "result": "passed",
+              "evidence": "AI dialog close button remained visible and inside the card after active/cancelled task actions: card right=1148, actions right=1080, close left=1092, close right=1132, gridTemplate='503.55px 260.45px 40px'"
+            }
+          ],
+          "commit": "a037a5f"
         },
         {
           "id": "3.4",
@@ -814,6 +870,20 @@
         "in-app browser loaded the fresh installed assets remoteEntry.js, __federation_expose_AppPage-C6P8JM58.js and __federation_expose_AppPage-De333u5l.css; search for 百万英镑 rendered one .media-card, target detail rendered .detail-card=1, .episode-row=2 and .ai-status-strip=1, history rendered the empty history state, and consoleErrors=[]",
         "rg found no direct API calls in MediaSearchPanel.vue, MediaGrid.vue, AiStatusStrip.vue or TargetDetailPanel.vue",
         "next task is phase-3 task 3.3"
+      ]
+    },
+    {
+      "task": "3.3",
+      "status": "completed",
+      "summary": "Extracted the upload preview dialog, online subtitle dialog and AI task dialog into child components that receive composable state/actions through props and emits; AppPage remains the coordinator. The AI task dialog title bar now reserves a fixed close-button column so active task actions cannot push the close button outside the card.",
+      "evidence": [
+        "frontend inventory exited 0 with endpoint_count=25, AppPage line_count=2855, stable defineExpose keys, and AiTaskDialog.vue, OnlineSubtitleDialog.vue and UploadDialog.vue included in component template/style inventory",
+        "style ownership summary exited 0 with selector_count=142 and unmapped_selectors=[]; frontend inventory/style ownership tests passed with 4 passed in 0.71s",
+        "frontend build passed with 45 modules transformed and generated __federation_expose_AppPage-B6B6W19W.js plus __federation_expose_AppPage-Bpb_N3Nm.css; backend focused smoke passed with 228 passed in 8.29s",
+        "in-app browser visible smoke passed with hasPageAndDetail=true, dialogsOk=true, historyOk=true, responsiveOk=true, freshAssetsMatch=true and noConsoleErrors=true; upload, online and AI dialogs opened and closed without destructive actions",
+        "AI dialog layout check showed close button remains inside the card and separated from action buttons: card right=1148, actions right=1080, close right=1132; screenshots saved under ignored .tmp-test-data/subtitlemanualupload-ui-backend-refactor-3.3/",
+        "rg found no direct API calls in AiTaskDialog.vue, OnlineSubtitleDialog.vue or UploadDialog.vue",
+        "next task is phase-3 task 3.4"
       ]
     }
   ],
