@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-ui-backend-refactor-phased-plan.md",
   "status": {
     "phase": "phase-5",
-    "task": "5.1",
-    "next_allowed_action": "Implement only task 5.1"
+    "task": "5.2",
+    "next_allowed_action": "Implement only task 5.2"
   },
   "execution_rules": {
     "branch": "codex/subtitlemanualupload-ui-backend-refactor",
@@ -956,9 +956,45 @@
         {
           "id": "5.1",
           "title": "Extract online subtitle models and errors",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "pre-work focused smoke passed with 231 passed in 9.03s; post-extraction focused smoke passed with 232 passed in 8.61s after adding the re-export/payload regression"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile plugins.v2/subtitlemanualupload/online_subtitles/common.py plugins.v2/subtitlemanualupload/online_subtitles/models.py plugins.v2/subtitlemanualupload/online_subtitle.py tests/test_subtitlemanualupload_online.py",
+              "result": "passed",
+              "evidence": "common.py, models.py, online_subtitle.py and the online subtitle regression tests compiled successfully"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_online.py -q",
+              "result": "passed",
+              "evidence": "43 passed in 0.74s, including model module direct import, common.py re-export identity and to_dict/to_payload compatibility"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_backend_inventory.py --details",
+              "result": "passed",
+              "evidence": "backend inventory exited 0; online_subtitles.common line_count=1674 after moving OnlineSubtitleResult, HtmlLink and CaptchaRequiredError into models.py, imported_symbols_missing_from_module=[]"
+            },
+            {
+              "command": "ssh root@10.10.10.189 \"docker cp ... moviepilot-v2:/app/app/plugins/subtitlemanualupload/online_subtitles/ && docker exec moviepilot-v2 python -m py_compile ... && docker exec moviepilot-v2 sha256sum ...\"",
+              "result": "passed",
+              "evidence": "moviepilot-v2 hot-loaded common.py and models.py; container SHA256 matched local common.py 1ca07512d2c87ad5db6f492768a5fa93f2eee01f2dfb932e6d94a6608b2ca4f6 and models.py 4c81ffc83cbb5f740791cf8a5f52c843aa659c7b8fb3cb2e6d61c03157f950e8"
+            },
+            {
+              "command": "ssh root@10.10.10.189 \"docker exec moviepilot-v2 python -c ...\"",
+              "result": "passed",
+              "evidence": "container import printed: OnlineSubtitleResult HtmlLink CaptchaRequiredError OnlineSubtitleResult True chinese True, proving online_subtitle facade, common.py re-export and models.py payload conversion remain compatible"
+            },
+            {
+              "command": "git diff --check -- plugins.v2/subtitlemanualupload/online_subtitles/common.py plugins.v2/subtitlemanualupload/online_subtitles/models.py tests/test_subtitlemanualupload_online.py",
+              "result": "passed",
+              "evidence": "diff check exited 0 for task 5.1 source and test files; only expected LF/CRLF warnings were printed before staging"
+            }
+          ],
+          "commit": "7309a30"
         },
         {
           "id": "5.2",
@@ -1344,6 +1380,19 @@
         "moviepilot-v2 hot-loaded installed files matched local SHA256 for auto_transfer.py and auto_transfer_write.py; container import printed AutoTransferService AutoTransferCollaborators AutoTransferWriteStrategy",
         "in-app browser observed the real page request /api/v1/plugin/SubtitleManualUpload/auto_transfer_queue status=200 with hasSubtitlePage=true, hasLoginHint=false, consoleErrors=[] and evidence saved under ignored .tmp-test-data/subtitlemanualupload-ui-backend-refactor-4.5/",
         "phase-4 acceptance satisfied; next task is phase-5 task 5.1"
+      ]
+    },
+    {
+      "task": "5.1",
+      "status": "completed",
+      "summary": "Extracted OnlineSubtitleResult, HtmlLink and CaptchaRequiredError into online_subtitles/models.py while keeping common.py as the compatibility re-export surface. OnlineSubtitleResult.to_dict still delegates language category fallback to the current common.py helper until the planned language-module extraction.",
+      "evidence": [
+        "source commit 7309a30 moved the model/error types into models.py, removed their in-place definitions from common.py and added a regression proving online_subtitle, common.py and models.py expose the same classes with unchanged to_dict/to_payload payloads",
+        "online subtitle tests passed with 43 passed in 0.74s; backend focused smoke passed with 232 passed in 8.61s",
+        "backend inventory exited 0 and showed online_subtitles.common line_count=1674 with imported_symbols_missing_from_module=[]",
+        "moviepilot-v2 on NAS 10.10.10.189 hot-loaded common.py and models.py; local and container SHA256 matched, py_compile passed, and container import printed OnlineSubtitleResult HtmlLink CaptchaRequiredError OnlineSubtitleResult True chinese True",
+        "browser-client control for the logged-in in-app browser remained unavailable with the trust error, and the separate 39222 CDP browser was not logged in; phase-5 browser happy-path acceptance remains to be proven with a logged-in controllable browser before the phase is accepted",
+        "next task is phase-5 task 5.2"
       ]
     }
   ],
