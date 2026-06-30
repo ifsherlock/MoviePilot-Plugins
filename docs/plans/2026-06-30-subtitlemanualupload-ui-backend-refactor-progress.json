@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-ui-backend-refactor-phased-plan.md",
   "status": {
     "phase": "phase-4",
-    "task": "4.2",
-    "next_allowed_action": "Implement only task 4.2"
+    "task": "4.3",
+    "next_allowed_action": "Implement only task 4.3"
   },
   "execution_rules": {
     "branch": "codex/subtitlemanualupload-ui-backend-refactor",
@@ -710,9 +710,60 @@
         {
           "id": "4.2",
           "title": "Extract provider rate-limit state and wait policy",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "pre-work smoke passed with 228 passed in 7.38s; post-extraction smoke passed with 229 passed in 7.48s after adding malformed rate-limit state coverage"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile plugins.v2/subtitlemanualupload/auto_transfer.py plugins.v2/subtitlemanualupload/auto_transfer_rate_limit.py plugins.v2/subtitlemanualupload/auto_transfer_queue.py",
+              "result": "passed",
+              "evidence": "auto_transfer.py, auto_transfer_rate_limit.py and auto_transfer_queue.py compiled successfully"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py::test_auto_transfer_rate_limit_is_tracked_per_provider tests/test_subtitlemanualupload_cache.py::test_auto_transfer_rate_limit_rejects_malformed_provider_state -q",
+              "result": "passed",
+              "evidence": "2 passed in 0.55s; provider-scoped wait state, waiting task message/reset and malformed provider state rejection are covered"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py -k auto_transfer -q",
+              "result": "passed",
+              "evidence": "27 passed, 101 deselected in 1.78s"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py::test_api_auto_transfer_queue_uses_auto_transfer_service_directly -q",
+              "result": "passed",
+              "evidence": "1 passed in 0.11s; /auto_transfer_queue facade path remains direct through AutoTransferService"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_backend_inventory.py --details",
+              "result": "passed",
+              "evidence": "backend inventory exited 0; auto_transfer.py line_count dropped from 1232 to 1191, facade_symbols_to_preserve remained AutoTransferCollaborators and AutoTransferService, and imported_symbols_missing_from_module=[]"
+            },
+            {
+              "command": "ssh nas docker exec moviepilot-v2 python -c 'from app.plugins.subtitlemanualupload.auto_transfer import AutoTransferService, AutoTransferCollaborators; print(...)'",
+              "result": "passed",
+              "evidence": "container runtime import printed AutoTransferService AutoTransferCollaborators after hot-loading auto_transfer.py and auto_transfer_rate_limit.py"
+            },
+            {
+              "command": "ssh nas docker exec moviepilot-v2 sha256sum for installed SubtitleManualUpload auto_transfer rate-limit files",
+              "result": "passed",
+              "evidence": "installed hot-loaded files matched local SHA256: auto_transfer.py 2ed5d2dd5bf968ee5dfdbed0e32951a3092c59ac943bdf2d14466b9325bea08e, auto_transfer_rate_limit.py 03c8af2ade7ce3f01a976699eb3efe0e369277d6530f5b916bfddf6a4f3244c9"
+            },
+            {
+              "command": "Codex in-app browser visible smoke on https://mp.jaysherlock.top:5443/#/plugin-app/SubtitleManualUpload/main",
+              "result": "passed",
+              "evidence": ".tmp-test-data/subtitlemanualupload-ui-backend-refactor-4.2/in-app-browser-queue-api-smoke.json recorded page.hasSubtitleMatch=true, hasLoginHint=false, /api/v1/plugin/SubtitleManualUpload/auto_transfer_queue status=200, payload success=true, summary/tasks/rate_limits/season_package_cache present, rateLimitProviders=[assrt,opensubtitles], rate_limit_scope=provider, taskCount=0 and consoleErrors=[]; empty queue entry remained hidden by design"
+            },
+            {
+              "command": "git diff --check -- plugins.v2/subtitlemanualupload/auto_transfer.py plugins.v2/subtitlemanualupload/auto_transfer_rate_limit.py tests/test_subtitlemanualupload_cache.py && git diff --cached --check",
+              "result": "passed",
+              "evidence": "diff checks exited 0 for task 4.2 source and test files; only expected LF/CRLF warnings were printed before staging"
+            }
+          ],
+          "commit": "d200971"
         },
         {
           "id": "4.3",
@@ -1088,6 +1139,19 @@
         "moviepilot-v2 hot-loaded installed files matched local SHA256 for auto_transfer.py, auto_transfer_models.py and auto_transfer_queue.py; container import printed AutoTransferService AutoTransferCollaborators",
         "in-app browser observed /api/v1/plugin/SubtitleManualUpload/auto_transfer_queue status=200 with success=true and summary/tasks/rate_limits/season_package_cache/rate_limit_scope payload fields intact; page rendered 字幕匹配 with no login hint and the empty queue entry stayed hidden by design",
         "next task is phase-4 task 4.2"
+      ]
+    },
+    {
+      "task": "4.2",
+      "status": "completed",
+      "summary": "Extracted provider-scoped auto-transfer online subtitle rate-limit waiting, status payload construction and waiting task message/reset behavior into auto_transfer_rate_limit.py. AutoTransferService keeps auto_wait_online_rate_limit and auto_transfer_rate_status as facade methods, and malformed provider rate-limit state now raises ValueError instead of being silently normalized.",
+      "evidence": [
+        "backend focused smoke passed before work with 228 passed in 7.38s and after extraction with 229 passed in 7.48s",
+        "rate-limit directed tests passed with 2 passed, including malformed provider state rejection; auto_transfer focused tests passed with 27 passed, 101 deselected; direct queue API facade test passed with 1 passed",
+        "backend inventory showed auto_transfer.py line_count=1191, AutoTransferCollaborators and AutoTransferService preserved, and imported_symbols_missing_from_module=[]",
+        "moviepilot-v2 hot-loaded installed files matched local SHA256 for auto_transfer.py and auto_transfer_rate_limit.py; container import printed AutoTransferService AutoTransferCollaborators",
+        "in-app browser observed /api/v1/plugin/SubtitleManualUpload/auto_transfer_queue status=200 with success=true, summary/tasks/rate_limits/season_package_cache/rate_limit_scope payload fields intact, provider rate limits for assrt and opensubtitles, no console errors, and the empty queue entry stayed hidden by design",
+        "next task is phase-4 task 4.3"
       ]
     }
   ],
