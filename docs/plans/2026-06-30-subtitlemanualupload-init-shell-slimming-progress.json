@@ -2,7 +2,7 @@
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-init-shell-slimming-phased-plan.md",
   "status": {
     "phase": "phase-8",
-    "task": "8.2",
+    "task": "8.3",
     "next_allowed_action": "Implement the current task; after verified completion, advance to the next task or phase automatically"
   },
   "execution_rules": {
@@ -884,8 +884,24 @@
         {
           "id": "8.2",
           "title": "Run visible Chrome browser verification",
-          "status": "pending",
-          "verification": [],
+          "status": "completed",
+          "verification": [
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' '.tmp-test-data\\subtitlemanualupload_8_2_browser_verify.py'",
+              "result": "passed",
+              "evidence": "visible Chrome CDP verification passed: entry/resource selector/resource count visible; installed remoteEntry.js and AppPage assets returned 200 and matched local dist SHA256; resource search/detail for 百万英镑 (1954) showed local .mkv path, target actions, and AI strip; external subtitles expanded with .srt/status; OpenSubtitles result selected; online_download_preview returned 200 with preview_row_count=1; AI status rendered; 1440/768/390 responsive screenshots showed plugin content"
+            },
+            {
+              "command": "Chrome CDP Network/Runtime observation during browser verification",
+              "result": "passed",
+              "evidence": "plugin API statuses were 2xx for search, status, auto_transfer_queue, targets, ai_tasks, timeline_tasks, online_status, online_manual_links, online_search_provider, online_download_preview; no plugin requestfailed, no plugin console errors, runtime_exceptions_count=0"
+            },
+            {
+              "command": "Screenshot evidence saved under .tmp-test-data/",
+              "result": "passed",
+              "evidence": "mp-subtitle-8.2-entry.png, target-detail.png, external-subtitles.png, online-search.png, online-preview.png, ai-status.png, responsive-1440.png, responsive-768.png, responsive-390.png are ignored local test artifacts"
+            }
+          ],
           "commit": null
         },
         {
@@ -1151,6 +1167,21 @@
         "API route contract and service-wrapper delegation targeted tests exited 0 with 2 passed",
         "baseline smoke exited 0 with 222 passed",
         "phase-8 task 8.1 acceptance satisfied; next task is phase-8 task 8.2"
+      ]
+    },
+    {
+      "task": "8.2",
+      "status": "completed",
+      "summary": "Ran visible Chrome CDP verification against the installed SubtitleManualUpload plugin on mp.jaysherlock.top, including installed frontend asset hash matching, resource/detail flows, external subtitles, OpenSubtitles search and preview, AI status, and responsive smoke.",
+      "evidence": [
+        "installed remoteEntry.js plus AppPage JS/CSS assets returned 200 and matched local dist SHA256; remoteEntry.js hash 161a2721a9d635e529318d24d97d1a3e19104ca4b1d2007ba80332ad29a00b75",
+        "entry showed 字幕匹配, resource selector, resource count, and 百万英镑 (1954); search/status/auto_transfer_queue/targets returned 200",
+        "百万英镑 (1954) detail showed local .mkv path, target action controls, and AI status strip",
+        "external subtitles expanded with .srt entry and status text",
+        "single-target online search rendered OpenSubtitles result; online_status, online_manual_links, online_search_provider, and online_download_preview returned 200; preview_row_count=1",
+        "AI status dialog rendered; responsive screenshots at 1440x1000, 768x1000, and 390x900 showed plugin content",
+        "no plugin requestfailed, no plugin console errors, runtime_exceptions_count=0; screenshots saved under ignored .tmp-test-data/",
+        "phase-8 task 8.2 acceptance satisfied; next task is phase-8 task 8.3"
       ]
     }
   ],
