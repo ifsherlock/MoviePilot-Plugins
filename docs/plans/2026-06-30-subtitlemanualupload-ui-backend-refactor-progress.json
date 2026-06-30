@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-ui-backend-refactor-phased-plan.md",
   "status": {
     "phase": "phase-2",
-    "task": "2.1",
-    "next_allowed_action": "Implement only task 2.1"
+    "task": "2.2",
+    "next_allowed_action": "Implement only task 2.2"
   },
   "execution_rules": {
     "branch": "codex/subtitlemanualupload-ui-backend-refactor",
@@ -164,9 +164,45 @@
         {
           "id": "2.1",
           "title": "Extract API wrapper and pure frontend utilities",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_frontend_inventory.py --details",
+              "result": "passed",
+              "evidence": "frontend inventory exited 0 after API wrapper extraction; template hash c294b143d5053c69467ace2f94292a728837b2607fb5a1a4f8ef4b52a3f0051a and style hash cfa12b27991adb643148def92aca7b86cf77c6265f8988e03ad5da6901cf520a matched the phase-1 baseline, endpoint_count remained 25, and AppPage line_count dropped to 5211"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_frontend_inventory.py -q",
+              "result": "passed",
+              "evidence": "2 passed in 0.25s"
+            },
+            {
+              "command": "$env:PATH='C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin;' + $env:PATH; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\bin\\pnpm.cmd' build",
+              "result": "passed",
+              "evidence": "vite build exited 0 in plugins.v2/subtitlemanualupload; built 22 modules and generated remoteEntry.js plus AppPage/Page/index hashed assets"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "228 passed in 8.49s"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_browser_baseline.py --cdp http://127.0.0.1:39223 --out-dir .tmp-test-data/subtitlemanualupload-ui-backend-refactor-2.1 --json-out .tmp-test-data/subtitlemanualupload-ui-backend-refactor-2.1/baseline.json",
+              "result": "passed",
+              "evidence": "visible Chrome/CDP browser smoke exited 0 after syncing current dist to the test container and clearing HTTP cache; remoteEntry.js, AppPage JS, AppPage CSS and shared assets all matched local SHA256, including remoteEntry.js e4391fdcdaf2d570e91934787c22eb275672a3f65cb8d7e2ddd67a731c5a3244"
+            },
+            {
+              "command": "Chrome CDP Network/Runtime observation during task 2.1 browser smoke",
+              "result": "passed",
+              "evidence": "entry, search for 百万英镑, target detail, online search, preview download, AI status and responsive checks rendered; search/status/auto_transfer_queue/targets/ai_tasks/timeline_tasks/online_status/online_manual_links/online_search_provider/online_download_preview returned 2xx; no plugin request failures, no plugin console errors and runtime_exceptions_count=0"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile scripts/subtitlemanualupload_browser_baseline.py",
+              "result": "passed",
+              "evidence": "browser baseline script compiled after adding cache clearing and cache-busting navigation for fresh asset verification"
+            }
+          ],
+          "commit": "de1a493"
         },
         {
           "id": "2.2",
@@ -507,6 +543,18 @@
         "responsive screenshots at 1440x1000, 768x1000 and 390x900 showed plugin content under ignored .tmp-test-data/subtitlemanualupload-ui-backend-refactor-1.3/",
         "no plugin request failures, no plugin console errors and runtime_exceptions_count=0",
         "phase-1 acceptance satisfied; next task is phase-2 task 2.1"
+      ]
+    },
+    {
+      "task": "2.1",
+      "status": "completed",
+      "summary": "Extracted the SubtitleManualUpload frontend API wrapper and pure utility helpers from AppPage.vue while keeping template and scoped style hashes unchanged; provider.js now re-exports compatibility helpers from utils, and the browser baseline script now clears HTTP cache and uses cache-busting navigation for fresh installed-asset verification.",
+      "evidence": [
+        "frontend inventory showed template hash c294b143d5053c69467ace2f94292a728837b2607fb5a1a4f8ef4b52a3f0051a and style hash cfa12b27991adb643148def92aca7b86cf77c6265f8988e03ad5da6901cf520a unchanged, endpoint_count=25 and AppPage line_count=5211",
+        "frontend inventory tests passed with 2 passed, frontend build passed with 22 modules transformed, and backend focused smoke passed with 228 tests",
+        "browser smoke used Chrome/CDP on 127.0.0.1:39223 after syncing current dist to moviepilot-v2 test container; remoteEntry.js and AppPage JS/CSS matched local SHA256, with remoteEntry.js e4391fdcdaf2d570e91934787c22eb275672a3f65cb8d7e2ddd67a731c5a3244",
+        "entry, resource search for 百万英镑, target detail, online search, preview download, AI status and responsive screenshots rendered; all observed plugin API calls returned 2xx with no plugin request failures, no plugin console errors and runtime_exceptions_count=0",
+        "next task is phase-2 task 2.2"
       ]
     }
   ],
