@@ -10,6 +10,9 @@ import { usePluginStatus } from '../composables/usePluginStatus'
 import { useTargets } from '../composables/useTargets'
 import { useTimelineTasks } from '../composables/useTimelineTasks'
 import { useUploadPreview } from '../composables/useUploadPreview'
+import MediaGrid from './MediaGrid.vue'
+import MediaSearchPanel from './MediaSearchPanel.vue'
+import TargetDetailPanel from './TargetDetailPanel.vue'
 import {
   buildOutputName,
   compactTargetName,
@@ -759,99 +762,35 @@ defineExpose({
     />
 
     <section v-if="!selectedMedia" class="media-stage">
-      <VCard class="glass-card search-card" rounded="xl" elevation="0">
-        <VCardText>
-          <div class="search-head">
-            <div>
-              <div class="section-kicker">{{ rootTab === 'history' ? '历史记录' : '资源选择' }}</div>
-              <h2>{{ rootTab === 'history' ? '查看已匹配字幕' : '选择本地已有资源' }}</h2>
-              <p>{{ rootTab === 'history' ? matchHistorySummary : `仅展示 MoviePilot 已整理到本地库的视频资源。${indexSummary}` }}</p>
-            </div>
-            <VBtn
-              variant="tonal"
-              color="primary"
-              prepend-icon="mdi-refresh"
-              :loading="refreshing"
-              @click="refreshIndex"
-            >
-              刷新媒体库清单
-            </VBtn>
-          </div>
-          <div class="search-bar">
-            <VTextField
-              v-model="searchKeyword"
-              label="片名、剧名或文件关键词"
-              variant="outlined"
-              density="comfortable"
-              hide-details
-              clearable
-              @keyup.enter="submitRootSearch"
-            />
-            <VSelect
-              v-model="mediaType"
-              :items="[
-                { title: '全部', value: 'all' },
-                { title: '电影', value: 'movie' },
-                { title: '剧集', value: 'tv' },
-              ]"
-              label="类型"
-              variant="outlined"
-              density="comfortable"
-              hide-details
-            />
-            <VBtn
-              color="primary"
-              :loading="rootTab === 'history' ? matchHistoryLoading : searching"
-              @click="submitRootSearch"
-            >
-              搜索
-            </VBtn>
-          </div>
-        </VCardText>
-      </VCard>
+      <MediaSearchPanel
+        v-model:search-keyword="searchKeyword"
+        v-model:media-type="mediaType"
+        :root-tab="rootTab"
+        :match-history-summary="matchHistorySummary"
+        :index-summary="indexSummary"
+        :refreshing="refreshing"
+        :match-history-loading="matchHistoryLoading"
+        :searching="searching"
+        @refresh-index="refreshIndex"
+        @submit="submitRootSearch"
+      />
 
-      <div v-if="rootTab === 'match' && medias.length" class="media-list">
-        <button
-          v-for="(media, index) in medias"
-          :key="media.id"
-          class="media-card"
-          @click="selectMedia(media)"
-        >
-          <div class="poster-frame">
-            <img
-              v-if="posterImageSrc(media)"
-              :src="posterImageSrc(media)"
-              :alt="mediaLabel(media)"
-              :loading="posterLoading(index)"
-              :fetchpriority="posterFetchPriority(index)"
-              decoding="async"
-              draggable="false"
-              @error="markPosterFailed(media)"
-            >
-            <span v-else>{{ formatMediaType(media.media_type) }}</span>
-          </div>
-          <div class="media-copy">
-            <div class="media-type">{{ formatMediaType(media.media_type) }}</div>
-            <h3>{{ mediaLabel(media) }}</h3>
-            <p>{{ mediaStat(media) }}</p>
-          </div>
-          <VIcon icon="mdi-chevron-right" />
-        </button>
-      </div>
-      <div v-if="rootTab === 'match' && medias.length" class="pager-row">
-        <span>{{ medias.length }}/{{ mediaTotal || medias.length }} 个资源</span>
-        <VBtn
-          v-if="mediaHasMore"
-          variant="tonal"
-          :loading="searching"
-          @click="loadMoreMedia"
-        >
-          加载下一页
-        </VBtn>
-      </div>
-      <div v-else-if="rootTab === 'match'" class="empty-state">
-        {{ searching ? '正在读取本地资源...' : '输入关键词搜索；留空搜索会显示最近整理的视频。' }}
-      </div>
+      <MediaGrid
+        :root-tab="rootTab"
+        :medias="medias"
+        :media-total="mediaTotal"
+        :media-has-more="mediaHasMore"
+        :searching="searching"
+        :format-media-type="formatMediaType"
+        :media-label="mediaLabel"
+        :media-stat="mediaStat"
+        :poster-image-src="posterImageSrc"
+        :poster-loading="posterLoading"
+        :poster-fetch-priority="posterFetchPriority"
+        @select-media="selectMedia"
+        @mark-poster-failed="markPosterFailed"
+        @load-more="loadMoreMedia"
+      />
 
       <div
         v-if="rootTab === 'history' && (autoQueueTasks.length || autoQueueSummary.active)"
@@ -1076,327 +1015,81 @@ defineExpose({
     </section>
 
     <section v-else class="episode-stage">
-      <VCard class="glass-card detail-card" rounded="xl" elevation="0">
-        <VCardText>
-          <div class="detail-head">
-            <div class="selected-media">
-              <button class="back-btn" @click="resetSelection">
-                <VIcon icon="mdi-arrow-left" />
-              </button>
-              <div class="mini-poster">
-                <img
-                  v-if="posterImageSrc(selectedMedia)"
-                  :src="posterImageSrc(selectedMedia)"
-                  :alt="mediaLabel(selectedMedia)"
-                  loading="eager"
-                  fetchpriority="high"
-                  decoding="async"
-                  draggable="false"
-                  @error="markPosterFailed(selectedMedia)"
-                >
-                <span v-else>{{ formatMediaType(selectedMedia.media_type) }}</span>
-              </div>
-              <div>
-                <div class="section-kicker">{{ formatMediaType(selectedMedia.media_type) }}</div>
-                <h2>{{ mediaLabel(selectedMedia) }}</h2>
-                <p>{{ visibleTargets.length }} 个本地目标 · {{ selectedTargets.length }} 个已选 · {{ lockedTargetIds.length }} 个锁定</p>
-              </div>
-            </div>
-            <VBtn variant="tonal" :loading="resolving" @click="loadTargets(selectedMedia, selectedSeason)">
-              刷新列表
-            </VBtn>
-          </div>
-
-          <div v-if="selectedMedia.media_type === 'tv'" class="season-strip">
-            <button
-              v-for="season in seasonCards"
-              :key="season.value"
-              class="season-card"
-              :class="{ active: selectedSeason === season.value }"
-              @click="changeSeason(season.value)"
-            >
-              <span>{{ season.title }}</span>
-              <strong>{{ season.subtitle }}</strong>
-            </button>
-          </div>
-
-          <button
-            v-if="aiEnabled"
-            ref="aiStatusStripRef"
-            class="ai-status-strip"
-            :class="{ unavailable: !aiAvailable, active: aiHasActiveTasks }"
-            type="button"
-            @click="openAiTaskDialog()"
-          >
-            <span class="ai-status-orb">
-              <VProgressCircular
-                v-if="aiTasksLoading || aiHasActiveTasks"
-                size="16"
-                width="2"
-                indeterminate
-              />
-              <VIcon v-else icon="mdi-robot-outline" size="18" />
-            </span>
-            <strong>{{ aiSummaryText }}</strong>
-            <em>{{ aiAvailable ? '点击查看当前资源任务' : aiStatus.message }}</em>
-          </button>
-
-          <div class="match-panel">
-          <div class="toolbar-row">
-            <VBtn variant="tonal" @click="toggleSelectAll">
-              {{ allVisibleSelected ? '取消全选' : '全选当前列表' }}
-            </VBtn>
-            <VBtn
-              color="primary"
-              :disabled="!unlockedVisibleTargets.length"
-              @click="openBatchUpload"
-            >
-              {{ selectedTargets.length ? '上传选中字幕' : '批量上传整季字幕' }}
-            </VBtn>
-            <VBtn
-              v-if="aiEnabled"
-              color="warning"
-              variant="tonal"
-              prepend-icon="mdi-robot-outline"
-              :disabled="!aiCapableBatchTargets.length || !aiAvailable"
-              :loading="aiSubmitting"
-              @click="openBatchAiGenerate"
-            >
-              {{ aiBatchLabel }}
-            </VBtn>
-            <VBtn
-              v-if="aiEnabled && aiBatchCancelTargets.length"
-              color="error"
-              variant="tonal"
-              prepend-icon="mdi-cancel"
-              :loading="aiCancelling"
-              @click="cancelBatchAiGenerate"
-            >
-              取消 AI
-            </VBtn>
-            <VBtn
-              class="online-batch-btn"
-              color="success"
-              variant="flat"
-              prepend-icon="mdi-cloud-search-outline"
-              :disabled="!batchUploadTargets.length"
-              :loading="onlineSearching"
-              @click="openBatchOnlineSearch"
-            >
-              {{ onlineBatchLabel }}
-            </VBtn>
-            <VBtn
-              color="error"
-              variant="tonal"
-              :disabled="!selectedTargetIds.length"
-              :loading="clearing"
-              @click="clearSelectedSubtitles"
-            >
-              清空选中外挂字幕
-            </VBtn>
-            <VBtn
-              color="warning"
-              variant="tonal"
-              prepend-icon="mdi-timeline-clock"
-              :disabled="!selectedTimelineTargets.length || timelineFixing || !timelineAvailable"
-              :loading="timelineFixing"
-              @click="fixSelectedDetailTimeline"
-            >
-              批量调轴
-            </VBtn>
-            <VBtn
-              color="secondary"
-              variant="tonal"
-              prepend-icon="mdi-restore"
-              :disabled="!selectedRestorableTargets.length || clearing"
-              :loading="clearing"
-              @click="restoreSelectedBackups"
-            >
-              批量恢复
-            </VBtn>
-          </div>
-
-          <div v-if="visibleTargets.length" class="episode-list">
-            <div
-              v-for="target in visibleTargets"
-              :key="target.id"
-              class="episode-row"
-              :class="{ locked: isLocked(target.id) }"
-            >
-              <VCheckbox
-                :model-value="selectedTargetIds.includes(target.id)"
-                density="compact"
-                hide-details
-                @update:model-value="value => toggleTarget(target.id, value)"
-              />
-              <VBtn
-                class="episode-expand-btn"
-                variant="tonal"
-                density="comfortable"
-                :icon="detailExpanded(target) ? 'mdi-chevron-down' : 'mdi-chevron-right'"
-                :title="detailExpanded(target) ? '收起外挂字幕' : '展开外挂字幕'"
-                @click="toggleDetailExpanded(target)"
-              />
-              <div class="episode-index">
-                {{ target.media_type === 'tv' ? `E${String(target.episode || 0).padStart(2, '0')}` : 'MOV' }}
-              </div>
-              <div class="episode-copy">
-                <div class="episode-title">{{ compactTargetName(target) }}</div>
-                <div class="episode-path">{{ target.relative_path }}</div>
-              </div>
-              <VMenu v-if="target.has_subtitle" location="bottom end">
-                <template #activator="{ props: menuProps }">
-                  <VBtn
-                    v-bind="menuProps"
-                    class="cc-btn has-sub"
-                    variant="text"
-                    icon="mdi-closed-caption"
-                    :title="`已有 ${target.subtitle_count} 个外挂字幕`"
-                  />
-                </template>
-                <VCard min-width="280" rounded="lg">
-                  <VList density="compact">
-                    <VListSubheader>已有外挂字幕</VListSubheader>
-                    <VListItem
-                      v-for="subtitle in target.subtitles"
-                      :key="subtitle.path"
-                      :title="subtitle.name"
-                      :subtitle="formatBytes(subtitle.size)"
-                    />
-                  </VList>
-                </VCard>
-              </VMenu>
-              <VBtn
-                v-else
-                class="cc-btn"
-                variant="text"
-                icon="mdi-closed-caption-outline"
-                title="暂无外挂字幕"
-              />
-              <VBtn
-                v-if="aiEnabled"
-                class="ai-row-btn"
-                :class="aiTaskStatusClass(target)"
-                variant="text"
-                :icon="aiTaskIcon(target)"
-                :color="aiTaskColor(target)"
-                :title="aiTaskTitle(target)"
-                :disabled="isTargetActionDisabled(target) || isStreamTarget(target) || (!aiAvailable && !aiTaskForTarget(target))"
-                @click="openSingleAiGenerate(target)"
-              />
-              <VBtn
-                variant="text"
-                icon="mdi-magnify"
-                title="搜索此集在线字幕"
-                :disabled="isTargetActionDisabled(target)"
-                @click="openSingleOnlineSearch(target)"
-              />
-              <VBtn
-                variant="text"
-                :icon="isLocked(target.id) ? 'mdi-lock' : 'mdi-lock-open-variant'"
-                :color="isLocked(target.id) ? 'warning' : undefined"
-                :title="isLocked(target.id) ? '解锁此集' : '锁定此集，批量上传跳过'"
-                @click="toggleLock(target.id)"
-              />
-              <VBtn
-                color="primary"
-                variant="tonal"
-                size="small"
-                :disabled="isTargetActionDisabled(target)"
-                @click="openSingleUpload(target)"
-              >
-                单集上传
-              </VBtn>
-              <div v-if="detailExpanded(target)" class="episode-expanded">
-                <div class="history-status compact-status">
-                  <span>{{ (target.subtitles || []).length ? `${target.subtitles.length} 个外挂字幕` : '暂无外挂字幕' }}</span>
-                  <span v-if="detailRowForTarget(target).task">AI：{{ aiStatusText(detailRowForTarget(target).task) }}</span>
-                  <span>{{ timelineResultForTarget(detailRowForTarget(target)) }}</span>
-                  <span
-                    v-for="meta in timelineMetaItems(timelineTaskForTarget(target)?.timeline)"
-                    :key="`${target.id}-detail-${meta}`"
-                    class="timeline-meta"
-                  >
-                    {{ meta }}
-                  </span>
-                  <span v-if="isStreamTarget(target)">STRM 资源不启用 AI 生成和智能调轴</span>
-                </div>
-                <div v-if="(target.subtitles || []).length" class="subtitle-history-list compact-subtitles">
-                  <div
-                    v-for="subtitle in target.subtitles"
-                    :key="subtitle.path"
-                    class="subtitle-history-item"
-                  >
-                    <div class="subtitle-history-copy">
-                      <strong>{{ subtitle.name }}</strong>
-                      <span>{{ formatBytes(subtitle.size) }} · {{ subtitle.modified_at || '未知时间' }}</span>
-                    </div>
-                    <div class="subtitle-history-actions">
-                      <VBtn
-                        size="small"
-                        variant="tonal"
-                        color="warning"
-                        :loading="timelineFixing"
-                        :disabled="timelineFixing || !timelineAvailable || isTargetActionDisabled(target) || isStreamTarget(target)"
-                        @click.stop="fixHistorySubtitleTimeline(target, subtitle)"
-                      >
-                        调轴
-                      </VBtn>
-                      <VBtn
-                        size="small"
-                        variant="tonal"
-                        color="secondary"
-                        :loading="clearing"
-                        :disabled="!subtitle.backup_available || isTargetActionDisabled(target)"
-                        @click.stop="restoreSubtitleBackup(target, subtitle)"
-                      >
-                        恢复
-                      </VBtn>
-                      <VBtn
-                        size="small"
-                        variant="tonal"
-                        color="error"
-                        :loading="clearing"
-                        :disabled="isTargetActionDisabled(target)"
-                        @click.stop="deleteSubtitle(target, subtitle)"
-                      >
-                        删除
-                      </VBtn>
-                    </div>
-                  </div>
-                </div>
-                <div v-else class="empty-state compact-empty">
-                  当前集暂无外挂字幕。
-                </div>
-              </div>
-            </div>
-          </div>
-          <div v-else class="empty-state">
-            {{ resolving ? '正在读取本地视频目标...' : '这个资源没有本地视频文件。' }}
-          </div>
-
-          <div v-if="lastWritten.length" class="result-panel">
-            <div class="section-kicker">写入结果</div>
-            <div v-for="item in lastWritten" :key="item.output_path" class="result-row">
-              <div>
-                <strong>{{ item.output_name }}</strong>
-                <span>{{ item.target_label }}</span>
-              </div>
-              <em>{{ timelineResultText(item) }}</em>
-              <div v-if="timelineMetaItems(item).length" class="timeline-meta-list">
-                <span
-                  v-for="meta in timelineMetaItems(item)"
-                  :key="`${item.output_path}-${meta}`"
-                  class="timeline-meta"
-                >
-                  {{ meta }}
-                </span>
-              </div>
-            </div>
-          </div>
-          </div>
-        </VCardText>
-      </VCard>
+      <TargetDetailPanel
+        ref="aiStatusStripRef"
+        :selected-media="selectedMedia"
+        :selected-season="selectedSeason"
+        :selected-targets="selectedTargets"
+        :selected-target-ids="selectedTargetIds"
+        :locked-target-ids="lockedTargetIds"
+        :visible-targets="visibleTargets"
+        :season-cards="seasonCards"
+        :resolving="resolving"
+        :ai-enabled="aiEnabled"
+        :ai-available="aiAvailable"
+        :ai-has-active-tasks="aiHasActiveTasks"
+        :ai-tasks-loading="aiTasksLoading"
+        :ai-summary-text="aiSummaryText"
+        :ai-status="aiStatus"
+        :all-visible-selected="allVisibleSelected"
+        :unlocked-visible-targets="unlockedVisibleTargets"
+        :ai-capable-batch-targets="aiCapableBatchTargets"
+        :ai-submitting="aiSubmitting"
+        :ai-batch-label="aiBatchLabel"
+        :ai-batch-cancel-targets="aiBatchCancelTargets"
+        :ai-cancelling="aiCancelling"
+        :online-searching="onlineSearching"
+        :online-batch-label="onlineBatchLabel"
+        :batch-upload-targets="batchUploadTargets"
+        :clearing="clearing"
+        :selected-timeline-targets="selectedTimelineTargets"
+        :timeline-fixing="timelineFixing"
+        :timeline-available="timelineAvailable"
+        :selected-restorable-targets="selectedRestorableTargets"
+        :last-written="lastWritten"
+        :poster-image-src="posterImageSrc"
+        :media-label="mediaLabel"
+        :format-media-type="formatMediaType"
+        :compact-target-name="compactTargetName"
+        :format-bytes="formatBytes"
+        :is-locked="isLocked"
+        :is-target-action-disabled="isTargetActionDisabled"
+        :is-stream-target="isStreamTarget"
+        :detail-expanded="detailExpanded"
+        :detail-row-for-target="detailRowForTarget"
+        :ai-task-for-target="aiTaskForTarget"
+        :ai-task-status-class="aiTaskStatusClass"
+        :ai-task-icon="aiTaskIcon"
+        :ai-task-color="aiTaskColor"
+        :ai-task-title="aiTaskTitle"
+        :ai-status-text="aiStatusText"
+        :timeline-result-for-target="timelineResultForTarget"
+        :timeline-meta-items="timelineMetaItems"
+        :timeline-task-for-target="timelineTaskForTarget"
+        :timeline-result-text="timelineResultText"
+        @reset-selection="resetSelection"
+        @mark-poster-failed="markPosterFailed"
+        @load-targets="loadTargets"
+        @change-season="changeSeason"
+        @open-ai-task-dialog="openAiTaskDialog"
+        @toggle-select-all="toggleSelectAll"
+        @open-batch-upload="openBatchUpload"
+        @open-batch-ai-generate="openBatchAiGenerate"
+        @cancel-batch-ai-generate="cancelBatchAiGenerate"
+        @open-batch-online-search="openBatchOnlineSearch"
+        @clear-selected-subtitles="clearSelectedSubtitles"
+        @fix-selected-detail-timeline="fixSelectedDetailTimeline"
+        @restore-selected-backups="restoreSelectedBackups"
+        @toggle-target="toggleTarget"
+        @toggle-detail-expanded="toggleDetailExpanded"
+        @open-single-ai-generate="openSingleAiGenerate"
+        @open-single-online-search="openSingleOnlineSearch"
+        @toggle-lock="toggleLock"
+        @open-single-upload="openSingleUpload"
+        @fix-history-subtitle-timeline="fixHistorySubtitleTimeline"
+        @restore-subtitle-backup="restoreSubtitleBackup"
+        @delete-subtitle="deleteSubtitle"
+      />
     </section>
 
     <VDialog v-model="autoQueueDialog" max-width="760">

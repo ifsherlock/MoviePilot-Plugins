@@ -12,6 +12,7 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 APP_PAGE = REPO_ROOT / "plugins.v2" / "subtitlemanualupload" / "src" / "components" / "AppPage.vue"
+COMPONENTS_DIR = APP_PAGE.parent
 API_CLIENT = REPO_ROOT / "plugins.v2" / "subtitlemanualupload" / "src" / "api" / "subtitleManualUploadApi.js"
 COMPOSABLES_DIR = REPO_ROOT / "plugins.v2" / "subtitlemanualupload" / "src" / "composables"
 
@@ -35,6 +36,7 @@ TEXT_ATTR_RE = re.compile(
     r"(?<![:A-Za-z0-9_-])(?P<name>label|title|placeholder|aria-label|alt)\s*=\s*(['\"])(?P<value>.*?)(?<!\\)\2",
     re.DOTALL,
 )
+VUE_IMPORT_RE = re.compile(r"from\s+['\"](?P<path>\./[^'\"]+\.vue)['\"]")
 
 
 class _VisibleTextParser(HTMLParser):
@@ -102,6 +104,77 @@ def _parse_sections(source: str) -> dict[str, dict[str, str]]:
         raise ValueError(f"expected one scoped <style> section, found {len(scoped_styles)}")
     sections["style_scoped"] = scoped_styles[0]
     return sections
+
+
+def _parse_vue_sections(source: str) -> dict[str, dict[str, str]]:
+    sections: dict[str, dict[str, str]] = {}
+    for match in SECTION_RE.finditer(source):
+        tag = match.group("tag").lower()
+        if tag in sections:
+            continue
+        sections[tag] = {
+            "attrs": match.group("attrs").strip(),
+            "body": match.group("body"),
+            "body_start_line": source[: match.start("body")].count("\n") + 1,
+        }
+    return sections
+
+
+def _component_template_sources() -> list[dict[str, Any]]:
+    sources: list[dict[str, Any]] = []
+    queue = [APP_PAGE.resolve()]
+    seen: set[Path] = set()
+
+    while queue:
+        path = queue.pop(0)
+        if path in seen:
+            continue
+        seen.add(path)
+        source = path.read_text(encoding="utf-8")
+        sections = _parse_vue_sections(source)
+        template = sections.get("template")
+        if template is not None:
+            sources.append(
+                {
+                    "path": _relative(path),
+                    "attrs": template["attrs"],
+                    "body": template["body"],
+                    "line_count": len(template["body"].splitlines()),
+                    "body_start_line": template["body_start_line"],
+                    "sha256": _sha256(template["body"]),
+                }
+            )
+
+        script = sections.get("script")
+        if script is None:
+            continue
+        for match in VUE_IMPORT_RE.finditer(script["body"]):
+            imported = (path.parent / match.group("path")).resolve()
+            if imported.suffix == ".vue" and COMPONENTS_DIR.resolve() in imported.parents and imported.exists():
+                queue.append(imported)
+    return sources
+
+
+def _component_style_sources() -> list[dict[str, Any]]:
+    sources: list[dict[str, Any]] = []
+    for template_source in _component_template_sources():
+        path = REPO_ROOT / template_source["path"]
+        source = path.read_text(encoding="utf-8")
+        sections = _parse_vue_sections(source)
+        style = sections.get("style")
+        if style is None:
+            continue
+        sources.append(
+            {
+                "path": _relative(path),
+                "attrs": style["attrs"],
+                "line_count": len(style["body"].splitlines()),
+                "body_start_line": style["body_start_line"],
+                "sha256": _sha256(style["body"]),
+                "class_selectors": sorted(_unique(CSS_CLASS_RE.findall(style["body"]))),
+            }
+        )
+    return sources
 
 
 def _find_matching_brace(source: str, open_index: int) -> int:
@@ -313,9 +386,12 @@ def build_inventory(*, details: bool = False) -> dict[str, Any]:
     script = sections["script"]["body"]
     template = sections["template"]["body"]
     style = sections["style_scoped"]["body"]
+    template_sources = _component_template_sources()
+    style_sources = _component_style_sources()
+    component_template = "\n".join(item["body"] for item in template_sources)
     endpoint_items = _endpoint_inventory(script)
-    class_items = _class_inventory(template, style)
-    visible_text = _visible_text_inventory(template)
+    class_items = _class_inventory(component_template, style)
+    visible_text = _visible_text_inventory(component_template)
 
     inventory: dict[str, Any] = {
         "target": _relative(APP_PAGE),
@@ -337,6 +413,10 @@ def build_inventory(*, details: bool = False) -> dict[str, Any]:
                 "sha256": _sha256(style),
             },
         },
+        "component_templates": [
+            {key: value for key, value in item.items() if key != "body"} for item in template_sources
+        ],
+        "component_styles": style_sources,
         "define_expose_keys": _define_expose_keys(script),
         "endpoint_count": len(endpoint_items),
         "endpoints": endpoint_items if details else [item["endpoint"] for item in endpoint_items],

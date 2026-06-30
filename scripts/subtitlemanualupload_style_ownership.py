@@ -30,16 +30,22 @@ class FragmentRange:
 
 
 FRAGMENT_RANGES = [
-    FragmentRange("app-page-shell", "AppPage", "stay-in-app-page", 721, 760),
-    FragmentRange("media-search-panel", "MediaSearchPanel", "move-in-3.2", 761, 857),
-    FragmentRange("match-history-entry", "MatchHistoryPanel", "move-in-3.4", 858, 1077),
-    FragmentRange("target-detail-panel", "TargetDetailPanel", "move-in-3.2", 1078, 1394),
-    FragmentRange("auto-transfer-queue-dialog", "AutoTransferQueuePanel", "move-in-3.4", 1395, 1445),
-    FragmentRange("ai-task-dialog", "AiTaskDialog", "move-in-3.3", 1446, 1564),
-    FragmentRange("online-subtitle-dialog", "OnlineSubtitleDialog", "move-in-3.3", 1565, 1821),
-    FragmentRange("upload-preview-dialog", "UploadPreviewDialog", "move-in-3.3", 1822, 2010),
-    FragmentRange("rar-help-dialog", "UploadPreviewDialog", "move-in-3.3", 2011, 2084),
+    FragmentRange("app-page-shell", "AppPage", "stay-in-app-page", 721, 763),
+    FragmentRange("match-history-entry", "MatchHistoryPanel", "move-in-3.4", 764, 1016),
+    FragmentRange("target-detail-panel-shell", "TargetDetailPanel", "move-in-3.2", 1017, 1090),
+    FragmentRange("auto-transfer-queue-dialog", "AutoTransferQueuePanel", "move-in-3.4", 1091, 1141),
+    FragmentRange("ai-task-dialog", "AiTaskDialog", "move-in-3.3", 1142, 1258),
+    FragmentRange("online-subtitle-dialog", "OnlineSubtitleDialog", "move-in-3.3", 1259, 1524),
+    FragmentRange("upload-preview-dialog", "UploadPreviewDialog", "move-in-3.3", 1525, 1703),
+    FragmentRange("rar-help-dialog", "UploadPreviewDialog", "move-in-3.3", 1704, 1775),
 ]
+
+COMPONENT_OWNERS = {
+    "plugins.v2/subtitlemanualupload/src/components/MediaSearchPanel.vue": ("MediaSearchPanel", "move-in-3.2"),
+    "plugins.v2/subtitlemanualupload/src/components/MediaGrid.vue": ("MediaGrid", "move-in-3.2"),
+    "plugins.v2/subtitlemanualupload/src/components/TargetDetailPanel.vue": ("TargetDetailPanel", "move-in-3.2"),
+    "plugins.v2/subtitlemanualupload/src/components/AiStatusStrip.vue": ("AiStatusStrip", "move-in-3.2"),
+}
 
 SHARED_SELECTORS = {
     "glass-card": "SharedCardSurface",
@@ -107,6 +113,13 @@ def _fragment_for_line(line_number: int) -> FragmentRange:
     return FragmentRange("unclassified-template-fragment", "Unknown", "review-before-extract", line_number, line_number)
 
 
+def _fragment_for_usage(source_path: str, line_number: int) -> FragmentRange:
+    if source_path != frontend_inventory._relative(APP_PAGE):
+        owner, migration = COMPONENT_OWNERS.get(source_path, ("Unknown", "review-before-extract"))
+        return FragmentRange(Path(source_path).stem, owner, migration, line_number, line_number)
+    return _fragment_for_line(line_number)
+
+
 def _style_selector_lines(style: str, style_start_line: int) -> dict[str, list[int]]:
     selector_lines: dict[str, list[int]] = {}
     for offset, line in enumerate(style.splitlines(), start=0):
@@ -116,39 +129,46 @@ def _style_selector_lines(style: str, style_start_line: int) -> dict[str, list[i
     return {selector: sorted(set(lines)) for selector, lines in selector_lines.items()}
 
 
-def _template_class_usages(template: str, template_start_line: int) -> dict[str, list[dict[str, Any]]]:
+def _template_class_usages(template_sources: list[dict[str, Any]]) -> dict[str, list[dict[str, Any]]]:
     usages: dict[str, list[dict[str, Any]]] = {}
 
-    def add_usage(selector: str, line_number: int, source: str) -> None:
-        fragment = _fragment_for_line(line_number)
+    def add_usage(selector: str, source_path: str, line_number: int, source: str) -> None:
+        fragment = _fragment_for_usage(source_path, line_number)
         item = {
+            "file": source_path,
             "line": line_number,
             "fragment": fragment.name,
+            "owner": fragment.owner,
+            "migration": fragment.migration,
             "source": source,
         }
         if item not in usages.setdefault(selector, []):
             usages[selector].append(item)
 
-    for offset, line in enumerate(template.splitlines(), start=0):
-        line_number = template_start_line + offset
-        for attr in re.finditer(r'(?<![:A-Za-z0-9_-])(?:class|selected-class)\s*=\s*"([^"]*)"', line):
-            for token in frontend_inventory._compact_text(attr.group(1)).split():
-                if re.match(r"^[A-Za-z_][A-Za-z0-9_-]*$", token):
-                    add_usage(token, line_number, "class-attribute")
+    for template_source in template_sources:
+        source_path = str(template_source["path"])
+        template = str(template_source["body"])
+        template_start_line = int(template_source["body_start_line"])
+        for offset, line in enumerate(template.splitlines(), start=0):
+            line_number = template_start_line + offset
+            for attr in re.finditer(r'(?<![:A-Za-z0-9_-])(?:class|selected-class)\s*=\s*"([^"]*)"', line):
+                for token in frontend_inventory._compact_text(attr.group(1)).split():
+                    if re.match(r"^[A-Za-z_][A-Za-z0-9_-]*$", token):
+                        add_usage(token, source_path, line_number, "class-attribute")
 
-        dynamic_match = re.search(r'(?<![A-Za-z0-9_-]):class\s*=\s*"([^"]*)"', line)
-        if dynamic_match:
-            expression = dynamic_match.group(1)
-            if "auto-queue-${task.status}" in expression:
-                for selector in ("auto-queue-failed", "auto-queue-in_progress", "auto-queue-pending"):
-                    add_usage(selector, line_number, "dynamic-auto-queue-status")
-            if "aiTaskStatusClass(target)" in expression:
-                add_usage("ai-row-btn", line_number, "dynamic-ai-target-status")
-            if "ai-${task.status}" in expression:
-                add_usage("ai-task-row", line_number, "dynamic-ai-task-status")
+            dynamic_match = re.search(r'(?<![A-Za-z0-9_-]):class\s*=\s*"([^"]*)"', line)
+            if dynamic_match:
+                expression = dynamic_match.group(1)
+                if "auto-queue-${task.status}" in expression:
+                    for selector in ("auto-queue-failed", "auto-queue-in_progress", "auto-queue-pending"):
+                        add_usage(selector, source_path, line_number, "dynamic-auto-queue-status")
+                if "aiTaskStatusClass(target)" in expression:
+                    add_usage("ai-row-btn", source_path, line_number, "dynamic-ai-target-status")
+                if "ai-${task.status}" in expression:
+                    add_usage("ai-task-row", source_path, line_number, "dynamic-ai-task-status")
 
-        if "<VBtn" in line:
-            add_usage("v-btn", line_number, "vuetify-component-descendant")
+            if "<VBtn" in line:
+                add_usage("v-btn", source_path, line_number, "vuetify-component-descendant")
 
     return usages
 
@@ -168,11 +188,10 @@ def _owner_from_usages(selector: str, usages: list[dict[str, Any]]) -> tuple[str
     owners = []
     migrations = []
     for usage in usages:
-        fragment = _fragment_for_line(int(usage["line"]))
-        if fragment.owner not in owners:
-            owners.append(fragment.owner)
-        if fragment.migration not in migrations:
-            migrations.append(fragment.migration)
+        if usage["owner"] not in owners:
+            owners.append(usage["owner"])
+        if usage["migration"] not in migrations:
+            migrations.append(usage["migration"])
 
     if len(owners) == 1:
         return owners[0], migrations[0], migrations[0] == "stay-in-app-page"
@@ -182,12 +201,10 @@ def _owner_from_usages(selector: str, usages: list[dict[str, Any]]) -> tuple[str
 def build_style_ownership() -> dict[str, Any]:
     source = APP_PAGE.read_text(encoding="utf-8")
     sections = frontend_inventory._parse_sections(source)
-    template = sections["template"]["body"]
     style = sections["style_scoped"]["body"]
-    template_start_line = _section_body_start(source, "template")
     style_start_line = _section_body_start(source, "style")
     selector_lines = _style_selector_lines(style, style_start_line)
-    template_usages = _template_class_usages(template, template_start_line)
+    template_usages = _template_class_usages(frontend_inventory._component_template_sources())
 
     selectors: list[dict[str, Any]] = []
     for selector in sorted(selector_lines):

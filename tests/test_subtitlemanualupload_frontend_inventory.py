@@ -37,6 +37,12 @@ def test_frontend_inventory_cli_outputs_valid_json_with_core_fields():
     assert inventory["sections"]["style_scoped"]["sha256"]
     assert inventory["sections"]["script"]["attrs"] == "setup"
     assert inventory["sections"]["style_scoped"]["attrs"] == "scoped"
+    component_paths = {item["path"] for item in inventory["component_templates"]}
+    assert "plugins.v2/subtitlemanualupload/src/components/MediaGrid.vue" in component_paths
+    assert "plugins.v2/subtitlemanualupload/src/components/TargetDetailPanel.vue" in component_paths
+    component_style_paths = {item["path"] for item in inventory["component_styles"]}
+    assert "plugins.v2/subtitlemanualupload/src/components/MediaSearchPanel.vue" in component_style_paths
+    assert "plugins.v2/subtitlemanualupload/src/components/TargetDetailPanel.vue" in component_style_paths
 
 
 def test_frontend_inventory_reports_app_page_contract_surfaces():
@@ -56,6 +62,8 @@ def test_frontend_inventory_reports_app_page_contract_surfaces():
     assert "subtitle-upload-page" in classes["template_classes"]
     assert "subtitle-upload-page" in classes["style_class_selectors"]
     assert "hero-card" in classes["template_classes"]
+    assert "media-card" in classes["template_classes"]
+    assert "ai-status-strip" in classes["template_classes"]
 
     texts = inventory["visible_text_inventory"]["all_static_texts"]
     assert "字幕匹配" in texts
