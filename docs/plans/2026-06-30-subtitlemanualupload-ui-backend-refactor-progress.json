@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-ui-backend-refactor-phased-plan.md",
   "status": {
     "phase": "phase-3",
-    "task": "3.1",
-    "next_allowed_action": "Implement only task 3.1"
+    "task": "3.2",
+    "next_allowed_action": "Implement only task 3.2"
   },
   "execution_rules": {
     "branch": "codex/subtitlemanualupload-ui-backend-refactor",
@@ -359,9 +359,45 @@
         {
           "id": "3.1",
           "title": "Build style ownership map for AppPage selectors",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_style_ownership.py --summary",
+              "result": "passed",
+              "evidence": "style ownership summary exited 0 with selector_count=142, unmapped_selectors=[], 5 stay-in-AppPage selectors, 24 shared selectors, 105 move-with-component selectors and 8 legacy orphan cleanup selectors"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile scripts/subtitlemanualupload_style_ownership.py tests/test_subtitlemanualupload_style_ownership.py",
+              "result": "passed",
+              "evidence": "style ownership script and test module compiled successfully"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_style_ownership.py tests/test_subtitlemanualupload_frontend_inventory.py -q",
+              "result": "passed",
+              "evidence": "4 passed in 0.33s; ownership selectors exactly matched frontend inventory style_class_selectors and known selectors mapped to AppPage, 3.2, 3.3, 3.4 or LegacyOrphanCleanup"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_frontend_inventory.py --details",
+              "result": "passed",
+              "evidence": "frontend inventory exited 0; template hash c294b143d5053c69467ace2f94292a728837b2607fb5a1a4f8ef4b52a3f0051a and style hash cfa12b27991adb643148def92aca7b86cf77c6265f8988e03ad5da6901cf520a remained unchanged, endpoint_count=25 and AppPage line_count=3606"
+            },
+            {
+              "command": "$env:PATH='C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin;' + $env:PATH; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\bin\\pnpm.cmd' build",
+              "result": "passed",
+              "evidence": "vite build exited 0 in plugins.v2/subtitlemanualupload; built 31 modules with existing AppPage/Page/index hashed assets"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "228 passed in 8.10s"
+            },
+            {
+              "command": "git diff --check -- scripts/subtitlemanualupload_style_ownership.py tests/test_subtitlemanualupload_style_ownership.py plugins.v2/subtitlemanualupload/src plugins.v2/subtitlemanualupload/dist",
+              "result": "passed",
+              "evidence": "diff check exited 0 for touched ownership script/test and frontend source/dist paths"
+            }
+          ],
+          "commit": "68a3f53"
         },
         {
           "id": "3.2",
@@ -711,6 +747,18 @@
         "browser smoke used Chrome/CDP on 127.0.0.1:39223 after syncing current dist to the test container; current remoteEntry.js and AppPage JS/CSS matched local SHA256, with remoteEntry.js 63f69034fe1441ea6b33237a3b5304981e79d74b19f5f2516252523c2fca502e",
         "entry, resource search for 百万英镑, target detail, online search, preview download, AI status and responsive screenshots rendered; all observed plugin API calls returned 2xx with no plugin request failures, no plugin console errors and runtime_exceptions_count=0",
         "phase-2 acceptance satisfied; next task is phase-3 task 3.1"
+      ]
+    },
+    {
+      "task": "3.1",
+      "status": "completed",
+      "summary": "Added scripts/subtitlemanualupload_style_ownership.py and tests/test_subtitlemanualupload_style_ownership.py to map every AppPage scoped CSS class selector to template usage fragments, AppPage retention, future component migration targets or legacy orphan cleanup before moving markup into child components.",
+      "evidence": [
+        "style ownership summary exited 0 with selector_count=142, unmapped_selectors=[], stay-in-AppPage=5, shared=24, move-with-component=105 and legacy orphan cleanup=8",
+        "ownership tests plus frontend inventory tests passed with 4 passed; ownership selectors exactly matched frontend inventory style_class_selectors",
+        "frontend inventory showed template hash c294b143d5053c69467ace2f94292a728837b2607fb5a1a4f8ef4b52a3f0051a and style hash cfa12b27991adb643148def92aca7b86cf77c6265f8988e03ad5da6901cf520a unchanged, endpoint_count=25 and AppPage line_count=3606",
+        "frontend build passed with 31 modules transformed, diff check passed, and backend focused smoke passed with 228 tests",
+        "next task is phase-3 task 3.2"
       ]
     }
   ],
