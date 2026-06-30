@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-ui-backend-refactor-phased-plan.md",
   "status": {
     "phase": "phase-3",
-    "task": "3.2",
-    "next_allowed_action": "Implement only task 3.2"
+    "task": "3.3",
+    "next_allowed_action": "Implement only task 3.3"
   },
   "execution_rules": {
     "branch": "codex/subtitlemanualupload-ui-backend-refactor",
@@ -402,9 +402,50 @@
         {
           "id": "3.2",
           "title": "Extract read-only display components",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "backend focused smoke exited 0 with 228 passed in 8.41s before starting task 3.2 work"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_frontend_inventory.py --details",
+              "result": "passed",
+              "evidence": "frontend inventory exited 0 after extracting MediaSearchPanel, MediaGrid, TargetDetailPanel and AiStatusStrip; endpoint_count remained 25, defineExpose keys were preserved, AppPage line_count=3299, and component_templates/component_styles include the four new components"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_style_ownership.py --summary",
+              "result": "passed",
+              "evidence": "style ownership summary exited 0 with selector_count=142 and unmapped_selectors=[] after adding 3.2 component ownership mappings"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_frontend_inventory.py tests/test_subtitlemanualupload_style_ownership.py -q",
+              "result": "passed",
+              "evidence": "frontend inventory and style ownership tests exited 0 with 4 passed in 0.75s"
+            },
+            {
+              "command": "$env:PATH='C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin;' + $env:PATH; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\bin\\pnpm.cmd' build",
+              "result": "passed",
+              "evidence": "vite build exited 0 in plugins.v2/subtitlemanualupload with 39 modules transformed; generated __federation_expose_AppPage-C6P8JM58.js and __federation_expose_AppPage-De333u5l.css"
+            },
+            {
+              "command": "Built-in Codex in-app browser 3.2 smoke against https://mp.jaysherlock.top:5443/#/plugin-app/SubtitleManualUpload/main",
+              "result": "passed",
+              "evidence": "after syncing current dist to the moviepilot-v2 test container, pageAssets observed remoteEntry.js, __federation_expose_AppPage-C6P8JM58.js and __federation_expose_AppPage-De333u5l.css; search for 百万英镑 rendered one .media-card, target detail rendered .detail-card=1, .episode-row=2, .ai-status-strip=1, history rendered the empty history state, and consoleErrors=[]"
+            },
+            {
+              "command": "rg -n \"pluginApi|createSubtitleManualUploadApi|fetch\\(|axios|\\.value\\.(search|targets|status|aiTasks|online|prepareUpload|applyUpload)\" plugins.v2/subtitlemanualupload/src/components/MediaSearchPanel.vue plugins.v2/subtitlemanualupload/src/components/MediaGrid.vue plugins.v2/subtitlemanualupload/src/components/AiStatusStrip.vue plugins.v2/subtitlemanualupload/src/components/TargetDetailPanel.vue",
+              "result": "passed",
+              "evidence": "no direct API calls were found in the four new read-only display components; they receive props and emit actions"
+            },
+            {
+              "command": "git diff --check -- plugins.v2/subtitlemanualupload/src plugins.v2/subtitlemanualupload/dist scripts/subtitlemanualupload_frontend_inventory.py scripts/subtitlemanualupload_style_ownership.py tests/test_subtitlemanualupload_frontend_inventory.py tests/test_subtitlemanualupload_style_ownership.py",
+              "result": "passed",
+              "evidence": "diff check exited 0 for touched frontend source, dist assets, inventory/ownership scripts and tests"
+            }
+          ],
+          "commit": "84f438f"
         },
         {
           "id": "3.3",
@@ -759,6 +800,20 @@
         "frontend inventory showed template hash c294b143d5053c69467ace2f94292a728837b2607fb5a1a4f8ef4b52a3f0051a and style hash cfa12b27991adb643148def92aca7b86cf77c6265f8988e03ad5da6901cf520a unchanged, endpoint_count=25 and AppPage line_count=3606",
         "frontend build passed with 31 modules transformed, diff check passed, and backend focused smoke passed with 228 tests",
         "next task is phase-3 task 3.2"
+      ]
+    },
+    {
+      "task": "3.2",
+      "status": "completed",
+      "summary": "Extracted the read-only media search panel, media grid, target detail panel and AI status strip from AppPage.vue while keeping AppPage as the coordinator; the new child components receive props and emit existing actions without direct API calls.",
+      "evidence": [
+        "frontend inventory exited 0 with endpoint_count=25, AppPage line_count=3299, stable defineExpose keys, and the four new components included in component template/style inventory",
+        "style ownership summary exited 0 with selector_count=142 and unmapped_selectors=[] after moving read-only display markup and styles",
+        "frontend inventory and style ownership tests passed with 4 passed in 0.75s; frontend build passed with 39 modules transformed and generated __federation_expose_AppPage-C6P8JM58.js plus __federation_expose_AppPage-De333u5l.css",
+        "backend focused smoke passed with 228 tests before 3.2 verification and again on resume with 228 passed in 8.13s",
+        "in-app browser loaded the fresh installed assets remoteEntry.js, __federation_expose_AppPage-C6P8JM58.js and __federation_expose_AppPage-De333u5l.css; search for 百万英镑 rendered one .media-card, target detail rendered .detail-card=1, .episode-row=2 and .ai-status-strip=1, history rendered the empty history state, and consoleErrors=[]",
+        "rg found no direct API calls in MediaSearchPanel.vue, MediaGrid.vue, AiStatusStrip.vue or TargetDetailPanel.vue",
+        "next task is phase-3 task 3.3"
       ]
     }
   ],
