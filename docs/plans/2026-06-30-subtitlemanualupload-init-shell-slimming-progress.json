@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-init-shell-slimming-phased-plan.md",
   "status": {
     "phase": "phase-8",
-    "task": "8.3",
-    "next_allowed_action": "Implement the current task; after verified completion, advance to the next task or phase automatically"
+    "task": "complete",
+    "next_allowed_action": "All planned tasks are completed; do not push, merge, or amend unless explicitly requested"
   },
   "execution_rules": {
     "branch": "codex/subtitlemanualupload-init-shell-slimming",
@@ -907,8 +907,44 @@
         {
           "id": "8.3",
           "title": "Update version/history if release packaging is requested and generate local zip",
-          "status": "pending",
-          "verification": [],
+          "status": "completed",
+          "verification": [
+            {
+              "command": "Updated SubtitleManualUpload version metadata",
+              "result": "passed",
+              "evidence": "plugin_version, root package.json, package.v2.json, plugins.v2/subtitlemanualupload/package.json, and README history all updated to 0.1.74 with v0.1.74 release note"
+            },
+            {
+              "command": "$env:PATH='C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin;' + $env:PATH; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\bin\\pnpm.cmd' build",
+              "result": "passed",
+              "evidence": "vite build exited 0 in plugins.v2/subtitlemanualupload"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_init_inventory.py --details",
+              "result": "passed",
+              "evidence": "line_count=365, method_count=12, runtime_helpers/service_delegates/ai_autosub_facade/archive_methods/auto_transfer_facade all count=0"
+            },
+            {
+              "command": "rg -n \"compat\\.py|compat_core|compat_services|SubtitleManualUploadCompatMixin|install_compat_\" plugins.v2/subtitlemanualupload tests scripts -g \"*.py\"",
+              "result": "passed",
+              "evidence": "no matches"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py::test_plugin_api_route_contract_is_stable -q",
+              "result": "passed",
+              "evidence": "5 passed in 1.46s"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "222 passed in 6.14s"
+            },
+            {
+              "command": "Generated local zip subtitlemanualupload-0.1.74-init-shell-slimming.zip",
+              "result": "passed",
+              "evidence": "zip entries=67, bad_entries=0, package.json and __init__.py contain 0.1.74, SHA256=ADD98611BE849533B8A6EFBD155285CAB7512887A7ACDA4255D6876D24C1F674; zip remains untracked"
+            }
+          ],
           "commit": null
         }
       ]
@@ -1182,6 +1218,21 @@
         "AI status dialog rendered; responsive screenshots at 1440x1000, 768x1000, and 390x900 showed plugin content",
         "no plugin requestfailed, no plugin console errors, runtime_exceptions_count=0; screenshots saved under ignored .tmp-test-data/",
         "phase-8 task 8.2 acceptance satisfied; next task is phase-8 task 8.3"
+      ]
+    },
+    {
+      "task": "8.3",
+      "status": "completed",
+      "summary": "Updated SubtitleManualUpload public version metadata and release history to 0.1.74, rebuilt the frontend, generated a local release zip, and verified the final package without tracking generated artifacts.",
+      "evidence": [
+        "plugin_version, root package.json, package.v2.json, plugin package.json, and README history all updated to 0.1.74",
+        "pnpm build exited 0 in plugins.v2/subtitlemanualupload",
+        "inventory reported line_count=365 and method_count=12 with removed compat/helper/facade groups still at count=0",
+        "compat layer grep over plugins, tests, and scripts returned no matches",
+        "inventory tests plus API route contract exited 0 with 5 passed",
+        "baseline smoke exited 0 with 222 passed",
+        "local zip subtitlemanualupload-0.1.74-init-shell-slimming.zip generated with 67 entries, bad_entries=0, version 0.1.74 in package.json and __init__.py, SHA256=ADD98611BE849533B8A6EFBD155285CAB7512887A7ACDA4255D6876D24C1F674; zip remains untracked",
+        "phase-8 acceptance satisfied; all planned tasks completed"
       ]
     }
   ],

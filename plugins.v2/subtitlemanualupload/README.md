@@ -2,6 +2,11 @@
 
 MoviePilot V2 插件，提供手动上传字幕并匹配改名的页面。
 
+## v0.1.74 更新
+
+- 主入口进一步瘦身为 MoviePilot 插件壳，剩余运行时 helper、服务访问器和服务代理迁移到独立模块。
+- 完成真实 Chrome 浏览器验收，覆盖资源选择、外挂字幕、OpenSubtitles 在线预览、AI 状态和响应式页面。
+
 ## v0.1.73 更新
 
 - 移除 `compat.py`、`compat_core.py` 和 `compat_services.py` 兼容层，运行时服务装配改为显式模块。
