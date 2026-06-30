@@ -1,6 +1,9 @@
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
 import { createSubtitleManualUploadApi } from '../api/subtitleManualUploadApi'
+import { useMediaSearch } from '../composables/useMediaSearch'
+import { usePluginStatus } from '../composables/usePluginStatus'
+import { useTargets } from '../composables/useTargets'
 import {
   buildOutputName,
   compactTargetName,
@@ -55,45 +58,6 @@ const props = defineProps({
 
 const pluginBase = computed(() => `plugin/${props.pluginId || 'SubtitleManualUpload'}`)
 const pluginApi = computed(() => createSubtitleManualUploadApi(props.api, pluginBase))
-const status = ref({
-  enabled: false,
-  source: 'MoviePilot 本地整理记录',
-  index: {
-    ready: false,
-    updated_at: '',
-    entry_count: 0,
-    media_count: 0,
-    expires_in: 0,
-  },
-  archive_support: {
-    zip: true,
-    rar: false,
-    rar_tool: '',
-    rar_tool_path: '/usr/local/bin/7z',
-    rar_python: false,
-    rar_python_package: 'rarfile',
-    dependency_mode: 'none',
-    dependency_status: {},
-  },
-  timeline_fixer: { available: false, modules: {} },
-  ai_subtitle: {
-    enabled: true,
-    installed: false,
-    available: false,
-    running: false,
-    queue_ready: false,
-    plugin_name: 'AI字幕生成(联动版)',
-    plugin_version: '',
-    message: '请先安装并启用 AI字幕生成(联动版)',
-    counts: {},
-    updated_at: '',
-  },
-})
-
-const loading = ref(false)
-const searching = ref(false)
-const resolving = ref(false)
-const refreshing = ref(false)
 const preparing = ref(false)
 const applying = ref(false)
 const clearing = ref(false)
@@ -108,16 +72,6 @@ const dragging = ref(false)
 const message = ref('')
 const error = ref('')
 const onlineError = ref('')
-const searchKeyword = ref('')
-const mediaType = ref('all')
-const medias = ref([])
-const mediaPage = ref(1)
-const mediaPageSize = 24
-const mediaTotal = ref(0)
-const mediaHasMore = ref(false)
-const mediaPrefetchPages = ref({})
-const failedPosterImages = ref({})
-let mediaSearchToken = 0
 const rootTab = ref('match')
 const matchHistoryLoading = ref(false)
 const matchHistoryItems = ref([])
@@ -128,7 +82,6 @@ const matchHistoryHasMore = ref(false)
 const expandedHistoryIds = ref([])
 const expandedHistorySeasonKeys = ref([])
 const expandedHistoryTargetIds = ref([])
-const expandedDetailTargetIds = ref([])
 const selectedHistoryTargetIds = ref({})
 const timelineFixing = ref(false)
 const autoTransferQueue = ref({
@@ -138,13 +91,6 @@ const autoTransferQueue = ref({
   season_package_cache: [],
 })
 const autoQueueDialog = ref(false)
-const selectedMedia = ref(null)
-const detailTab = ref('match')
-const seasons = ref([])
-const selectedSeason = ref('all')
-const targets = ref([])
-const selectedTargetIds = ref([])
-const lockedTargetIds = ref([])
 const uploadDialog = ref(false)
 const rarHelpDialog = ref(false)
 const uploadTitle = ref('')
@@ -197,11 +143,140 @@ let aiTaskTimer = null
 let timelineTaskTimer = null
 let historyTimelineTimer = null
 let autoQueueTimer = null
-let indexRefreshTimer = null
 let onlineSearchSeq = 0
 let onlineDownloadSeq = 0
 const ONLINE_PROVIDER_TIMEOUT_MS = 25000
 const ONLINE_DOWNLOAD_TIMEOUT_MS = 35000
+
+const {
+  resolving,
+  selectedMedia,
+  detailTab,
+  seasons,
+  selectedSeason,
+  selectedTargetIds,
+  lockedTargetIds,
+  expandedDetailTargetIds,
+  visibleTargets,
+  selectedTargets,
+  targetById,
+  unlockedVisibleTargets,
+  allVisibleSelected,
+  isLocked,
+  lockedTargetPayload,
+  isTargetActionDisabled,
+  detailExpanded,
+  toggleDetailExpanded,
+  clearTargetState,
+  loadTargets,
+  selectMedia,
+  changeSeason,
+  resetSelection,
+  toggleSelectAll,
+  toggleTarget,
+  toggleLock,
+} = useTargets({
+  pluginApi,
+  unwrapResponse,
+  errorMessage,
+  error,
+  message,
+  mediaLabel,
+  clearRelatedState() {
+    preview.value = null
+    lastWritten.value = []
+    aiTaskDialogTarget.value = null
+    aiTaskScopeTargets.value = []
+    aiTaskData.value = {
+      ...aiTaskData.value,
+      summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, ignored: 0, no_audio: 0, failed: 0, cancelled: 0 },
+      tasks: [],
+      task_by_target: {},
+      tasks_by_target: {},
+    }
+    timelineTaskData.value = {
+      summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, skipped: 0, failed: 0 },
+      tasks: [],
+      task_by_target: {},
+    }
+    stopAiPolling()
+    stopTimelinePolling()
+  },
+  beforeLoadTargets() {
+    preview.value = null
+  },
+  async afterTargetsLoaded(nextTargets) {
+    aiTaskScopeTargets.value = nextTargets
+    await loadAiTasks({ silent: true })
+    await loadTimelineTasks({ silent: true })
+  },
+  runSearch: () => runSearch(),
+})
+
+const {
+  searching,
+  searchKeyword,
+  mediaType,
+  medias,
+  mediaPage,
+  mediaPageSize,
+  mediaTotal,
+  mediaHasMore,
+  posterImageKey,
+  posterImageSrc,
+  markPosterFailed,
+  posterLoading,
+  posterFetchPriority,
+  runSearch,
+  loadMoreMedia,
+} = useMediaSearch({
+  pluginApi,
+  unwrapResponse,
+  errorMessage,
+  error,
+  message,
+  selectedMedia,
+  clearTargetState,
+})
+
+const {
+  status,
+  loading,
+  refreshing,
+  indexStatus,
+  indexSummary,
+  archiveStatus,
+  rarAvailable,
+  rarPythonAvailable,
+  rarDependencyStatus,
+  timelineStatus,
+  timelineAvailable,
+  timelineConfiguredMaxOffset,
+  timelineNeedsRiskyConfirm,
+  timelineMissing,
+  loadStatus,
+  refreshIndex,
+  stopIndexRefreshPolling,
+} = usePluginStatus({
+  pluginApi,
+  unwrapResponse,
+  errorMessage,
+  error,
+  message,
+  rootTab,
+  selectedMedia,
+  selectedSeason,
+  applyAiStatus(nextAiStatus) {
+    aiTaskData.value = { ...aiTaskData.value, status: nextAiStatus }
+  },
+  applyAutoTransferSummary(summary) {
+    autoTransferQueue.value = { ...autoTransferQueue.value, summary }
+  },
+  loadAutoTransferQueue,
+  loadTargets,
+  loadMatchHistory,
+  runSearch,
+})
 
 const aiRestartSourceOptions = [
   { title: '沿用原任务来源', value: 'reuse' },
@@ -252,13 +327,6 @@ const rarHelpItems = [
   },
 ]
 
-const visibleTargets = computed(() => targets.value || [])
-const selectedTargets = computed(() => {
-  const picked = new Set(selectedTargetIds.value || [])
-  return visibleTargets.value.filter(item => picked.has(item.id))
-})
-const targetById = computed(() => new Map(visibleTargets.value.map(target => [target.id, target])))
-const unlockedVisibleTargets = computed(() => visibleTargets.value.filter(item => !isLocked(item.id) && item.writable !== false))
 const uploadTargets = computed(() => uploadScopeTargets.value.filter(item => !isLocked(item.id) && item.writable !== false))
 const batchUploadTargets = computed(() => {
   const base = selectedTargets.value.length ? selectedTargets.value : visibleTargets.value
@@ -401,13 +469,6 @@ const aiRestartSubtitleOptions = computed(() => {
       value: subtitle.path,
     }))
 })
-const timelineStatus = computed(() => status.value?.timeline_fixer || { available: false, modules: {} })
-const timelineAvailable = computed(() => timelineStatus.value.available === true)
-const timelineConfiguredMaxOffset = computed(() => {
-  const value = Number(timelineStatus.value.configured_max_offset_seconds || timelineStatus.value.max_offset_seconds || 120)
-  return Number.isFinite(value) && value > 0 ? value : 120
-})
-const timelineNeedsRiskyConfirm = computed(() => timelineConfiguredMaxOffset.value > 120)
 const autoQueueSummary = computed(() => autoTransferQueue.value?.summary || status.value?.auto_transfer_queue || {})
 const autoQueueTasks = computed(() => autoTransferQueue.value?.tasks || [])
 const autoQueueActive = computed(() => Number(autoQueueSummary.value.active || 0) > 0)
@@ -432,20 +493,6 @@ const allSelectedPreviewTargetsAreStream = computed(() => {
 })
 const hasSelectedPreviewStreamTargets = computed(() => selectedPreviewTargets.value.some(isStreamTarget))
 const timelineEnabledForApply = computed(() => fixTimeline.value && timelineAvailable.value && !allSelectedPreviewTargetsAreStream.value)
-const indexStatus = computed(() => status.value?.index || {})
-const indexSummary = computed(() => {
-  if (!indexStatus.value.ready) return '媒体库清单尚未缓存'
-  const parts = [
-    `${indexStatus.value.media_count || 0} 个媒体`,
-    `${indexStatus.value.entry_count || 0} 个视频`,
-  ]
-  if (indexStatus.value.updated_at) parts.push(`更新于 ${indexStatus.value.updated_at}`)
-  return parts.join(' · ')
-})
-const archiveStatus = computed(() => status.value?.archive_support || { zip: true, rar: false, rar_tool: '', rar_python: false })
-const rarAvailable = computed(() => archiveStatus.value.rar === true)
-const rarPythonAvailable = computed(() => archiveStatus.value.rar_python === true)
-const rarDependencyStatus = computed(() => archiveStatus.value.dependency_status || {})
 const seasonCards = computed(() => {
   if (selectedMedia.value?.media_type !== 'tv') return []
   const total = seasons.value.reduce((sum, item) => sum + Number(item.local_count || 0), 0)
@@ -460,11 +507,6 @@ const seasonCards = computed(() => {
         count: item.local_count || 0,
       })),
   ]
-})
-const allVisibleSelected = computed(() => {
-  if (!visibleTargets.value.length) return false
-  const picked = new Set(selectedTargetIds.value || [])
-  return visibleTargets.value.every(item => picked.has(item.id))
 })
 const matchHistoryRows = computed(() => visibleTargets.value.map(target => {
   const subtitles = target.subtitles || []
@@ -490,45 +532,6 @@ const matchHistorySummary = computed(() => {
   if (!matchHistoryTotal.value) return '暂无已匹配字幕记录'
   return `${matchHistoryTotal.value} 部资源有外挂字幕记录`
 })
-const timelineMissing = computed(() => {
-  const missing = []
-  if (timelineStatus.value.ffmpeg === false) missing.push('ffmpeg')
-  if (timelineStatus.value.ffprobe === false) missing.push('ffprobe')
-  const modules = timelineStatus.value.modules || {}
-  Object.entries(modules).forEach(([name, ok]) => {
-    if (name === 'webrtcvad') return
-    if (!ok) missing.push(name)
-  })
-  return missing.join('、')
-})
-
-function posterImageKey(item, url) {
-  return `${item?.id || item?.media_id || item?.title || ''}\u0000${url || ''}`
-}
-
-function posterImageSrc(item) {
-  const url = item?.poster_thumb_url || item?.poster_url || ''
-  if (!url || failedPosterImages.value[posterImageKey(item, url)]) return ''
-  return url
-}
-
-function markPosterFailed(item) {
-  const url = item?.poster_thumb_url || item?.poster_url || ''
-  if (!url) return
-  failedPosterImages.value = {
-    ...failedPosterImages.value,
-    [posterImageKey(item, url)]: true,
-  }
-}
-
-function posterLoading(index) {
-  return index < 6 ? 'eager' : 'lazy'
-}
-
-function posterFetchPriority(index) {
-  return index < 6 ? 'high' : 'low'
-}
-
 function historyExpanded(item) {
   return expandedHistoryIds.value.includes(item?.id)
 }
@@ -769,20 +772,6 @@ function fixHistorySubtitleTimeline(target, subtitle) {
   )
 }
 
-function detailExpanded(target) {
-  return expandedDetailTargetIds.value.includes(target?.id)
-}
-
-function toggleDetailExpanded(target) {
-  const id = target?.id
-  if (!id) return
-  if (expandedDetailTargetIds.value.includes(id)) {
-    expandedDetailTargetIds.value = expandedDetailTargetIds.value.filter(item => item !== id)
-    return
-  }
-  expandedDetailTargetIds.value = [...expandedDetailTargetIds.value, id]
-}
-
 function detailRowForTarget(target) {
   return matchHistoryRows.value.find(row => row.target.id === target?.id) || {
     target,
@@ -859,18 +848,6 @@ function confirmRiskyTimelineOffset(actionLabel = '智能调轴') {
     '超过 120s 的调轴结果通常意味着错集、错版本或整季包映射错误，不建议超过 120s。\n\n' +
     '确认后，本次请求才会允许 120-300s 的结果人工写入；自动入库不会放行高风险偏移。',
   )
-}
-
-function isLocked(targetId) {
-  return lockedTargetIds.value.includes(targetId)
-}
-
-function lockedTargetPayload() {
-  return [...lockedTargetIds.value]
-}
-
-function isTargetActionDisabled(target) {
-  return isLocked(target.id) || target.writable === false
 }
 
 function ensureConfiguredApiProvidersSelected() {
@@ -1267,106 +1244,6 @@ function openSingleAiGenerate(target) {
   openAiTaskDialog(target)
 }
 
-function clearTargetState() {
-  seasons.value = []
-  detailTab.value = 'match'
-  selectedSeason.value = 'all'
-  targets.value = []
-  selectedTargetIds.value = []
-  preview.value = null
-  lastWritten.value = []
-  aiTaskDialogTarget.value = null
-  aiTaskScopeTargets.value = []
-  aiTaskData.value = {
-    ...aiTaskData.value,
-    summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, ignored: 0, no_audio: 0, failed: 0, cancelled: 0 },
-    tasks: [],
-    task_by_target: {},
-    tasks_by_target: {},
-  }
-  timelineTaskData.value = {
-    summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, skipped: 0, failed: 0 },
-    tasks: [],
-    task_by_target: {},
-  }
-  stopAiPolling()
-  stopTimelinePolling()
-}
-
-async function loadStatus() {
-  loading.value = true
-  error.value = ''
-  try {
-    const response = await pluginApi.value.status()
-    status.value = unwrapResponse(response) || status.value
-    if (status.value.ai_subtitle) {
-      aiTaskData.value = { ...aiTaskData.value, status: status.value.ai_subtitle }
-    }
-    if (status.value.auto_transfer_queue) {
-      autoTransferQueue.value = { ...autoTransferQueue.value, summary: status.value.auto_transfer_queue }
-      if (Number(status.value.auto_transfer_queue.active || 0) > 0) {
-        loadAutoTransferQueue()
-      }
-    }
-  } catch (err) {
-    error.value = errorMessage(err, '加载插件状态失败')
-  } finally {
-    loading.value = false
-  }
-}
-
-function stopIndexRefreshPolling() {
-  if (indexRefreshTimer) {
-    clearTimeout(indexRefreshTimer)
-    indexRefreshTimer = null
-  }
-}
-
-function scheduleIndexRefreshPolling() {
-  stopIndexRefreshPolling()
-  if (!status.value?.index?.refreshing) {
-    refreshing.value = false
-    return
-  }
-  refreshing.value = true
-  indexRefreshTimer = setTimeout(async () => {
-    await pollIndexRefresh()
-  }, 3000)
-}
-
-async function pollIndexRefresh() {
-  try {
-    const response = await pluginApi.value.status()
-    const nextStatus = unwrapResponse(response) || status.value
-    const wasRefreshing = Boolean(status.value?.index?.refreshing)
-    status.value = nextStatus
-    if (nextStatus.ai_subtitle) {
-      aiTaskData.value = { ...aiTaskData.value, status: nextStatus.ai_subtitle }
-    }
-    if (nextStatus.index?.refresh_error) {
-      error.value = nextStatus.index.refresh_error
-      refreshing.value = false
-      return
-    }
-    if (wasRefreshing && !nextStatus.index?.refreshing) {
-      refreshing.value = false
-      if (selectedMedia.value) {
-        await loadTargets(selectedMedia.value, selectedSeason.value || 'all')
-      } else if (rootTab.value === 'history') {
-        await loadMatchHistory()
-      } else {
-        await runSearch()
-      }
-      message.value = '媒体库资源清单刷新完成'
-      return
-    }
-    scheduleIndexRefreshPolling()
-  } catch (err) {
-    refreshing.value = false
-    error.value = errorMessage(err, '刷新媒体库清单状态失败')
-  }
-}
-
 function stopAutoQueuePolling() {
   if (autoQueueTimer) {
     clearTimeout(autoQueueTimer)
@@ -1429,142 +1306,12 @@ async function loadOnlineStatus() {
   }
 }
 
-async function refreshIndex() {
-  refreshing.value = true
-  error.value = ''
-  try {
-    const response = await pluginApi.value.refreshIndex({})
-    const data = unwrapResponse(response) || {}
-    if (data.index) {
-      status.value = { ...status.value, index: data.index }
-    }
-    if (data.index?.refreshing) {
-      scheduleIndexRefreshPolling()
-    } else if (selectedMedia.value) {
-      await loadTargets(selectedMedia.value, selectedSeason.value || 'all')
-    } else if (rootTab.value === 'history') {
-      await loadMatchHistory()
-    } else {
-      await runSearch()
-    }
-    message.value = response?.message || '已刷新媒体库资源清单'
-  } catch (err) {
-    error.value = errorMessage(err, '刷新媒体库清单失败')
-    refreshing.value = false
-  } finally {
-    if (!status.value?.index?.refreshing) {
-      refreshing.value = false
-    }
-  }
-}
-
-function mediaRequestKey(keyword, type, page) {
-  return `${type || 'all'}\u0000${keyword || ''}\u0000${page}`
-}
-
-function clearMediaPrefetch() {
-  mediaPrefetchPages.value = {}
-}
-
-async function fetchMediaPage(keyword, type, page) {
-  const params = new URLSearchParams()
-  params.set('keyword', keyword)
-  params.set('media_type', type)
-  params.set('page', String(page))
-  params.set('page_size', String(mediaPageSize))
-  const response = await pluginApi.value.search(params)
-  return unwrapResponse(response) || {}
-}
-
-function applyMediaPage(data, page, append) {
-  mediaPage.value = Number(data.page || page)
-  mediaTotal.value = Number(data.total || 0)
-  mediaHasMore.value = Boolean(data.has_more)
-  medias.value = append ? [...medias.value, ...(data.medias || [])] : (data.medias || [])
-  if (!medias.value.length) {
-    const keyword = searchKeyword.value.trim()
-    message.value = keyword
-      ? '本地资源库里没有匹配的视频目标，请换个关键词试试'
-      : '本地整理记录里暂时没有可用的视频目标'
-  }
-}
-
-async function prefetchMediaPage(page, token) {
-  if (!mediaHasMore.value || page <= mediaPage.value) return
-  const keyword = searchKeyword.value.trim()
-  const type = mediaType.value
-  const key = mediaRequestKey(keyword, type, page)
-  if (mediaPrefetchPages.value[key]?.loading || mediaPrefetchPages.value[key]?.data) return
-  mediaPrefetchPages.value = {
-    ...mediaPrefetchPages.value,
-    [key]: { loading: true },
-  }
-  try {
-    const data = await fetchMediaPage(keyword, type, page)
-    if (token !== mediaSearchToken) return
-    mediaPrefetchPages.value = {
-      ...mediaPrefetchPages.value,
-      [key]: { data },
-    }
-  } catch (err) {
-    if (token !== mediaSearchToken) return
-    const nextCache = { ...mediaPrefetchPages.value }
-    delete nextCache[key]
-    mediaPrefetchPages.value = nextCache
-  }
-}
-
-async function runSearch(options = {}) {
-  const keyword = searchKeyword.value.trim()
-  const append = Boolean(options.append)
-  const page = append ? mediaPage.value + 1 : 1
-  if (!append) {
-    mediaSearchToken += 1
-    clearMediaPrefetch()
-  }
-  const token = mediaSearchToken
-  const cacheKey = mediaRequestKey(keyword, mediaType.value, page)
-  const cachedPage = append ? mediaPrefetchPages.value[cacheKey]?.data : null
-  if (cachedPage) {
-    const nextCache = { ...mediaPrefetchPages.value }
-    delete nextCache[cacheKey]
-    mediaPrefetchPages.value = nextCache
-    applyMediaPage(cachedPage, page, true)
-    prefetchMediaPage(page + 1, token)
-    return
-  }
-  searching.value = true
-  error.value = ''
-  message.value = ''
-  if (!append) {
-    selectedMedia.value = null
-    clearTargetState()
-  }
-  try {
-    const data = await fetchMediaPage(keyword, mediaType.value, page)
-    if (token !== mediaSearchToken) return
-    applyMediaPage(data, page, append)
-    prefetchMediaPage(page + 1, token)
-  } catch (err) {
-    error.value = errorMessage(err, '搜索本地资源失败')
-  } finally {
-    if (token === mediaSearchToken) {
-      searching.value = false
-    }
-  }
-}
-
 function submitRootSearch() {
   if (rootTab.value === 'history') {
     loadMatchHistory()
     return
   }
   runSearch()
-}
-
-function loadMoreMedia() {
-  if (searching.value || !mediaHasMore.value) return
-  runSearch({ append: true })
 }
 
 async function loadMatchHistory(options = {}) {
@@ -1604,93 +1351,6 @@ function setRootTab(tab) {
   if (tab === 'history' && !matchHistoryItems.value.length) {
     loadMatchHistory()
   }
-}
-
-function buildMediaParams(media, season) {
-  const params = new URLSearchParams()
-  params.set('media_type', media.media_type || '')
-  if (media.tmdb_id) params.set('tmdb_id', String(media.tmdb_id))
-  if (media.douban_id) params.set('douban_id', String(media.douban_id))
-  if (media.title) params.set('title', media.title)
-  if (media.year) params.set('year', media.year)
-  if (season !== null && season !== undefined && season !== '') {
-    params.set('season', String(season))
-  }
-  return params
-}
-
-async function loadTargets(media = selectedMedia.value, season = selectedSeason.value) {
-  if (!media) return
-  resolving.value = true
-  error.value = ''
-  message.value = ''
-  preview.value = null
-  try {
-    const params = buildMediaParams(media, season || 'all')
-    const response = await pluginApi.value.targets(params)
-    const data = unwrapResponse(response) || {}
-    selectedMedia.value = data.media || media
-    seasons.value = data.seasons || []
-    selectedSeason.value = data.selected_season ?? 'all'
-    targets.value = data.targets || []
-    aiTaskScopeTargets.value = targets.value
-    selectedTargetIds.value = []
-    await loadAiTasks({ silent: true })
-    await loadTimelineTasks({ silent: true })
-
-    if (!targets.value.length) {
-      message.value = `${mediaLabel(selectedMedia.value)} 没有找到本地可写入的视频文件`
-    }
-  } catch (err) {
-    error.value = errorMessage(err, '读取本地视频目标失败')
-  } finally {
-    resolving.value = false
-  }
-}
-
-async function selectMedia(media) {
-  selectedMedia.value = media
-  clearTargetState()
-  await loadTargets(media, 'all')
-}
-
-async function changeSeason(season) {
-  selectedSeason.value = season
-  detailTab.value = 'match'
-  selectedTargetIds.value = []
-  await loadTargets(selectedMedia.value, season)
-}
-
-function resetSelection() {
-  selectedMedia.value = null
-  clearTargetState()
-  runSearch()
-}
-
-function toggleSelectAll() {
-  if (allVisibleSelected.value) {
-    selectedTargetIds.value = []
-    return
-  }
-  selectedTargetIds.value = visibleTargets.value.map(item => item.id)
-}
-
-function toggleTarget(targetId, checked) {
-  const set = new Set(selectedTargetIds.value)
-  if (checked) {
-    set.add(targetId)
-  } else {
-    set.delete(targetId)
-  }
-  selectedTargetIds.value = Array.from(set)
-}
-
-function toggleLock(targetId) {
-  if (isLocked(targetId)) {
-    lockedTargetIds.value = lockedTargetIds.value.filter(item => item !== targetId)
-    return
-  }
-  lockedTargetIds.value = [...lockedTargetIds.value, targetId]
 }
 
 function timelineResultForTarget(row) {

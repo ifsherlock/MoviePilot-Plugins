@@ -197,6 +197,11 @@ def sha256(data: bytes) -> str:
 
 
 def browser_page(cdp: str, url_hint: str) -> dict:
+    try:
+        with urllib.request.urlopen(cdp + "/json/new?" + urllib.parse.quote(url_hint, safe=""), timeout=10) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.URLError:
+        pass
     targets = cdp_get(cdp, "/json")
     page = next(
         (
@@ -362,6 +367,11 @@ def run_baseline(cdp: str, out_dir: Path, url: str) -> dict:
 
     client.send("Page.navigate", {"url": "about:blank"})
     client.pump(1)
+    client.asset_responses = {}
+    client.api_responses = []
+    client.failed_plugin_requests = []
+    client.console_plugin_errors = []
+    client.runtime_exceptions = []
     client.send("Page.navigate", {"url": run_url})
     page_ready = wait_for(client, "document.body?.innerText.includes('字幕匹配')", seconds=30)
     if not page_ready:

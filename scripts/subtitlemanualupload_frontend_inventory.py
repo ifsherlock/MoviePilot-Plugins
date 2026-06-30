@@ -13,6 +13,7 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[1]
 APP_PAGE = REPO_ROOT / "plugins.v2" / "subtitlemanualupload" / "src" / "components" / "AppPage.vue"
 API_CLIENT = REPO_ROOT / "plugins.v2" / "subtitlemanualupload" / "src" / "api" / "subtitleManualUploadApi.js"
+COMPOSABLES_DIR = REPO_ROOT / "plugins.v2" / "subtitlemanualupload" / "src" / "composables"
 
 
 SECTION_RE = re.compile(
@@ -209,29 +210,35 @@ def _define_expose_keys(script: str) -> list[str]:
 
 def _endpoint_inventory(script: str) -> list[dict[str, Any]]:
     endpoints: list[dict[str, Any]] = []
-    for lineno, line in enumerate(script.splitlines(), start=1):
-        for match in PROP_API_RE.finditer(line):
-            endpoints.append(
-                {
-                    "method": match.group("method").upper(),
-                    "endpoint": match.group("endpoint").replace("${pluginBase.value}", ""),
-                    "raw": match.group("endpoint"),
-                    "line": lineno,
-                }
-            )
-        for match in PLUGIN_API_CALL_RE.finditer(line):
-            api_methods = _api_method_inventory()
-            item = api_methods.get(match.group("name"))
-            if item is None:
-                continue
-            endpoints.append(
-                {
-                    "method": item["method"],
-                    "endpoint": item["endpoint"],
-                    "raw": f"pluginApi.value.{match.group('name')}",
-                    "line": lineno,
-                }
-            )
+    sources: list[tuple[str, str]] = [("AppPage.vue", script)]
+    if COMPOSABLES_DIR.exists():
+        sources.extend((path.name, path.read_text(encoding="utf-8")) for path in sorted(COMPOSABLES_DIR.glob("*.js")))
+    for source_name, source in sources:
+        for lineno, line in enumerate(source.splitlines(), start=1):
+            for match in PROP_API_RE.finditer(line):
+                endpoints.append(
+                    {
+                        "method": match.group("method").upper(),
+                        "endpoint": match.group("endpoint").replace("${pluginBase.value}", ""),
+                        "raw": match.group("endpoint"),
+                        "line": lineno,
+                        "source": source_name,
+                    }
+                )
+            for match in PLUGIN_API_CALL_RE.finditer(line):
+                api_methods = _api_method_inventory()
+                item = api_methods.get(match.group("name"))
+                if item is None:
+                    continue
+                endpoints.append(
+                    {
+                        "method": item["method"],
+                        "endpoint": item["endpoint"],
+                        "raw": f"pluginApi.value.{match.group('name')}",
+                        "line": lineno,
+                        "source": source_name,
+                    }
+                )
     return endpoints
 
 
