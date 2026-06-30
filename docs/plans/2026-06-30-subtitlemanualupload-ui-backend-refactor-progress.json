@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-ui-backend-refactor-phased-plan.md",
   "status": {
     "phase": "phase-4",
-    "task": "4.1",
-    "next_allowed_action": "Implement only task 4.1"
+    "task": "4.2",
+    "next_allowed_action": "Implement only task 4.2"
   },
   "execution_rules": {
     "branch": "codex/subtitlemanualupload-ui-backend-refactor",
@@ -652,9 +652,60 @@
         {
           "id": "4.1",
           "title": "Extract task model, keys, queue snapshot and queue mutation",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            {
+              "command": "git log --oneline -15",
+              "result": "passed",
+              "evidence": "latest completed ledger commit before task 4.1 was 0ad4659, followed by task 4.1 code commit e813cbd after verification"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "228 passed in 8.92s with AutoTransferQueue delegated from AutoTransferService"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py -k auto_transfer -q",
+              "result": "passed",
+              "evidence": "26 passed, 101 deselected in 1.62s; covers queue enqueue, stop, group key behavior, rate-limit task state, strategy and write/fallback paths"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py::test_api_auto_transfer_queue_uses_auto_transfer_service_directly -q",
+              "result": "passed",
+              "evidence": "1 passed in 0.10s; /auto_transfer_queue still delegates through the AutoTransferService facade"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile plugins.v2/subtitlemanualupload/auto_transfer.py plugins.v2/subtitlemanualupload/auto_transfer_models.py plugins.v2/subtitlemanualupload/auto_transfer_queue.py",
+              "result": "passed",
+              "evidence": "auto_transfer.py, auto_transfer_models.py and auto_transfer_queue.py compiled successfully"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_backend_inventory.py --details",
+              "result": "passed",
+              "evidence": "backend inventory exited 0; auto_transfer.py line_count dropped from 1431 to 1232, facade_symbols_to_preserve remained AutoTransferCollaborators and AutoTransferService, and imported_symbols_missing_from_module=[]"
+            },
+            {
+              "command": "docker exec moviepilot-v2 python -c 'from app.plugins.subtitlemanualupload.auto_transfer import AutoTransferService, AutoTransferCollaborators; print(...)'",
+              "result": "passed",
+              "evidence": "container runtime import printed AutoTransferService AutoTransferCollaborators, proving the public facade import is available in the installed plugin environment"
+            },
+            {
+              "command": "ssh nas docker exec moviepilot-v2 sha256sum for installed SubtitleManualUpload auto_transfer files",
+              "result": "passed",
+              "evidence": "installed hot-loaded files matched local SHA256: auto_transfer.py 98ee74b08b1d03506807ac5b4fa958330438a978049bc477f0b2c92d069feda5, auto_transfer_models.py bdcc41e312098e0d1121903c18e88a5c8a0f3ac37bac34237b98dee2b1f03ee6, auto_transfer_queue.py 9f045bd6810b0ce21d40dff143e71b7a2840c29b3724248201e0d90ff845004c"
+            },
+            {
+              "command": "Codex in-app browser visible smoke on https://mp.jaysherlock.top:5443/#/plugin-app/SubtitleManualUpload/main",
+              "result": "passed",
+              "evidence": ".tmp-test-data/subtitlemanualupload-ui-backend-refactor-4.1/in-app-browser-queue-api-smoke.json recorded pageOk=true, /api/v1/plugin/SubtitleManualUpload/auto_transfer_queue status=200, payload success=true, summary/tasks/rate_limits/season_package_cache present, rate_limit_scope=provider, status endpoint status=200, and emptyQueueHidesEntryByDesign=true because summary.active=0 and taskCount=0"
+            },
+            {
+              "command": "git diff --check -- plugins.v2/subtitlemanualupload/auto_transfer.py plugins.v2/subtitlemanualupload/auto_transfer_models.py plugins.v2/subtitlemanualupload/auto_transfer_queue.py && git diff --cached --check",
+              "result": "passed",
+              "evidence": "diff checks exited 0 for task 4.1 source files; only expected LF/CRLF warnings were printed before staging"
+            }
+          ],
+          "commit": "e813cbd"
         },
         {
           "id": "4.2",
@@ -1024,6 +1075,19 @@
         "test container assets matched the local build with remoteEntry.js d983f1c694df5863d33c3eda19eab541f3cece1e41de7dac4e8fea0c005e9ccc, AppPage JS 89f26ebdb4141ecae893ded23f4b9e10e0028abc2f548cc093423ae80286cacc and AppPage CSS aec49325bb9008fbe29d13f849997ecce8ad8f6b8e82fde81609249f2daa5b44",
         "in-app browser visible smoke passed with freshAssetsMatch=true, detailOk=true, uploadDialogOk=true, rarHelpDialogOk=true, appPageShellOk=true and noConsoleErrors=true; RAR help dialog rendered command blocks and copy buttons",
         "phase-3 acceptance satisfied; next task is phase-4 task 4.1"
+      ]
+    },
+    {
+      "task": "4.1",
+      "status": "completed",
+      "summary": "Extracted auto-transfer task construction, key generation, queue dedupe, trimming, mutation, batch claiming, summary and public snapshot payload formatting into auto_transfer_models.py and auto_transfer_queue.py. AutoTransferService keeps the existing public method names and delegates queue ownership to AutoTransferQueue.",
+      "evidence": [
+        "backend focused smoke passed with 228 passed in 8.92s",
+        "auto_transfer focused tests passed with 26 passed, 101 deselected; direct queue API facade test passed with 1 passed",
+        "backend inventory showed auto_transfer.py line_count=1232, AutoTransferCollaborators and AutoTransferService preserved, and imported_symbols_missing_from_module=[]",
+        "moviepilot-v2 hot-loaded installed files matched local SHA256 for auto_transfer.py, auto_transfer_models.py and auto_transfer_queue.py; container import printed AutoTransferService AutoTransferCollaborators",
+        "in-app browser observed /api/v1/plugin/SubtitleManualUpload/auto_transfer_queue status=200 with success=true and summary/tasks/rate_limits/season_package_cache/rate_limit_scope payload fields intact; page rendered 字幕匹配 with no login hint and the empty queue entry stayed hidden by design",
+        "next task is phase-4 task 4.2"
       ]
     }
   ],
