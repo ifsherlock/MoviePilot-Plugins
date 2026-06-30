@@ -41,12 +41,16 @@ def test_frontend_inventory_cli_outputs_valid_json_with_core_fields():
     assert "plugins.v2/subtitlemanualupload/src/components/MediaGrid.vue" in component_paths
     assert "plugins.v2/subtitlemanualupload/src/components/TargetDetailPanel.vue" in component_paths
     assert "plugins.v2/subtitlemanualupload/src/components/AiTaskDialog.vue" in component_paths
+    assert "plugins.v2/subtitlemanualupload/src/components/AutoTransferQueueDialog.vue" in component_paths
+    assert "plugins.v2/subtitlemanualupload/src/components/MatchHistoryPanel.vue" in component_paths
     assert "plugins.v2/subtitlemanualupload/src/components/OnlineSubtitleDialog.vue" in component_paths
     assert "plugins.v2/subtitlemanualupload/src/components/UploadDialog.vue" in component_paths
     component_style_paths = {item["path"] for item in inventory["component_styles"]}
     assert "plugins.v2/subtitlemanualupload/src/components/MediaSearchPanel.vue" in component_style_paths
     assert "plugins.v2/subtitlemanualupload/src/components/TargetDetailPanel.vue" in component_style_paths
     assert "plugins.v2/subtitlemanualupload/src/components/AiTaskDialog.vue" in component_style_paths
+    assert "plugins.v2/subtitlemanualupload/src/components/AutoTransferQueueDialog.vue" in component_style_paths
+    assert "plugins.v2/subtitlemanualupload/src/components/MatchHistoryPanel.vue" in component_style_paths
     assert "plugins.v2/subtitlemanualupload/src/components/OnlineSubtitleDialog.vue" in component_style_paths
     assert "plugins.v2/subtitlemanualupload/src/components/UploadDialog.vue" in component_style_paths
 

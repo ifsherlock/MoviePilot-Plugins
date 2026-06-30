@@ -58,4 +58,6 @@ def test_style_ownership_covers_frontend_inventory_selectors():
     assert by_selector[".ai-task-dialog"]["owner"] == "AiTaskDialog"
     assert by_selector[".upload-dialog"]["owner"] == "UploadDialog"
     assert by_selector[".auto-queue-card"]["migration"] == "move-in-3.4"
+    assert by_selector[".auto-queue-card"]["owner"] == "AutoTransferQueueDialog"
+    assert by_selector[".global-history-card"]["owner"] == "MatchHistoryPanel"
     assert by_selector[".detail-tabs"]["owner"] == "LegacyOrphanCleanup"

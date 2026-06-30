@@ -168,6 +168,7 @@ def _component_style_sources() -> list[dict[str, Any]]:
             {
                 "path": _relative(path),
                 "attrs": style["attrs"],
+                "body": style["body"],
                 "line_count": len(style["body"].splitlines()),
                 "body_start_line": style["body_start_line"],
                 "sha256": _sha256(style["body"]),
@@ -389,8 +390,9 @@ def build_inventory(*, details: bool = False) -> dict[str, Any]:
     template_sources = _component_template_sources()
     style_sources = _component_style_sources()
     component_template = "\n".join(item["body"] for item in template_sources)
+    component_style = "\n".join(item["body"] for item in style_sources)
     endpoint_items = _endpoint_inventory(script)
-    class_items = _class_inventory(component_template, style)
+    class_items = _class_inventory(component_template, "\n".join([style, component_style]))
     visible_text = _visible_text_inventory(component_template)
 
     inventory: dict[str, Any] = {
@@ -416,7 +418,9 @@ def build_inventory(*, details: bool = False) -> dict[str, Any]:
         "component_templates": [
             {key: value for key, value in item.items() if key != "body"} for item in template_sources
         ],
-        "component_styles": style_sources,
+        "component_styles": [
+            {key: value for key, value in item.items() if key != "body"} for item in style_sources
+        ],
         "define_expose_keys": _define_expose_keys(script),
         "endpoint_count": len(endpoint_items),
         "endpoints": endpoint_items if details else [item["endpoint"] for item in endpoint_items],

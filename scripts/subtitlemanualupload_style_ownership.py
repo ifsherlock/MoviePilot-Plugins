@@ -46,6 +46,11 @@ COMPONENT_OWNERS = {
     "plugins.v2/subtitlemanualupload/src/components/TargetDetailPanel.vue": ("TargetDetailPanel", "move-in-3.2"),
     "plugins.v2/subtitlemanualupload/src/components/AiStatusStrip.vue": ("AiStatusStrip", "move-in-3.2"),
     "plugins.v2/subtitlemanualupload/src/components/AiTaskDialog.vue": ("AiTaskDialog", "move-in-3.3"),
+    "plugins.v2/subtitlemanualupload/src/components/AutoTransferQueueDialog.vue": (
+        "AutoTransferQueueDialog",
+        "move-in-3.4",
+    ),
+    "plugins.v2/subtitlemanualupload/src/components/MatchHistoryPanel.vue": ("MatchHistoryPanel", "move-in-3.4"),
     "plugins.v2/subtitlemanualupload/src/components/OnlineSubtitleDialog.vue": ("OnlineSubtitleDialog", "move-in-3.3"),
     "plugins.v2/subtitlemanualupload/src/components/UploadDialog.vue": ("UploadDialog", "move-in-3.3"),
 }
@@ -203,10 +208,14 @@ def _owner_from_usages(selector: str, usages: list[dict[str, Any]]) -> tuple[str
 
 def build_style_ownership() -> dict[str, Any]:
     source = APP_PAGE.read_text(encoding="utf-8")
-    sections = frontend_inventory._parse_sections(source)
-    style = sections["style_scoped"]["body"]
-    style_start_line = _section_body_start(source, "style")
-    selector_lines = _style_selector_lines(style, style_start_line)
+    selector_lines: dict[str, list[int]] = {}
+    for style_source in frontend_inventory._component_style_sources():
+        for selector, lines in _style_selector_lines(
+            str(style_source["body"]),
+            int(style_source["body_start_line"]),
+        ).items():
+            selector_lines.setdefault(selector, []).extend(lines)
+    selector_lines = {selector: sorted(set(lines)) for selector, lines in selector_lines.items()}
     template_usages = _template_class_usages(frontend_inventory._component_template_sources())
 
     selectors: list[dict[str, Any]] = []

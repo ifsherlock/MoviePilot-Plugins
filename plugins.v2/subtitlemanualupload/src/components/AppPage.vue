@@ -11,7 +11,9 @@ import { useTargets } from '../composables/useTargets'
 import { useTimelineTasks } from '../composables/useTimelineTasks'
 import { useUploadPreview } from '../composables/useUploadPreview'
 import AiTaskDialog from './AiTaskDialog.vue'
+import AutoTransferQueueDialog from './AutoTransferQueueDialog.vue'
 import MediaGrid from './MediaGrid.vue'
+import MatchHistoryPanel from './MatchHistoryPanel.vue'
 import MediaSearchPanel from './MediaSearchPanel.vue'
 import OnlineSubtitleDialog from './OnlineSubtitleDialog.vue'
 import TargetDetailPanel from './TargetDetailPanel.vue'
@@ -796,226 +798,58 @@ defineExpose({
         @load-more="loadMoreMedia"
       />
 
-      <div
-        v-if="rootTab === 'history' && (autoQueueTasks.length || autoQueueSummary.active)"
-        class="auto-queue-entry"
-      >
-        <VBtn
-          variant="tonal"
-          color="primary"
-          prepend-icon="mdi-tray-full"
-          @click="autoQueueDialog = true"
-        >
-          入库自动字幕队列 · {{ autoQueueSummaryText }}
-        </VBtn>
-      </div>
-
-      <div v-if="rootTab === 'history' && matchHistoryItems.length" class="global-history-list">
-        <div
-          v-for="(item, index) in matchHistoryItems"
-          :key="item.id"
-          class="global-history-card"
-        >
-          <button
-            type="button"
-            class="global-history-head"
-            @click="toggleHistoryExpanded(item)"
-          >
-            <div class="poster-frame compact">
-              <img
-                v-if="posterImageSrc(item)"
-                :src="posterImageSrc(item)"
-                :alt="mediaLabel(item)"
-                :loading="posterLoading(index)"
-                :fetchpriority="posterFetchPriority(index)"
-                decoding="async"
-                draggable="false"
-                @error="markPosterFailed(item)"
-              >
-              <span v-else>{{ formatMediaType(item.media_type) }}</span>
-            </div>
-            <div class="media-copy">
-              <div class="media-type">{{ formatMediaType(item.media_type) }}</div>
-              <h3>{{ mediaLabel(item) }}</h3>
-              <p>{{ historyMediaStat(item) }} · {{ item.latest_at || '未知时间' }}</p>
-            </div>
-            <VIcon :icon="historyExpanded(item) ? 'mdi-chevron-up' : 'mdi-chevron-down'" />
-          </button>
-          <div v-if="historyExpanded(item)" class="global-history-targets">
-            <div class="history-bulk-toolbar">
-              <div class="history-bulk-copy">
-                <strong>已选 {{ historySelectedCount(item) }}/{{ historyDeletableTargets(item).length }} 集</strong>
-                <span>{{ item.subtitle_count }} 个外挂字幕</span>
-              </div>
-              <div class="history-bulk-actions">
-                <VBtn
-                  size="small"
-                  variant="tonal"
-                  prepend-icon="mdi-checkbox-multiple-marked-outline"
-                  :disabled="!historyDeletableTargets(item).length || clearing"
-                  @click.stop="toggleHistoryItemTargets(item)"
-                >
-                  {{ allHistoryTargetsSelected(item) ? '取消全选' : '全选' }}
-                </VBtn>
-                <VBtn
-                  size="small"
-                  color="error"
-                  variant="tonal"
-                  prepend-icon="mdi-delete-sweep"
-                  :disabled="!historySelectedCount(item) || clearing"
-                  :loading="clearing"
-                  @click.stop="clearHistorySelectedSubtitles(item)"
-                >
-                  删除选中
-                </VBtn>
-                <VBtn
-                  size="small"
-                  color="warning"
-                  variant="tonal"
-                  prepend-icon="mdi-timeline-clock-outline"
-                  :disabled="!historySelectedTimelineTargets(item).length || timelineFixing || !timelineAvailable"
-                  :loading="timelineFixing"
-                  @click.stop="fixHistorySelectedTimeline(item)"
-                >
-                  调轴选中
-                </VBtn>
-              </div>
-            </div>
-            <div class="history-season-tree">
-              <div
-                v-for="season in historySeasonGroups(item)"
-                :key="historySeasonKey(item, season)"
-                class="history-season-node"
-              >
-                <div v-if="!season.direct" class="history-season-row">
-                  <VCheckbox
-                    :model-value="allHistorySeasonTargetsSelected(item, season)"
-                    :indeterminate="historySeasonPartiallySelected(item, season)"
-                    density="compact"
-                    hide-details
-                    :disabled="!season.targets.length || clearing"
-                    @click.stop
-                    @update:model-value="value => toggleHistorySeasonTargets(item, season, value)"
-                  />
-                  <button
-                    type="button"
-                    class="history-season-toggle"
-                    @click.stop="toggleHistorySeasonExpanded(item, season)"
-                  >
-                    <VIcon :icon="historySeasonExpanded(item, season) ? 'mdi-chevron-down' : 'mdi-chevron-right'" />
-                    <strong>{{ season.label }}</strong>
-                    <span>{{ season.targets.length }} 集 · {{ season.subtitleCount }} 个外挂字幕</span>
-                    <em v-if="historySeasonSelectedCount(item, season)">已选 {{ historySeasonSelectedCount(item, season) }}</em>
-                  </button>
-                </div>
-                <div
-                  v-if="season.direct || historySeasonExpanded(item, season)"
-                  class="history-episode-list"
-                  :class="{ 'direct-targets': season.direct }"
-                >
-                  <div
-                    v-for="target in season.targets"
-                    :key="`${historySeasonKey(item, season)}-${target.id}`"
-                    class="history-episode-node"
-                  >
-                    <div class="history-episode-row">
-                      <VCheckbox
-                        :model-value="historySelectedIds(item).includes(target.id)"
-                        density="compact"
-                        hide-details
-                        :disabled="!(target.subtitles || []).length || clearing"
-                        @click.stop
-                        @update:model-value="value => toggleHistoryTarget(item, target.id, value)"
-                      />
-                      <button
-                        type="button"
-                        class="history-episode-toggle"
-                        @click.stop="toggleHistoryTargetExpanded(target)"
-                      >
-                        <VIcon :icon="historyTargetExpanded(target) ? 'mdi-chevron-down' : 'mdi-chevron-right'" />
-                        <span class="episode-title">{{ compactTargetName(target) }}</span>
-                        <small>{{ (target.subtitles || []).length }} 个外挂字幕</small>
-                      </button>
-                      <VBtn
-                        size="small"
-                        variant="tonal"
-                        prepend-icon="mdi-magnify"
-                        :disabled="isTargetActionDisabled(target)"
-                        @click.stop="openSingleOnlineSearch(target)"
-                      >
-                        重新搜索
-                      </VBtn>
-                    </div>
-                    <div v-if="historyTargetExpanded(target)" class="history-subtitle-children">
-                      <div class="episode-path">{{ target.relative_path }}</div>
-                      <div v-if="target.timeline_task" class="history-status compact-status">
-                        <span>调轴：{{ timelineTaskText(target.timeline_task) }}</span>
-                        <span
-                          v-for="meta in timelineMetaItems(target.timeline_task.timeline)"
-                          :key="`${target.id}-${meta}`"
-                          class="timeline-meta"
-                        >
-                          {{ meta }}
-                        </span>
-                      </div>
-                      <div class="subtitle-history-list compact-subtitles">
-                        <div
-                          v-for="subtitle in target.subtitles"
-                          :key="subtitle.path"
-                          class="subtitle-history-item"
-                        >
-                          <div class="subtitle-history-copy">
-                            <strong>{{ subtitle.name }}</strong>
-                            <span>{{ formatBytes(subtitle.size) }} · {{ subtitle.modified_at || '未知时间' }}</span>
-                          </div>
-                          <div class="subtitle-history-actions">
-                            <VBtn
-                              size="small"
-                              variant="tonal"
-                              color="warning"
-                              :loading="timelineFixing"
-                              :disabled="timelineFixing || !timelineAvailable || isStreamTarget(target)"
-                              @click.stop="fixHistorySubtitleTimeline(target, subtitle)"
-                            >
-                              调轴
-                            </VBtn>
-                            <VBtn
-                              size="small"
-                              variant="tonal"
-                              color="error"
-                              :loading="clearing"
-                              @click.stop="deleteSubtitle(target, subtitle)"
-                            >
-                              删除
-                            </VBtn>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div v-if="!historySeasonGroups(item).length" class="empty-state compact-empty">
-              暂无可管理的外挂字幕
-            </div>
-          </div>
-        </div>
-      </div>
-      <div v-if="rootTab === 'history' && matchHistoryItems.length" class="pager-row">
-        <span>{{ matchHistoryItems.length }}/{{ matchHistoryTotal || matchHistoryItems.length }} 部资源</span>
-        <VBtn
-          v-if="matchHistoryHasMore"
-          variant="tonal"
-          :loading="matchHistoryLoading"
-          @click="loadMoreMatchHistory"
-        >
-          加载下一页
-        </VBtn>
-      </div>
-      <div v-else-if="rootTab === 'history'" class="empty-state">
-        {{ matchHistoryLoading ? '正在读取匹配历史...' : '还没有找到已匹配字幕记录。' }}
-      </div>
+      <MatchHistoryPanel
+        :root-tab="rootTab"
+        :auto-queue-tasks="autoQueueTasks"
+        :auto-queue-summary="autoQueueSummary"
+        :auto-queue-summary-text="autoQueueSummaryText"
+        :match-history-items="matchHistoryItems"
+        :match-history-total="matchHistoryTotal"
+        :match-history-has-more="matchHistoryHasMore"
+        :match-history-loading="matchHistoryLoading"
+        :clearing="clearing"
+        :timeline-fixing="timelineFixing"
+        :timeline-available="timelineAvailable"
+        :poster-image-src="posterImageSrc"
+        :media-label="mediaLabel"
+        :poster-loading="posterLoading"
+        :poster-fetch-priority="posterFetchPriority"
+        :mark-poster-failed="markPosterFailed"
+        :format-media-type="formatMediaType"
+        :history-media-stat="historyMediaStat"
+        :history-expanded="historyExpanded"
+        :toggle-history-expanded="toggleHistoryExpanded"
+        :history-selected-count="historySelectedCount"
+        :history-deletable-targets="historyDeletableTargets"
+        :toggle-history-item-targets="toggleHistoryItemTargets"
+        :all-history-targets-selected="allHistoryTargetsSelected"
+        :clear-history-selected-subtitles="clearHistorySelectedSubtitles"
+        :history-selected-timeline-targets="historySelectedTimelineTargets"
+        :fix-history-selected-timeline="fixHistorySelectedTimeline"
+        :history-season-groups="historySeasonGroups"
+        :history-season-key="historySeasonKey"
+        :all-history-season-targets-selected="allHistorySeasonTargetsSelected"
+        :history-season-partially-selected="historySeasonPartiallySelected"
+        :toggle-history-season-targets="toggleHistorySeasonTargets"
+        :history-season-expanded="historySeasonExpanded"
+        :toggle-history-season-expanded="toggleHistorySeasonExpanded"
+        :history-season-selected-count="historySeasonSelectedCount"
+        :history-selected-ids="historySelectedIds"
+        :toggle-history-target="toggleHistoryTarget"
+        :history-target-expanded="historyTargetExpanded"
+        :toggle-history-target-expanded="toggleHistoryTargetExpanded"
+        :compact-target-name="compactTargetName"
+        :is-target-action-disabled="isTargetActionDisabled"
+        :open-single-online-search="openSingleOnlineSearch"
+        :timeline-task-text="timelineTaskText"
+        :timeline-meta-items="timelineMetaItems"
+        :format-bytes="formatBytes"
+        :fix-history-subtitle-timeline="fixHistorySubtitleTimeline"
+        :is-stream-target="isStreamTarget"
+        :delete-subtitle="deleteSubtitle"
+        @open-auto-queue="autoQueueDialog = true"
+        @load-more-match-history="loadMoreMatchHistory"
+      />
     </section>
 
     <section v-else class="episode-stage">
@@ -1096,51 +930,13 @@ defineExpose({
       />
     </section>
 
-    <VDialog v-model="autoQueueDialog" max-width="760">
-      <VCard class="auto-queue-card" rounded="xl">
-        <VCardTitle class="dialog-title">
-          <div>
-            <span>入库自动字幕队列</span>
-            <p>{{ autoQueueSummaryText }}</p>
-          </div>
-          <div class="online-title-actions">
-            <VBtn
-              variant="tonal"
-              prepend-icon="mdi-refresh"
-              @click="loadAutoTransferQueue"
-            >
-              刷新
-            </VBtn>
-            <VBtn icon="mdi-close" variant="text" @click="autoQueueDialog = false" />
-          </div>
-        </VCardTitle>
-        <VDivider />
-        <VCardText>
-          <div class="auto-queue-rates">
-            <span
-              v-for="(rate, provider) in autoTransferQueue.rate_limits || {}"
-              :key="provider"
-            >
-              {{ provider }}：{{ rate.remaining }}/{{ rate.limit_per_minute }} 可用
-            </span>
-          </div>
-          <div v-if="autoQueueTasks.length" class="auto-queue-list">
-            <div
-              v-for="task in autoQueueTasks.slice().reverse().slice(0, 12)"
-              :key="task.id"
-              class="auto-queue-row"
-              :class="`auto-queue-${task.status}`"
-            >
-              <strong>{{ task.target_label || task.title || task.id }}</strong>
-              <span>{{ task.message || task.status }}<template v-if="task.next_run_at"> · 下次 {{ task.next_run_at }}</template></span>
-            </div>
-          </div>
-          <div v-else class="empty-state compact-empty">
-            当前没有入库自动字幕任务。
-          </div>
-        </VCardText>
-      </VCard>
-    </VDialog>
+    <AutoTransferQueueDialog
+      v-model="autoQueueDialog"
+      :auto-queue-summary-text="autoQueueSummaryText"
+      :auto-transfer-queue="autoTransferQueue"
+      :auto-queue-tasks="autoQueueTasks"
+      @load-auto-transfer-queue="loadAutoTransferQueue"
+    />
 
     <AiTaskDialog
       v-model="aiTaskDialog"
@@ -1503,224 +1299,6 @@ defineExpose({
   margin: 0;
   color: #687873;
   font-size: 13px;
-}
-
-.pager-row {
-  display: flex;
-  justify-content: center;
-  gap: 12px;
-  align-items: center;
-  padding: 4px 0 8px;
-  color: #687873;
-  font-size: 13px;
-}
-
-.global-history-list {
-  display: grid;
-  gap: 12px;
-}
-
-.auto-queue-card {
-  margin-bottom: 14px;
-  border: 1px solid rgba(192, 126, 42, 0.18);
-  background: linear-gradient(135deg, rgba(255, 246, 226, 0.92), rgba(255, 255, 255, 0.78));
-}
-
-.auto-queue-head,
-.auto-queue-rates,
-.auto-queue-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.auto-queue-rates {
-  justify-content: flex-start;
-  flex-wrap: wrap;
-  margin-top: 10px;
-  color: rgba(35, 42, 39, 0.62);
-  font-size: 0.82rem;
-}
-
-.auto-queue-list {
-  display: grid;
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.auto-queue-row {
-  border-radius: 14px;
-  padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.74);
-}
-
-.auto-queue-row span {
-  color: rgba(35, 42, 39, 0.62);
-  font-size: 0.82rem;
-}
-
-.auto-queue-failed {
-  border: 1px solid rgba(198, 58, 58, 0.24);
-}
-
-.auto-queue-in_progress,
-.auto-queue-pending {
-  border: 1px solid rgba(192, 126, 42, 0.24);
-}
-
-.global-history-card {
-  border: 1px solid rgba(91, 109, 100, 0.14);
-  border-radius: 22px;
-  overflow: hidden;
-  background: rgba(255, 255, 255, 0.76);
-}
-
-.global-history-head {
-  display: grid;
-  grid-template-columns: 56px minmax(0, 1fr) auto;
-  gap: 14px;
-  align-items: center;
-  width: 100%;
-  padding: 12px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  text-align: left;
-}
-
-.global-history-targets {
-  display: grid;
-  gap: 10px;
-  padding: 0 12px 12px;
-}
-
-.history-bulk-toolbar {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-  justify-content: space-between;
-  padding: 10px 12px;
-  border: 1px solid rgba(91, 109, 100, 0.12);
-  border-radius: 16px;
-  background: rgba(255, 255, 255, 0.58);
-}
-
-.history-bulk-copy {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  color: #53655f;
-  font-size: 12px;
-}
-
-.history-bulk-copy strong {
-  color: #263a33;
-  font-size: 13px;
-}
-
-.history-bulk-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  justify-content: flex-end;
-}
-
-.history-season-tree {
-  display: grid;
-  gap: 8px;
-}
-
-.history-season-node {
-  overflow: hidden;
-  border: 1px solid rgba(91, 109, 100, 0.13);
-  border-radius: 14px;
-  background: rgba(255, 255, 255, 0.62);
-}
-
-.history-season-row,
-.history-episode-row {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: center;
-  min-height: 46px;
-  padding: 6px 10px;
-}
-
-.history-season-toggle,
-.history-episode-toggle {
-  display: flex;
-  min-width: 0;
-  gap: 8px;
-  align-items: center;
-  border: 0;
-  background: transparent;
-  color: #30443f;
-  text-align: left;
-}
-
-.history-season-toggle strong,
-.history-episode-toggle .episode-title {
-  min-width: 0;
-  overflow: hidden;
-  font-weight: 900;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.history-season-toggle span,
-.history-episode-toggle small {
-  flex: 0 0 auto;
-  color: #6f7f79;
-  font-size: 12px;
-}
-
-.history-season-toggle em {
-  flex: 0 0 auto;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: rgba(255, 244, 218, 0.9);
-  color: #8a5f23;
-  font-size: 12px;
-  font-style: normal;
-  font-weight: 800;
-}
-
-.history-episode-list {
-  display: grid;
-  gap: 6px;
-  padding: 0 10px 10px 42px;
-}
-
-.history-episode-list.direct-targets {
-  padding: 8px 10px 10px;
-}
-
-.history-episode-node {
-  border-radius: 12px;
-  background: rgba(245, 241, 232, 0.52);
-}
-
-.history-subtitle-children {
-  display: grid;
-  gap: 8px;
-  padding: 0 10px 10px 42px;
-}
-
-.history-row.compact-row {
-  border-radius: 16px;
-  background: rgba(245, 241, 232, 0.58);
-}
-
-.history-row.selectable {
-  grid-template-columns: auto minmax(0, 1fr) auto;
-}
-
-.compact-subtitles {
-  margin-top: 8px;
 }
 
 .detail-card {
