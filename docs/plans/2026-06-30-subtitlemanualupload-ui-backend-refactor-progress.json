@@ -1,0 +1,516 @@
+{
+  "plan": "docs/plans/2026-06-30-subtitlemanualupload-ui-backend-refactor-phased-plan.md",
+  "status": {
+    "phase": "phase-2",
+    "task": "2.1",
+    "next_allowed_action": "Implement only task 2.1"
+  },
+  "execution_rules": {
+    "branch": "codex/subtitlemanualupload-ui-backend-refactor",
+    "smoke_check": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+    "frontend_build_check": "$env:PATH='C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin;' + $env:PATH; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\bin\\pnpm.cmd' build",
+    "frontend_build_cwd": "plugins.v2/subtitlemanualupload",
+    "inventory_check": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_init_inventory.py --details",
+    "commit_each_verified_task": true,
+    "no_commit_on_failed_verification": true,
+    "never_push_merge_or_amend": true,
+    "advance_after_verified_phase": true,
+    "no_user_confirmation_between_phases": true,
+    "only_flip_status_fields": true,
+    "do_not_commit_secrets_logs_zips_screenshots_or_local_private_config": true
+  },
+  "decision_log": [
+    {
+      "decision": "Use an L-level phased plan",
+      "reason": "The work spans Vue extraction, backend service boundaries, tests, browser verification and release readiness",
+      "status": "recorded"
+    },
+    {
+      "decision": "Extract frontend composables before extracting child components",
+      "reason": "The current AppPage has high shared state density, so logic boundaries must stabilize before moving scoped template and styles",
+      "status": "recorded"
+    },
+    {
+      "decision": "Preserve backend facade import paths during module splits",
+      "reason": "Existing tests and plugin services depend on current module paths",
+      "status": "recorded"
+    }
+  ],
+  "phases": [
+    {
+      "id": "phase-1",
+      "goal": "Establish regression gates for frontend DOM/style/API inventory and backend facade inventory",
+      "acceptance": [
+        "Frontend inventory script exits 0 and prints valid JSON with template/style hashes and endpoint inventory",
+        "Backend big-module inventory script exits 0 and prints valid JSON for auto_transfer.py, online_subtitles/common.py, target_resolver.py and timeline_fixer.py",
+        "Backend focused smoke exits 0",
+        "pnpm build exits 0 in plugins.v2/subtitlemanualupload",
+        "Browser baseline records current asset hashes, no plugin request failures and no plugin console runtime errors"
+      ],
+      "tasks": [
+        {
+          "id": "1.1",
+          "title": "Add frontend AppPage inventory script",
+          "status": "completed",
+          "verification": [
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_frontend_inventory.py --details",
+              "result": "passed",
+              "evidence": "exited 0 and printed valid JSON with line_count=5446, endpoint_count=25, template/style/script SHA256 hashes, defineExpose keys, visible text inventory and CSS class inventory"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile scripts/subtitlemanualupload_frontend_inventory.py tests/test_subtitlemanualupload_frontend_inventory.py",
+              "result": "passed",
+              "evidence": "script and test module compiled successfully"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_frontend_inventory.py -q",
+              "result": "passed",
+              "evidence": "2 passed in 0.15s"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "228 passed in 8.38s"
+            }
+          ],
+          "commit": "73ac516"
+        },
+        {
+          "id": "1.2",
+          "title": "Add backend big-module inventory script",
+          "status": "completed",
+          "verification": [
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_backend_inventory.py --details",
+              "result": "passed",
+              "evidence": "exited 0 and printed valid JSON for auto_transfer.py, online_subtitles/common.py, target_resolver.py and timeline_fixer.py"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile scripts/subtitlemanualupload_backend_inventory.py tests/test_subtitlemanualupload_backend_inventory.py",
+              "result": "passed",
+              "evidence": "script and test module compiled successfully"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_frontend_inventory.py tests/test_subtitlemanualupload_backend_inventory.py -q",
+              "result": "passed",
+              "evidence": "4 passed in 4.97s"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "228 passed in 8.87s"
+            }
+          ],
+          "commit": "a30d156"
+        },
+        {
+          "id": "1.3",
+          "title": "Record browser baseline protocol and evidence",
+          "status": "completed",
+          "verification": [
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile scripts/subtitlemanualupload_browser_baseline.py",
+              "result": "passed",
+              "evidence": "browser baseline script compiled successfully"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_browser_baseline.py --cdp http://127.0.0.1:39223",
+              "result": "passed",
+              "evidence": "visible Chrome/CDP baseline exited 0; installed remoteEntry.js and AppPage JS/CSS assets returned 200 and matched local dist SHA256; screenshots saved under ignored .tmp-test-data/subtitlemanualupload-ui-backend-refactor-1.3/"
+            },
+            {
+              "command": "Chrome CDP Network/Runtime observation during browser baseline",
+              "result": "passed",
+              "evidence": "plugin API statuses were 2xx for search, status, auto_transfer_queue, targets, ai_tasks, timeline_tasks, online_status, online_manual_links, online_search_provider, online_download_preview; no plugin request failures, no plugin console errors, runtime_exceptions_count=0"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_frontend_inventory.py --details",
+              "result": "passed",
+              "evidence": "frontend inventory exited 0 with template hash c294b143d5053c69467ace2f94292a728837b2607fb5a1a4f8ef4b52a3f0051a, style hash cfa12b27991adb643148def92aca7b86cf77c6265f8988e03ad5da6901cf520a and endpoint_count=25"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_backend_inventory.py --details",
+              "result": "passed",
+              "evidence": "backend inventory exited 0 with valid JSON for auto_transfer.py, online_subtitles/common.py, target_resolver.py and timeline_fixer.py"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "228 passed in 8.34s"
+            },
+            {
+              "command": "$env:PATH='C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin;' + $env:PATH; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\bin\\pnpm.cmd' build",
+              "result": "passed",
+              "evidence": "vite build exited 0 in plugins.v2/subtitlemanualupload; remoteEntry.js and AppPage assets generated successfully"
+            }
+          ],
+          "commit": "640e1f9"
+        }
+      ]
+    },
+    {
+      "id": "phase-2",
+      "goal": "Extract AppPage logic into composables while keeping template and scoped style hashes unchanged",
+      "acceptance": [
+        "AppPage template hash matches the Phase 1 baseline",
+        "AppPage scoped style hash matches the Phase 1 baseline",
+        "Endpoint inventory is unchanged",
+        "pnpm build exits 0",
+        "Browser smoke verifies entry, search, target detail, dialogs, AI status and history render without console runtime errors",
+        "Backend focused smoke exits 0"
+      ],
+      "tasks": [
+        {
+          "id": "2.1",
+          "title": "Extract API wrapper and pure frontend utilities",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "2.2",
+          "title": "Extract plugin status, media search and target selection composables",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "2.3",
+          "title": "Extract upload, online subtitle, AI task and timeline task composables",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "2.4",
+          "title": "Extract match history and auto-transfer queue composables",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "phase-3",
+      "goal": "Extract AppPage child components with CSS ownership and responsive browser guards",
+      "acceptance": [
+        "Endpoint inventory, visible text inventory and defineExpose keys remain unchanged",
+        "CSS selector inventory has no orphan selector and no renamed selector",
+        "pnpm build exits 0",
+        "Browser checks pass at 1440x1000, 768x1000 and 390x900",
+        "No destructive write/delete/restore/restart/submit-AI action is clicked during browser verification"
+      ],
+      "tasks": [
+        {
+          "id": "3.1",
+          "title": "Build style ownership map for AppPage selectors",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "3.2",
+          "title": "Extract read-only display components",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "3.3",
+          "title": "Extract upload, online subtitle and AI task dialogs",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "3.4",
+          "title": "Extract match history and auto-transfer queue panels",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "3.5",
+          "title": "Shrink AppPage shell and remove duplicated style fragments",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "phase-4",
+      "goal": "Split auto_transfer.py into queue, rate limit, processor, season cache and write strategy modules",
+      "acceptance": [
+        "AutoTransferService and AutoTransferCollaborators remain import-compatible from auto_transfer.py",
+        "All auto_transfer named tests in tests/test_subtitlemanualupload_cache.py exit 0",
+        "Backend focused smoke exits 0",
+        "Backend big-module inventory reports auto_transfer.py line count reduced and facade symbols preserved",
+        "Browser smoke verifies auto-transfer queue dialog and /auto_transfer_queue return 2xx"
+      ],
+      "tasks": [
+        {
+          "id": "4.1",
+          "title": "Extract task model, keys, queue snapshot and queue mutation",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "4.2",
+          "title": "Extract provider rate-limit state and wait policy",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "4.3",
+          "title": "Extract single-entry auto-transfer processor",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "4.4",
+          "title": "Extract season package cache and season package matching",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "4.5",
+          "title": "Extract write selection strategy",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "phase-5",
+      "goal": "Split online_subtitles/common.py into explicit model, client, keyword, language and matcher modules",
+      "acceptance": [
+        "tests/test_subtitlemanualupload_online.py exits 0",
+        "OpenSubtitles conflict, ASSRT mojibake, provider roots and proxy default targeted tests exit 0",
+        "Backend focused smoke exits 0",
+        "Internal provider/service imports use real modules instead of common.py where applicable",
+        "common.py remains import-compatible as a thin facade",
+        "Browser online subtitle search and preview happy path returns 2xx or a user-visible provider message without console errors"
+      ],
+      "tasks": [
+        {
+          "id": "5.1",
+          "title": "Extract online subtitle models and errors",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "5.2",
+          "title": "Extract page clients, direct downloader and network helpers",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "5.3",
+          "title": "Extract keyword builder and title alias utilities",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "5.4",
+          "title": "Extract language and format classification",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "5.5",
+          "title": "Extract relevance matcher and metadata conflict gates",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "5.6",
+          "title": "Migrate internal provider imports away from common.py",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "phase-6",
+      "goal": "Split target_resolver.py into normalizers, metadata, subtitle inventory, local catalog and resolver facade",
+      "acceptance": [
+        "Target resolver API and cache targeted tests exit 0",
+        "Subtitle inventory tests for external, embedded and STRM targets exit 0",
+        "Backend focused smoke exits 0",
+        "target_resolver.py becomes facade-sized while previous public symbols remain importable",
+        "Browser search and target detail render identical labels, paths, subtitle status and action availability"
+      ],
+      "tasks": [
+        {
+          "id": "6.1",
+          "title": "Extract pure normalizers and identity helpers",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "6.2",
+          "title": "Extract media metadata service",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "6.3",
+          "title": "Extract subtitle inventory",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "6.4",
+          "title": "Extract local media catalog",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "6.5",
+          "title": "Extract media target resolver facade",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "phase-7",
+      "goal": "Split timeline_fixer.py algorithm internals while preserving public fix_subtitle_timeline behavior",
+      "acceptance": [
+        "tests/test_timeline_fixer.py exits 0",
+        "Real media fixture test passes or is skipped only by its existing skip condition",
+        "Backend focused smoke exits 0",
+        "timeline_fixer.py remains the stable public import surface",
+        "Browser upload/online preview timeline status renders without console errors and without clicking write"
+      ],
+      "tasks": [
+        {
+          "id": "7.1",
+          "title": "Extract dependency and binary probing",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "7.2",
+          "title": "Extract VAD building and audio/subtitle IO",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "7.3",
+          "title": "Extract alignment and confidence scoring",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "7.4",
+          "title": "Extract cache manifest and result cache",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "7.5",
+          "title": "Keep timeline_fixer.py facade stable and remove dead internals",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "phase-8",
+      "goal": "Run final regression, true Chrome verification and release-readiness audit",
+      "acceptance": [
+        "Backend focused smoke exits 0",
+        "pnpm build exits 0",
+        "Inventory scripts exit 0 and show reduced file sizes with stable facades",
+        "True Chrome verification passes named non-destructive flows and viewports",
+        "Installed remoteEntry.js and built assets are proven fresh or the mismatch is recorded as a blocker",
+        "Generated zip, screenshots, logs and local artifacts are not committed",
+        "Version/history updates are made only when explicitly requested"
+      ],
+      "tasks": [
+        {
+          "id": "8.1",
+          "title": "Run backend, frontend and inventory verification",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "8.2",
+          "title": "Run true Chrome browser verification with cache control",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "8.3",
+          "title": "Run package readiness audit without committing generated artifacts",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        }
+      ]
+    }
+  ],
+  "turn_log": [
+    {
+      "task": "1.1",
+      "status": "completed",
+      "summary": "Added scripts/subtitlemanualupload_frontend_inventory.py and tests/test_subtitlemanualupload_frontend_inventory.py to inventory AppPage.vue script/template/style hashes, defineExpose keys, plugin API endpoints, visible static text and CSS class selectors before frontend extraction.",
+      "evidence": [
+        "frontend inventory CLI exited 0 with valid JSON",
+        "frontend inventory tests exited 0 with 2 passed",
+        "backend focused smoke exited 0 with 228 passed"
+      ]
+    },
+    {
+      "task": "1.2",
+      "status": "completed",
+      "summary": "Added scripts/subtitlemanualupload_backend_inventory.py and tests/test_subtitlemanualupload_backend_inventory.py to inventory backend big-module line counts, class/function counts, public exports, import references and facade symbols to preserve.",
+      "evidence": [
+        "backend inventory CLI exited 0 with valid JSON for four modules",
+        "frontend plus backend inventory tests exited 0 with 4 passed",
+        "backend focused smoke exited 0 with 228 passed"
+      ]
+    },
+    {
+      "task": "1.3",
+      "status": "completed",
+      "summary": "Added scripts/subtitlemanualupload_browser_baseline.py to capture the installed SubtitleManualUpload browser baseline through Chrome CDP, including asset hashes, non-destructive page flows, API status inventory, console/runtime checks and responsive screenshots.",
+      "evidence": [
+        "installed remoteEntry.js plus AppPage JS/CSS assets returned 200 and matched local dist SHA256; remoteEntry.js hash 161a2721a9d635e529318d24d97d1a3e19104ca4b1d2007ba80332ad29a00b75",
+        "entry, resource search for 百万英镑, target detail, online search, preview download and AI status rendered; online_download_preview returned 200 with preview_row_count=1",
+        "responsive screenshots at 1440x1000, 768x1000 and 390x900 showed plugin content under ignored .tmp-test-data/subtitlemanualupload-ui-backend-refactor-1.3/",
+        "no plugin request failures, no plugin console errors and runtime_exceptions_count=0",
+        "phase-1 acceptance satisfied; next task is phase-2 task 2.1"
+      ]
+    }
+  ],
+  "residual_risk": [
+    "The built-in Codex in-app browser runtime could not be invoked from PowerShell because browser-client reported it was not trusted, so task 1.3 evidence was captured through the existing authenticated Chrome/CDP profile without reading cookies or storage."
+  ]
+}
