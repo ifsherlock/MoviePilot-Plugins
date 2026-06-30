@@ -10,6 +10,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from .config_schema import normalize_auto_multi_subtitle_mode
 from .auto_transfer_queue import AutoTransferQueue
+from .auto_transfer_rate_limit import AutoTransferRateLimiter
 from .online_subtitle import build_search_keywords
 from .subtitle_language import (
     auto_subtitle_sort_key,
@@ -118,6 +119,7 @@ class AutoTransferService:
             ensure_worker=lambda: self.ensure_transfer_auto_worker(),
             rate_status=self.auto_transfer_rate_status,
         )
+        self._rate_limiter = AutoTransferRateLimiter(owner, time_module=self._time)
 
     def _callback(self, name: str, fallback_name: str) -> Callable[..., Any]:
         callback = getattr(self._collaborators, name)
@@ -284,53 +286,10 @@ class AutoTransferService:
         return self._queue.claim_next_batch()
 
     def auto_wait_online_rate_limit(self, providers: Iterable[str], task_ids: Optional[List[str]] = None) -> None:
-        owner = self._owner
-        provider_ids = sorted({owner._normalize_text(provider).lower() for provider in providers if owner._normalize_text(provider)})
-        if not provider_ids:
-            return
-        task_ids = task_ids or []
-        while True:
-            now = self._time.time()
-            wait_until = 0.0
-            with owner._transfer_auto_lock:
-                for provider_id in provider_ids:
-                    records = [item for item in owner._online_rate_records.get(provider_id, []) if now - item < 60]
-                    owner._online_rate_records[provider_id] = records
-                    if len(records) >= owner._online_rate_limit_per_minute:
-                        wait_until = max(wait_until, min(records) + 60)
-                if wait_until <= now:
-                    for provider_id in provider_ids:
-                        records = [item for item in owner._online_rate_records.get(provider_id, []) if now - item < 60]
-                        records.append(now)
-                        owner._online_rate_records[provider_id] = records
-                    for task_id in task_ids:
-                        task = owner._auto_transfer_tasks.get(task_id)
-                        if task and task.get("status") == "in_progress":
-                            task["next_run_ts"] = 0
-                            task["message"] = "入库自动字幕处理中"
-                    return
-                for task_id in task_ids:
-                    task = owner._auto_transfer_tasks.get(task_id)
-                    if task and task.get("status") == "in_progress":
-                        task["next_run_ts"] = wait_until
-                        task["message"] = f"等待字幕源限速窗口：{','.join(provider_ids)}"
-            self._time.sleep(max(0.5, min(wait_until - now, 5.0)))
+        self._rate_limiter.wait(providers, task_ids=task_ids)
 
     def auto_transfer_rate_status(self) -> Dict[str, Any]:
-        owner = self._owner
-        now = self._time.time()
-        status: Dict[str, Any] = {}
-        for provider_id in self.auto_search_providers():
-            records = [item for item in owner._online_rate_records.get(provider_id, []) if now - item < 60]
-            remaining = max(0, owner._online_rate_limit_per_minute - len(records))
-            reset_ts = min(records) + 60 if records else 0
-            status[provider_id] = {
-                "used": len(records),
-                "remaining": remaining,
-                "limit_per_minute": owner._online_rate_limit_per_minute,
-                "reset_at": owner._timestamp_iso(reset_ts),
-            }
-        return status
+        return self._rate_limiter.status(self.auto_search_providers())
 
     def auto_transfer_queue_summary(self) -> Dict[str, Any]:
         return self._queue.summary()

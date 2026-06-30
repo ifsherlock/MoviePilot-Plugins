@@ -3628,6 +3628,15 @@ def test_auto_transfer_rate_limit_is_tracked_per_provider(tmp_path):
     assert plugin._auto_transfer_tasks["t1"]["next_run_ts"] == 0
 
 
+def test_auto_transfer_rate_limit_rejects_malformed_provider_state(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._online_rate_records = {"assrt": "invalid"}
+
+    with pytest.raises(ValueError, match="assrt"):
+        plugin._auto_wait_online_rate_limit(["assrt"])
+
+
 def test_auto_transfer_skips_chinese_media_by_tmdb_language(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
