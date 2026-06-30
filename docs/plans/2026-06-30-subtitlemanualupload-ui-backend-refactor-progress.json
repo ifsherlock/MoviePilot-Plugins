@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-ui-backend-refactor-phased-plan.md",
   "status": {
     "phase": "phase-3",
-    "task": "3.4",
-    "next_allowed_action": "Implement only task 3.4"
+    "task": "3.5",
+    "next_allowed_action": "Implement only task 3.5"
   },
   "execution_rules": {
     "branch": "codex/subtitlemanualupload-ui-backend-refactor",
@@ -513,9 +513,65 @@
         {
           "id": "3.4",
           "title": "Extract match history and auto-transfer queue panels",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            {
+              "command": "git log --oneline -15",
+              "result": "passed",
+              "evidence": "latest completed work before task 3.4 was c7d5d04 / a037a5f for task 3.3, matching the progress ledger"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "228 passed in 8.08s after extracting the match history panel and auto-transfer queue dialog"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_frontend_inventory.py tests/test_subtitlemanualupload_style_ownership.py -q",
+              "result": "passed",
+              "evidence": "4 passed in 1.02s"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_frontend_inventory.py --details",
+              "result": "passed",
+              "evidence": "frontend inventory exited 0 with AppPage line_count=2433, endpoint_count=25, stable defineExpose keys, and AutoTransferQueueDialog.vue plus MatchHistoryPanel.vue included in component template/style inventory"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_style_ownership.py --summary",
+              "result": "passed",
+              "evidence": "style ownership summary exited 0 with selector_count=143 and unmapped_selectors=[]; .auto-queue-card owner=AutoTransferQueueDialog and .global-history-card owner=MatchHistoryPanel"
+            },
+            {
+              "command": "$env:PATH='C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin;' + $env:PATH; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\bin\\pnpm.cmd' build",
+              "result": "passed",
+              "evidence": "vite build exited 0 in plugins.v2/subtitlemanualupload with 49 modules transformed; generated remoteEntry.js, __federation_expose_AppPage-Dh_P89vY.js and __federation_expose_AppPage-iyuBqbBI.css"
+            },
+            {
+              "command": "rg -n \"pluginApi|createSubtitleManualUploadApi|fetch\\(|axios|\\.value\\.(search|targets|status|aiTasks|online|prepareUpload|applyUpload)\" plugins.v2/subtitlemanualupload/src/components/MatchHistoryPanel.vue plugins.v2/subtitlemanualupload/src/components/AutoTransferQueueDialog.vue",
+              "result": "passed",
+              "evidence": "no-direct-api-calls"
+            },
+            {
+              "command": "git diff --check -- plugins.v2/subtitlemanualupload/src plugins.v2/subtitlemanualupload/dist scripts/subtitlemanualupload_frontend_inventory.py scripts/subtitlemanualupload_style_ownership.py tests/test_subtitlemanualupload_frontend_inventory.py tests/test_subtitlemanualupload_style_ownership.py && git diff --cached --check",
+              "result": "passed",
+              "evidence": "diff checks exited 0; only expected LF/CRLF warnings were printed before staging"
+            },
+            {
+              "command": "ssh nas docker exec moviepilot-v2 sha256sum for installed SubtitleManualUpload dist assets",
+              "result": "passed",
+              "evidence": "test container assets matched the local build: remoteEntry.js 7d6524a993f05194996383692d93931855211efb3a8d2c61d609c82c0ec8d07e, __federation_expose_AppPage-Dh_P89vY.js d68a39c9c4efc0e17d357ca9ed0741ac85dd98f2f71933043e0b80e0ba58b6ec, __federation_expose_AppPage-iyuBqbBI.css 47011bfaa68590cca83feac02281be262cffaeaca13b2d1228a12d54d79dd6b6"
+            },
+            {
+              "command": "Codex in-app browser visible smoke on https://mp.jaysherlock.top:5443/#/plugin-app/SubtitleManualUpload/main",
+              "result": "passed",
+              "evidence": "in-app-browser-smoke.json recorded checks hasPage=true, hasHistoryTabText=true, historyPanelOk=true, queueEntryConsistent=true, queueDialogOk=true, freshAssetNamesObserved=true and noConsoleErrors=true; history tab rendered 20 .global-history-card items and one .pager-row; screenshot saved under ignored .tmp-test-data/subtitlemanualupload-ui-backend-refactor-3.4/"
+            },
+            {
+              "command": "Codex in-app browser auto-transfer queue state check",
+              "result": "passed",
+              "evidence": "current backend state had autoQueueEntryCount=0, so the queue dialog was not opened in browser; AutoTransferQueueDialog.vue was verified by inventory/style ownership, build, direct API scan and fresh asset hash match"
+            }
+          ],
+          "commit": "eb1ab7a"
         },
         {
           "id": "3.5",
@@ -884,6 +940,20 @@
         "AI dialog layout check showed close button remains inside the card and separated from action buttons: card right=1148, actions right=1080, close right=1132; screenshots saved under ignored .tmp-test-data/subtitlemanualupload-ui-backend-refactor-3.3/",
         "rg found no direct API calls in AiTaskDialog.vue, OnlineSubtitleDialog.vue or UploadDialog.vue",
         "next task is phase-3 task 3.4"
+      ]
+    },
+    {
+      "task": "3.4",
+      "status": "completed",
+      "summary": "Extracted the match history panel and auto-transfer queue dialog into child components. AppPage now passes the existing match history expansion, selection, delete, timeline and queue state/actions through props and emits while keeping the composables and plugin API calls in the coordinator layer.",
+      "evidence": [
+        "frontend inventory exited 0 with endpoint_count=25, AppPage line_count=2433, stable defineExpose keys, and MatchHistoryPanel.vue plus AutoTransferQueueDialog.vue included in component template/style inventory",
+        "style ownership summary exited 0 with selector_count=143 and unmapped_selectors=[]; ownership tests and frontend inventory tests passed with 4 passed in 1.02s",
+        "frontend build passed with 49 modules transformed and generated __federation_expose_AppPage-Dh_P89vY.js plus __federation_expose_AppPage-iyuBqbBI.css; backend focused smoke passed with 228 passed in 8.08s",
+        "test container assets matched the local build with remoteEntry.js 7d6524a993f05194996383692d93931855211efb3a8d2c61d609c82c0ec8d07e, AppPage JS d68a39c9c4efc0e17d357ca9ed0741ac85dd98f2f71933043e0b80e0ba58b6ec and AppPage CSS 47011bfaa68590cca83feac02281be262cffaeaca13b2d1228a12d54d79dd6b6",
+        "in-app browser visible smoke passed with hasPage=true, hasHistoryTabText=true, historyPanelOk=true, queueEntryConsistent=true, queueDialogOk=true, freshAssetNamesObserved=true and noConsoleErrors=true; history tab rendered 20 .global-history-card items and one .pager-row",
+        "rg found no direct API calls in MatchHistoryPanel.vue or AutoTransferQueueDialog.vue",
+        "next task is phase-3 task 3.5"
       ]
     }
   ],
