@@ -153,6 +153,17 @@ def find_rar_tool(
     return ""
 
 
+def find_lsar_tool(unar_tool_path: str) -> str:
+    unar_path = Path(unar_tool_path)
+    if unar_path.name.lower() != "unar":
+        return ""
+    sibling = unar_path.with_name("lsar")
+    if is_executable_file(sibling):
+        return str(sibling)
+    found = shutil.which("lsar")
+    return found or ""
+
+
 def find_sevenzip_tool(
     *,
     configured_tool_path: Any,
@@ -217,7 +228,7 @@ class ArchiveDependencyService:
 
     def prepare_rar_dependency(self) -> None:
         if self._rar_dependency_mode == "none":
-            self.set_dependency_status("skipped", "未启用 RAR 解压器自动处理")
+            self.set_dependency_status("skipped", "未启用 RAR 解压器自动处理，将只检测现有 unar")
             return
 
         if self.rar_tool():
@@ -227,7 +238,7 @@ class ArchiveDependencyService:
         if self._rar_dependency_mode == "mapped_binary":
             self.set_dependency_status(
                 "missing",
-                f"未检测到映射文件，请把宿主机 7zz 映射到容器 {self._rar_tool_path}",
+                f"未检测到映射文件，请把宿主机 unar 映射到容器 {self._rar_tool_path}",
             )
             self._log_info("[SubtitleManualUpload] RAR 映射模式未检测到工具 path=%s", self._rar_tool_path)
             return
@@ -242,16 +253,16 @@ class ArchiveDependencyService:
         self._log_info("[SubtitleManualUpload] 开始尝试在容器内安装 RAR 解压器")
         install_script = r"""
 set -eu
-if command -v unrar >/dev/null 2>&1 || command -v bsdtar >/dev/null 2>&1 || command -v 7z >/dev/null 2>&1 || command -v 7za >/dev/null 2>&1 || command -v 7zz >/dev/null 2>&1; then
+if command -v unar >/dev/null 2>&1; then
   exit 0
 fi
 if ! command -v apt-get >/dev/null 2>&1; then
-  echo "当前容器没有 apt-get，无法自动安装，请使用宿主机静态 7zz 映射" >&2
+  echo "当前容器没有 apt-get，无法自动安装，请使用宿主机 unar 映射" >&2
   exit 78
 fi
 export DEBIAN_FRONTEND=noninteractive
 apt-get update
-apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get install -y --no-install-recommends 7zip unrar-free libarchive-tools
+apt-get install -y --no-install-recommends unar
 """
         try:
             completed = self._subprocess.run(
@@ -287,7 +298,7 @@ apt-get install -y --no-install-recommends p7zip-full unrar-free || apt-get inst
             )
             return
 
-        self.set_dependency_status("failed", "安装命令结束，但仍未检测到 unrar、bsdtar、7z、7za 或 7zz")
+        self.set_dependency_status("failed", "安装命令结束，但仍未检测到 unar")
         self._log_warning("[SubtitleManualUpload] 容器内安装后仍未检测到 RAR 解压器")
 
     def rar_tool(self) -> str:
@@ -379,6 +390,24 @@ def list_rar_members(
     run_command: Callable[..., bytes],
 ) -> List[str]:
     tool_name = Path(tool_path).name.lower()
+    if tool_name == "unar":
+        lsar_path = find_lsar_tool(tool_path)
+        if not lsar_path:
+            raise ValueError("当前容器缺少 lsar，无法列出 RAR 压缩包内容")
+        output = run_command([lsar_path, "-json", str(archive_path)])
+        try:
+            payload = json.loads(decode_preview_bytes(output))
+        except Exception as exc:
+            raise ValueError("lsar 输出无法解析") from exc
+        contents = payload.get("lsarContents") if isinstance(payload, dict) else []
+        members = []
+        for item in contents or []:
+            if not isinstance(item, dict) or item.get("XADIsDirectory"):
+                continue
+            member = str(item.get("XADFileName") or "").strip()
+            if member:
+                members.append(member)
+        return members
     if tool_name == "unrar":
         output = run_command([tool_path, "lb", str(archive_path)])
         return [line.strip() for line in decode_preview_bytes(output).splitlines() if line.strip()]
@@ -406,6 +435,8 @@ def read_rar_member(
     run_command: Callable[..., bytes],
 ) -> bytes:
     tool_name = Path(tool_path).name.lower()
+    if tool_name == "unar":
+        return run_command([tool_path, "-quiet", "-no-directory", "-output-directory", "-", str(archive_path), member])
     if tool_name == "unrar":
         return run_command([tool_path, "p", "-inul", str(archive_path), member])
     if tool_name == "bsdtar":
@@ -484,6 +515,16 @@ def extract_rar_subtitle_files(
     logger_warning: Optional[WarningLogger] = None,
     resource_limits: ArchiveResourceLimits = DEFAULT_ARCHIVE_RESOURCE_LIMITS,
 ) -> List[Dict[str, Any]]:
+    tool_path = rar_tool_func()
+    if tool_path and Path(tool_path).name.lower() == "unar":
+        return extract_command_archive_subtitle_files_func(
+            source_name,
+            archive_path,
+            session_dir,
+            tool_path,
+            resource_limits=resource_limits,
+        )
+
     if rar_python_available_func():
         try:
             return extract_with_rarfile(
@@ -502,10 +543,9 @@ def extract_rar_subtitle_files(
                     exc,
                 )
 
-    tool_path = rar_tool_func()
     if not tool_path:
         package_note = f"已声明 Python 依赖 {rar_python_package}，但 RAR 内容解压仍需要外部解压程序"
-        raise ValueError(f"{package_note}；请在容器安装 unrar、bsdtar、7z、7za 或映射静态 7zz")
+        raise ValueError(f"{package_note}；请在容器安装或映射 /usr/bin/unar")
 
     return extract_command_archive_subtitle_files_func(
         source_name,

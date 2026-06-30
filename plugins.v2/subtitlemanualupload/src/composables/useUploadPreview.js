@@ -25,7 +25,6 @@ export function useUploadPreview({
   const applying = ref(false)
   const dragging = ref(false)
   const uploadDialog = ref(false)
-  const rarHelpDialog = ref(false)
   const uploadTitle = ref('')
   const uploadScopeTargets = ref([])
   const files = ref([])
@@ -33,8 +32,6 @@ export function useUploadPreview({
   const fileInputRef = ref(null)
   const fixTimeline = ref(false)
   const batchLanguageSuffix = ref('')
-  const copyMessage = ref('')
-  const copyError = ref('')
   const lastWritten = ref([])
 
   const uploadTargets = computed(() => uploadScopeTargets.value.filter(item => !isLocked(item.id) && item.writable !== false))
@@ -251,23 +248,6 @@ export function useUploadPreview({
     message.value = ''
   }
 
-  function openRarHelp() {
-    copyMessage.value = ''
-    copyError.value = ''
-    rarHelpDialog.value = true
-  }
-
-  async function copyHelpText(text, label) {
-    copyMessage.value = ''
-    copyError.value = ''
-    try {
-      await navigator.clipboard.writeText(text)
-      copyMessage.value = `${label} 已复制`
-    } catch (err) {
-      copyError.value = '复制失败，请手动选择命令文本复制'
-    }
-  }
-
   async function applyUpload() {
     if (!canApply.value || !preview.value) return
     const allowRiskyOffset = timelineEnabledForApply.value && timelineNeedsRiskyConfirm.value
@@ -309,7 +289,6 @@ export function useUploadPreview({
     applying,
     dragging,
     uploadDialog,
-    rarHelpDialog,
     uploadTitle,
     uploadScopeTargets,
     files,
@@ -317,8 +296,6 @@ export function useUploadPreview({
     fileInputRef,
     fixTimeline,
     batchLanguageSuffix,
-    copyMessage,
-    copyError,
     lastWritten,
     uploadTargets,
     batchUploadTargets,
@@ -353,8 +330,6 @@ export function useUploadPreview({
     togglePreviewItem,
     applyBatchLanguageSuffix,
     resetUploadPreview,
-    openRarHelp,
-    copyHelpText,
     applyUpload,
   }
 }

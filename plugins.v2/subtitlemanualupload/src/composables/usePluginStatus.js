@@ -14,7 +14,7 @@ const DEFAULT_STATUS = {
     zip: true,
     rar: false,
     rar_tool: '',
-    rar_tool_path: '/usr/local/bin/7z',
+    rar_tool_path: '/usr/bin/unar',
     rar_python: false,
     rar_python_package: 'rarfile',
     dependency_mode: 'none',

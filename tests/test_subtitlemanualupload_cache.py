@@ -5,6 +5,7 @@ from dataclasses import replace
 import inspect
 import io
 import importlib.util
+import json
 import re
 import shutil
 import sys
@@ -675,7 +676,7 @@ def test_archive_dependency_service_reports_mapped_binary_missing():
 
     service.prepare_rar_dependency()
 
-    assert statuses == [("missing", "未检测到映射文件，请把宿主机 7zz 映射到容器 /missing/7z")]
+    assert statuses == [("missing", "未检测到映射文件，请把宿主机 unar 映射到容器 /missing/7z")]
 
 
 def test_archive_subtitle_count_limit_rejects_zip_subtitles(tmp_path):
@@ -802,6 +803,84 @@ def test_archive_subtitle_extractor_uses_dependency_service_for_7z(tmp_path):
         ("list", "sample.7z", "7z"),
         ("read", "nested/Movie.zh.ass", "7z"),
     ]
+
+
+def test_unar_archive_commands_use_lsar_json_and_stdout_extract(tmp_path):
+    module, _, _ = load_plugin_module()
+    upload_session = plugin_submodule(module, "upload_session")
+    archive_path = tmp_path / "sample.rar"
+    archive_path.write_bytes(b"Rar!\x1a\x07\x01\x00")
+    unar_path = tmp_path / "unar"
+    lsar_path = tmp_path / "lsar"
+    unar_path.write_text("", encoding="utf-8")
+    lsar_path.write_text("", encoding="utf-8")
+    unar_path.chmod(0o755)
+    lsar_path.chmod(0o755)
+    calls = []
+
+    def run_command(args):
+        calls.append(tuple(str(item) for item in args))
+        if Path(args[0]).name == "lsar":
+            return json.dumps(
+                {
+                    "lsarContents": [
+                        {"XADFileName": "nested/Movie.zh.ass"},
+                        {"XADFileName": "nested", "XADIsDirectory": True},
+                        {"XADFileName": "notes.txt"},
+                    ]
+                }
+            ).encode("utf-8")
+        return b"subtitle"
+
+    members = upload_session.list_rar_members(
+        archive_path,
+        str(unar_path),
+        decode_preview_bytes=lambda raw: raw.decode("utf-8", errors="ignore"),
+        run_command=run_command,
+    )
+    member_bytes = upload_session.read_rar_member(
+        archive_path,
+        "nested/Movie.zh.ass",
+        str(unar_path),
+        run_command=run_command,
+    )
+
+    assert members == ["nested/Movie.zh.ass", "notes.txt"]
+    assert member_bytes == b"subtitle"
+    assert calls == [
+        (str(lsar_path), "-json", str(archive_path)),
+        (str(unar_path), "-quiet", "-no-directory", "-output-directory", "-", str(archive_path), "nested/Movie.zh.ass"),
+    ]
+
+
+def test_rar_extraction_prefers_unar_over_rarfile_when_available(tmp_path):
+    module, _, _ = load_plugin_module()
+    upload_session = plugin_submodule(module, "upload_session")
+    archive_path = tmp_path / "sample.rar"
+    archive_path.write_bytes(b"Rar!\x1a\x07\x01\x00")
+    calls = []
+
+    def extract_with_rarfile(*args, **kwargs):
+        calls.append("rarfile")
+        return []
+
+    def extract_with_command(source_name, archive_path, session_dir, tool_path, **kwargs):
+        calls.append(("command", Path(tool_path).name))
+        return [{"source_name": "Movie.zh.ass"}]
+
+    extracted = upload_session.extract_rar_subtitle_files(
+        "sample.rar",
+        archive_path,
+        tmp_path,
+        rar_python_available_func=lambda: True,
+        extract_with_rarfile=extract_with_rarfile,
+        rar_tool_func=lambda: "/usr/bin/unar",
+        extract_command_archive_subtitle_files_func=extract_with_command,
+        rar_python_package="rarfile",
+    )
+
+    assert extracted == [{"source_name": "Movie.zh.ass"}]
+    assert calls == [("command", "unar")]
 
 
 def test_prepare_upload_uses_upload_session_service(tmp_path):

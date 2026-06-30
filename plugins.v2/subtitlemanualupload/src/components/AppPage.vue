@@ -16,7 +16,6 @@ import MediaGrid from './MediaGrid.vue'
 import MatchHistoryPanel from './MatchHistoryPanel.vue'
 import MediaSearchPanel from './MediaSearchPanel.vue'
 import OnlineSubtitleDialog from './OnlineSubtitleDialog.vue'
-import RarHelpDialog from './RarHelpDialog.vue'
 import TargetDetailPanel from './TargetDetailPanel.vue'
 import UploadDialog from './UploadDialog.vue'
 import {
@@ -254,52 +253,11 @@ const {
   runSearch,
 })
 
-const rarContainerInstallCommand = `docker exec -it moviepilot bash
-apt-get update
-apt-get install -y p7zip-full unrar-free`
-const rarStaticInstallCommand = `curl -fsSLo /tmp/mp-7zz.sh \\
-  https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/plugins.v2/subtitlemanualupload/scripts/install-static-7zz.sh
-sudo bash /tmp/mp-7zz.sh
-
-# 脚本默认优先使用清华/中科大 Gentoo distfiles 镜像下载 7zz。
-# 如果自动检测不准，可直接指定 MoviePilot 宿主机映射目录：
-sudo env MP_HOST_ROOT=/volume1/docker/moviepilot bash /tmp/mp-7zz.sh
-
-# 如果需要指定下载源，可覆盖 DOWNLOAD_URL：
-sudo env DOWNLOAD_URL=https://example.com/7zz.tar.xz bash /tmp/mp-7zz.sh
-
-# 按脚本输出的实际路径添加到 MoviePilot volumes：
-volumes:
-  - /volume1/docker/moviepilot/tools/7zz:/usr/local/bin/7z:ro
-
-# 重建或重启 MoviePilot 容器后验证：
-docker exec moviepilot which 7z
-docker exec moviepilot 7z i`
-const rarHelpItems = [
-  {
-    badge: '方案一',
-    title: '容器内临时安装',
-    description: '适合临时测试，容器重建后可能失效。',
-    button: '复制命令',
-    copyLabel: '容器安装命令',
-    command: rarContainerInstallCommand,
-  },
-  {
-    badge: '方案二',
-    title: '静态 7zz 下载并映射',
-    description: '推荐长期使用。脚本默认优先使用清华/中科大镜像下载，会检测或提示输入 MoviePilot 宿主机目录，并设置 0755 执行权限。',
-    button: '复制方案',
-    copyLabel: '静态 7zz 安装映射方案',
-    command: rarStaticInstallCommand,
-  },
-]
-
 const {
   preparing,
   applying,
   dragging,
   uploadDialog,
-  rarHelpDialog,
   uploadTitle,
   uploadScopeTargets,
   files,
@@ -307,8 +265,6 @@ const {
   fileInputRef,
   fixTimeline,
   batchLanguageSuffix,
-  copyMessage,
-  copyError,
   lastWritten,
   uploadTargets,
   batchUploadTargets,
@@ -336,8 +292,6 @@ const {
   togglePreviewItem,
   applyBatchLanguageSuffix,
   resetUploadPreview,
-  openRarHelp,
-  copyHelpText,
   applyUpload,
 } = useUploadPreview({
   pluginApi,
@@ -1047,19 +1001,10 @@ defineExpose({
       @dragover="handleDragOver"
       @dragleave="handleDragLeave"
       @remove-file="removeFile"
-      @open-rar-help="openRarHelp"
       @apply-batch-language-suffix="applyBatchLanguageSuffix"
       @toggle-preview-item="togglePreviewItem"
       @update-preview-target="updatePreviewTarget"
       @update-language-suffix="updateLanguageSuffix"
-    />
-    <RarHelpDialog
-      v-model="rarHelpDialog"
-      :rar-help-items="rarHelpItems"
-      :copy-message="copyMessage"
-      :copy-error="copyError"
-      :rar-dependency-status="rarDependencyStatus"
-      @copy-help-text="copyHelpText"
     />
   </div>
 </template>

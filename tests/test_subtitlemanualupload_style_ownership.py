@@ -61,7 +61,6 @@ def test_style_ownership_covers_frontend_inventory_selectors():
     assert by_selector[".auto-queue-card"]["migration"] == "move-in-3.4"
     assert by_selector[".auto-queue-card"]["owner"] == "AutoTransferQueueDialog"
     assert by_selector[".global-history-card"]["owner"] == "MatchHistoryPanel"
-    assert by_selector[".rar-help-dialog"]["owner"] == "RarHelpDialog"
     assert ".detail-tabs" not in by_selector
     assert ownership["legacy_orphan_cleanup_selectors"] == []
     assert ownership["app_page_unused_selectors"] == []

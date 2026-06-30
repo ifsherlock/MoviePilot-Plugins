@@ -251,7 +251,7 @@ class SubtitleManualUpload(_PluginBase):
     _archive_exts = {".zip", ".rar", ".7z"}
     _rar_exts = {".rar"}
     _sevenzip_exts = {".7z"}
-    _rar_tools = ("unrar", "bsdtar", "7z", "7za", "7zz")
+    _rar_tools = ("unar", "/usr/bin/unar", "unrar", "bsdtar", "7z", "7za", "7zz")
     _sevenzip_tools = ("7z", "7za", "7zz", "bsdtar")
     _rar_python_package = "rarfile"
     _rar_dependency_modes = set(RAR_DEPENDENCY_MODES)

@@ -19,7 +19,7 @@ from .subtitle_language import (
 )
 
 
-DEFAULT_RAR_TOOL_PATH = "/usr/local/bin/7z"
+DEFAULT_RAR_TOOL_PATH = "/usr/bin/unar"
 DEFAULT_ONLINE_PROVIDER_IDS = ["assrt", "opensubtitles"]
 AVAILABLE_ONLINE_PROVIDER_IDS = ["subhd", "zimuku", "assrt", "opensubtitles"]
 MANUAL_ONLINE_PROVIDER_IDS = ["subhd", "zimuku", "assrt", "opensubtitles"]
@@ -561,7 +561,7 @@ def build_config_form(
                             "label": "RAR 解压器处理方式",
                             "items": [
                                 {"title": "不处理，仅检测", "value": "none"},
-                                {"title": "加载插件时尝试容器内安装", "value": "container_install"},
+                                {"title": "加载插件时尝试容器内安装 unar", "value": "container_install"},
                                 {"title": "使用宿主机映射文件", "value": "mapped_binary"},
                             ],
                         },

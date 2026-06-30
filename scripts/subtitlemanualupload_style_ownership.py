@@ -37,7 +37,6 @@ FRAGMENT_RANGES = [
     FragmentRange("ai-task-dialog-entry", "AiTaskDialog", "move-in-3.3", 941, 969),
     FragmentRange("online-subtitle-dialog-entry", "OnlineSubtitleDialog", "move-in-3.3", 971, 1016),
     FragmentRange("upload-preview-dialog-entry", "UploadDialog", "move-in-3.3", 1017, 1054),
-    FragmentRange("rar-help-dialog-entry", "RarHelpDialog", "move-in-3.5", 1055, 1064),
 ]
 
 COMPONENT_OWNERS = {
@@ -52,7 +51,6 @@ COMPONENT_OWNERS = {
     ),
     "plugins.v2/subtitlemanualupload/src/components/MatchHistoryPanel.vue": ("MatchHistoryPanel", "move-in-3.4"),
     "plugins.v2/subtitlemanualupload/src/components/OnlineSubtitleDialog.vue": ("OnlineSubtitleDialog", "move-in-3.3"),
-    "plugins.v2/subtitlemanualupload/src/components/RarHelpDialog.vue": ("RarHelpDialog", "move-in-3.5"),
     "plugins.v2/subtitlemanualupload/src/components/UploadDialog.vue": ("UploadDialog", "move-in-3.3"),
 }
 

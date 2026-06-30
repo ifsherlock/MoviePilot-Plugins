@@ -39,7 +39,6 @@ const emit = defineEmits([
   'dragover',
   'dragleave',
   'remove-file',
-  'open-rar-help',
   'apply-batch-language-suffix',
   'toggle-preview-item',
   'update-preview-target',
@@ -127,7 +126,7 @@ function onPickFiles(event) {
           <div class="dropzone-icon">SRT / ASS / ZIP / RAR / 7Z</div>
           <div class="dropzone-title">把字幕或压缩包拖到这里</div>
           <div class="dropzone-text">
-            支持字幕文件、ZIP、RAR、7Z；RAR/7Z 需容器内解压器支持。
+            支持字幕文件、ZIP、RAR、7Z；RAR 默认使用容器内 unar 解压。
           </div>
           <VBtn
             color="primary"
@@ -149,14 +148,11 @@ function onPickFiles(event) {
         </div>
 
         <div v-if="!hasPreviewItems" class="support-row">
-          <span :class="{ ok: rarPythonAvailable }">rarfile：{{ rarPythonAvailable ? '已安装' : '将由 requirements.txt 安装' }}</span>
-          <span :class="{ ok: rarAvailable }">RAR 解压器：{{ rarAvailable ? archiveStatus.rar_tool || '可用' : '未检测到' }}</span>
+          <span :class="{ ok: rarAvailable }">RAR 解压器：{{ rarAvailable ? archiveStatus.rar_tool || 'unar 可用' : '未检测到 unar' }}</span>
+          <span :class="{ ok: rarPythonAvailable }">rarfile：{{ rarPythonAvailable ? '已安装' : '备用依赖未安装' }}</span>
           <span :class="{ ok: rarDependencyStatus.state === 'ready' }">
             处理方式：{{ rarDependencyModeLabel(archiveStatus.dependency_mode) }}
           </span>
-          <button class="support-help" type="button" @click="$emit('open-rar-help')">
-            RAR 不能解压？查看处理方式
-          </button>
           <span :class="{ ok: timelineAvailable }">
             智能调轴：{{ timelineAvailable ? '可用' : `缺少 ${timelineMissing || '依赖'}` }}
           </span>
@@ -345,16 +341,6 @@ function onPickFiles(event) {
 .support-row span.ok {
   background: #e2f1e9;
   color: #2f7d62;
-}
-
-.support-help {
-  padding: 5px 10px;
-  border: 0;
-  border-radius: 999px;
-  background: #fff0d6;
-  color: #9a611d;
-  font-size: 12px;
-  font-weight: 800;
 }
 
 .file-list,
