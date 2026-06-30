@@ -318,6 +318,16 @@ def wait_for_api(client: CDPClient, endpoint: str, seconds: int = 60) -> bool:
     return False
 
 
+def cache_busted_url(url: str) -> str:
+    nonce = str(int(time.time() * 1000))
+    if "#" in url:
+        base, fragment = url.split("#", 1)
+        separator = "&" if "?" in base else "?"
+        return f"{base}{separator}_subtitle_smoke={nonce}#{fragment}"
+    separator = "&" if "?" in url else "?"
+    return f"{url}{separator}_subtitle_smoke={nonce}"
+
+
 def asset_hash_results(client: CDPClient) -> list[dict]:
     results = []
     for name, info in sorted(client.asset_responses.items()):
@@ -346,11 +356,13 @@ def run_baseline(cdp: str, out_dir: Path, url: str) -> dict:
     for method in ("Page.enable", "Runtime.enable", "Network.enable"):
         client.send(method)
     client.send("Network.setCacheDisabled", {"cacheDisabled": True})
+    client.send("Network.clearBrowserCache")
     client.set_viewport(1440, 1000)
+    run_url = cache_busted_url(url)
 
     client.send("Page.navigate", {"url": "about:blank"})
     client.pump(1)
-    client.send("Page.navigate", {"url": url})
+    client.send("Page.navigate", {"url": run_url})
     page_ready = wait_for(client, "document.body?.innerText.includes('字幕匹配')", seconds=30)
     if not page_ready:
         body_text = client.evaluate("document.body?.innerText || ''")
@@ -414,7 +426,7 @@ def run_baseline(cdp: str, out_dir: Path, url: str) -> dict:
     ai_text = client.evaluate("document.body?.innerText || ''")
     ai_shot = client.screenshot("ai-status-1440x1000.png")
 
-    client.send("Page.navigate", {"url": url})
+    client.send("Page.navigate", {"url": cache_busted_url(url)})
     wait_for(client, "document.body?.innerText.includes('字幕匹配')", seconds=30)
     client.pump(3)
     responsive = []

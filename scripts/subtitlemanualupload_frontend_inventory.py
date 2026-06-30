@@ -12,6 +12,7 @@ from typing import Any
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 APP_PAGE = REPO_ROOT / "plugins.v2" / "subtitlemanualupload" / "src" / "components" / "AppPage.vue"
+API_CLIENT = REPO_ROOT / "plugins.v2" / "subtitlemanualupload" / "src" / "api" / "subtitleManualUploadApi.js"
 
 
 SECTION_RE = re.compile(
@@ -23,6 +24,11 @@ DYNAMIC_CLASS_RE = re.compile(r"(?<![A-Za-z0-9_-]):class\s*=\s*(['\"])(?P<value>
 CSS_CLASS_RE = re.compile(r"(?<![A-Za-z0-9_-])\.([A-Za-z_][A-Za-z0-9_-]*)")
 PROP_API_RE = re.compile(
     r"props\.api\.(?P<method>get|post|put|delete|patch)\(\s*`(?P<endpoint>\$\{pluginBase\.value\}[^`]*)`",
+)
+PLUGIN_API_CALL_RE = re.compile(r"pluginApi\.value\.(?P<name>[A-Za-z0-9_]+)\(")
+API_METHOD_BLOCK_RE = re.compile(
+    r"(?P<name>[A-Za-z0-9_]+)\([^)]*\)\s*\{\s*return\s+(?P<method>get|post)\((?P<quote>['`])(?P<endpoint>/.*?)(?P=quote)",
+    re.DOTALL,
 )
 TEXT_ATTR_RE = re.compile(
     r"(?<![:A-Za-z0-9_-])(?P<name>label|title|placeholder|aria-label|alt)\s*=\s*(['\"])(?P<value>.*?)(?<!\\)\2",
@@ -213,7 +219,33 @@ def _endpoint_inventory(script: str) -> list[dict[str, Any]]:
                     "line": lineno,
                 }
             )
+        for match in PLUGIN_API_CALL_RE.finditer(line):
+            api_methods = _api_method_inventory()
+            item = api_methods.get(match.group("name"))
+            if item is None:
+                continue
+            endpoints.append(
+                {
+                    "method": item["method"],
+                    "endpoint": item["endpoint"],
+                    "raw": f"pluginApi.value.{match.group('name')}",
+                    "line": lineno,
+                }
+            )
     return endpoints
+
+
+def _api_method_inventory() -> dict[str, dict[str, str]]:
+    if not API_CLIENT.exists():
+        return {}
+    source = API_CLIENT.read_text(encoding="utf-8")
+    methods: dict[str, dict[str, str]] = {}
+    for match in API_METHOD_BLOCK_RE.finditer(source):
+        methods[match.group("name")] = {
+            "method": match.group("method").upper(),
+            "endpoint": match.group("endpoint"),
+        }
+    return methods
 
 
 def _class_inventory(template: str, style: str) -> dict[str, Any]:
