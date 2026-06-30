@@ -35,6 +35,7 @@ def test_style_ownership_cli_outputs_valid_selector_map():
     assert summary["target"] == "plugins.v2/subtitlemanualupload/src/components/AppPage.vue"
     assert summary["selector_count"] > 100
     assert summary["unmapped_selectors"] == []
+    assert summary["app_page_unused_selectors"] == []
     assert ".subtitle-upload-page" in summary["stay_in_app_page_selectors"]
     assert ".media-card" in summary["move_with_component_selectors"]
 
@@ -60,4 +61,7 @@ def test_style_ownership_covers_frontend_inventory_selectors():
     assert by_selector[".auto-queue-card"]["migration"] == "move-in-3.4"
     assert by_selector[".auto-queue-card"]["owner"] == "AutoTransferQueueDialog"
     assert by_selector[".global-history-card"]["owner"] == "MatchHistoryPanel"
-    assert by_selector[".detail-tabs"]["owner"] == "LegacyOrphanCleanup"
+    assert by_selector[".rar-help-dialog"]["owner"] == "RarHelpDialog"
+    assert ".detail-tabs" not in by_selector
+    assert ownership["legacy_orphan_cleanup_selectors"] == []
+    assert ownership["app_page_unused_selectors"] == []

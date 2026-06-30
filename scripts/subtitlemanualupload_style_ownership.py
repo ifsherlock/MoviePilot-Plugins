@@ -30,14 +30,14 @@ class FragmentRange:
 
 
 FRAGMENT_RANGES = [
-    FragmentRange("app-page-shell", "AppPage", "stay-in-app-page", 727, 767),
-    FragmentRange("match-history-entry", "MatchHistoryPanel", "move-in-3.4", 768, 1020),
-    FragmentRange("target-detail-panel-shell", "TargetDetailPanel", "move-in-3.2", 1021, 1098),
-    FragmentRange("auto-transfer-queue-dialog", "AutoTransferQueuePanel", "move-in-3.4", 1099, 1144),
-    FragmentRange("ai-task-dialog-entry", "AiTaskDialog", "move-in-3.3", 1145, 1174),
-    FragmentRange("online-subtitle-dialog-entry", "OnlineSubtitleDialog", "move-in-3.3", 1175, 1220),
-    FragmentRange("upload-preview-dialog-entry", "UploadDialog", "move-in-3.3", 1221, 1258),
-    FragmentRange("rar-help-dialog", "UploadDialog", "move-in-3.3", 1259, 1331),
+    FragmentRange("app-page-shell", "AppPage", "stay-in-app-page", 730, 768),
+    FragmentRange("media-stage-shell", "AppPage", "stay-in-app-page", 770, 853),
+    FragmentRange("target-detail-panel-entry", "TargetDetailPanel", "move-in-3.2", 855, 931),
+    FragmentRange("auto-transfer-queue-dialog-entry", "AutoTransferQueueDialog", "move-in-3.4", 933, 939),
+    FragmentRange("ai-task-dialog-entry", "AiTaskDialog", "move-in-3.3", 941, 969),
+    FragmentRange("online-subtitle-dialog-entry", "OnlineSubtitleDialog", "move-in-3.3", 971, 1016),
+    FragmentRange("upload-preview-dialog-entry", "UploadDialog", "move-in-3.3", 1017, 1054),
+    FragmentRange("rar-help-dialog-entry", "RarHelpDialog", "move-in-3.5", 1055, 1064),
 ]
 
 COMPONENT_OWNERS = {
@@ -52,6 +52,7 @@ COMPONENT_OWNERS = {
     ),
     "plugins.v2/subtitlemanualupload/src/components/MatchHistoryPanel.vue": ("MatchHistoryPanel", "move-in-3.4"),
     "plugins.v2/subtitlemanualupload/src/components/OnlineSubtitleDialog.vue": ("OnlineSubtitleDialog", "move-in-3.3"),
+    "plugins.v2/subtitlemanualupload/src/components/RarHelpDialog.vue": ("RarHelpDialog", "move-in-3.5"),
     "plugins.v2/subtitlemanualupload/src/components/UploadDialog.vue": ("UploadDialog", "move-in-3.3"),
 }
 
@@ -209,14 +210,29 @@ def _owner_from_usages(selector: str, usages: list[dict[str, Any]]) -> tuple[str
 def build_style_ownership() -> dict[str, Any]:
     source = APP_PAGE.read_text(encoding="utf-8")
     selector_lines: dict[str, list[int]] = {}
+    app_page_style_selectors: set[str] = set()
+    app_page_path = frontend_inventory._relative(APP_PAGE)
     for style_source in frontend_inventory._component_style_sources():
-        for selector, lines in _style_selector_lines(
+        source_selectors = _style_selector_lines(
             str(style_source["body"]),
             int(style_source["body_start_line"]),
-        ).items():
+        )
+        if str(style_source["path"]) == app_page_path:
+            app_page_style_selectors.update(source_selectors)
+        for selector, lines in source_selectors.items():
             selector_lines.setdefault(selector, []).extend(lines)
     selector_lines = {selector: sorted(set(lines)) for selector, lines in selector_lines.items()}
     template_usages = _template_class_usages(frontend_inventory._component_template_sources())
+    app_page_template_selectors = {
+        selector
+        for selector, usages in template_usages.items()
+        if any(usage["file"] == app_page_path for usage in usages)
+    }
+    app_page_unused_selectors = sorted(
+        f".{selector}"
+        for selector in app_page_style_selectors
+        if selector not in app_page_template_selectors and selector not in FRAMEWORK_DESCENDANT_SELECTORS
+    )
 
     selectors: list[dict[str, Any]] = []
     for selector in sorted(selector_lines):
@@ -244,6 +260,8 @@ def build_style_ownership() -> dict[str, Any]:
         "selector_count": len(selectors),
         "unmapped_selectors": unmapped,
         "legacy_orphan_cleanup_selectors": legacy_orphans,
+        "app_page_style_selectors": [f".{selector}" for selector in sorted(app_page_style_selectors)],
+        "app_page_unused_selectors": app_page_unused_selectors,
         "stay_in_app_page_selectors": staying,
         "shared_selectors": shared,
         "move_with_component_selectors": moving,
