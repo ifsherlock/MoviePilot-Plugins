@@ -2,6 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
 import { createSubtitleManualUploadApi } from '../api/subtitleManualUploadApi'
 import { aiRestartSourceOptions, useAiTasks } from '../composables/useAiTasks'
+import { useAutoTransferQueue } from '../composables/useAutoTransferQueue'
+import { useMatchHistory } from '../composables/useMatchHistory'
 import { useMediaSearch } from '../composables/useMediaSearch'
 import { useOnlineSubtitles } from '../composables/useOnlineSubtitles'
 import { usePluginStatus } from '../composables/usePluginStatus'
@@ -60,26 +62,6 @@ const pluginApi = computed(() => createSubtitleManualUploadApi(props.api, plugin
 const clearing = ref(false)
 const message = ref('')
 const error = ref('')
-const rootTab = ref('match')
-const matchHistoryLoading = ref(false)
-const matchHistoryItems = ref([])
-const matchHistoryPage = ref(1)
-const matchHistoryPageSize = 20
-const matchHistoryTotal = ref(0)
-const matchHistoryHasMore = ref(false)
-const expandedHistoryIds = ref([])
-const expandedHistorySeasonKeys = ref([])
-const expandedHistoryTargetIds = ref([])
-const selectedHistoryTargetIds = ref({})
-const autoTransferQueue = ref({
-  summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, skipped: 0, failed: 0 },
-  tasks: [],
-  rate_limits: {},
-  season_package_cache: [],
-})
-const autoQueueDialog = ref(false)
-let historyTimelineTimer = null
-let autoQueueTimer = null
 
 const {
   resolving,
@@ -158,6 +140,75 @@ const {
 })
 
 const {
+  autoTransferQueue,
+  autoQueueDialog,
+  autoQueueSummary,
+  autoQueueTasks,
+  autoQueueSummaryText,
+  applyAutoTransferSummary,
+  stopAutoQueuePolling,
+  loadAutoTransferQueue,
+} = useAutoTransferQueue({
+  pluginApi,
+  unwrapResponse,
+  errorMessage,
+  error,
+})
+
+const {
+  rootTab,
+  matchHistoryLoading,
+  matchHistoryItems,
+  matchHistoryTotal,
+  matchHistoryHasMore,
+  historyExpanded,
+  toggleHistoryExpanded,
+  historySeasonKey,
+  historySeasonExpanded,
+  toggleHistorySeasonExpanded,
+  historyTargetExpanded,
+  toggleHistoryTargetExpanded,
+  historyDeletableTargets,
+  historySelectedIds,
+  historySelectedCount,
+  allHistoryTargetsSelected,
+  toggleHistoryTarget,
+  toggleHistoryItemTargets,
+  historySeasonGroups,
+  historySeasonSelectedCount,
+  allHistorySeasonTargetsSelected,
+  historySeasonPartiallySelected,
+  toggleHistorySeasonTargets,
+  clearHistorySelectedSubtitles,
+  historySelectedTimelineTargets,
+  fixHistorySelectedTimeline,
+  fixHistorySubtitleTimeline,
+  stopHistoryTimelinePolling,
+  scheduleHistoryTimelinePolling,
+  submitRootSearch,
+  loadMatchHistory,
+  loadMoreMatchHistory,
+  setRootTab,
+  matchHistorySummary,
+} = useMatchHistory({
+  pluginApi,
+  unwrapResponse,
+  errorMessage,
+  error,
+  message,
+  clearing,
+  searchKeyword,
+  mediaType,
+  selectedMedia,
+  clearTargetState,
+  lockedTargetPayload,
+  isStreamTarget,
+  seasonLabel,
+  runSearch,
+  fixExistingTimeline: (...args) => fixExistingTimeline(...args),
+})
+
+const {
   status,
   loading,
   refreshing,
@@ -187,9 +238,7 @@ const {
   applyAiStatus(nextAiStatus) {
     aiTaskData.value = { ...aiTaskData.value, status: nextAiStatus }
   },
-  applyAutoTransferSummary(summary) {
-    autoTransferQueue.value = { ...autoTransferQueue.value, summary }
-  },
+  applyAutoTransferSummary,
   loadAutoTransferQueue,
   loadTargets,
   loadMatchHistory,
@@ -475,18 +524,6 @@ const {
   loadTimelineTasks,
 })
 
-const autoQueueSummary = computed(() => autoTransferQueue.value?.summary || status.value?.auto_transfer_queue || {})
-const autoQueueTasks = computed(() => autoTransferQueue.value?.tasks || [])
-const autoQueueActive = computed(() => Number(autoQueueSummary.value.active || 0) > 0)
-const autoQueueSummaryText = computed(() => {
-  const parts = []
-  if (autoQueueSummary.value.in_progress) parts.push(`${autoQueueSummary.value.in_progress} 个处理中`)
-  if (autoQueueSummary.value.pending) parts.push(`${autoQueueSummary.value.pending} 个排队`)
-  if (autoQueueSummary.value.failed) parts.push(`${autoQueueSummary.value.failed} 个失败`)
-  if (autoQueueSummary.value.completed) parts.push(`${autoQueueSummary.value.completed} 个完成`)
-  if (autoQueueSummary.value.skipped) parts.push(`${autoQueueSummary.value.skipped} 个跳过`)
-  return parts.length ? parts.join(' / ') : '暂无入库自动字幕任务'
-})
 const seasonCards = computed(() => {
   if (selectedMedia.value?.media_type !== 'tv') return []
   const total = seasons.value.reduce((sum, item) => sum + Number(item.local_count || 0), 0)
@@ -520,216 +557,6 @@ const matchHistoryRows = computed(() => visibleTargets.value.map(target => {
   }
 }))
 const selectedRestorableTargets = computed(() => selectedSubtitleTargets.value.filter(target => (target.subtitles || []).some(subtitle => subtitle.backup_available)))
-const matchHistorySummary = computed(() => {
-  if (!matchHistoryTotal.value) return '暂无已匹配字幕记录'
-  return `${matchHistoryTotal.value} 部资源有外挂字幕记录`
-})
-function historyExpanded(item) {
-  return expandedHistoryIds.value.includes(item?.id)
-}
-
-function toggleHistoryExpanded(item) {
-  const id = item?.id
-  if (!id) return
-  if (expandedHistoryIds.value.includes(id)) {
-    expandedHistoryIds.value = expandedHistoryIds.value.filter(value => value !== id)
-    return
-  }
-  expandedHistoryIds.value = [...expandedHistoryIds.value, id]
-}
-
-function historySeasonKey(item, group) {
-  return `${item?.id || 'history'}:${group?.key || group?.season || 'all'}`
-}
-
-function historySeasonExpanded(item, group) {
-  return expandedHistorySeasonKeys.value.includes(historySeasonKey(item, group))
-}
-
-function toggleHistorySeasonExpanded(item, group) {
-  const key = historySeasonKey(item, group)
-  if (expandedHistorySeasonKeys.value.includes(key)) {
-    expandedHistorySeasonKeys.value = expandedHistorySeasonKeys.value.filter(value => value !== key)
-    return
-  }
-  expandedHistorySeasonKeys.value = [...expandedHistorySeasonKeys.value, key]
-}
-
-function historyTargetExpanded(target) {
-  return expandedHistoryTargetIds.value.includes(target?.id)
-}
-
-function toggleHistoryTargetExpanded(target) {
-  const id = target?.id
-  if (!id) return
-  if (expandedHistoryTargetIds.value.includes(id)) {
-    expandedHistoryTargetIds.value = expandedHistoryTargetIds.value.filter(value => value !== id)
-    return
-  }
-  expandedHistoryTargetIds.value = [...expandedHistoryTargetIds.value, id]
-}
-
-function historyDeletableTargets(item) {
-  return (item?.targets || []).filter(target => target?.id && (target.subtitles || []).length)
-}
-
-function historySelectedIds(item) {
-  const id = item?.id
-  return id ? (selectedHistoryTargetIds.value[id] || []) : []
-}
-
-function historySelectedCount(item) {
-  const selected = new Set(historySelectedIds(item))
-  return historyDeletableTargets(item).filter(target => selected.has(target.id)).length
-}
-
-function allHistoryTargetsSelected(item) {
-  const targets = historyDeletableTargets(item)
-  return targets.length > 0 && historySelectedCount(item) === targets.length
-}
-
-function setHistorySelection(item, ids) {
-  const itemId = item?.id
-  if (!itemId) return
-  selectedHistoryTargetIds.value = {
-    ...selectedHistoryTargetIds.value,
-    [itemId]: Array.from(new Set(ids)),
-  }
-}
-
-function toggleHistoryTarget(item, targetId, checked) {
-  if (!item?.id || !targetId) return
-  const selected = new Set(historySelectedIds(item))
-  if (checked) {
-    selected.add(targetId)
-  } else {
-    selected.delete(targetId)
-  }
-  setHistorySelection(item, Array.from(selected))
-}
-
-function toggleHistoryItemTargets(item) {
-  if (allHistoryTargetsSelected(item)) {
-    setHistorySelection(item, [])
-    return
-  }
-  setHistorySelection(item, historyDeletableTargets(item).map(target => target.id))
-}
-
-function historySeasonGroups(item) {
-  const targets = historyDeletableTargets(item)
-  if (!targets.length) return []
-  if (item?.media_type !== 'tv') {
-    return [
-      {
-        key: 'movie',
-        direct: true,
-        targets,
-        subtitleCount: targets.reduce((sum, target) => sum + (target.subtitles || []).length, 0),
-      },
-    ]
-  }
-  const groups = new Map()
-  targets.forEach(target => {
-    const season = Number(target.season || 0)
-    if (!groups.has(season)) {
-      groups.set(season, {
-        key: `season-${season}`,
-        season,
-        label: seasonLabel(season),
-        targets: [],
-        subtitleCount: 0,
-      })
-    }
-    const group = groups.get(season)
-    group.targets.push(target)
-    group.subtitleCount += (target.subtitles || []).length
-  })
-  return Array.from(groups.values()).sort((a, b) => a.season - b.season)
-}
-
-function historySeasonSelectedCount(item, group) {
-  const selected = new Set(historySelectedIds(item))
-  return (group?.targets || []).filter(target => selected.has(target.id)).length
-}
-
-function allHistorySeasonTargetsSelected(item, group) {
-  const targets = group?.targets || []
-  if (!targets.length) return false
-  return historySeasonSelectedCount(item, group) === targets.length
-}
-
-function historySeasonPartiallySelected(item, group) {
-  const count = historySeasonSelectedCount(item, group)
-  return count > 0 && count < (group?.targets || []).length
-}
-
-function toggleHistorySeasonTargets(item, group, checked) {
-  if (!item?.id || !group?.targets?.length) return
-  const selected = new Set(historySelectedIds(item))
-  ;(group.targets || []).forEach(target => {
-    if (!target?.id) return
-    if (checked) {
-      selected.add(target.id)
-    } else {
-      selected.delete(target.id)
-    }
-  })
-  setHistorySelection(item, Array.from(selected))
-}
-
-async function clearHistoryTargets(item, targetsToClear, label) {
-  const targetIds = (targetsToClear || []).map(target => target.id).filter(Boolean)
-  if (!targetIds.length || clearing.value) return
-  const subtitleCount = (targetsToClear || []).reduce((sum, target) => sum + (target.subtitles || []).length, 0)
-  const confirmed = window.confirm(`确认删除${label}的 ${subtitleCount} 个外挂字幕？`)
-  if (!confirmed) return
-  clearing.value = true
-  error.value = ''
-  message.value = ''
-  try {
-    const response = await pluginApi.value.clearSubtitles({
-      target_ids: targetIds,
-      locked_target_ids: lockedTargetPayload(),
-    })
-    const data = unwrapResponse(response) || {}
-    message.value = response?.message || `已删除 ${data.count || 0} 个外挂字幕`
-    setHistorySelection(item, [])
-    await loadMatchHistory()
-  } catch (err) {
-    error.value = errorMessage(err, '批量删除外挂字幕失败')
-  } finally {
-    clearing.value = false
-  }
-}
-
-function clearHistorySelectedSubtitles(item) {
-  const selected = new Set(historySelectedIds(item))
-  const targetsToClear = historyDeletableTargets(item).filter(target => selected.has(target.id))
-  clearHistoryTargets(item, targetsToClear, '选中集数')
-}
-
-function historyTimelineTargets(item) {
-  return historyDeletableTargets(item).filter(target => !isStreamTarget(target) && (target.subtitles || []).length)
-}
-
-function historySelectedTimelineTargets(item) {
-  const selected = new Set(historySelectedIds(item))
-  return historyTimelineTargets(item).filter(target => selected.has(target.id))
-}
-
-function fixHistorySelectedTimeline(item) {
-  const targets = historySelectedTimelineTargets(item)
-  fixExistingTimeline(targets.map(target => ({ target_id: target.id })), '选中集数')
-}
-
-function fixHistorySubtitleTimeline(target, subtitle) {
-  if (!target || !subtitle) return
-  fixExistingTimeline(
-    [{ target_id: target.id, subtitle_path: subtitle.path }],
-    subtitle.name || '单个字幕',
-  )
-}
 
 function detailRowForTarget(target) {
   return matchHistoryRows.value.find(row => row.target.id === target?.id) || {
@@ -800,101 +627,6 @@ function confirmRiskyTimelineOffset(actionLabel = '智能调轴') {
     '超过 120s 的调轴结果通常意味着错集、错版本或整季包映射错误，不建议超过 120s。\n\n' +
     '确认后，本次请求才会允许 120-300s 的结果人工写入；自动入库不会放行高风险偏移。',
   )
-}
-
-function stopAutoQueuePolling() {
-  if (autoQueueTimer) {
-    clearTimeout(autoQueueTimer)
-    autoQueueTimer = null
-  }
-}
-
-function scheduleAutoQueuePolling() {
-  stopAutoQueuePolling()
-  if (!autoQueueActive.value) return
-  autoQueueTimer = setTimeout(() => {
-    loadAutoTransferQueue()
-  }, 3000)
-}
-
-async function loadAutoTransferQueue() {
-  try {
-    const response = await pluginApi.value.autoTransferQueue()
-    autoTransferQueue.value = unwrapResponse(response) || autoTransferQueue.value
-    scheduleAutoQueuePolling()
-  } catch (err) {
-    error.value = errorMessage(err, '读取入库自动字幕队列失败')
-  }
-}
-
-function stopHistoryTimelinePolling() {
-  if (historyTimelineTimer) {
-    clearTimeout(historyTimelineTimer)
-    historyTimelineTimer = null
-  }
-}
-
-function historyHasActiveTimelineTask() {
-  return matchHistoryItems.value.some(item => (item.targets || []).some(target => {
-    const task = target.timeline_task
-    return task && (task.active || ['pending', 'in_progress'].includes(task.status))
-  }))
-}
-
-function scheduleHistoryTimelinePolling() {
-  stopHistoryTimelinePolling()
-  if (!historyHasActiveTimelineTask()) return
-  historyTimelineTimer = setTimeout(async () => {
-    await loadMatchHistory()
-    scheduleHistoryTimelinePolling()
-  }, 3000)
-}
-
-function submitRootSearch() {
-  if (rootTab.value === 'history') {
-    loadMatchHistory()
-    return
-  }
-  runSearch()
-}
-
-async function loadMatchHistory(options = {}) {
-  const append = Boolean(options.append)
-  const page = append ? matchHistoryPage.value + 1 : 1
-  matchHistoryLoading.value = true
-  error.value = ''
-  try {
-    const params = new URLSearchParams()
-    params.set('keyword', searchKeyword.value.trim())
-    params.set('media_type', mediaType.value)
-    params.set('page', String(page))
-    params.set('page_size', String(matchHistoryPageSize))
-    const response = await pluginApi.value.matchHistory(params)
-    const data = unwrapResponse(response) || {}
-    matchHistoryPage.value = Number(data.page || page)
-    matchHistoryTotal.value = Number(data.total || 0)
-    matchHistoryHasMore.value = Boolean(data.has_more)
-    matchHistoryItems.value = append ? [...matchHistoryItems.value, ...(data.items || [])] : (data.items || [])
-    scheduleHistoryTimelinePolling()
-  } catch (err) {
-    error.value = errorMessage(err, '读取匹配历史失败')
-  } finally {
-    matchHistoryLoading.value = false
-  }
-}
-
-function loadMoreMatchHistory() {
-  if (matchHistoryLoading.value || !matchHistoryHasMore.value) return
-  loadMatchHistory({ append: true })
-}
-
-function setRootTab(tab) {
-  rootTab.value = tab
-  selectedMedia.value = null
-  clearTargetState()
-  if (tab === 'history' && !matchHistoryItems.value.length) {
-    loadMatchHistory()
-  }
 }
 
 function timelineResultForTarget(row) {
