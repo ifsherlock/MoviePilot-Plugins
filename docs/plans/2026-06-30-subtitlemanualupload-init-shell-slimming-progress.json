@@ -902,7 +902,7 @@
               "evidence": "mp-subtitle-8.2-entry.png, target-detail.png, external-subtitles.png, online-search.png, online-preview.png, ai-status.png, responsive-1440.png, responsive-768.png, responsive-390.png are ignored local test artifacts"
             }
           ],
-          "commit": null
+          "commit": "dc7ea0b24f7a01a9bd710bb67ca56776e80ba65c"
         },
         {
           "id": "8.3",
