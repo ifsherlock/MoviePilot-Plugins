@@ -141,6 +141,41 @@ def test_manual_providers_keep_subhd_zimuku_links_only():
     assert status["zimuku"]["manual_only"] is False
 
 
+def test_online_subtitle_models_are_reexported_from_common():
+    module = load_online_module()
+    models_module = sys.modules[module.OnlineSubtitleResult.__module__]
+    package_name = models_module.__name__.rsplit(".", 1)[0]
+    common_module = sys.modules[f"{package_name}.common"]
+
+    assert common_module.OnlineSubtitleResult is models_module.OnlineSubtitleResult
+    assert common_module.HtmlLink is models_module.HtmlLink
+    assert common_module.CaptchaRequiredError is models_module.CaptchaRequiredError
+
+    result = module.OnlineSubtitleResult(
+        provider="assrt",
+        result_id="1",
+        title="Example",
+        page_url="https://example.invalid/subtitles/1",
+        language="简体中文",
+    )
+    payload = result.to_dict()
+
+    assert payload["provider_label"] == "assrt"
+    assert payload["language_category"] == "chinese"
+    assert payload["result_years"] == []
+
+    error = module.CaptchaRequiredError("需要验证码", provider="subhd", verify_url="https://subhd.tv/captcha")
+
+    assert error.to_payload() == {
+        "captcha_required": True,
+        "provider": "subhd",
+        "message": "需要验证码",
+        "verify_url": "https://subhd.tv/captcha",
+        "captcha_image": "",
+        "captcha_hint": "需要验证码",
+    }
+
+
 def test_opensubtitles_search_all_prefers_tmdb_then_title_then_imdb():
     module = load_online_module()
     provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key")
