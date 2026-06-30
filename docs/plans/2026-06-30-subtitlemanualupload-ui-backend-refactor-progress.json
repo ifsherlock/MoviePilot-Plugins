@@ -1,9 +1,9 @@
 {
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-ui-backend-refactor-phased-plan.md",
   "status": {
-    "phase": "phase-3",
-    "task": "3.5",
-    "next_allowed_action": "Implement only task 3.5"
+    "phase": "phase-4",
+    "task": "4.1",
+    "next_allowed_action": "Implement only task 4.1"
   },
   "execution_rules": {
     "branch": "codex/subtitlemanualupload-ui-backend-refactor",
@@ -576,9 +576,65 @@
         {
           "id": "3.5",
           "title": "Shrink AppPage shell and remove duplicated style fragments",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            {
+              "command": "git log --oneline -15",
+              "result": "passed",
+              "evidence": "latest completed work before task 3.5 was 4c719dd / eb1ab7a for task 3.4, matching the progress ledger"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "228 passed in 9.08s after shrinking AppPage and extracting the RAR help dialog"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_frontend_inventory.py tests/test_subtitlemanualupload_style_ownership.py -q",
+              "result": "passed",
+              "evidence": "4 passed in 0.90s after RarHelpDialog ownership was added"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_frontend_inventory.py --details",
+              "result": "passed",
+              "evidence": "frontend inventory exited 0 with AppPage line_count=1132, endpoint_count=25, stable defineExpose keys, AppPage scoped style line_count=65, and RarHelpDialog.vue included in component template/style inventory"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_style_ownership.py --summary",
+              "result": "passed",
+              "evidence": "style ownership summary exited 0 with selector_count=136, unmapped_selectors=[], legacy_orphan_cleanup_selectors=[], app_page_unused_selectors=[], and app_page_style_selectors limited to .episode-stage, .hero-card, .media-stage, .root-tabs and .subtitle-upload-page"
+            },
+            {
+              "command": "$env:PATH='C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin;' + $env:PATH; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\bin\\pnpm.cmd' build",
+              "result": "passed",
+              "evidence": "vite build exited 0 in plugins.v2/subtitlemanualupload with 51 modules transformed; generated remoteEntry.js, __federation_expose_AppPage-BaU8W9e1.js and __federation_expose_AppPage-BUOOVs46.css"
+            },
+            {
+              "command": "rg -n \"pluginApi|createSubtitleManualUploadApi|fetch\\(|axios|\\.value\\.(search|targets|status|aiTasks|online|prepareUpload|applyUpload)\" plugins.v2/subtitlemanualupload/src/components/RarHelpDialog.vue plugins.v2/subtitlemanualupload/src/components/MatchHistoryPanel.vue plugins.v2/subtitlemanualupload/src/components/AutoTransferQueueDialog.vue",
+              "result": "passed",
+              "evidence": "no-direct-api-calls"
+            },
+            {
+              "command": "git diff --check -- plugins.v2/subtitlemanualupload/src plugins.v2/subtitlemanualupload/dist scripts/subtitlemanualupload_style_ownership.py tests/test_subtitlemanualupload_frontend_inventory.py tests/test_subtitlemanualupload_style_ownership.py && git diff --cached --check",
+              "result": "passed",
+              "evidence": "diff checks exited 0; only expected LF/CRLF warnings were printed before staging"
+            },
+            {
+              "command": "ssh nas docker exec moviepilot-v2 sha256sum for installed SubtitleManualUpload dist assets",
+              "result": "passed",
+              "evidence": "test container assets matched the local build: remoteEntry.js d983f1c694df5863d33c3eda19eab541f3cece1e41de7dac4e8fea0c005e9ccc, __federation_expose_AppPage-BaU8W9e1.js 89f26ebdb4141ecae893ded23f4b9e10e0028abc2f548cc093423ae80286cacc, __federation_expose_AppPage-BUOOVs46.css aec49325bb9008fbe29d13f849997ecce8ad8f6b8e82fde81609249f2daa5b44"
+            },
+            {
+              "command": "Codex in-app browser visible smoke on https://mp.jaysherlock.top:5443/#/plugin-app/SubtitleManualUpload/main",
+              "result": "passed",
+              "evidence": "in-app-browser-smoke-fresh.json recorded checks freshAssetsMatch=true, detailOk=true, uploadDialogOk=true, rarHelpDialogOk=true, appPageShellOk=true and noConsoleErrors=true; target detail rendered one .detail-card, two .episode-row items and one .ai-status-strip, and the RAR help dialog rendered command blocks and copy buttons"
+            },
+            {
+              "command": "Phase 3 acceptance review",
+              "result": "passed",
+              "evidence": "Phase 3 component extraction is complete: read-only panels, workflow dialogs, history/queue panels and RAR help dialog are child components; AppPage retains page composition, cross-flow orchestration and defineExpose; child components own migrated scoped styles; AppPage has no unused scoped selectors; browser evidence across tasks covers entry, search, target detail, dialogs, AI status and history with no console errors"
+            }
+          ],
+          "commit": "793700b"
         }
       ]
     },
@@ -954,6 +1010,20 @@
         "in-app browser visible smoke passed with hasPage=true, hasHistoryTabText=true, historyPanelOk=true, queueEntryConsistent=true, queueDialogOk=true, freshAssetNamesObserved=true and noConsoleErrors=true; history tab rendered 20 .global-history-card items and one .pager-row",
         "rg found no direct API calls in MatchHistoryPanel.vue or AutoTransferQueueDialog.vue",
         "next task is phase-3 task 3.5"
+      ]
+    },
+    {
+      "task": "3.5",
+      "status": "completed",
+      "summary": "Shrank AppPage.vue to the page shell/coordinator by extracting the RAR help dialog into RarHelpDialog.vue and removing duplicated or orphaned scoped style fragments from AppPage. Style ownership now proves AppPage keeps only shell selectors and has no unused scoped selectors.",
+      "evidence": [
+        "frontend inventory exited 0 with endpoint_count=25, AppPage line_count=1132, AppPage scoped style line_count=65, stable defineExpose keys, and RarHelpDialog.vue included in component template/style inventory",
+        "style ownership summary exited 0 with selector_count=136, unmapped_selectors=[], legacy_orphan_cleanup_selectors=[], app_page_unused_selectors=[], and only five AppPage style selectors retained",
+        "frontend inventory/style ownership tests passed with 4 passed in 0.90s; frontend build passed with 51 modules transformed and generated __federation_expose_AppPage-BaU8W9e1.js plus __federation_expose_AppPage-BUOOVs46.css",
+        "backend focused smoke passed with 228 passed in 9.08s",
+        "test container assets matched the local build with remoteEntry.js d983f1c694df5863d33c3eda19eab541f3cece1e41de7dac4e8fea0c005e9ccc, AppPage JS 89f26ebdb4141ecae893ded23f4b9e10e0028abc2f548cc093423ae80286cacc and AppPage CSS aec49325bb9008fbe29d13f849997ecce8ad8f6b8e82fde81609249f2daa5b44",
+        "in-app browser visible smoke passed with freshAssetsMatch=true, detailOk=true, uploadDialogOk=true, rarHelpDialogOk=true, appPageShellOk=true and noConsoleErrors=true; RAR help dialog rendered command blocks and copy buttons",
+        "phase-3 acceptance satisfied; next task is phase-4 task 4.1"
       ]
     }
   ],
