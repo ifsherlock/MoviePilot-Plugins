@@ -9,6 +9,7 @@ import shutil
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from .config_schema import normalize_auto_multi_subtitle_mode
+from .auto_transfer_queue import AutoTransferQueue
 from .online_subtitle import build_search_keywords
 from .subtitle_language import (
     auto_subtitle_sort_key,
@@ -111,6 +112,12 @@ class AutoTransferService:
         self._threading = self._collaborators.threading_module or threading_module
         self._time = self._collaborators.time_module or time_module
         self._http_exception = self._collaborators.http_exception or http_exception
+        self._queue = AutoTransferQueue(
+            owner,
+            time_module=self._time,
+            ensure_worker=lambda: self.ensure_transfer_auto_worker(),
+            rate_status=self.auto_transfer_rate_status,
+        )
 
     def _callback(self, name: str, fallback_name: str) -> Callable[..., Any]:
         callback = getattr(self._collaborators, name)
@@ -217,131 +224,25 @@ class AutoTransferService:
         return self._owner.get_data_path() / "auto_season_packages" / cache_key
 
     def stop(self) -> None:
-        owner = self._owner
-        with owner._transfer_auto_lock:
-            owner._auto_transfer_stopping = True
-            tasks = owner._auto_transfer_tasks or OrderedDict()
-            now = self._time.time()
-            for task in tasks.values():
-                if task.get("status") == "pending":
-                    task["status"] = "skipped"
-                    task["active"] = False
-                    task["next_run_ts"] = 0
-                    task["updated_ts"] = now
-                    task["message"] = "服务已停止，未继续处理新任务"
-            worker = owner._auto_transfer_worker
-            if not worker or not worker.is_alive():
-                owner._auto_transfer_worker = None
+        self._queue.stop()
 
     def transfer_auto_key(self, entry: Dict[str, Any]) -> str:
-        owner = self._owner
-        path = owner._normalize_text(entry.get("path") or entry.get("relative_path"))
-        if path:
-            normalized_path = path.lower().replace("\\", "/")
-            return owner._hash_text(f"{normalized_path}|{owner._entry_filesystem_signature(entry)}")
-        return owner._normalize_text(entry.get("id") or entry.get("target_label") or entry.get("filename"))
+        return self._queue.transfer_key(entry)
 
     def claim_transfer_auto_entries(self, entries: List[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], int]:
-        owner = self._owner
-        now = self._time.time()
-        claimed: List[Dict[str, Any]] = []
-        skipped = 0
-        with owner._transfer_auto_lock:
-            owner._transfer_auto_recent = {
-                key: ts
-                for key, ts in (owner._transfer_auto_recent or {}).items()
-                if now - ts < owner._transfer_auto_dedupe_seconds
-            }
-            for entry in entries:
-                key = self.transfer_auto_key(entry)
-                if not key:
-                    claimed.append(entry)
-                    continue
-                if key in owner._transfer_auto_recent:
-                    skipped += 1
-                    continue
-                owner._transfer_auto_recent[key] = now
-                claimed.append(entry)
-        return claimed, skipped
+        return self._queue.claim_entries(entries)
 
     def auto_transfer_entry_key(self, entry: Dict[str, Any]) -> str:
-        owner = self._owner
-        return self.transfer_auto_key(entry) or owner._hash_text(
-            f"{entry.get('id')}|{entry.get('target_label')}|{entry.get('filename')}"
-        )
+        return self._queue.entry_key(entry)
 
     def auto_transfer_group_key(self, entry: Dict[str, Any]) -> str:
-        owner = self._owner
-        if owner._normalize_text(entry.get("media_type")) != "tv":
-            return self.auto_transfer_entry_key(entry)
-        media_key = owner._normalize_text(entry.get("media_key") or entry.get("tmdb_id") or entry.get("title"))
-        season = owner._safe_int(entry.get("season"), 0)
-        if not media_key or not season:
-            return self.auto_transfer_entry_key(entry)
-        return f"tv|{media_key}|s{season:02d}"
+        return self._queue.group_key(entry)
 
     def trim_auto_transfer_tasks_locked(self) -> None:
-        owner = self._owner
-        tasks = owner._auto_transfer_tasks or OrderedDict()
-        while len(tasks) > owner._auto_transfer_queue_history_limit:
-            removable = next(
-                (
-                    key
-                    for key, task in tasks.items()
-                    if task.get("status") not in {"pending", "in_progress"}
-                ),
-                None,
-            )
-            if not removable:
-                break
-            tasks.pop(removable, None)
+        self._queue.trim_locked()
 
     def enqueue_transfer_auto_entries(self, entries: List[Dict[str, Any]]) -> Tuple[int, int]:
-        owner = self._owner
-        valid_entries = owner.services.local_media_catalog().filter_existing_local_entries(entries)
-        if getattr(owner, "_auto_transfer_stopping", False):
-            return 0, len(valid_entries) + (len(entries or []) - len(valid_entries))
-        claimed, skipped = self.claim_transfer_auto_entries(valid_entries)
-        if not claimed:
-            return 0, skipped + (len(entries or []) - len(valid_entries))
-        now = self._time.time()
-        queued = 0
-        with owner._transfer_auto_lock:
-            active_keys = {
-                owner._normalize_text(task.get("entry_key"))
-                for task in (owner._auto_transfer_tasks or OrderedDict()).values()
-                if task.get("status") in {"pending", "in_progress"}
-            }
-            for entry in claimed:
-                entry_key = self.auto_transfer_entry_key(entry)
-                if entry_key in active_keys:
-                    skipped += 1
-                    continue
-                task_id = owner._hash_text(f"auto-transfer|{entry_key}|{now}")[:16]
-                owner._auto_transfer_tasks[task_id] = {
-                    "id": task_id,
-                    "entry_key": entry_key,
-                    "group_key": self.auto_transfer_group_key(entry),
-                    "entry": entry,
-                    "target_label": entry.get("target_label") or entry.get("filename"),
-                    "media_type": entry.get("media_type"),
-                    "title": entry.get("title"),
-                    "season": owner._safe_int(entry.get("season"), 0),
-                    "episode": owner._safe_int(entry.get("episode"), 0),
-                    "status": "pending",
-                    "active": True,
-                    "message": "等待入库自动字幕处理",
-                    "created_ts": now,
-                    "updated_ts": now,
-                    "next_run_ts": 0,
-                    "result": {},
-                }
-                active_keys.add(entry_key)
-                queued += 1
-            self.trim_auto_transfer_tasks_locked()
-        if queued:
-            self.ensure_transfer_auto_worker()
-        return queued, skipped
+        return self._queue.enqueue_entries(entries)
 
     def handle_transfer_complete(self, event: Any) -> Dict[str, Any]:
         owner = self._owner
@@ -377,56 +278,10 @@ class AutoTransferService:
             worker.start()
 
     def update_auto_transfer_task(self, task_id: str, **updates: Any) -> None:
-        owner = self._owner
-        with owner._transfer_auto_lock:
-            task = (owner._auto_transfer_tasks or OrderedDict()).get(task_id)
-            if not task:
-                return
-            task.update(updates)
-            task["updated_ts"] = self._time.time()
-            if task.get("status") not in {"pending", "in_progress"}:
-                task["active"] = False
-                task["next_run_ts"] = 0
-            owner._auto_transfer_tasks.move_to_end(task_id)
-            owner._trim_auto_transfer_tasks_locked()
+        self._queue.update_task(task_id, **updates)
 
     def claim_next_auto_transfer_batch(self) -> Tuple[List[Dict[str, Any]], float]:
-        owner = self._owner
-        with owner._transfer_auto_lock:
-            if getattr(owner, "_auto_transfer_stopping", False):
-                owner._auto_transfer_worker = None
-                return [], -1
-            pending = [
-                task
-                for task in (owner._auto_transfer_tasks or OrderedDict()).values()
-                if task.get("status") == "pending"
-            ]
-            if not pending:
-                owner._auto_transfer_worker = None
-                return [], -1
-            first = pending[0]
-            group_key = owner._normalize_text(first.get("group_key"))
-            group = [task for task in pending if owner._normalize_text(task.get("group_key")) == group_key]
-            is_tv_group = owner._normalize_text(first.get("media_type")) == "tv"
-            if is_tv_group:
-                newest = max(float(task.get("created_ts") or 0) for task in group)
-                wait_seconds = owner._auto_transfer_queue_debounce_seconds - (self._time.time() - newest)
-                if wait_seconds > 0:
-                    for task in group:
-                        task["next_run_ts"] = self._time.time() + wait_seconds
-                        task["message"] = "等待同季入库事件聚合"
-                    return [], min(wait_seconds, 1.0)
-                batch = group
-            else:
-                batch = [first]
-            now = self._time.time()
-            for task in batch:
-                task["status"] = "in_progress"
-                task["active"] = True
-                task["message"] = "入库自动字幕处理中"
-                task["updated_ts"] = now
-                task["next_run_ts"] = 0
-            return [owner._json_clone(task) for task in batch], 0
+        return self._queue.claim_next_batch()
 
     def auto_wait_online_rate_limit(self, providers: Iterable[str], task_ids: Optional[List[str]] = None) -> None:
         owner = self._owner
@@ -478,64 +333,10 @@ class AutoTransferService:
         return status
 
     def auto_transfer_queue_summary(self) -> Dict[str, Any]:
-        owner = self._owner
-        with owner._transfer_auto_lock:
-            tasks = list((owner._auto_transfer_tasks or OrderedDict()).values())
-            worker_alive = bool(owner._auto_transfer_worker and owner._auto_transfer_worker.is_alive())
-        summary = {
-            "pending": 0,
-            "in_progress": 0,
-            "completed": 0,
-            "skipped": 0,
-            "failed": 0,
-            "active": 0,
-            "total": len(tasks),
-            "worker_alive": worker_alive,
-        }
-        for task in tasks:
-            status = task.get("status")
-            if status in summary:
-                summary[status] += 1
-            if task.get("active") or status in {"pending", "in_progress"}:
-                summary["active"] += 1
-        return summary
+        return self._queue.summary()
 
     def auto_transfer_queue_snapshot(self, limit: int = 100) -> Dict[str, Any]:
-        owner = self._owner
-        with owner._transfer_auto_lock:
-            tasks = [owner._json_clone(task) for task in (owner._auto_transfer_tasks or OrderedDict()).values()]
-        pending_position = 0
-        public_tasks: List[Dict[str, Any]] = []
-        for task in tasks[-limit:]:
-            if task.get("status") == "pending":
-                pending_position += 1
-                task["queue_position"] = pending_position
-            task.pop("entry", None)
-            task["created_at"] = owner._timestamp_iso(task.pop("created_ts", 0))
-            task["updated_at"] = owner._timestamp_iso(task.pop("updated_ts", 0))
-            task["next_run_at"] = owner._timestamp_iso(task.pop("next_run_ts", 0))
-            public_tasks.append(task)
-        cache_items = []
-        for item in list((owner._auto_season_package_cache or OrderedDict()).values())[-20:]:
-            cache_items.append(
-                {
-                    "key": item.get("key"),
-                    "title": item.get("title"),
-                    "season": item.get("season"),
-                    "subtitle_count": len(item.get("items") or []),
-                    "updated_at": item.get("updated_at", ""),
-                    "provider": item.get("provider", ""),
-                    "source_title": item.get("source_title", ""),
-                }
-            )
-        return {
-            "summary": self.auto_transfer_queue_summary(),
-            "tasks": public_tasks,
-            "rate_limits": self.auto_transfer_rate_status(),
-            "season_package_cache": cache_items,
-            "debounce_seconds": owner._auto_transfer_queue_debounce_seconds,
-            "rate_limit_scope": "provider",
-        }
+        return self._queue.snapshot(limit=limit)
 
     def auto_transfer_queue_loop(self) -> None:
         owner = self._owner
