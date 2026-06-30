@@ -10,9 +10,12 @@ import { usePluginStatus } from '../composables/usePluginStatus'
 import { useTargets } from '../composables/useTargets'
 import { useTimelineTasks } from '../composables/useTimelineTasks'
 import { useUploadPreview } from '../composables/useUploadPreview'
+import AiTaskDialog from './AiTaskDialog.vue'
 import MediaGrid from './MediaGrid.vue'
 import MediaSearchPanel from './MediaSearchPanel.vue'
+import OnlineSubtitleDialog from './OnlineSubtitleDialog.vue'
 import TargetDetailPanel from './TargetDetailPanel.vue'
+import UploadDialog from './UploadDialog.vue'
 import {
   buildOutputName,
   compactTargetName,
@@ -421,6 +424,7 @@ const {
   loadAiTasks,
   aiTaskForTarget,
   isAiTaskActive,
+  isAiTaskAllowed,
   aiTaskColor,
   aiTaskIcon,
   aiTaskTitle,
@@ -1138,568 +1142,120 @@ defineExpose({
       </VCard>
     </VDialog>
 
-    <VDialog v-model="aiTaskDialog" max-width="860">
-      <VCard class="ai-task-dialog" rounded="xl">
-        <VCardTitle class="dialog-title">
-          <div>
-            <span>{{ aiTaskDialogTarget ? `AI 状态 · ${compactTargetName(aiTaskDialogTarget)}` : 'AI 字幕生成状态' }}</span>
-            <p>{{ aiSummaryText }} · 状态来自 AI字幕生成(联动版) 队列</p>
-          </div>
-          <div class="online-title-actions">
-            <VBtn
-              v-if="aiDialogHasActiveTasks"
-              variant="tonal"
-              color="error"
-              prepend-icon="mdi-cancel"
-              :loading="aiCancelling"
-              @click="cancelDialogAiTasks"
-            >
-              取消任务
-            </VBtn>
-            <VBtn
-              v-if="aiAvailable && (aiTaskDialogTarget || aiDialogTasks.length)"
-              variant="tonal"
-              color="warning"
-              prepend-icon="mdi-robot-happy-outline"
-              :disabled="aiDialogHasExistingTasks && !aiDialogSelectedAllowedTasks.length"
-              :loading="aiSubmitting"
-              @click="regenerateDialogAiTasks"
-            >
-              {{ aiDialogActionText }}
-            </VBtn>
-            <VBtn
-              variant="tonal"
-              color="primary"
-              prepend-icon="mdi-refresh"
-              :loading="aiTasksLoading"
-              @click="loadAiTasks"
-            >
-              刷新
-            </VBtn>
-            <VBtn icon="mdi-close" variant="text" @click="aiTaskDialog = false" />
-          </div>
-        </VCardTitle>
-        <VDivider />
-        <VCardText>
-          <VAlert
-            v-if="!aiAvailable"
-            class="mb-4"
-            type="warning"
-            variant="tonal"
-            :text="aiStatus.message || '请先安装并启用 AI字幕生成(联动版)'"
-          />
-          <div v-if="aiAvailable && (aiTaskDialogTarget || aiDialogTasks.length)" class="ai-restart-options">
-            <VSelect
-              v-model="aiRestartSourcePolicy"
-              :items="aiRestartSourceOptions"
-              :label="aiDialogSourceLabel"
-              density="comfortable"
-              hint="改选来源会写入来源变体后缀，如 .aiasr.srt 或 .aiembedded.srt"
-              persistent-hint
-            />
-            <VSelect
-              v-if="aiRestartSourcePolicy === 'matched_external'"
-              v-model="aiRestartSubtitlePath"
-              class="mt-3"
-              :items="aiRestartSubtitleOptions"
-              label="外挂字幕"
-              density="comfortable"
-              :hint="aiRestartSubtitleOptions.length ? '使用这条外挂 SRT 作为 AI 翻译来源' : '当前集没有可用于 AI 翻译的 SRT 外挂字幕'"
-              persistent-hint
-              :disabled="!aiRestartSubtitleOptions.length"
-            />
-          </div>
-          <div v-if="aiDialogTasks.length" class="ai-task-list">
-            <div
-              v-for="task in aiDialogTasks"
-              :key="task.task_id"
-              class="ai-task-row"
-              :class="`ai-${task.status}`"
-            >
-              <VCheckbox
-                v-model="aiSelectedTaskIds"
-                :value="task.task_id"
-                density="compact"
-                hide-details
-                :disabled="!isAiTaskAllowed(task)"
-              />
-              <div class="ai-task-badge">
-                <VIcon :icon="aiTaskIconForTask(task)" />
-              </div>
-              <div class="ai-task-main">
-                <strong>{{ task.target_label || task.video_name }}</strong>
-                <span>{{ task.source_asset_name || task.source_subtitle_name ? `字幕源：${task.source_asset_name || task.source_subtitle_name}` : (task.resolved_source_label || task.source_policy_label || task.video_name) }}</span>
-                <span v-if="task.output_name">输出：{{ task.output_name }}</span>
-                <p>{{ aiStatusText(task) }}</p>
-              </div>
-              <div class="ai-task-time">
-                <VChip size="small" variant="tonal">{{ task.status_label }}</VChip>
-                <span>{{ task.complete_time || task.add_time || '-' }}</span>
-                <VBtn
-                  size="small"
-                  variant="tonal"
-                  color="warning"
-                  :disabled="!isAiTaskAllowed(task)"
-                  :loading="aiSubmitting"
-                  @click="regenerateSingleAiTask(task)"
-                >
-                  重新生成
-                </VBtn>
-              </div>
-            </div>
-          </div>
-          <div v-else class="empty-state">
-            当前资源还没有 AI 字幕生成任务。可以点击单集 AI 图标，或使用上方“AI 生成”批量提交。
-          </div>
-        </VCardText>
-      </VCard>
-    </VDialog>
+    <AiTaskDialog
+      v-model="aiTaskDialog"
+      v-model:ai-restart-source-policy="aiRestartSourcePolicy"
+      v-model:ai-restart-subtitle-path="aiRestartSubtitlePath"
+      v-model:ai-selected-task-ids="aiSelectedTaskIds"
+      :ai-task-dialog-target="aiTaskDialogTarget"
+      :compact-target-name="compactTargetName"
+      :ai-summary-text="aiSummaryText"
+      :ai-dialog-has-active-tasks="aiDialogHasActiveTasks"
+      :ai-cancelling="aiCancelling"
+      :ai-available="aiAvailable"
+      :ai-dialog-tasks="aiDialogTasks"
+      :ai-dialog-has-existing-tasks="aiDialogHasExistingTasks"
+      :ai-dialog-selected-allowed-tasks="aiDialogSelectedAllowedTasks"
+      :ai-submitting="aiSubmitting"
+      :ai-dialog-action-text="aiDialogActionText"
+      :ai-tasks-loading="aiTasksLoading"
+      :ai-status="aiStatus"
+      :ai-restart-source-options="aiRestartSourceOptions"
+      :ai-dialog-source-label="aiDialogSourceLabel"
+      :ai-restart-subtitle-options="aiRestartSubtitleOptions"
+      :is-ai-task-allowed="isAiTaskAllowed"
+      :ai-task-icon-for-task="aiTaskIconForTask"
+      :ai-status-text="aiStatusText"
+      @cancel-dialog-ai-tasks="cancelDialogAiTasks"
+      @regenerate-dialog-ai-tasks="regenerateDialogAiTasks"
+      @load-ai-tasks="loadAiTasks"
+      @regenerate-single-ai-task="regenerateSingleAiTask"
+    />
 
-    <VDialog :model-value="onlineDialog" max-width="1080" @update:model-value="updateOnlineDialog">
-      <VCard class="online-dialog" rounded="xl">
-        <VCardTitle class="dialog-title">
-          <div>
-            <span>{{ onlineTitle || '在线字幕搜索' }}</span>
-            <p>{{ onlineTargets.length }} 个目标 · 下载会进入匹配预览，提交 AI 翻译会直接进入 AI 状态</p>
-          </div>
-          <div class="online-title-actions">
-            <VBtn
-              color="success"
-              :disabled="!selectedOnlineResults.length || onlineAiDownloading"
-              :loading="onlinePreviewDownloading"
-              @click="downloadOnlinePreview"
-            >
-              下载并生成预览
-            </VBtn>
-            <VBtn
-              color="primary"
-              variant="tonal"
-              :disabled="!canSubmitOnlineAiTranslate || onlinePreviewDownloading"
-              :loading="onlineAiDownloading"
-              @click="requestOnlineAiTranslate"
-            >
-              提交 AI 翻译
-            </VBtn>
-            <VBtn
-              v-if="onlineDownloading"
-              color="warning"
-              variant="tonal"
-              @click="stopOnlineDownload"
-            >
-              停止等待
-            </VBtn>
-            <VBtn icon="mdi-close" variant="text" @click="closeOnlineDialog" />
-          </div>
-        </VCardTitle>
-        <VDivider />
-        <VCardActions class="online-search-actions">
-          <VTextField
-            v-model="onlineKeyword"
-            label="手动关键词（可选）"
-            placeholder="留空按资源名、季集号自动生成"
-            variant="outlined"
-            density="comfortable"
-            hide-details
-            clearable
-            @keyup.enter="runOnlineSearch"
-          />
-          <VSelect
-            v-model="onlineSelectedProviders"
-            :items="onlineProviderItems"
-            label="字幕源"
-            variant="outlined"
-            density="comfortable"
-            hide-details
-            multiple
-            chips
-          />
-          <VBtn
-            color="primary"
-            :disabled="!onlineSelectedProviders.length"
-            :loading="onlineSearching"
-            @click="runOnlineSearch"
-          >
-            搜索
-          </VBtn>
-          <VBtn
-            v-if="onlineSearching"
-            color="warning"
-            variant="tonal"
-            @click="stopOnlineSearch"
-          >
-            停止等待
-          </VBtn>
-        </VCardActions>
-        <VDivider />
-        <VCardText>
-          <VAlert
-            v-if="onlineError"
-            class="mb-4"
-            type="error"
-            variant="tonal"
-            :text="onlineError"
-          />
-          <VAlert
-            v-if="onlineMessages.length && !onlineMessagesCollapsed"
-            class="online-message-summary"
-            :type="onlineMessageType"
-            variant="tonal"
-            density="compact"
-          >
-            <div class="online-message-summary-content">
-              <span>{{ onlineMessageSummary }}</span>
-              <VBtn
-                size="x-small"
-                variant="text"
-                @click="onlineMessagesCollapsed = true"
-              >
-                收起
-              </VBtn>
-            </div>
-          </VAlert>
-
-          <div class="online-layout">
-            <section class="online-results-panel">
-              <div class="online-panel-head">
-                <div>
-                  <div class="section-kicker">自动搜索</div>
-                  <h3>选择要下载的字幕</h3>
-                </div>
-                <span>{{ hasOnlineResults ? `${filteredOnlineResults.length}/${onlineResults.length} 条结果` : '暂无结果' }}</span>
-              </div>
-              <VChipGroup
-                v-if="hasOnlineResults"
-                v-model="onlineLanguageFilter"
-                class="online-provider-filter"
-                mandatory
-                selected-class="online-provider-filter-active"
-              >
-                <VChip
-                  v-for="item in onlineLanguageFilterItems"
-                  :key="item.value"
-                  :value="item.value"
-                  size="small"
-                  variant="tonal"
-                >
-                  {{ item.title }}
-                </VChip>
-              </VChipGroup>
-              <VChipGroup
-                v-if="hasOnlineResults"
-                v-model="onlineProviderFilter"
-                class="online-provider-filter"
-                mandatory
-                selected-class="online-provider-filter-active"
-              >
-                <VChip
-                  v-for="item in onlineProviderFilterItems"
-                  :key="item.value"
-                  :value="item.value"
-                  size="small"
-                  variant="tonal"
-                >
-                  {{ item.title }}
-                </VChip>
-              </VChipGroup>
-              <div v-if="onlineProviderProgressItems.length" class="online-provider-progress">
-                <VChip
-                  v-for="item in onlineProviderProgressItems"
-                  :key="item.provider"
-                  size="small"
-                  variant="tonal"
-                  :color="providerProgressColor(item.state)"
-                >
-                  {{ providerName(item.provider) }} · {{ providerProgressText(item.state) }}
-                </VChip>
-              </div>
-
-              <div v-if="onlineSearching && !filteredOnlineResults.length" class="online-loading">
-                正在从 API 搜索字幕，先返回的结果会先显示...
-              </div>
-              <div v-if="filteredOnlineResults.length" class="online-result-list">
-                <div
-                  v-for="item in filteredOnlineResults"
-                  :key="onlineResultKey(item)"
-                  class="online-result-card"
-                  :class="{
-                    active: selectedOnlineResultIds.includes(onlineResultKey(item)),
-                    disabled: !isOnlineResultDownloadable(item),
-                  }"
-                >
-                  <VCheckbox
-                    :model-value="selectedOnlineResultIds.includes(onlineResultKey(item))"
-                    density="compact"
-                    hide-details
-                    :disabled="!isOnlineResultDownloadable(item)"
-                    @update:model-value="value => toggleOnlineResult(item, value)"
-                  />
-                  <div class="online-result-main">
-                    <div class="online-result-title">{{ item.title }}</div>
-                    <div class="online-result-meta">
-                      <span>{{ providerName(item.provider) }}</span>
-                      <span>{{ onlineResultMeta(item) }}</span>
-                      <span v-if="!isOnlineResultDownloadable(item)" class="online-manual-badge">
-                        需手动下载
-                      </span>
-                    </div>
-                    <p v-if="item.note">{{ item.note }}</p>
-                    <p v-if="item.match_detail" class="online-match-detail">{{ item.match_detail }}</p>
-                  </div>
-                  <a
-                    v-if="item.page_url"
-                    class="online-open-link"
-                    :href="item.page_url"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    查看
-                  </a>
-                </div>
-              </div>
-              <div v-else-if="!onlineSearching" class="empty-state">
-                {{ hasOnlineResults ? '当前平台筛选下没有结果。' : '没有可自动下载的字幕结果。可以换关键词重试，或使用右侧手动搜索。' }}
-              </div>
-            </section>
-
-            <aside class="manual-links-panel">
-              <div class="section-kicker">手动搜索</div>
-              <h3>跳转字幕站</h3>
-              <p>自动搜索失败或源站需要验证时，可打开链接下载字幕包后回到本页上传。</p>
-              <div
-                v-for="provider in onlineManualLinks"
-                :key="provider.provider"
-                class="manual-provider"
-              >
-                <div class="manual-provider-head">
-                  <strong>{{ provider.name }}</strong>
-                </div>
-                <div class="manual-keywords">
-                  <a
-                    v-for="link in provider.links"
-                    :key="`${provider.provider}-${link.keyword}`"
-                    :href="link.url"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                  >
-                    {{ link.keyword }}
-                  </a>
-                </div>
-              </div>
-            </aside>
-          </div>
-        </VCardText>
-      </VCard>
-    </VDialog>
-
-    <VDialog v-model="onlineAiConfirmDialog" max-width="520">
-      <VCard rounded="lg">
-        <VCardTitle class="dialog-title compact">
-          <div>
-            <span>确认提交 AI 翻译</span>
-            <p>{{ onlineAiConfirmText }}</p>
-          </div>
-        </VCardTitle>
-        <VDivider />
-        <VCardText>
-          <VAlert
-            type="warning"
-            variant="tonal"
-            text="确认后会在后台下载所选外语字幕，智能调轴后提交到 AI 字幕生成队列；不会打开匹配预览，误触后可在 AI 状态里取消。"
-          />
-        </VCardText>
-        <VCardActions class="justify-end">
-          <VBtn variant="text" @click="onlineAiConfirmDialog = false">取消</VBtn>
-          <VBtn
-            color="primary"
-            variant="flat"
-            :loading="onlineAiDownloading"
-            @click="confirmOnlineAiTranslate"
-          >
-            确认提交
-          </VBtn>
-        </VCardActions>
-      </VCard>
-    </VDialog>
-
-    <VDialog v-model="uploadDialog" max-width="980">
-      <VCard class="upload-dialog" rounded="xl">
-        <VCardTitle class="dialog-title">
-          <span>{{ uploadTitle || '上传字幕' }}</span>
-          <VBtn icon="mdi-close" variant="text" @click="uploadDialog = false" />
-        </VCardTitle>
-        <VDivider />
-        <VCardActions class="dialog-actions dialog-actions-top">
-          <VBtn variant="text" @click="uploadDialog = false">关闭</VBtn>
-          <VSpacer />
-          <VBtn
-            v-if="hasPreviewItems"
-            variant="tonal"
-            @click="resetUploadPreview"
-          >
-            重新选择文件
-          </VBtn>
-          <VTooltip
-            v-if="hasPreviewItems"
-            location="top"
-            :text="allSelectedPreviewTargetsAreStream ? 'STRM 资源暂不支持智能调轴。' : (hasSelectedPreviewStreamTargets ? 'STRM 目标会跳过调轴，其余本地视频正常处理。' : '写入前会分析视频/字幕时间轴，可能占用 CPU 并造成短暂卡顿。')"
-          >
-            <template #activator="{ props: tooltipProps }">
-              <div
-                v-bind="tooltipProps"
-                class="timeline-action"
-              >
-                <VSwitch
-                  v-model="fixTimeline"
-                  color="primary"
-                  density="comfortable"
-                  hide-details
-                  :disabled="!timelineAvailable || allSelectedPreviewTargetsAreStream"
-                  :label="hasSelectedPreviewStreamTargets ? '智能调轴（STRM跳过）' : '智能调轴'"
-                />
-              </div>
-            </template>
-          </VTooltip>
-          <VBtn
-            v-if="hasPreviewItems"
-            color="success"
-            :disabled="!canApply"
-            :loading="applying"
-            @click="applyUpload"
-          >
-            写入字幕
-          </VBtn>
-        </VCardActions>
-        <VDivider />
-        <VCardText>
-          <div
-            v-if="!hasPreviewItems"
-            class="dropzone"
-            :class="{ dragging }"
-            @drop="handleDrop"
-            @dragover="handleDragOver"
-            @dragleave="handleDragLeave"
-          >
-            <div class="dropzone-icon">SRT / ASS / ZIP / RAR / 7Z</div>
-            <div class="dropzone-title">把字幕或压缩包拖到这里</div>
-            <div class="dropzone-text">
-              支持字幕文件、ZIP、RAR、7Z；RAR/7Z 需容器内解压器支持。
-            </div>
-            <VBtn
-              color="primary"
-              variant="flat"
-              :disabled="preparing"
-              :loading="preparing"
-              @click="openFileDialog"
-            >
-              选择文件
-            </VBtn>
-            <input
-              ref="fileInputRef"
-              class="hidden-input"
-              type="file"
-              multiple
-              accept=".srt,.ass,.ssa,.sbv,.sub,.vtt,.webvtt,.zip,.rar,.7z"
-              @change="onPickFiles"
-            >
-          </div>
-
-          <div v-if="!hasPreviewItems" class="support-row">
-            <span :class="{ ok: rarPythonAvailable }">rarfile：{{ rarPythonAvailable ? '已安装' : '将由 requirements.txt 安装' }}</span>
-            <span :class="{ ok: rarAvailable }">RAR 解压器：{{ rarAvailable ? archiveStatus.rar_tool || '可用' : '未检测到' }}</span>
-            <span :class="{ ok: rarDependencyStatus.state === 'ready' }">
-              处理方式：{{ rarDependencyModeLabel(archiveStatus.dependency_mode) }}
-            </span>
-            <button class="support-help" type="button" @click="openRarHelp">
-              RAR 不能解压？查看处理方式
-            </button>
-            <span :class="{ ok: timelineAvailable }">
-              智能调轴：{{ timelineAvailable ? '可用' : `缺少 ${timelineMissing || '依赖'}` }}
-            </span>
-          </div>
-
-          <div v-if="!hasPreviewItems && files.length" class="file-list">
-            <div v-for="file in files" :key="`${file.name}-${file.size}`" class="file-row">
-              <div>
-                <strong>{{ file.name }}</strong>
-                <span>{{ formatBytes(file.size) }}</span>
-              </div>
-              <VBtn size="small" variant="text" color="error" @click="removeFile(file)">移除</VBtn>
-            </div>
-          </div>
-
-          <div v-if="hasPreviewItems" class="preview-list">
-            <div class="preview-head">
-              <div>
-                <div class="section-kicker">字幕匹配</div>
-                <h3>确认集数与输出文件名</h3>
-              </div>
-              <div class="batch-language">
-                <VTextField
-                  v-model="batchLanguageSuffix"
-                  label="批量语言后缀"
-                  placeholder="chi / eng / jpn"
-                  variant="outlined"
-                  density="comfortable"
-                  hide-details
-                  @keyup.enter="applyBatchLanguageSuffix"
-                />
-                <VBtn
-                  variant="tonal"
-                  color="primary"
-                  :disabled="!batchLanguageSuffix.trim()"
-                  @click="applyBatchLanguageSuffix"
-                >
-                  应用到全部
-                </VBtn>
-              </div>
-            </div>
-            <div
-              v-for="item in preview.items"
-              :key="item.upload_id"
-              class="preview-row"
-              :class="{ disabled: item.selected === false }"
-            >
-              <VCheckbox
-                :model-value="item.selected !== false"
-                density="compact"
-                hide-details
-                @update:model-value="value => togglePreviewItem(item.upload_id, value)"
-              />
-              <div class="subtitle-source">
-                <strong>{{ item.source_name }}</strong>
-                <span>
-                  {{ item.archive_name ? `来自 ${item.archive_name} · ` : '' }}{{ item.detected_label || '未知语言' }}
-                </span>
-              </div>
-              <VSelect
-                :model-value="item.target_id"
-                :items="targetSelectItems"
-                label="对应集数"
-                variant="outlined"
-                density="comfortable"
-                hide-details
-                :disabled="item.selected === false"
-                @update:model-value="value => updatePreviewTarget(item.upload_id, value)"
-              />
-              <VTextField
-                :model-value="item.language_suffix"
-                label="语言后缀"
-                variant="outlined"
-                density="comfortable"
-                hide-details
-                :disabled="item.selected === false"
-                @update:model-value="value => updateLanguageSuffix(item.upload_id, value)"
-              />
-              <div class="output-name">
-                <span>改名为</span>
-                <strong>{{ item.output_name || buildOutputName(uploadTargets.find(target => target.id === item.target_id), item) || '待选择目标' }}</strong>
-              </div>
-            </div>
-          </div>
-        </VCardText>
-      </VCard>
-    </VDialog>
-
+    <OnlineSubtitleDialog
+      v-model="onlineDialog"
+      v-model:online-keyword="onlineKeyword"
+      v-model:online-selected-providers="onlineSelectedProviders"
+      v-model:online-messages-collapsed="onlineMessagesCollapsed"
+      v-model:online-language-filter="onlineLanguageFilter"
+      v-model:online-provider-filter="onlineProviderFilter"
+      v-model:online-ai-confirm-dialog="onlineAiConfirmDialog"
+      :online-title="onlineTitle"
+      :online-targets="onlineTargets"
+      :selected-online-results="selectedOnlineResults"
+      :online-ai-downloading="onlineAiDownloading"
+      :online-preview-downloading="onlinePreviewDownloading"
+      :can-submit-online-ai-translate="canSubmitOnlineAiTranslate"
+      :online-downloading="onlineDownloading"
+      :online-provider-items="onlineProviderItems"
+      :online-searching="onlineSearching"
+      :online-error="onlineError"
+      :online-messages="onlineMessages"
+      :online-message-type="onlineMessageType"
+      :online-message-summary="onlineMessageSummary"
+      :has-online-results="hasOnlineResults"
+      :filtered-online-results="filteredOnlineResults"
+      :online-results="onlineResults"
+      :online-language-filter-items="onlineLanguageFilterItems"
+      :online-provider-filter-items="onlineProviderFilterItems"
+      :online-provider-progress-items="onlineProviderProgressItems"
+      :selected-online-result-ids="selectedOnlineResultIds"
+      :online-manual-links="onlineManualLinks"
+      :online-ai-confirm-text="onlineAiConfirmText"
+      :provider-progress-color="providerProgressColor"
+      :provider-progress-text="providerProgressText"
+      :provider-name="providerName"
+      :online-result-key="onlineResultKey"
+      :online-result-meta="onlineResultMeta"
+      :is-online-result-downloadable="isOnlineResultDownloadable"
+      @update:model-value="updateOnlineDialog"
+      @download-online-preview="downloadOnlinePreview"
+      @request-online-ai-translate="requestOnlineAiTranslate"
+      @stop-online-download="stopOnlineDownload"
+      @close-online-dialog="closeOnlineDialog"
+      @run-online-search="runOnlineSearch"
+      @stop-online-search="stopOnlineSearch"
+      @toggle-online-result="toggleOnlineResult"
+      @confirm-online-ai-translate="confirmOnlineAiTranslate"
+    />
+    <UploadDialog
+      v-model="uploadDialog"
+      v-model:fix-timeline="fixTimeline"
+      v-model:batch-language-suffix="batchLanguageSuffix"
+      :upload-title="uploadTitle"
+      :has-preview-items="hasPreviewItems"
+      :all-selected-preview-targets-are-stream="allSelectedPreviewTargetsAreStream"
+      :has-selected-preview-stream-targets="hasSelectedPreviewStreamTargets"
+      :timeline-available="timelineAvailable"
+      :applying="applying"
+      :can-apply="canApply"
+      :dragging="dragging"
+      :preparing="preparing"
+      :rar-python-available="rarPythonAvailable"
+      :rar-available="rarAvailable"
+      :archive-status="archiveStatus"
+      :rar-dependency-status="rarDependencyStatus"
+      :timeline-missing="timelineMissing"
+      :files="files"
+      :preview="preview"
+      :target-select-items="targetSelectItems"
+      :upload-targets="uploadTargets"
+      :format-bytes="formatBytes"
+      :rar-dependency-mode-label="rarDependencyModeLabel"
+      :build-output-name="buildOutputName"
+      @reset-upload-preview="resetUploadPreview"
+      @apply-upload="applyUpload"
+      @pick-files="onPickFiles"
+      @drop="handleDrop"
+      @dragover="handleDragOver"
+      @dragleave="handleDragLeave"
+      @remove-file="removeFile"
+      @open-rar-help="openRarHelp"
+      @apply-batch-language-suffix="applyBatchLanguageSuffix"
+      @toggle-preview-item="togglePreviewItem"
+      @update-preview-target="updatePreviewTarget"
+      @update-language-suffix="updateLanguageSuffix"
+    />
     <VDialog v-model="rarHelpDialog" max-width="820">
       <VCard class="rar-help-dialog" rounded="xl">
         <VCardTitle class="dialog-title">

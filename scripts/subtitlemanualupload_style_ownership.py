@@ -30,14 +30,14 @@ class FragmentRange:
 
 
 FRAGMENT_RANGES = [
-    FragmentRange("app-page-shell", "AppPage", "stay-in-app-page", 721, 763),
-    FragmentRange("match-history-entry", "MatchHistoryPanel", "move-in-3.4", 764, 1016),
-    FragmentRange("target-detail-panel-shell", "TargetDetailPanel", "move-in-3.2", 1017, 1090),
-    FragmentRange("auto-transfer-queue-dialog", "AutoTransferQueuePanel", "move-in-3.4", 1091, 1141),
-    FragmentRange("ai-task-dialog", "AiTaskDialog", "move-in-3.3", 1142, 1258),
-    FragmentRange("online-subtitle-dialog", "OnlineSubtitleDialog", "move-in-3.3", 1259, 1524),
-    FragmentRange("upload-preview-dialog", "UploadPreviewDialog", "move-in-3.3", 1525, 1703),
-    FragmentRange("rar-help-dialog", "UploadPreviewDialog", "move-in-3.3", 1704, 1775),
+    FragmentRange("app-page-shell", "AppPage", "stay-in-app-page", 727, 767),
+    FragmentRange("match-history-entry", "MatchHistoryPanel", "move-in-3.4", 768, 1020),
+    FragmentRange("target-detail-panel-shell", "TargetDetailPanel", "move-in-3.2", 1021, 1098),
+    FragmentRange("auto-transfer-queue-dialog", "AutoTransferQueuePanel", "move-in-3.4", 1099, 1144),
+    FragmentRange("ai-task-dialog-entry", "AiTaskDialog", "move-in-3.3", 1145, 1174),
+    FragmentRange("online-subtitle-dialog-entry", "OnlineSubtitleDialog", "move-in-3.3", 1175, 1220),
+    FragmentRange("upload-preview-dialog-entry", "UploadDialog", "move-in-3.3", 1221, 1258),
+    FragmentRange("rar-help-dialog", "UploadDialog", "move-in-3.3", 1259, 1331),
 ]
 
 COMPONENT_OWNERS = {
@@ -45,6 +45,9 @@ COMPONENT_OWNERS = {
     "plugins.v2/subtitlemanualupload/src/components/MediaGrid.vue": ("MediaGrid", "move-in-3.2"),
     "plugins.v2/subtitlemanualupload/src/components/TargetDetailPanel.vue": ("TargetDetailPanel", "move-in-3.2"),
     "plugins.v2/subtitlemanualupload/src/components/AiStatusStrip.vue": ("AiStatusStrip", "move-in-3.2"),
+    "plugins.v2/subtitlemanualupload/src/components/AiTaskDialog.vue": ("AiTaskDialog", "move-in-3.3"),
+    "plugins.v2/subtitlemanualupload/src/components/OnlineSubtitleDialog.vue": ("OnlineSubtitleDialog", "move-in-3.3"),
+    "plugins.v2/subtitlemanualupload/src/components/UploadDialog.vue": ("UploadDialog", "move-in-3.3"),
 }
 
 SHARED_SELECTORS = {
