@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-ui-backend-refactor-phased-plan.md",
   "status": {
     "phase": "phase-6",
-    "task": "6.4",
-    "next_allowed_action": "Implement only task 6.4"
+    "task": "6.5",
+    "next_allowed_action": "Implement only task 6.5"
   },
   "execution_rules": {
     "branch": "codex/subtitlemanualupload-ui-backend-refactor",
@@ -1361,9 +1361,55 @@
         {
           "id": "6.4",
           "title": "Extract local media catalog",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "pre-work smoke passed with 238 passed, 2 skipped in 9.48s; post-extraction smoke passed with 239 passed, 2 skipped in 9.74s"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile plugins.v2/subtitlemanualupload/local_media_catalog.py plugins.v2/subtitlemanualupload/target_resolver.py tests/test_subtitlemanualupload_cache.py",
+              "result": "passed",
+              "evidence": "local_media_catalog.py, target_resolver.py and cache tests compiled successfully"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py::test_local_media_catalog_is_reexported_from_target_resolver tests/test_subtitlemanualupload_cache.py::test_local_entries_cache_hits_until_forced_refresh tests/test_subtitlemanualupload_cache.py::test_local_entries_cache_persists_between_plugin_instances tests/test_subtitlemanualupload_cache.py::test_stale_persisted_cache_returns_before_background_refresh tests/test_subtitlemanualupload_cache.py::test_search_media_candidates_reuses_media_index_cache -q",
+              "result": "passed",
+              "evidence": "5 passed in 0.73s, covering facade re-export, local cache hits, persisted cache restore, stale-before-background-refresh and media index cache reuse"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py -q",
+              "result": "passed",
+              "evidence": "134 passed in 7.40s"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_backend_inventory.py --details",
+              "result": "passed",
+              "evidence": "backend inventory exited 0; target_resolver.py line_count=762, facade_symbol_count=29, imported_symbols_missing_from_module=[]"
+            },
+            {
+              "command": "git diff --check -- plugins.v2/subtitlemanualupload/local_media_catalog.py plugins.v2/subtitlemanualupload/target_resolver.py tests/test_subtitlemanualupload_cache.py",
+              "result": "passed",
+              "evidence": "diff check exited 0 for touched 6.4 files"
+            },
+            {
+              "command": "scp to NAS then docker cp into moviepilot-v2; docker exec moviepilot-v2 sha256sum and python -m py_compile target_resolver.py local_media_catalog.py",
+              "result": "passed",
+              "evidence": "container SHA256 matched local for target_resolver.py b1407d4108174f84edebc37a5dd64281f627e2517c3c62c9c8782f700f11db6a and local_media_catalog.py a3f8f4ce47207e2da73dd0ddfdb08df4d04e6d5f7c88aae1e4880f274e073ffc; py_compile exited 0"
+            },
+            {
+              "command": "docker exec -i moviepilot-v2 python import/behavior check",
+              "result": "passed",
+              "evidence": "stdout included 'LocalMediaCatalog LocalMediaCatalog True False [{'title': 'Movie'}] None', proving facade subclass and media index cache hit/loaded_at invalidation"
+            },
+            {
+              "command": "built-in browser visible DOM and console check on logged-in SubtitleManualUpload target detail",
+              "result": "passed",
+              "evidence": "page rendered 百万英镑 (1954), 2 个本地目标, /vol local paths, subtitle state and 单集上传 actions with loginHint=false and consoleErrors=[]"
+            }
+          ],
+          "commit": "d87bbeb"
         },
         {
           "id": "6.5",
@@ -1793,6 +1839,20 @@
         "moviepilot-v2 on NAS 10.10.10.189 hot-loaded target_resolver.py and subtitle_inventory.py; local/container SHA256 matched, py_compile passed, and container import printed SubtitleInventory SubtitleInventory True [] chi True 1",
         "built-in browser opened 百万英镑 (1954) and rendered target detail with /vol local paths, subtitle state and 单集上传 actions; loginHint=false and consoleErrors=[]",
         "next task is phase-6 task 6.4"
+      ]
+    },
+    {
+      "task": "6.4",
+      "status": "completed",
+      "summary": "Extracted persistent local cache, stale-before-background-refresh, background refresh state, media grouping, media index cache and target resolution cache lookup into local_media_catalog.py while target_resolver.py keeps a compatible LocalMediaCatalog facade.",
+      "evidence": [
+        "source commit d87bbeb created local_media_catalog.py, reduced target_resolver.py local catalog ownership and added a regression covering facade subclassing, stale cache return and media index loaded_at invalidation",
+        "directed local catalog tests passed with 5 passed in 0.73s; full cache tests passed with 134 passed in 7.40s",
+        "backend focused smoke passed after extraction with 239 passed, 2 skipped in 9.74s",
+        "backend inventory showed target_resolver.py line_count=762, facade_symbol_count=29 and imported_symbols_missing_from_module=[]",
+        "moviepilot-v2 on NAS 10.10.10.189 hot-loaded target_resolver.py and local_media_catalog.py; local/container SHA256 matched, py_compile passed, and container import printed LocalMediaCatalog LocalMediaCatalog True plus media-index hit then invalidation evidence",
+        "built-in browser rendered 百万英镑 (1954) target detail with 2 个本地目标, /vol local paths, subtitle state and 单集上传 actions; loginHint=false and consoleErrors=[]",
+        "next task is phase-6 task 6.5"
       ]
     }
   ],
