@@ -360,6 +360,43 @@ def test_local_media_catalog_is_reexported_from_target_resolver(tmp_path):
     assert catalog.media_index_cache_get(key, entries) is None
 
 
+def test_media_target_resolver_is_reexported_from_target_resolver(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    target_resolver = plugin_submodule(module, "target_resolver")
+    media_target_resolver = plugin_submodule(module, "media_target_resolver")
+
+    assert issubclass(target_resolver.MediaTargetResolver, media_target_resolver.MediaTargetResolver)
+    assert isinstance(plugin.services.target_resolver(), media_target_resolver.MediaTargetResolver)
+
+    video = tmp_path / "Movie.mkv"
+    video.write_text("video", encoding="utf-8")
+    subtitle = tmp_path / "Movie.chi.srt"
+    subtitle.write_text("1\n00:00:01,000 --> 00:00:02,000\n你好\n", encoding="utf-8")
+    target = plugin.services.target_resolver().target_from_entry(
+        {
+            "id": "m1",
+            "path": str(video),
+            "target_label": "Movie.mkv",
+            "basename": "Movie",
+            "media_type": "movie",
+            "title": "Movie",
+            "year": "2024",
+            "library_name": "MoviePilot 媒体库",
+            "relative_path": "Movie.mkv",
+            "storage": "local",
+            "writable": True,
+        }
+    )
+
+    assert target["label"] == "Movie.mkv"
+    assert target["path"] == str(video)
+    assert target["is_stream"] is False
+    assert target["has_subtitle"] is True
+    assert target["subtitle_count"] == 1
+    assert target["subtitles"][0]["language_suffix"] == "chi"
+
+
 def remember_targets(plugin, module, entries):
     target_resolver = plugin_submodule(module, "target_resolver")
     runtime_helpers = plugin_submodule(module, "runtime_helpers")
