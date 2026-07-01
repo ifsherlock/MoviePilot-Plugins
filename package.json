@@ -46,6 +46,7 @@
         "author_url": "https://github.com/ifsherlock",
         "level": 1,
         "system_version": ">=2.13.5",
+        "release": true,
         "history": {
             "v0.1.74": "主入口瘦身为 MoviePilot 插件壳，移除剩余动态辅助安装并补充真实浏览器验收",
             "v0.1.73": "移除兼容层和动态兼容安装，服务装配改为显式模块并清理旧私有入口测试",
