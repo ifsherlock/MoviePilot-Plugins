@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-ui-backend-refactor-phased-plan.md",
   "status": {
     "phase": "phase-6",
-    "task": "6.3",
-    "next_allowed_action": "Implement only task 6.3"
+    "task": "6.4",
+    "next_allowed_action": "Implement only task 6.4"
   },
   "execution_rules": {
     "branch": "codex/subtitlemanualupload-ui-backend-refactor",
@@ -1313,9 +1313,50 @@
         {
           "id": "6.3",
           "title": "Extract subtitle inventory",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "pre-work smoke passed with 237 passed, 2 skipped in 8.80s; post-extraction smoke passed with 238 passed, 2 skipped in 10.03s"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile plugins.v2/subtitlemanualupload/subtitle_inventory.py plugins.v2/subtitlemanualupload/target_resolver.py tests/test_subtitlemanualupload_cache.py",
+              "result": "passed",
+              "evidence": "subtitle_inventory.py, target_resolver.py and cache tests compiled successfully"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py::test_subtitle_inventory_is_reexported_from_target_resolver tests/test_subtitlemanualupload_cache.py::test_target_has_chinese_subtitle_checks_external_and_embedded_tracks tests/test_subtitlemanualupload_cache.py::test_auto_transfer_skips_before_search_when_video_has_embedded_chinese_subtitle tests/test_subtitlemanualupload_cache.py::test_auto_transfer_ai_source_only_skips_embedded_chinese_before_ai tests/test_subtitlemanualupload_cache.py::test_auto_transfer_embedded_regional_chinese_language_tag_skips tests/test_subtitlemanualupload_cache.py::test_auto_transfer_existing_chinese_subtitle_skips_all_strategies -q",
+              "result": "passed",
+              "evidence": "6 passed in 0.71s, covering facade re-export, external subtitles, embedded subtitles, STRM skip, cache reuse and Chinese-subtitle auto-transfer skips"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py -q",
+              "result": "passed",
+              "evidence": "133 passed in 7.13s"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_backend_inventory.py --details",
+              "result": "passed",
+              "evidence": "backend inventory exited 0; target_resolver.py line_count=1176, facade_symbol_count=29, imported_symbols_missing_from_module=[]"
+            },
+            {
+              "command": "scp to NAS then docker cp into moviepilot-v2; docker exec moviepilot-v2 sha256sum and python -m py_compile target_resolver.py subtitle_inventory.py",
+              "result": "passed",
+              "evidence": "container SHA256 matched local for target_resolver.py cff8c186a8d8e16185b07846411f354c930cff6e57f3ac468ac942fbefed74d9 and subtitle_inventory.py 14e6898f38f50fd579f34fa543bc40dcd559b5362e686c73be602a67c21d5bec; py_compile exited 0"
+            },
+            {
+              "command": "docker exec -i moviepilot-v2 python import/behavior check",
+              "result": "passed",
+              "evidence": "stdout included 'SubtitleInventory SubtitleInventory True [] chi True 1', proving facade subclass, STRM skip, Chinese embedded suffix and probe cache reuse"
+            },
+            {
+              "command": "built-in browser visible DOM and console check on logged-in SubtitleManualUpload page after opening 百万英镑 (1954)",
+              "result": "passed",
+              "evidence": "title count was 1; page rendered 百万英镑 (1954), /vol local paths, subtitle state and 单集上传 actions with loginHint=false and consoleErrors=[]"
+            }
+          ],
+          "commit": "3e4327e"
         },
         {
           "id": "6.4",
@@ -1738,6 +1779,20 @@
         "moviepilot-v2 on NAS 10.10.10.189 hot-loaded target_resolver.py and media_metadata.py; local/container SHA256 matched, py_compile passed, and container import printed MediaMetadataService MediaMetadataService The Wandering Earth plus TMDB original_language=zh-hans evidence",
         "built-in browser visible DOM rendered 百万英镑 (1954) target detail, /vol local paths and 单集上传 actions with loginHint=false and consoleErrors=[]; /targets network recapture timed out in browser-control and is retained as phase-6 residual risk",
         "next task is phase-6 task 6.3"
+      ]
+    },
+    {
+      "task": "6.3",
+      "status": "completed",
+      "summary": "Extracted external subtitle enumeration, embedded subtitle probing, language suffix detection, backup path reporting, STRM skip detection and embedded probe cache behavior into subtitle_inventory.py while target_resolver.py keeps a compatible SubtitleInventory facade.",
+      "evidence": [
+        "source commit 3e4327e created subtitle_inventory.py, reduced target_resolver.py subtitle inventory ownership and added a regression covering facade subclassing, external subtitles, STRM skip and embedded probe cache reuse",
+        "directed subtitle inventory tests passed with 6 passed in 0.71s; full cache tests passed with 133 passed in 7.13s",
+        "backend focused smoke passed after extraction with 238 passed, 2 skipped in 10.03s",
+        "backend inventory showed target_resolver.py line_count=1176, facade_symbol_count=29 and imported_symbols_missing_from_module=[]",
+        "moviepilot-v2 on NAS 10.10.10.189 hot-loaded target_resolver.py and subtitle_inventory.py; local/container SHA256 matched, py_compile passed, and container import printed SubtitleInventory SubtitleInventory True [] chi True 1",
+        "built-in browser opened 百万英镑 (1954) and rendered target detail with /vol local paths, subtitle state and 单集上传 actions; loginHint=false and consoleErrors=[]",
+        "next task is phase-6 task 6.4"
       ]
     }
   ],
