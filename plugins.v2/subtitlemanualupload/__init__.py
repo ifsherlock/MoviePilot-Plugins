@@ -66,7 +66,7 @@ from .online_subtitle import (
     check_online_rate_limit,
     extract_title_aliases,
 )
-from .config_schema import (
+from .config.config_schema import (
     AUTO_MULTI_SUBTITLE_MODES,
     AUTO_TRANSFER_SUBTITLE_STRATEGIES,
     AUTO_TRANSFER_SUBTITLE_STRATEGY_ALIASES,
@@ -92,7 +92,7 @@ from .config_schema import (
     normalize_timeline_min_offset,
     normalize_timeline_vad_mode,
 )
-from .config_runtime import (
+from .config.config_runtime import (
     apply_runtime_config,
     build_save_config_payload,
     reset_runtime_state,

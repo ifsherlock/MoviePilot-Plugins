@@ -4420,7 +4420,7 @@ def test_auto_transfer_legacy_ai_first_maps_to_ai_source_only(tmp_path):
 
 def test_auto_transfer_legacy_strategy_aliases_are_migrated():
     module, _, _ = load_plugin_module()
-    config_schema = plugin_submodule(module, "config_schema")
+    config_schema = plugin_submodule(module, "config.config_schema")
     aliases = {
         "search_first": "online_then_ai_source",
         "search_only": "online_source_only",
@@ -4434,7 +4434,7 @@ def test_auto_transfer_legacy_strategy_aliases_are_migrated():
 
 def test_auto_subtitle_preference_config_normalizes_legacy_strings(tmp_path):
     module, _, _ = load_plugin_module()
-    config_schema = plugin_submodule(module, "config_schema")
+    config_schema = plugin_submodule(module, "config.config_schema")
     plugin = make_plugin(module)
     saved_configs = []
     plugin.update_config = lambda config: saved_configs.append(config)
@@ -4508,7 +4508,7 @@ def test_auto_subtitle_preference_config_normalizes_legacy_strings(tmp_path):
 
 def test_config_schema_default_config_covers_config_vue_bound_fields():
     module, _, _ = load_plugin_module()
-    config_schema = plugin_submodule(module, "config_schema")
+    config_schema = plugin_submodule(module, "config.config_schema")
     plugin = module.SubtitleManualUpload.__new__(module.SubtitleManualUpload)
     _, default_config = plugin.get_form()
     vue_text = (Path(module.__file__).parent / "src" / "components" / "Config.vue").read_text(encoding="utf-8")

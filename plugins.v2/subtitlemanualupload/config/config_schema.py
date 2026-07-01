@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from .online_subtitle import (
+from ..online_subtitle import (
     DEFAULT_ASSRT_API_URL,
     DEFAULT_ENGINE,
     DEFAULT_OPENSUBTITLES_API_URL,
@@ -11,7 +11,7 @@ from .online_subtitle import (
     normalize_online_engine,
     normalize_provider_roots,
 )
-from .subtitle_language import (
+from ..subtitle_language import (
     DEFAULT_AUTO_FORMAT_PRIORITY,
     DEFAULT_AUTO_LANGUAGE_PRIORITY,
     normalize_auto_format_priority,

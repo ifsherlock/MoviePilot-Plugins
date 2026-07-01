@@ -5,7 +5,7 @@ from typing import Any, Dict
 
 from fastapi import Request
 
-from ..config_schema import host_from_url
+from ..config.config_schema import host_from_url
 from ..timeline_fixer import check_timeline_fixer_dependencies
 
 

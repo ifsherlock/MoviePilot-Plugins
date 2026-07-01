@@ -31,10 +31,13 @@ def test_backend_inventory_cli_outputs_valid_json_for_big_modules():
     inventory = json.loads(completed.stdout)
 
     assert inventory["module_count"] == 4
-    assert inventory["remaining_root_module_count"] == 37
-    assert inventory["migration"]["root_module_count"] == 37
-    assert inventory["migration"]["remaining_root_module_count"] == 37
+    remaining_root_modules = inventory["migration"]["remaining_root_modules"]
+    assert inventory["remaining_root_module_count"] == len(remaining_root_modules)
+    assert inventory["migration"]["root_module_count"] == len(remaining_root_modules)
+    assert inventory["migration"]["remaining_root_module_count"] == len(remaining_root_modules)
     assert inventory["migration"]["unmapped_root_modules"] == []
+    assert "config_runtime" not in remaining_root_modules
+    assert "config_schema" not in remaining_root_modules
 
     target_packages = {item["name"]: item for item in inventory["target_subpackages"]}
     for name in (
@@ -51,11 +54,17 @@ def test_backend_inventory_cli_outputs_valid_json_for_big_modules():
         "utils",
     ):
         assert target_packages[name]["exists"] is True
-        assert target_packages[name]["contains_only_init"] is True
+        if name == "config":
+            assert target_packages[name]["contains_only_init"] is False
+            assert target_packages[name]["python_files"] == ["__init__.py", "config_runtime.py", "config_schema.py"]
+        else:
+            assert target_packages[name]["contains_only_init"] is True
 
     migration_targets = {item["module"]: item for item in inventory["migration"]["migration_targets"]}
     assert migration_targets["workflow_actions"]["target_subpackage"] == "automation"
     assert migration_targets["auto_transfer"]["target_subpackage"] == "auto_transfer"
+    assert migration_targets["config_runtime"]["migrated"] is True
+    assert migration_targets["config_schema"]["migrated"] is True
     assert migration_targets["target_resolver"]["target_subpackage"] == "catalog"
     assert migration_targets["timeline_fixer"]["target_subpackage"] == "timeline"
 

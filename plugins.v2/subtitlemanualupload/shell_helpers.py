@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
 from .autosub_bridge import autosub_task_summary as bridge_autosub_task_summary
-from .config_schema import normalize_auto_transfer_subtitle_strategy
+from .config.config_schema import normalize_auto_transfer_subtitle_strategy
 from .online_subtitle import check_online_rate_limit, extract_title_aliases
 from .runtime_helpers import (
     apply_tmdb_detail as runtime_apply_tmdb_detail,
