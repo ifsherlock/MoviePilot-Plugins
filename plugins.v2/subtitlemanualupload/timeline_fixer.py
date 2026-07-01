@@ -12,6 +12,8 @@ from importlib import util as importlib_util
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from . import timeline_dependencies as _timeline_dependencies
+
 SAMPLE_RATE = 100
 AUDIO_SAMPLE_RATE = 16000
 FRAME_DURATION_MS = 10
@@ -80,43 +82,18 @@ class TimelineFixResult:
 
 
 def check_timeline_fixer_dependencies() -> Dict[str, Any]:
-    ffmpeg = shutil.which("ffmpeg")
-    ffprobe = shutil.which("ffprobe")
-    modules = {
-        "numpy": importlib_util.find_spec("numpy") is not None,
-        "pysubs2": importlib_util.find_spec("pysubs2") is not None,
-        "webrtcvad": importlib_util.find_spec("webrtcvad") is not None,
-    }
-    required_modules = {key: modules[key] for key in ("numpy", "pysubs2")}
-    return {
-        "available": bool(ffmpeg and ffprobe and all(required_modules.values())),
-        "ffmpeg": bool(ffmpeg),
-        "ffprobe": bool(ffprobe),
-        "ffmpeg_path": ffmpeg or "",
-        "ffprobe_path": ffprobe or "",
-        "ffmpeg_version": _binary_version(ffmpeg),
-        "ffprobe_version": _binary_version(ffprobe),
-        "modules": modules,
-        "sample_rate": SAMPLE_RATE,
-        "max_offset_seconds": DEFAULT_MAX_OFFSET_SECONDS,
-        "min_offset_seconds": DEFAULT_MIN_OFFSET_SECONDS,
-    }
+    return _timeline_dependencies.check_timeline_fixer_dependencies(
+        sample_rate=SAMPLE_RATE,
+        max_offset_seconds=DEFAULT_MAX_OFFSET_SECONDS,
+        min_offset_seconds=DEFAULT_MIN_OFFSET_SECONDS,
+        shutil_module=shutil,
+        importlib_util_module=importlib_util,
+        binary_version_func=_binary_version,
+    )
 
 
 def _binary_version(path: Optional[str]) -> str:
-    if not path:
-        return ""
-    try:
-        result = subprocess.run(
-            [path, "-version"],
-            capture_output=True,
-            text=True,
-            timeout=5,
-        )
-    except Exception:
-        return ""
-    first_line = (result.stdout or result.stderr or "").splitlines()
-    return first_line[0][:160] if first_line else ""
+    return _timeline_dependencies._binary_version(path, subprocess_module=subprocess)
 
 
 def fix_subtitle_timeline(
@@ -291,17 +268,7 @@ def _normalize_max_offset(value: Any) -> int:
 
 
 def _missing_dependency_names(status: Dict[str, Any]) -> List[str]:
-    missing = []
-    if not status.get("ffmpeg"):
-        missing.append("ffmpeg")
-    if not status.get("ffprobe"):
-        missing.append("ffprobe")
-    for name, ok in (status.get("modules") or {}).items():
-        if name == "webrtcvad":
-            continue
-        if not ok:
-            missing.append(name)
-    return missing
+    return _timeline_dependencies.missing_dependency_names(status)
 
 
 def _build_base_vad(

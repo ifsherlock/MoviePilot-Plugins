@@ -12,9 +12,18 @@ import pytest
 
 def load_timeline_module():
     root = Path(__file__).resolve().parents[1]
-    module_path = root / "plugins.v2" / "subtitlemanualupload" / "timeline_fixer.py"
-    module_name = "subtitlemanualupload_timeline_fixer_testpkg"
-    sys.modules.pop(module_name, None)
+    package_dir = root / "plugins.v2" / "subtitlemanualupload"
+    module_path = package_dir / "timeline_fixer.py"
+    package_name = "subtitlemanualupload_timeline_fixer_testpkg"
+    module_name = f"{package_name}.timeline_fixer"
+    for name in list(sys.modules):
+        if name == package_name or name.startswith(f"{package_name}."):
+            sys.modules.pop(name, None)
+    package = importlib.util.module_from_spec(
+        importlib.util.spec_from_loader(package_name, loader=None, is_package=True)
+    )
+    package.__path__ = [str(package_dir)]
+    sys.modules[package_name] = package
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
@@ -33,6 +42,7 @@ def test_normalize_max_offset_defaults_and_caps():
 
 def test_dependency_status_treats_webrtcvad_as_optional(monkeypatch):
     module = load_timeline_module()
+    dependencies = sys.modules[f"{module.__package__}.timeline_dependencies"]
 
     monkeypatch.setattr(module.shutil, "which", lambda name: f"/usr/bin/{name}" if name in {"ffmpeg", "ffprobe"} else None)
     monkeypatch.setattr(
@@ -47,6 +57,15 @@ def test_dependency_status_treats_webrtcvad_as_optional(monkeypatch):
     assert status["available"] is True
     assert status["modules"]["webrtcvad"] is False
     assert "webrtcvad" not in module._missing_dependency_names(status)
+    assert module._missing_dependency_names(status) == dependencies.missing_dependency_names(status)
+    assert status == dependencies.check_timeline_fixer_dependencies(
+        sample_rate=module.SAMPLE_RATE,
+        max_offset_seconds=module.DEFAULT_MAX_OFFSET_SECONDS,
+        min_offset_seconds=module.DEFAULT_MIN_OFFSET_SECONDS,
+        shutil_module=module.shutil,
+        importlib_util_module=module.importlib_util,
+        binary_version_func=module._binary_version,
+    )
 
 
 def test_audio_extraction_timeout_scales_with_video_duration(monkeypatch, tmp_path):
