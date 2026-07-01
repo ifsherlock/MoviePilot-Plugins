@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-ui-backend-refactor-phased-plan.md",
   "status": {
     "phase": "phase-5",
-    "task": "5.4",
-    "next_allowed_action": "Implement only task 5.4"
+    "task": "5.5",
+    "next_allowed_action": "Implement only task 5.5"
   },
   "execution_rules": {
     "branch": "codex/subtitlemanualupload-ui-backend-refactor",
@@ -1085,9 +1085,45 @@
         {
           "id": "5.4",
           "title": "Extract language and format classification",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "pre-work focused smoke passed with 234 passed in 8.29s; post-extraction focused smoke passed with 235 passed in 8.35s after adding the language helper re-export/classification regression"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile plugins.v2/subtitlemanualupload/online_subtitles/common.py plugins.v2/subtitlemanualupload/online_subtitles/language.py plugins.v2/subtitlemanualupload/online_subtitles/models.py plugins.v2/subtitlemanualupload/online_subtitle.py tests/test_subtitlemanualupload_online.py",
+              "result": "passed",
+              "evidence": "common.py, language.py, models.py, online_subtitle.py and online subtitle regression tests compiled successfully"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_online.py -q",
+              "result": "passed",
+              "evidence": "46 passed in 0.81s, including language.py direct import, common.py re-export identity, bilingual zh/English label behavior, subtitle format detection and OnlineSubtitleResult.to_dict language category fallback"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_backend_inventory.py --details",
+              "result": "passed",
+              "evidence": "backend inventory exited 0; online_subtitles.common line_count=769 after moving language category, language label, subtitle format and language priority logic into language.py, imported_symbols_missing_from_module=[]"
+            },
+            {
+              "command": "ssh root@10.10.10.189 \"docker cp ... moviepilot-v2:/app/app/plugins/subtitlemanualupload/online_subtitles/ && docker exec moviepilot-v2 python -m py_compile ... && docker exec moviepilot-v2 sha256sum ...\"",
+              "result": "passed",
+              "evidence": "moviepilot-v2 on NAS 10.10.10.189 hot-loaded common.py, language.py, models.py, clients.py and keyword_builder.py; container SHA256 matched local common.py bfc02a478d8de6f829c5b3e2f56449d1084683ef0b4930ec1c8b80e675044a27, language.py 8dac32ab86b5a6d760c12eecceb90be73764dc255737f0cf5b5faaab29d6a7c8, models.py 6b24144983c7b19d8f3c500b073477d47d69327647123bf2e2c9ab167a0c80bc, clients.py f4e81ca3df6564c982eeecab66e86871adf5dc91a4234c697c244103360fd0d5 and keyword_builder.py f0d66e0361aaeca8584fbff5c21dd98dedb2f5f3dd6aa5b444c604af9d962cc4"
+            },
+            {
+              "command": "ssh root@10.10.10.189 'docker exec moviepilot-v2 python -c ...'",
+              "result": "passed",
+              "evidence": "container import printed: _guess_language_label _language_category_from_text True True 简英双语 中英双语 ASS / SRT chinese, proving language.py and common.py re-export compatibility plus model category fallback"
+            },
+            {
+              "command": "git diff --check -- plugins.v2/subtitlemanualupload/online_subtitles/common.py plugins.v2/subtitlemanualupload/online_subtitles/language.py plugins.v2/subtitlemanualupload/online_subtitles/models.py tests/test_subtitlemanualupload_online.py",
+              "result": "passed",
+              "evidence": "diff check exited 0 for task 5.4 source and test files; only expected LF/CRLF warnings were printed before staging"
+            }
+          ],
+          "commit": "9320ac7"
         },
         {
           "id": "5.5",
@@ -1491,6 +1527,19 @@
         "moviepilot-v2 on NAS 10.10.10.189 hot-loaded common.py, keyword_builder.py, clients.py and models.py; local and container SHA256 matched, py_compile passed, and container import printed build_search_keywords extract_title_aliases True True ['Example Show S01E02', '中文剧名 S01E02'] chinese ['Example Alt']",
         "browser-client control for the logged-in in-app browser is still unavailable with the trust error; phase-5 browser happy-path acceptance remains pending until a logged-in controllable browser is available",
         "next task is phase-5 task 5.4"
+      ]
+    },
+    {
+      "task": "5.4",
+      "status": "completed",
+      "summary": "Extracted online subtitle language category detection, display label selection, subtitle format detection and result language priority into online_subtitles/language.py. OnlineSubtitleResult.to_dict now imports its category fallback from language.py while common.py keeps compatibility re-exports.",
+      "evidence": [
+        "source commit 9320ac7 created language.py, removed the language/format helper implementations from common.py and added a regression proving language.py and common.py expose the same helper objects",
+        "online subtitle tests passed with 46 passed in 0.81s; backend focused smoke passed with 235 passed in 8.35s",
+        "backend inventory exited 0 and showed online_subtitles.common line_count=769 with imported_symbols_missing_from_module=[]",
+        "moviepilot-v2 on NAS 10.10.10.189 hot-loaded common.py, language.py, models.py, clients.py and keyword_builder.py; local and container SHA256 matched, py_compile passed, and container import printed _guess_language_label _language_category_from_text True True 简英双语 中英双语 ASS / SRT chinese",
+        "browser-client control for the logged-in in-app browser is still unavailable with the trust error; phase-5 browser happy-path acceptance remains pending until a logged-in controllable browser is available",
+        "next task is phase-5 task 5.5"
       ]
     }
   ],
