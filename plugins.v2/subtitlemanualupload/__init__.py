@@ -147,7 +147,7 @@ from .matching.subtitle_writer import (
 )
 from .timeline.timeline_fixer import TimelineFixResult, check_timeline_fixer_dependencies, fix_subtitle_timeline
 from .matching.tongwen import convert_subtitle_file_to_simplified
-from .target_resolver import (
+from .catalog.target_resolver import (
     LocalMediaCatalog,
     MediaTargetResolver,
     SubtitleInventory,

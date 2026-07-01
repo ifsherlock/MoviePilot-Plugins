@@ -49,6 +49,12 @@ def test_backend_inventory_cli_outputs_valid_json_for_big_modules():
     assert "timeline_io" not in remaining_root_modules
     assert "timeline_tasks" not in remaining_root_modules
     assert "timeline_vad" not in remaining_root_modules
+    assert "local_media_catalog" not in remaining_root_modules
+    assert "media_metadata" not in remaining_root_modules
+    assert "media_target_resolver" not in remaining_root_modules
+    assert "subtitle_inventory" not in remaining_root_modules
+    assert "target_normalizers" not in remaining_root_modules
+    assert "target_resolver" not in remaining_root_modules
 
     target_packages = {item["name"]: item for item in inventory["target_subpackages"]}
     for name in (
@@ -68,6 +74,17 @@ def test_backend_inventory_cli_outputs_valid_json_for_big_modules():
         if name == "config":
             assert target_packages[name]["contains_only_init"] is False
             assert target_packages[name]["python_files"] == ["__init__.py", "config_runtime.py", "config_schema.py"]
+        elif name == "catalog":
+            assert target_packages[name]["contains_only_init"] is False
+            assert target_packages[name]["python_files"] == [
+                "__init__.py",
+                "local_media_catalog.py",
+                "media_metadata.py",
+                "media_target_resolver.py",
+                "subtitle_inventory.py",
+                "target_normalizers.py",
+                "target_resolver.py",
+            ]
         elif name == "matching":
             assert target_packages[name]["contains_only_init"] is False
             assert target_packages[name]["python_files"] == [
@@ -108,6 +125,12 @@ def test_backend_inventory_cli_outputs_valid_json_for_big_modules():
     assert migration_targets["timeline_io"]["migrated"] is True
     assert migration_targets["timeline_tasks"]["migrated"] is True
     assert migration_targets["timeline_vad"]["migrated"] is True
+    assert migration_targets["local_media_catalog"]["migrated"] is True
+    assert migration_targets["media_metadata"]["migrated"] is True
+    assert migration_targets["media_target_resolver"]["migrated"] is True
+    assert migration_targets["subtitle_inventory"]["migrated"] is True
+    assert migration_targets["target_normalizers"]["migrated"] is True
+    assert migration_targets["target_resolver"]["migrated"] is True
     assert migration_targets["target_resolver"]["target_subpackage"] == "catalog"
     assert migration_targets["timeline_fixer"]["target_subpackage"] == "timeline"
 

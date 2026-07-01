@@ -16,7 +16,7 @@ from .request_helpers import (
     locked_target_ids_from_body,
     target_ids_from_body,
 )
-from ..target_resolver import (
+from ..catalog.target_resolver import (
     auto_fill_missing_targets as fill_missing_target_ids,
     suggest_target as suggest_target_id,
 )

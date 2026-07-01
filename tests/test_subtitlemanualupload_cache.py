@@ -141,8 +141,8 @@ def plugin_submodule(module, name):
 
 def test_target_normalizers_are_reexported_from_target_resolver(tmp_path):
     module, _, _ = load_plugin_module()
-    target_resolver = plugin_submodule(module, "target_resolver")
-    target_normalizers = plugin_submodule(module, "target_normalizers")
+    target_resolver = plugin_submodule(module, "catalog.target_resolver")
+    target_normalizers = plugin_submodule(module, "catalog.target_normalizers")
 
     for name in [
         "media_type_text",
@@ -183,8 +183,8 @@ def test_target_normalizers_are_reexported_from_target_resolver(tmp_path):
 
 def test_media_metadata_helpers_are_reexported_from_target_resolver():
     module, _, _ = load_plugin_module()
-    target_resolver = plugin_submodule(module, "target_resolver")
-    media_metadata = plugin_submodule(module, "media_metadata")
+    target_resolver = plugin_submodule(module, "catalog.target_resolver")
+    media_metadata = plugin_submodule(module, "catalog.media_metadata")
     online_subtitle = plugin_submodule(module, "online_subtitle")
     runtime_helpers = plugin_submodule(module, "runtime_helpers")
 
@@ -230,8 +230,8 @@ def test_media_metadata_helpers_are_reexported_from_target_resolver():
 
 def test_subtitle_inventory_is_reexported_from_target_resolver(tmp_path):
     module, _, _ = load_plugin_module()
-    target_resolver = plugin_submodule(module, "target_resolver")
-    subtitle_inventory = plugin_submodule(module, "subtitle_inventory")
+    target_resolver = plugin_submodule(module, "catalog.target_resolver")
+    subtitle_inventory = plugin_submodule(module, "catalog.subtitle_inventory")
     subtitle_language = plugin_submodule(module, "matching.subtitle_language")
     runtime_helpers = plugin_submodule(module, "runtime_helpers")
 
@@ -320,8 +320,8 @@ def test_subtitle_inventory_is_reexported_from_target_resolver(tmp_path):
 def test_local_media_catalog_is_reexported_from_target_resolver(tmp_path):
     module, histories, _ = load_plugin_module()
     plugin = make_plugin(module)
-    target_resolver = plugin_submodule(module, "target_resolver")
-    local_media_catalog = plugin_submodule(module, "local_media_catalog")
+    target_resolver = plugin_submodule(module, "catalog.target_resolver")
+    local_media_catalog = plugin_submodule(module, "catalog.local_media_catalog")
 
     assert issubclass(target_resolver.LocalMediaCatalog, local_media_catalog.LocalMediaCatalog)
 
@@ -363,8 +363,8 @@ def test_local_media_catalog_is_reexported_from_target_resolver(tmp_path):
 def test_media_target_resolver_is_reexported_from_target_resolver(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
-    target_resolver = plugin_submodule(module, "target_resolver")
-    media_target_resolver = plugin_submodule(module, "media_target_resolver")
+    target_resolver = plugin_submodule(module, "catalog.target_resolver")
+    media_target_resolver = plugin_submodule(module, "catalog.media_target_resolver")
 
     assert issubclass(target_resolver.MediaTargetResolver, media_target_resolver.MediaTargetResolver)
     assert isinstance(plugin.services.target_resolver(), media_target_resolver.MediaTargetResolver)
@@ -398,7 +398,7 @@ def test_media_target_resolver_is_reexported_from_target_resolver(tmp_path):
 
 
 def remember_targets(plugin, module, entries):
-    target_resolver = plugin_submodule(module, "target_resolver")
+    target_resolver = plugin_submodule(module, "catalog.target_resolver")
     runtime_helpers = plugin_submodule(module, "runtime_helpers")
     target_resolver.TargetEntryCache(
         plugin._entry_map,
@@ -729,7 +729,7 @@ def test_transfer_event_entries_can_merge_into_local_cache(tmp_path):
 def test_entry_map_is_bounded_lru():
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
-    target_resolver = plugin_submodule(module, "target_resolver")
+    target_resolver = plugin_submodule(module, "catalog.target_resolver")
     runtime_helpers = plugin_submodule(module, "runtime_helpers")
     cache = target_resolver.TargetEntryCache(
         plugin._entry_map,
@@ -2793,7 +2793,7 @@ def test_subtitle_history_service_persists_and_restores_cache(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
     history_module = plugin_submodule(module, "matching.subtitle_history")
-    target_resolver = plugin_submodule(module, "target_resolver")
+    target_resolver = plugin_submodule(module, "catalog.target_resolver")
     runtime_helpers = plugin_submodule(module, "runtime_helpers")
     history = history_module.SubtitleHistory(
         plugin,

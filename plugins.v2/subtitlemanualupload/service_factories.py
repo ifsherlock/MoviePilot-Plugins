@@ -39,7 +39,7 @@ from .online_subtitle import OnlineSubtitleSearchService, extract_title_aliases
 from .matching.subtitle_history import SubtitleHistory
 from .matching.subtitle_language import is_chinese_language_suffix
 from .matching.subtitle_writer import SubtitleWriter, subtitle_backup_path as writer_subtitle_backup_path
-from .target_resolver import (
+from .catalog.target_resolver import (
     LocalMediaCatalog,
     MediaMetadataService,
     MediaTargetResolver,
