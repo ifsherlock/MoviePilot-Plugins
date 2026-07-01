@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib.util
 import importlib
+import inspect
 import sys
 from pathlib import Path
 
@@ -239,3 +240,62 @@ def test_automation_facade_timeline_fix_precheck_uses_existing_operations(tmp_pa
     assert result["data"]["requires_confirmation"] is True
     assert result["data"]["preview_count"] == 1
     assert result["data"]["timeline_tasks"]["summary"] == {"total": 1}
+
+
+def test_workflow_actions_contract(tmp_path):
+    helpers, module, plugin, _ = make_enabled_plugin(tmp_path)
+    auto_transfer = FakeAutoTransfer()
+    autosub_bridge = FakeAutosubBridge()
+    timeline_tasks = FakeTimelineTasks()
+    helpers.override_services(
+        plugin,
+        auto_transfer=auto_transfer,
+        autosub_bridge=autosub_bridge,
+        timeline_tasks=timeline_tasks,
+    )
+
+    actions = plugin.get_actions()
+    action_by_id = {item["id"]: item for item in actions}
+
+    assert list(action_by_id) == [
+        "subtitlemanualupload_query_status",
+        "subtitlemanualupload_refresh_index",
+        "subtitlemanualupload_online_match",
+        "subtitlemanualupload_ai_generate",
+        "subtitlemanualupload_timeline_fix",
+    ]
+    assert [item["name"] for item in actions] == [
+        "字幕匹配：查询状态",
+        "字幕匹配：刷新本地索引",
+        "字幕匹配：在线自动匹配",
+        "字幕匹配：AI 生成字幕",
+        "字幕匹配：智能调轴",
+    ]
+    assert not any(
+        forbidden in action_id
+        for action_id in action_by_id
+        for forbidden in ("clear", "delete", "restore")
+    )
+    for action in actions:
+        parameters = list(inspect.signature(action["func"]).parameters)
+        assert parameters[:1] == ["action_content"]
+        assert isinstance(action.get("kwargs"), dict)
+
+    class FakeActionContent:
+        kwargs = {"target_ids": ["t1"]}
+
+    online_result = action_by_id["subtitlemanualupload_online_match"]["func"](
+        FakeActionContent(),
+        **action_by_id["subtitlemanualupload_online_match"]["kwargs"],
+    )
+    ai_result = action_by_id["subtitlemanualupload_ai_generate"]["func"](
+        FakeActionContent(),
+        **action_by_id["subtitlemanualupload_ai_generate"]["kwargs"],
+    )
+
+    assert online_result["success"] is True
+    assert online_result["data"]["requires_confirmation"] is True
+    assert ai_result["success"] is True
+    assert ai_result["data"]["requires_confirmation"] is True
+    assert auto_transfer.written == []
+    assert autosub_bridge.submitted == []

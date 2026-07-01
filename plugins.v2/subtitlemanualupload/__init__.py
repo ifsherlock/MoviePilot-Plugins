@@ -305,6 +305,11 @@ class SubtitleManualUpload(_PluginBase):
     def get_command() -> List[Dict[str, Any]]:
         return []
 
+    def get_actions(self) -> List[Dict[str, Any]]:
+        from .workflow_actions import build_actions
+
+        return build_actions(self)
+
     @staticmethod
     def get_render_mode() -> Tuple[str, str]:
         return "vue", "dist/assets"
