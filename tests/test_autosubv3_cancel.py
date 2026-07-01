@@ -900,14 +900,51 @@ def test_task_store_keeps_skip_record_keys():
     assert plugin._data["skip_chinese_videos"]["/media/chinese.mkv"]["reason"] == "chinese"
 
 
-def test_delete_api_is_registered():
+def test_autosubv3_task_apis_are_registered():
     module = load_plugin_module()
     plugin = make_plugin(module)
 
     apis = {item["path"]: item for item in plugin.get_api()}
 
-    assert "/delete" in apis
-    assert apis["/delete"]["methods"] == ["POST"]
+    assert {
+        path: {
+            "methods": apis[path]["methods"],
+            "auth": apis[path]["auth"],
+            "summary": apis[path]["summary"],
+        }
+        for path in apis
+    } == {
+        "/status": {
+            "methods": ["GET"],
+            "auth": "bear",
+            "summary": "获取 AI 字幕生成联动状态",
+        },
+        "/submit": {
+            "methods": ["POST"],
+            "auth": "bear",
+            "summary": "提交 AI 字幕生成任务",
+        },
+        "/tasks": {
+            "methods": ["GET"],
+            "auth": "bear",
+            "summary": "获取 AI 字幕生成任务状态",
+        },
+        "/cancel": {
+            "methods": ["POST"],
+            "auth": "bear",
+            "summary": "取消 AI 字幕生成任务",
+        },
+        "/delete": {
+            "methods": ["POST"],
+            "auth": "bear",
+            "summary": "删除 AI 字幕任务记录",
+        },
+        "/restart": {
+            "methods": ["POST"],
+            "auth": "bear",
+            "summary": "重新生成 AI 字幕任务",
+        },
+    }
 
 
 def test_translation_high_failure_rate_blocks_subtitle_output():

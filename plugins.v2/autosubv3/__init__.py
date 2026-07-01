@@ -16,7 +16,6 @@ import psutil
 import srt
 from lxml import etree
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from fastapi import HTTPException, Request
 from app.core.config import settings
 from app.core.context import MediaInfo
 from app.core.event import eventmanager, Event as MPEvent
@@ -48,6 +47,7 @@ from .core.models import (
 )
 from .ffmpeg import Ffmpeg
 from .storage.task_store import TaskStore
+from .tasks.api import AutoSubTaskApi
 from .tasks.queue_worker import QueueWorker
 from .tasks.task_service import TaskService
 from .translate.openai_translate import OpenAi
@@ -132,6 +132,7 @@ class AutoSubv3(_PluginBase):
     _task_store = None
     _queue_worker = None
     _task_service = None
+    _task_api = None
     _observer = None
     _monitor_paths = None
     _lock = Lock()
@@ -251,6 +252,11 @@ class AutoSubv3(_PluginBase):
         if not self._task_service:
             self._task_service = TaskService(self, settings.RMT_MEDIAEXT, logger)
         return self._task_service
+
+    def _get_task_api(self) -> AutoSubTaskApi:
+        if not self._task_api:
+            self._task_api = AutoSubTaskApi(self)
+        return self._task_api
 
     def load_tasks(self) -> Dict[str, TaskItem]:
         return self._get_task_store().load_tasks()
@@ -407,7 +413,7 @@ class AutoSubv3(_PluginBase):
         return self._get_task_service().status_payload()
 
     def api_status(self) -> Dict[str, Any]:
-        return self._ok(self._status_payload())
+        return self._get_task_api().api_status()
 
     def submit_tasks(
         self,
@@ -427,62 +433,20 @@ class AutoSubv3(_PluginBase):
             overwrite_policy=overwrite_policy,
         )
 
-    async def api_submit(self, request: Request) -> Dict[str, Any]:
-        if not self._running or not self._task_queue:
-            raise HTTPException(status_code=409, detail=self._status_payload()["message"])
-        body = await request.json()
-        paths = body.get("paths") or []
-        if isinstance(paths, str):
-            paths = [paths]
-        if not isinstance(paths, list):
-            paths = []
-        subtitle_overrides = body.get("subtitle_overrides") if isinstance(body.get("subtitle_overrides"), dict) else None
-        result = self.submit_tasks(
-            paths,
-            source=self._normalize_text(body.get("source")) or TaskSource.MANUAL.value,
-            subtitle_overrides=subtitle_overrides,
-            trigger=self._normalize_text(body.get("trigger")) or TriggerType.MANUAL.value,
-            source_policy=self._normalize_text(body.get("source_policy")) or SourcePolicy.AUTO.value,
-            overwrite_policy=self._normalize_text(body.get("overwrite_policy")) or OverwritePolicy.SKIP.value,
-        )
-        return self._ok(
-            result,
-            message=f"已提交 {len(result['added'])} 个 AI 字幕生成任务，跳过 {len(result['skipped'])} 个，失败 {len(result['failed'])} 个",
-        )
+    async def api_submit(self, request) -> Dict[str, Any]:
+        return await self._get_task_api().api_submit(request)
 
     def cancel_tasks(self, task_ids: Optional[List[str]] = None, paths: Optional[List[str]] = None) -> Dict[str, Any]:
         return self._get_task_service().cancel_tasks(task_ids=task_ids, paths=paths)
 
-    async def api_cancel(self, request: Request) -> Dict[str, Any]:
-        body = await request.json()
-        paths = body.get("paths") or []
-        task_ids = body.get("task_ids") or []
-        if isinstance(paths, str):
-            paths = [paths]
-        if isinstance(task_ids, str):
-            task_ids = [task_ids]
-        result = self.cancel_tasks(task_ids=task_ids if isinstance(task_ids, list) else [], paths=paths if isinstance(paths, list) else [])
-        return self._ok(
-            result,
-            message=f"已取消 {len(result.get('cancelled') or [])} 个 AI 字幕任务，跳过 {len(result.get('skipped') or [])} 个",
-        )
+    async def api_cancel(self, request) -> Dict[str, Any]:
+        return await self._get_task_api().api_cancel(request)
 
     def delete_tasks(self, task_ids: Optional[List[str]] = None, paths: Optional[List[str]] = None) -> Dict[str, Any]:
         return self._get_task_service().delete_tasks(task_ids=task_ids, paths=paths)
 
-    async def api_delete(self, request: Request) -> Dict[str, Any]:
-        body = await request.json()
-        paths = body.get("paths") or []
-        task_ids = body.get("task_ids") or []
-        if isinstance(paths, str):
-            paths = [paths]
-        if isinstance(task_ids, str):
-            task_ids = [task_ids]
-        result = self.delete_tasks(task_ids=task_ids if isinstance(task_ids, list) else [], paths=paths if isinstance(paths, list) else [])
-        return self._ok(
-            result,
-            message=f"已删除 {len(result.get('deleted') or [])} 个 AI 字幕任务，跳过 {len(result.get('skipped') or [])} 个",
-        )
+    async def api_delete(self, request) -> Dict[str, Any]:
+        return await self._get_task_api().api_delete(request)
 
     def restart_tasks(
         self,
@@ -496,42 +460,14 @@ class AutoSubv3(_PluginBase):
             overwrite_policy=overwrite_policy,
         )
 
-    async def api_restart(self, request: Request) -> Dict[str, Any]:
-        if not self._running or not self._task_queue:
-            raise HTTPException(status_code=409, detail=self._status_payload()["message"])
-        body = await request.json()
-        task_ids = body.get("task_ids") or []
-        if isinstance(task_ids, str):
-            task_ids = [task_ids]
-        result = self.restart_tasks(
-            task_ids=task_ids if isinstance(task_ids, list) else [],
-            source_policy=self._normalize_text(body.get("source_policy")) or SourcePolicy.REUSE.value,
-            overwrite_policy=self._normalize_text(body.get("overwrite_policy")) or OverwritePolicy.BACKUP_REPLACE.value,
-        )
-        return self._ok(
-            result,
-            message=f"已重新提交 {len(result.get('added') or [])} 个 AI 字幕任务，跳过 {len(result.get('skipped') or [])} 个，失败 {len(result.get('failed') or [])} 个",
-        )
+    async def api_restart(self, request) -> Dict[str, Any]:
+        return await self._get_task_api().api_restart(request)
 
     def tasks_payload(self, paths: Optional[List[str]] = None, limit: int = 300) -> Dict[str, Any]:
         return self._get_task_service().tasks_payload(paths=paths, limit=limit)
 
-    def api_tasks(self, request: Request) -> Dict[str, Any]:
-        raw_paths = request.query_params.get("paths") or ""
-        filter_paths = set()
-        if raw_paths:
-            try:
-                parsed = json.loads(raw_paths)
-                if isinstance(parsed, list):
-                    filter_paths = {self._normalize_text(item) for item in parsed if self._normalize_text(item)}
-            except Exception:
-                filter_paths = {self._normalize_text(item) for item in raw_paths.split(",") if self._normalize_text(item)}
-        try:
-            limit = int(request.query_params.get("limit") or 300)
-        except Exception:
-            limit = 300
-        limit = min(max(limit, 1), 1000)
-        return self._ok(self.tasks_payload(paths=list(filter_paths), limit=limit))
+    def api_tasks(self, request) -> Dict[str, Any]:
+        return self._get_task_api().api_tasks(request)
 
     def load_skipped_videos(self) -> Dict[str, dict]:
         """加载无声音跳过的视频记录"""
@@ -1992,50 +1928,7 @@ class AutoSubv3(_PluginBase):
         return build_config_form()
 
     def get_api(self) -> List[Dict[str, Any]]:
-        return [
-            {
-                "path": "/status",
-                "endpoint": self.api_status,
-                "methods": ["GET"],
-                "auth": "bear",
-                "summary": "获取 AI 字幕生成联动状态",
-            },
-            {
-                "path": "/submit",
-                "endpoint": self.api_submit,
-                "methods": ["POST"],
-                "auth": "bear",
-                "summary": "提交 AI 字幕生成任务",
-            },
-            {
-                "path": "/tasks",
-                "endpoint": self.api_tasks,
-                "methods": ["GET"],
-                "auth": "bear",
-                "summary": "获取 AI 字幕生成任务状态",
-            },
-            {
-                "path": "/cancel",
-                "endpoint": self.api_cancel,
-                "methods": ["POST"],
-                "auth": "bear",
-                "summary": "取消 AI 字幕生成任务",
-            },
-            {
-                "path": "/delete",
-                "endpoint": self.api_delete,
-                "methods": ["POST"],
-                "auth": "bear",
-                "summary": "删除 AI 字幕任务记录",
-            },
-            {
-                "path": "/restart",
-                "endpoint": self.api_restart,
-                "methods": ["POST"],
-                "auth": "bear",
-                "summary": "重新生成 AI 字幕任务",
-            },
-        ]
+        return self._get_task_api().routes()
 
     @staticmethod
     def get_render_mode() -> Tuple[str, str]:
