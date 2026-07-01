@@ -4,7 +4,7 @@ import threading
 from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from .timeline.timeline_fixer import check_timeline_fixer_dependencies
+from ..timeline.timeline_fixer import check_timeline_fixer_dependencies
 
 
 class SubtitleAutomationFacade:

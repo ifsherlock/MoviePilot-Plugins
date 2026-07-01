@@ -306,12 +306,12 @@ class SubtitleManualUpload(_PluginBase):
         return []
 
     def get_actions(self) -> List[Dict[str, Any]]:
-        from .workflow_actions import build_actions
+        from .automation.workflow_actions import build_actions
 
         return build_actions(self)
 
     def get_agent_tools(self) -> List[type]:
-        from .agent_tools import get_agent_tools
+        from .automation.agent_tools import get_agent_tools
 
         return get_agent_tools()
 
