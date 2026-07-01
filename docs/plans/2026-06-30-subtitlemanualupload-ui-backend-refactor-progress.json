@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-ui-backend-refactor-phased-plan.md",
   "status": {
     "phase": "phase-7",
-    "task": "7.1",
-    "next_allowed_action": "Implement only task 7.1"
+    "task": "7.2",
+    "next_allowed_action": "Implement only task 7.2"
   },
   "execution_rules": {
     "branch": "codex/subtitlemanualupload-ui-backend-refactor",
@@ -1480,9 +1480,50 @@
         {
           "id": "7.1",
           "title": "Extract dependency and binary probing",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "pre-work smoke passed with 240 passed, 2 skipped in 10.31s; post-extraction smoke passed with 240 passed, 2 skipped in 10.09s"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile plugins.v2/subtitlemanualupload/timeline_dependencies.py plugins.v2/subtitlemanualupload/timeline_fixer.py tests/test_timeline_fixer.py",
+              "result": "passed",
+              "evidence": "timeline_dependencies.py, timeline_fixer.py and timeline tests compiled successfully"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_timeline_fixer.py -q",
+              "result": "passed",
+              "evidence": "13 passed, 2 skipped in 0.40s; real media fixture tests kept their existing explicit skip conditions"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_backend_inventory.py --details",
+              "result": "passed",
+              "evidence": "backend inventory exited 0; timeline_fixer.py line_count=1183, facade_symbol_count=28, imported_symbols_missing_from_module=[] and public imports remained TimelineFixResult/check_timeline_fixer_dependencies/fix_subtitle_timeline"
+            },
+            {
+              "command": "git diff --check -- plugins.v2/subtitlemanualupload/timeline_dependencies.py plugins.v2/subtitlemanualupload/timeline_fixer.py tests/test_timeline_fixer.py",
+              "result": "passed",
+              "evidence": "diff check exited 0 for touched 7.1 files"
+            },
+            {
+              "command": "scp to NAS 10.10.10.189 then docker cp into moviepilot-v2; docker exec moviepilot-v2 sha256sum and python -m py_compile timeline_fixer.py timeline_dependencies.py",
+              "result": "passed",
+              "evidence": "container SHA256 matched local for timeline_fixer.py 9ad8fb7cccbd0c8ad625d76346cba0fa15807a158b6071f1f96d56646fbb58dd and timeline_dependencies.py 584142fb9bc12d5c23876dfee8c7deb34407c193c9578a35d8b677c4d9c84ab6; py_compile exited 0"
+            },
+            {
+              "command": "docker exec moviepilot-v2 python -c import/behavior check",
+              "result": "passed",
+              "evidence": "stdout printed check_timeline_fixer_dependencies check_timeline_fixer_dependencies True True True ['numpy', 'pysubs2', 'webrtcvad'] [], proving facade entry delegates while ffmpeg/ffprobe/modules are detected in the real container"
+            },
+            {
+              "command": "logged-in in-app browser status and target-detail DOM check on https://mp.jaysherlock.top:5443/#/plugin-app/SubtitleManualUpload/main",
+              "result": "passed",
+              "evidence": "/api/v1/plugin/SubtitleManualUpload/status returned status=200 mimeType=application/json; detail page for 百万英镑 (1954) rendered 批量调轴, 搜索在线字幕, 单集上传, subtitle state and 2 个本地目标; loginHint=false and consoleErrors=[]"
+            }
+          ],
+          "commit": "ea70659"
         },
         {
           "id": "7.2",
@@ -1912,6 +1953,20 @@
         "container import check printed MediaTargetResolver MediaTargetResolver True",
         "logged-in in-app browser captured /targets status=200 for 百万英镑 (1954), rendered 2 个本地目标 with /vol2 and /vol3 paths, subtitle state and 单集上传 actions, with loginHint=false and consoleErrors=[]",
         "phase-6 acceptance satisfied; next task is phase-7 task 7.1"
+      ]
+    },
+    {
+      "task": "7.1",
+      "status": "completed",
+      "summary": "Extracted timeline dependency and binary probing into timeline_dependencies.py. timeline_fixer.py keeps check_timeline_fixer_dependencies, _binary_version and _missing_dependency_names as facade wrappers, so callers still import the original public timeline_fixer entry while dependency status has a single implementation module.",
+      "evidence": [
+        "source commit ea70659 created timeline_dependencies.py and kept timeline_fixer.py as the public entry for TimelineFixResult, check_timeline_fixer_dependencies and fix_subtitle_timeline",
+        "timeline tests passed with 13 passed, 2 skipped; backend focused smoke passed with 240 passed, 2 skipped in 10.09s",
+        "backend inventory showed timeline_fixer.py line_count=1183, facade_symbol_count=28 and imported_symbols_missing_from_module=[]",
+        "moviepilot-v2 on NAS 10.10.10.189 hot-loaded timeline_fixer.py and timeline_dependencies.py; local/container SHA256 matched and py_compile passed",
+        "container import check printed dependency status available=True, ffmpeg=True, ffprobe=True, modules=['numpy', 'pysubs2', 'webrtcvad'], missing=[]",
+        "logged-in in-app browser observed /status 200 and target detail rendered 批量调轴 with no console errors",
+        "next task is phase-7 task 7.2"
       ]
     }
   ],
