@@ -310,6 +310,11 @@ class SubtitleManualUpload(_PluginBase):
 
         return build_actions(self)
 
+    def get_agent_tools(self) -> List[type]:
+        from .agent_tools import get_agent_tools
+
+        return get_agent_tools()
+
     @staticmethod
     def get_render_mode() -> Tuple[str, str]:
         return "vue", "dist/assets"

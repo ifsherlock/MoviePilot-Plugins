@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import importlib.util
 import importlib
 import inspect
+import json
 import sys
 from pathlib import Path
 
@@ -297,5 +299,60 @@ def test_workflow_actions_contract(tmp_path):
     assert online_result["data"]["requires_confirmation"] is True
     assert ai_result["success"] is True
     assert ai_result["data"]["requires_confirmation"] is True
+    assert auto_transfer.written == []
+    assert autosub_bridge.submitted == []
+
+
+def test_agent_tools_contract(tmp_path, monkeypatch):
+    helpers, module, plugin, _ = make_enabled_plugin(tmp_path)
+    auto_transfer = FakeAutoTransfer()
+    autosub_bridge = FakeAutosubBridge()
+    timeline_tasks = FakeTimelineTasks()
+    helpers.override_services(
+        plugin,
+        auto_transfer=auto_transfer,
+        autosub_bridge=autosub_bridge,
+        timeline_tasks=timeline_tasks,
+    )
+    agent_module = importlib.import_module(f"{module.__name__}.agent_tools")
+
+    tools = plugin.get_agent_tools()
+    tool_by_name = {tool.name: tool for tool in tools}
+
+    assert list(tool_by_name) == [
+        "subtitle_status_tool",
+        "subtitle_online_match_tool",
+        "subtitle_ai_generate_tool",
+        "subtitle_task_status_tool",
+        "subtitle_timeline_fix_tool",
+    ]
+    for tool in tools:
+        assert issubclass(tool, agent_module.MoviePilotTool)
+        assert tool.description
+        assert hasattr(tool.args_schema, "schema") or hasattr(tool.args_schema, "model_json_schema")
+        assert callable(getattr(tool(), "get_tool_message"))
+        assert inspect.iscoroutinefunction(tool.run)
+
+    class EmptyPluginManager:
+        running_plugins = {}
+
+    monkeypatch.setattr(agent_module, "PluginManager", EmptyPluginManager)
+    missing = json.loads(asyncio.run(tool_by_name["subtitle_status_tool"]().run()))
+    assert missing == {
+        "success": False,
+        "message": "SubtitleManualUpload 插件未运行",
+        "data": {},
+    }
+
+    class FakePluginManager:
+        running_plugins = {"SubtitleManualUpload": plugin}
+
+    monkeypatch.setattr(agent_module, "PluginManager", FakePluginManager)
+    online_tool = tool_by_name["subtitle_online_match_tool"]()
+    result = json.loads(asyncio.run(online_tool.run(target_ids=["t1"], dry_run=True, confirm_write=False)))
+
+    assert online_tool.get_tool_message(target_ids=["t1"], confirm_write=False) == "正在预检 1 个目标的在线字幕匹配"
+    assert result["success"] is True
+    assert result["data"]["requires_confirmation"] is True
     assert auto_transfer.written == []
     assert autosub_bridge.submitted == []
