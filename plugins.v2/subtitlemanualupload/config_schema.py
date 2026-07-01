@@ -558,7 +558,7 @@ def build_config_form(
                         "VSelect",
                         {
                             "model": "rar_dependency_mode",
-                            "label": "RAR 解压器处理方式",
+                            "label": "压缩包解压器处理方式",
                             "items": [
                                 {"title": "不处理，仅检测", "value": "none"},
                                 {"title": "加载插件时尝试容器内安装 unar", "value": "container_install"},

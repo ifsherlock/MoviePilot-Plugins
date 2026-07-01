@@ -5297,7 +5297,7 @@ return (_ctx, _cache) => {
                   }, [
                     _cache[16] || (_cache[16] = _createElementVNode$1("div", { class: "dropzone-icon" }, "SRT / ASS / ZIP / RAR / 7Z", -1)),
                     _cache[17] || (_cache[17] = _createElementVNode$1("div", { class: "dropzone-title" }, "把字幕或压缩包拖到这里", -1)),
-                    _cache[18] || (_cache[18] = _createElementVNode$1("div", { class: "dropzone-text" }, " 支持字幕文件、ZIP、RAR、7Z；RAR 默认使用容器内 unar 解压。 ", -1)),
+                    _cache[18] || (_cache[18] = _createElementVNode$1("div", { class: "dropzone-text" }, " 支持字幕文件、ZIP、RAR、7Z；RAR / 7Z 默认使用容器内 unar 解压。 ", -1)),
                     _createVNode$1(_component_VBtn, {
                       color: "primary",
                       variant: "flat",
@@ -5325,7 +5325,7 @@ return (_ctx, _cache) => {
                 ? (_openBlock$1(), _createElementBlock$1("div", _hoisted_1$1, [
                     _createElementVNode$1("span", {
                       class: _normalizeClass$1({ ok: __props.rarAvailable })
-                    }, "RAR 解压器：" + _toDisplayString(__props.rarAvailable ? __props.archiveStatus.rar_tool || 'unar 可用' : '未检测到 unar'), 3),
+                    }, "压缩包解压器：" + _toDisplayString(__props.rarAvailable ? __props.archiveStatus.rar_tool || 'unar 可用' : '未检测到 unar'), 3),
                     _createElementVNode$1("span", {
                       class: _normalizeClass$1({ ok: __props.rarPythonAvailable })
                     }, "rarfile：" + _toDisplayString(__props.rarPythonAvailable ? '已安装' : '备用依赖未安装'), 3),
@@ -5449,7 +5449,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const UploadDialog = /*#__PURE__*/_export_sfc(_sfc_main$1, [['__scopeId',"data-v-2bfc2eed"]]);
+const UploadDialog = /*#__PURE__*/_export_sfc(_sfc_main$1, [['__scopeId',"data-v-e3d2b2a1"]]);
 
 function isStreamTarget(target) {
   if (!target) return false

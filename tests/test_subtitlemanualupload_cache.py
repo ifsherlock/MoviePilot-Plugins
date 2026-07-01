@@ -1026,7 +1026,7 @@ def test_archive_subtitle_extractor_uses_dependency_service_for_7z(tmp_path):
 
     class FakeArchiveDependency:
         def sevenzip_tool(self):
-            return "7z"
+            return "unar"
 
         def list_rar_members(self, archive_path, tool_path):
             calls.append(("list", Path(archive_path).name, tool_path))
@@ -1058,8 +1058,8 @@ def test_archive_subtitle_extractor_uses_dependency_service_for_7z(tmp_path):
     ]
     assert (tmp_path / "archive-upload-id.ass").read_bytes() == b"subtitle"
     assert calls == [
-        ("list", "sample.7z", "7z"),
-        ("read", "nested/Movie.zh.ass", "7z"),
+        ("list", "sample.7z", "unar"),
+        ("read", "nested/Movie.zh.ass", "unar"),
     ]
 
 
@@ -1383,7 +1383,7 @@ def test_online_download_preview_uses_upload_session_service(tmp_path):
     module.shutil.rmtree(session_dir, ignore_errors=True)
 
 
-def test_7z_archive_extraction_with_external_tool(tmp_path):
+def test_7z_archive_extraction_with_unar_tool(tmp_path):
     module, _, _ = load_plugin_module()
     cls = module.SubtitleManualUpload
     upload_session = plugin_submodule(module, "upload_session")
@@ -1391,18 +1391,21 @@ def test_7z_archive_extraction_with_external_tool(tmp_path):
     original_run = upload_session.subprocess.run
 
     def fake_which(tool):
-        return "7z" if tool == "7z" else ""
+        return tool if tool in {"unar", "lsar"} else ""
 
     def fake_run(args, stdout=None, stderr=None, check=None, timeout=None):
-        command = args[1]
-        if command == "l":
-            output = (
-                "Path = sample.7z\n"
-                "Path = 说明.txt\n"
-                "Path = Jack.Reacher.2012.chs&eng.ass\n"
-                "Path = Jack.Reacher.2012.eng.ass\n"
+        command = Path(args[0]).name
+        if command == "lsar":
+            output = json.dumps(
+                {
+                    "lsarContents": [
+                        {"XADFileName": "说明.txt"},
+                        {"XADFileName": "Jack.Reacher.2012.chs&eng.ass"},
+                        {"XADFileName": "Jack.Reacher.2012.eng.ass"},
+                    ]
+                }
             ).encode()
-        elif command == "x":
+        elif command == "unar":
             member = args[-1]
             output = f"[Script Info]\n; {member}\nDialogue: 0,0:00:01.00,0:00:02.00,Default,,0,0,0,,你好".encode()
         else:
@@ -1418,7 +1421,7 @@ def test_7z_archive_extraction_with_external_tool(tmp_path):
             rar_tool_path="",
             rar_python_package=cls._rar_python_package,
             rar_tools=cls._rar_tools,
-            sevenzip_tools=("7z",),
+            sevenzip_tools=("unar",),
             normalize_text=lambda value: str(value or "").strip(),
             decode_preview_bytes=lambda raw: (raw or b"").decode("utf-8", errors="ignore"),
         )

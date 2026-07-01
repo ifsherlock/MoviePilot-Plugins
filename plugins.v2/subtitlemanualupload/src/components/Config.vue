@@ -515,7 +515,7 @@ onMounted(() => {
           <div class="config-section">
             <div>
               <div class="config-section-title">RAR / 7Z 解压器</div>
-              <p>RAR 默认使用 MoviePilot 容器内的 <code>/usr/bin/unar</code>；7Z 仍使用容器内 7z/7za/7zz/bsdtar。</p>
+              <p>RAR / 7Z 默认使用 MoviePilot 容器内的 <code>/usr/bin/unar</code>。</p>
             </div>
           </div>
 
@@ -523,7 +523,7 @@ onMounted(() => {
             <VSelect
               v-model="localConfig.rar_dependency_mode"
               :items="rarDependencyModes"
-              label="RAR 解压器处理方式"
+              label="压缩包解压器处理方式"
               variant="outlined"
               density="comfortable"
               hide-details
@@ -601,92 +601,6 @@ onMounted(() => {
   justify-content: space-between;
 }
 
-.rar-help-dialog {
-  background: #fffaf2;
-}
-
-.rar-help-summary {
-  display: grid;
-  gap: 6px;
-  padding: 12px 14px;
-  border: 1px solid rgba(91, 109, 100, 0.12);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.64);
-  color: #52635d;
-  line-height: 1.7;
-}
-
-.rar-help-summary p {
-  margin: 0;
-}
-
-.rar-help-summary code {
-  padding: 1px 5px;
-  border-radius: 6px;
-  background: #efe6d8;
-}
-
-.rar-help-list {
-  display: grid;
-  gap: 12px;
-  margin-top: 16px;
-}
-
-.rar-help-row {
-  display: grid;
-  gap: 10px;
-  padding: 14px;
-  border: 1px solid rgba(91, 109, 100, 0.14);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.74);
-}
-
-.rar-help-row-head {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.rar-help-row-title {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-
-.rar-help-step {
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: #efe6d8;
-  color: #8a6b3f;
-  font-size: 12px;
-  font-weight: 900;
-}
-
-.command-block {
-  min-width: 0;
-}
-
-.command-block pre {
-  padding: 10px;
-  margin: 0;
-  overflow-x: auto;
-  border-radius: 12px;
-  background: #2f443d;
-  color: #fff6e8;
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.rar-help-row p {
-  margin: 0;
-  color: #687873;
-  font-size: 12px;
-  line-height: 1.6;
-}
-
 @media (max-width: 760px) {
   .config-grid.two-column {
     grid-template-columns: 1fr;
@@ -697,9 +611,5 @@ onMounted(() => {
     flex-direction: column;
   }
 
-  .rar-help-row-head {
-    align-items: stretch;
-    flex-direction: column;
-  }
 }
 </style>

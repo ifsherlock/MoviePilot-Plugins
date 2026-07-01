@@ -144,7 +144,7 @@ def find_rar_tool(
     configured = normalize_text(configured_tool_path)
     if configured:
         configured_path = Path(configured)
-        if is_executable_file(configured_path):
+        if is_executable_file(configured_path) and configured_path.name.lower() == "unar":
             return str(configured_path)
     for tool in rar_tools:
         found = shutil.which(tool)
@@ -175,7 +175,7 @@ def find_sevenzip_tool(
         configured_path = Path(configured)
         if (
             is_executable_file(configured_path)
-            and configured_path.name.lower() in {"7z", "7za", "7zz"}
+            and configured_path.name.lower() == "unar"
         ):
             return str(configured_path)
     for tool in sevenzip_tools:
@@ -408,22 +408,6 @@ def list_rar_members(
             if member:
                 members.append(member)
         return members
-    if tool_name == "unrar":
-        output = run_command([tool_path, "lb", str(archive_path)])
-        return [line.strip() for line in decode_preview_bytes(output).splitlines() if line.strip()]
-    if tool_name == "bsdtar":
-        output = run_command([tool_path, "-tf", str(archive_path)])
-        return [line.strip() for line in decode_preview_bytes(output).splitlines() if line.strip()]
-    if tool_name in {"7z", "7za", "7zz"}:
-        output = run_command([tool_path, "l", "-slt", str(archive_path)])
-        members = []
-        for line in decode_preview_bytes(output).splitlines():
-            if not line.startswith("Path = "):
-                continue
-            member = line.removeprefix("Path = ").strip()
-            if member and member != str(archive_path):
-                members.append(member)
-        return members
     return []
 
 
@@ -437,13 +421,7 @@ def read_rar_member(
     tool_name = Path(tool_path).name.lower()
     if tool_name == "unar":
         return run_command([tool_path, "-quiet", "-no-directory", "-output-directory", "-", str(archive_path), member])
-    if tool_name == "unrar":
-        return run_command([tool_path, "p", "-inul", str(archive_path), member])
-    if tool_name == "bsdtar":
-        return run_command([tool_path, "-xOf", str(archive_path), member])
-    if tool_name in {"7z", "7za", "7zz"}:
-        return run_command([tool_path, "x", "-so", str(archive_path), member])
-    raise ValueError("当前容器缺少可用的 RAR 解压工具")
+    raise ValueError("当前容器缺少可用的 unar 解压工具")
 
 
 def extract_rar_subtitle_files_with_rarfile(
@@ -567,7 +545,7 @@ def extract_7z_subtitle_files(
 ) -> List[Dict[str, Any]]:
     tool_path = sevenzip_tool_func()
     if not tool_path:
-        raise ValueError("7z 压缩包解压需要容器内可执行 7z、7za、7zz、bsdtar，或映射宿主机静态 7zz")
+        raise ValueError("7z 压缩包解压需要容器内可执行 unar，或映射宿主机 unar 到容器 /usr/bin/unar")
     return extract_command_archive_subtitle_files_func(
         source_name,
         archive_path,

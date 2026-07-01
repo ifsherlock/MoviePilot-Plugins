@@ -589,9 +589,9 @@ return (_ctx, _cache) => {
                 _createElementVNode("div", null, [
                   _createElementVNode("div", { class: "config-section-title" }, "RAR / 7Z 解压器"),
                   _createElementVNode("p", null, [
-                    _createTextVNode("RAR 默认使用 MoviePilot 容器内的 "),
+                    _createTextVNode("RAR / 7Z 默认使用 MoviePilot 容器内的 "),
                     _createElementVNode("code", null, "/usr/bin/unar"),
-                    _createTextVNode("；7Z 仍使用容器内 7z/7za/7zz/bsdtar。")
+                    _createTextVNode("。")
                   ])
                 ])
               ], -1)),
@@ -600,7 +600,7 @@ return (_ctx, _cache) => {
                   modelValue: localConfig.value.rar_dependency_mode,
                   "onUpdate:modelValue": _cache[29] || (_cache[29] = $event => ((localConfig.value.rar_dependency_mode) = $event)),
                   items: rarDependencyModes,
-                  label: "RAR 解压器处理方式",
+                  label: "压缩包解压器处理方式",
                   variant: "outlined",
                   density: "comfortable",
                   "hide-details": ""
@@ -633,6 +633,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-6c71acd7"]]);
+const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-3629af88"]]);
 
 export { Config as default };

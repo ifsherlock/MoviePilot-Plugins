@@ -126,7 +126,7 @@ function onPickFiles(event) {
           <div class="dropzone-icon">SRT / ASS / ZIP / RAR / 7Z</div>
           <div class="dropzone-title">把字幕或压缩包拖到这里</div>
           <div class="dropzone-text">
-            支持字幕文件、ZIP、RAR、7Z；RAR 默认使用容器内 unar 解压。
+            支持字幕文件、ZIP、RAR、7Z；RAR / 7Z 默认使用容器内 unar 解压。
           </div>
           <VBtn
             color="primary"
@@ -148,7 +148,7 @@ function onPickFiles(event) {
         </div>
 
         <div v-if="!hasPreviewItems" class="support-row">
-          <span :class="{ ok: rarAvailable }">RAR 解压器：{{ rarAvailable ? archiveStatus.rar_tool || 'unar 可用' : '未检测到 unar' }}</span>
+          <span :class="{ ok: rarAvailable }">压缩包解压器：{{ rarAvailable ? archiveStatus.rar_tool || 'unar 可用' : '未检测到 unar' }}</span>
           <span :class="{ ok: rarPythonAvailable }">rarfile：{{ rarPythonAvailable ? '已安装' : '备用依赖未安装' }}</span>
           <span :class="{ ok: rarDependencyStatus.state === 'ready' }">
             处理方式：{{ rarDependencyModeLabel(archiveStatus.dependency_mode) }}
