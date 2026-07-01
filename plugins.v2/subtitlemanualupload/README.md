@@ -2,6 +2,14 @@
 
 MoviePilot V2 插件，提供手动上传字幕并匹配改名的页面。
 
+## v0.1.77 更新
+
+- 修复 MoviePilot 工作流「调用插件」动作接口因 `func` 方法对象无法序列化而返回 500，导致动作下拉显示 `No data available` 的问题。
+- 工作流动作同时补齐 `action_id` 字段和 `(success, context)` 返回契约，选中动作后可被 `InvokePluginAction` 正确执行。
+- 工作流执行结果会写入 `workflow_context.subtitlemanualupload` 和 `node_outputs.subtitlemanualupload`，便于后续节点或日志查看。
+- 当前本地测试包名为 `subtitlemanualupload_v0.1.77.zip`；合入并执行 Release 后对应 tag 为 `SubtitleManualUpload_v0.1.77`。
+- 如升级后遇到问题，请在插件商店的版本历史弹窗中选择稳定版 `v0.1.70` 回退安装，确认稳定后再升级新版。
+
 ## v0.1.76 更新
 
 - 新增 MoviePilot 工作流动作：查询状态、刷新本地索引、在线自动匹配、AI 生成字幕、智能调轴。

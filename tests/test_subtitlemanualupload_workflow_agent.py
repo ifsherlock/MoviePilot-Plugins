@@ -279,26 +279,48 @@ def test_workflow_actions_contract(tmp_path):
         for forbidden in ("clear", "delete", "restore")
     )
     for action in actions:
+        assert action["action_id"] == action["id"]
+        assert isinstance(action["func"], str)
+        assert callable(action["func"])
         parameters = list(inspect.signature(action["func"]).parameters)
         assert parameters[:1] == ["action_content"]
         assert isinstance(action.get("kwargs"), dict)
+    json.dumps(actions, ensure_ascii=False)
+    try:
+        from pydantic import TypeAdapter
+    except Exception:
+        TypeAdapter = None
+    if TypeAdapter:
+        TypeAdapter(list[dict]).dump_json(actions)
 
     class FakeActionContent:
-        kwargs = {"target_ids": ["t1"]}
+        def __init__(self):
+            self.kwargs = {"target_ids": ["t1"]}
+            self.workflow_context = {}
+            self.node_outputs = {}
 
-    online_result = action_by_id["subtitlemanualupload_online_match"]["func"](
-        FakeActionContent(),
+    online_context = FakeActionContent()
+    ai_context = FakeActionContent()
+    online_success, online_context_result = action_by_id["subtitlemanualupload_online_match"]["func"](
+        online_context,
         **action_by_id["subtitlemanualupload_online_match"]["kwargs"],
     )
-    ai_result = action_by_id["subtitlemanualupload_ai_generate"]["func"](
-        FakeActionContent(),
+    ai_success, ai_context_result = action_by_id["subtitlemanualupload_ai_generate"]["func"](
+        ai_context,
         **action_by_id["subtitlemanualupload_ai_generate"]["kwargs"],
     )
 
+    assert online_success is True
+    assert online_context_result is online_context
+    online_result = online_context.workflow_context["subtitlemanualupload"]["last_result"]
     assert online_result["success"] is True
     assert online_result["data"]["requires_confirmation"] is True
+    assert ai_success is True
+    assert ai_context_result is ai_context
+    ai_result = ai_context.workflow_context["subtitlemanualupload"]["last_result"]
     assert ai_result["success"] is True
     assert ai_result["data"]["requires_confirmation"] is True
+    assert online_context.node_outputs["subtitlemanualupload"]["subtitlemanualupload_online_match"] == online_result
     assert auto_transfer.written == []
     assert autosub_bridge.submitted == []
 
