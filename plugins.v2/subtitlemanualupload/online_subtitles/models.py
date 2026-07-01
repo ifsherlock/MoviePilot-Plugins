@@ -34,7 +34,7 @@ class OnlineSubtitleResult:
     match_detail: str = ""
 
     def to_dict(self) -> Dict[str, Any]:
-        from .common import _language_category_from_text
+        from .language import _language_category_from_text
 
         return {
             "provider": self.provider,

@@ -232,6 +232,33 @@ def test_keyword_builder_is_reexported_from_common():
     assert keyword_module._region_bucket(media, targets) == "chinese"
 
 
+def test_language_helpers_are_reexported_from_common():
+    module = load_online_module()
+    language_module = sys.modules[module._language_category_from_text.__module__]
+    package_name = language_module.__name__.rsplit(".", 1)[0]
+    common_module = sys.modules[f"{package_name}.common"]
+
+    for name in (
+        "_guess_language_label",
+        "_language_category_from_text",
+        "_language_label_from_category",
+        "_language_priority",
+        "_guess_subtitle_format",
+    ):
+        assert getattr(common_module, name) is getattr(language_module, name)
+
+    assert module._guess_language_label("chs&eng.ass") == "简英双语"
+    assert module._language_label_from_category("chinese", "ze") == "中英双语"
+    assert module._guess_subtitle_format("Example.zh.ass.srt") == "ASS / SRT"
+    assert module.OnlineSubtitleResult(
+        provider="assrt",
+        result_id="lang",
+        title="Example",
+        page_url="https://example.invalid/subtitles/lang",
+        language="ze",
+    ).to_dict()["language_category"] == "chinese"
+
+
 def test_opensubtitles_search_all_prefers_tmdb_then_title_then_imdb():
     module = load_online_module()
     provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key")
