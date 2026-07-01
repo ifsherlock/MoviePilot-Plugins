@@ -317,6 +317,49 @@ def test_subtitle_inventory_is_reexported_from_target_resolver(tmp_path):
     assert fake_subprocess.calls == 1
 
 
+def test_local_media_catalog_is_reexported_from_target_resolver(tmp_path):
+    module, histories, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    target_resolver = plugin_submodule(module, "target_resolver")
+    local_media_catalog = plugin_submodule(module, "local_media_catalog")
+
+    assert issubclass(target_resolver.LocalMediaCatalog, local_media_catalog.LocalMediaCatalog)
+
+    old_time = module.datetime.now() - module.timedelta(seconds=1900)
+    stale_path = tmp_path / "stale.mkv"
+    stale_path.write_text("video", encoding="utf-8")
+    plugin._local_entries_cache = {
+        "loaded_at": old_time,
+        "entries": [
+            {
+                "id": "stale",
+                "path": str(stale_path),
+                "media_key": "movie-stale",
+                "media_type": "movie",
+                "title": "Stale Movie",
+            }
+        ],
+        "media_count": 1,
+        "persisted": True,
+    }
+    histories.data = [make_history_entry(tmp_path, "fresh", "fresh.mkv", media_key="movie-fresh")]
+    catalog = plugin.services.local_media_catalog()
+    started = {"value": False}
+    catalog.start_background_cache_refresh = lambda: started.update(value=True)
+
+    entries = catalog.load_local_entries(allow_stale=True)
+
+    assert [item["id"] for item in entries] == ["stale"]
+    assert started["value"] is True
+    assert catalog.cache_status()["stale"] is True
+
+    key = catalog.media_index_cache_key("stale", "movie")
+    catalog.media_index_cache_set(key, entries, [{"title": "Stale Movie"}])
+    assert catalog.media_index_cache_get(key, entries) == [{"title": "Stale Movie"}]
+    plugin._local_entries_cache["loaded_at"] = module.datetime.now()
+    assert catalog.media_index_cache_get(key, entries) is None
+
+
 def remember_targets(plugin, module, entries):
     target_resolver = plugin_submodule(module, "target_resolver")
     runtime_helpers = plugin_submodule(module, "runtime_helpers")
