@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-ui-backend-refactor-phased-plan.md",
   "status": {
     "phase": "phase-6",
-    "task": "6.1",
-    "next_allowed_action": "Implement only task 6.1"
+    "task": "6.2",
+    "next_allowed_action": "Implement only task 6.2"
   },
   "execution_rules": {
     "branch": "codex/subtitlemanualupload-ui-backend-refactor",
@@ -1222,9 +1222,45 @@
         {
           "id": "6.1",
           "title": "Extract pure normalizers and identity helpers",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile plugins.v2/subtitlemanualupload/target_normalizers.py plugins.v2/subtitlemanualupload/target_resolver.py tests/test_subtitlemanualupload_cache.py",
+              "result": "passed",
+              "evidence": "target_normalizers.py, target_resolver.py and cache tests compiled successfully"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py::test_target_normalizers_are_reexported_from_target_resolver tests/test_subtitlemanualupload_cache.py::test_api_targets_uses_media_target_resolver_directly -q",
+              "result": "passed",
+              "evidence": "2 passed in 0.49s"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py -q",
+              "result": "passed",
+              "evidence": "131 passed in 6.05s"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "236 passed, 2 skipped in 8.31s"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_backend_inventory.py --details",
+              "result": "passed",
+              "evidence": "target_resolver.py line_count=1690, facade_symbol_count=29 and imported_symbols_missing_from_module=[]"
+            },
+            {
+              "command": "moviepilot-v2 hot-load and docker exec import check on NAS 10.10.10.189",
+              "result": "passed",
+              "evidence": "local/container SHA256 matched for target_resolver.py and target_normalizers.py; py_compile passed; import printed MediaTargetResolver tv {'season': 1, 'episode': 2} True movie"
+            },
+            {
+              "command": "in-app browser visible DOM and console check on https://mp.jaysherlock.top:5443/#/plugin-app/SubtitleManualUpload/main",
+              "result": "passed",
+              "evidence": "built-in browser remained on the SubtitleManualUpload detail page after hot-load; visible target actions included 搜索此集在线字幕 and 单集上传; consoleErrors=[]"
+            }
+          ],
+          "commit": "5aeacad"
         },
         {
           "id": "6.2",
@@ -1634,9 +1670,24 @@
         "logged-in built-in browser opened 百万英镑 (1954), online subtitle dialog rendered 2/2 results with SubHD 1 and OpenSubtitles 1; online_status, online_manual_links, online_search_provider and online_download_preview returned 200; preview dialog rendered 已解析 1 个字幕文件，自动匹配 0 个; consoleErrors=[]",
         "phase-5 acceptance satisfied; next task is phase-6 task 6.1"
       ]
+    },
+    {
+      "task": "6.1",
+      "status": "completed",
+      "summary": "Extracted target normalizer and identity helpers into target_normalizers.py. target_resolver.py now keeps the existing direct import surface through thin facade wrappers while delegating media type normalization, poster URLs, episode hints, local/stream path checks, filesystem signatures and keyword matching to the new module.",
+      "evidence": [
+        "source commit 5aeacad created target_normalizers.py, reduced target_resolver.py helper ownership and added a cache regression proving target_resolver facade helpers and target_normalizers behavior stay aligned",
+        "directed target resolver tests passed with 2 passed in 0.49s; full cache tests passed with 131 passed in 6.05s",
+        "backend focused smoke passed with 236 passed, 2 skipped in 8.31s",
+        "backend inventory exited 0 and showed target_resolver.py line_count=1690, facade_symbol_count=29 and imported_symbols_missing_from_module=[]",
+        "moviepilot-v2 on NAS 10.10.10.189 hot-loaded target_resolver.py and target_normalizers.py; local and container SHA256 matched, py_compile passed, and container import printed MediaTargetResolver tv {'season': 1, 'episode': 2} True movie",
+        "built-in browser visible DOM stayed on SubtitleManualUpload target detail after hot-load with 搜索此集在线字幕 and 单集上传 actions available; consoleErrors=[]",
+        "next task is phase-6 task 6.2"
+      ]
     }
   ],
   "residual_risk": [
-    "Phase-5 browser-control risk from earlier tasks is retired by task 5.6 in-app browser evidence; later phases still require their own logged-in browser checks after target_resolver and timeline_fixer splits."
+    "Phase-5 browser-control risk from earlier tasks is retired by task 5.6 in-app browser evidence; later phases still require their own logged-in browser checks after target_resolver and timeline_fixer splits.",
+    "Task 6.1 proved browser visible target-detail state and console health after hot-load, but CDP network recapture for /targets timed out; the phase-6 acceptance browser check still needs fresh /targets 2xx evidence after the remaining target_resolver splits."
   ]
 }
