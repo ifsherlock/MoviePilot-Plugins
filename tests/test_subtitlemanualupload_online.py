@@ -205,6 +205,33 @@ def test_online_clients_are_reexported_from_common():
     assert "连接被重置" in clients_module._format_network_error("https://example.invalid/search", error)
 
 
+def test_keyword_builder_is_reexported_from_common():
+    module = load_online_module()
+    keyword_module = sys.modules[module.build_search_keywords.__module__]
+    package_name = keyword_module.__name__.rsplit(".", 1)[0]
+    common_module = sys.modules[f"{package_name}.common"]
+
+    for name in (
+        "build_search_keywords",
+        "extract_title_aliases",
+        "_region_bucket",
+        "_query_source_for_keyword",
+        "_clean_keyword",
+        "_unique_keywords",
+    ):
+        assert getattr(common_module, name) is getattr(keyword_module, name)
+
+    media = {"media_type": "tv", "title": "中文剧名", "en_title": "Example Show", "original_language": "zh"}
+    targets = [{"media_type": "tv", "title": "中文剧名", "en_title": "Example Show", "season": 1, "episode": 2}]
+
+    assert module.build_search_keywords(media, targets, "episode")[:2] == [
+        "Example Show S01E02",
+        "中文剧名 S01E02",
+    ]
+    assert module.extract_title_aliases('[{\"title\":\"Example Alt\"},{\"title\":\"English\"}]') == ["Example Alt"]
+    assert keyword_module._region_bucket(media, targets) == "chinese"
+
+
 def test_opensubtitles_search_all_prefers_tmdb_then_title_then_imdb():
     module = load_online_module()
     provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key")
