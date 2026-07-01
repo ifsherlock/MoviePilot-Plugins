@@ -139,6 +139,48 @@ def plugin_submodule(module, name):
     return sys.modules[f"{module.__name__}.{name}"]
 
 
+def test_target_normalizers_are_reexported_from_target_resolver(tmp_path):
+    module, _, _ = load_plugin_module()
+    target_resolver = plugin_submodule(module, "target_resolver")
+    target_normalizers = plugin_submodule(module, "target_normalizers")
+
+    for name in [
+        "media_type_text",
+        "poster_url",
+        "history_type_text",
+        "number_from_tag",
+        "extract_episode_hint",
+        "is_local_video_path",
+        "event_value",
+        "is_stream_path",
+        "entry_path_is_valid",
+        "entry_filesystem_signature",
+        "entry_matches_keyword",
+    ]:
+        assert callable(getattr(target_resolver, name))
+        assert callable(getattr(target_normalizers, name))
+
+    video = tmp_path / "Show.S01E02.mkv"
+    video.write_text("video")
+    entry = {
+        "storage": "local",
+        "path": str(video),
+        "title": "Example Show",
+        "filename": video.name,
+        "basename": video.stem,
+        "relative_path": "Season 1/Show.S01E02.mkv",
+    }
+
+    assert target_resolver.extract_episode_hint(video.name) == {"season": 1, "episode": 2}
+    assert target_resolver.extract_episode_hint(video.name) == target_normalizers.extract_episode_hint(video.name)
+    assert target_resolver.entry_path_is_valid(entry)
+    assert target_resolver.entry_path_is_valid(entry) == target_normalizers.entry_path_is_valid(entry)
+    assert target_resolver.entry_filesystem_signature(entry) == target_normalizers.entry_filesystem_signature(entry)
+    assert target_resolver.entry_filesystem_signature(entry).startswith("local|")
+    assert target_resolver.entry_matches_keyword(entry, "example s01e02")
+    assert target_resolver.entry_matches_keyword(entry, "example s01e02") == target_normalizers.entry_matches_keyword(entry, "example s01e02")
+
+
 def remember_targets(plugin, module, entries):
     target_resolver = plugin_submodule(module, "target_resolver")
     runtime_helpers = plugin_submodule(module, "runtime_helpers")
