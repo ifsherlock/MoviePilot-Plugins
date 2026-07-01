@@ -13,6 +13,7 @@ develop-eggs/
 dist/
 !plugins.v2/*/dist/
 !plugins.v2/*/dist/**
+*.zip
 release_zips/
 .tmp-test-data/
 downloads/
@@ -170,3 +171,4 @@ plugins.v2/.DS_Store
 
 # Local Codex / agent notes
 AGENTS.md
+docs/

@@ -46,6 +46,7 @@
         "author_url": "https://github.com/ifsherlock",
         "level": 1,
         "system_version": ">=2.13.5",
+        "release": true,
         "history": {
             "v0.1.70": "放宽字幕匹配插件依赖版本约束，兼容 MoviePilot 已安装的更高版本依赖",
             "v0.1.69": "刷新媒体库资源清单改为后台执行；新增信任整理历史路径模式，减少 CD2/网盘挂载等慢路径的批量文件访问，但网盘用户暂不保证完整可用性",
