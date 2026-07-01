@@ -102,6 +102,36 @@ def test_vad_io_helpers_are_reexported_from_timeline_fixer():
     assert set(config.text_subtitle_codecs) == module.TEXT_SUBTITLE_CODECS
 
 
+def test_alignment_helpers_are_reexported_from_timeline_fixer():
+    module = load_timeline_module()
+    alignment = sys.modules[f"{module.__package__}.timeline_alignment"]
+
+    config = module._timeline_alignment_config()
+    assert config.sample_rate == module.SAMPLE_RATE
+    assert config.risky_offset_seconds == module.RISKY_OFFSET_SECONDS
+    assert tuple(config.framerate_ratios) == module.FRAMERATE_RATIOS
+
+    values = [1.0, 1.0 + 1e-8, 0.5]
+    assert module._unique_float_values(values) == alignment.unique_float_values(values)
+    assert module._next_power_of_two(7) == alignment.next_power_of_two(7)
+    assert module._offset_to_convolve_index(32, 8, -3) == alignment.offset_to_convolve_index(32, 8, -3)
+
+    kwargs = {
+        "base_name": "audio:rms",
+        "offset_seconds": 130.0,
+        "scale_factor": 1.0,
+        "score": 0.5,
+        "score_margin": 0.1,
+        "active_ratio": 0.2,
+        "base_active_ratio": 0.2,
+        "max_offset_seconds": 300,
+    }
+    assert module._alignment_confidence(**kwargs) == alignment.alignment_confidence(
+        **kwargs,
+        config=config,
+    )
+
+
 def test_alignment_confidence_rejects_over_configured_max_and_flags_over_120():
     module = load_timeline_module()
 
