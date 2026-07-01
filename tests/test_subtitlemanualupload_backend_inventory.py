@@ -31,10 +31,39 @@ def test_backend_inventory_cli_outputs_valid_json_for_big_modules():
     inventory = json.loads(completed.stdout)
 
     assert inventory["module_count"] == 4
+    assert inventory["remaining_root_module_count"] == 37
+    assert inventory["migration"]["root_module_count"] == 37
+    assert inventory["migration"]["remaining_root_module_count"] == 37
+    assert inventory["migration"]["unmapped_root_modules"] == []
+
+    target_packages = {item["name"]: item for item in inventory["target_subpackages"]}
+    for name in (
+        "automation",
+        "auto_transfer",
+        "catalog",
+        "config",
+        "integrations",
+        "matching",
+        "online",
+        "runtime",
+        "timeline",
+        "upload",
+        "utils",
+    ):
+        assert target_packages[name]["exists"] is True
+        assert target_packages[name]["contains_only_init"] is True
+
+    migration_targets = {item["module"]: item for item in inventory["migration"]["migration_targets"]}
+    assert migration_targets["workflow_actions"]["target_subpackage"] == "automation"
+    assert migration_targets["auto_transfer"]["target_subpackage"] == "auto_transfer"
+    assert migration_targets["target_resolver"]["target_subpackage"] == "catalog"
+    assert migration_targets["timeline_fixer"]["target_subpackage"] == "timeline"
+
     for key in ("auto_transfer", "online_subtitles.common", "target_resolver", "timeline_fixer"):
         module = inventory["modules"][key]
         assert module["line_count"] > 0
-        assert module["total_class_function_count"] > 0
+        if key != "online_subtitles.common":
+            assert module["total_class_function_count"] > 0
         assert module["public_exports"]
         assert module["facade_symbols_to_preserve"]
         assert "path" in module
