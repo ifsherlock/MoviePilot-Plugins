@@ -10,9 +10,6 @@ const props = defineProps({
 
 const emit = defineEmits(['save', 'close'])
 const configError = ref('')
-const rarHelpDialog = ref(false)
-const copyMessage = ref('')
-const copyError = ref('')
 const localConfig = ref({
   enabled: false,
   show_sidebar_nav: true,
@@ -43,7 +40,7 @@ const localConfig = ref({
   opensubtitles_password: '',
   ai_link_enabled: true,
   rar_dependency_mode: 'none',
-  rar_tool_path: '/usr/local/bin/7z',
+  rar_tool_path: '/usr/bin/unar',
 })
 
 const onlineProviderItems = [
@@ -55,7 +52,7 @@ const onlineProviderItems = [
 
 const rarDependencyModes = [
   { title: '不处理，仅检测', value: 'none' },
-  { title: '加载插件时尝试容器内安装', value: 'container_install' },
+  { title: '加载插件时尝试容器内安装 unar', value: 'container_install' },
   { title: '使用宿主机映射文件', value: 'mapped_binary' },
 ]
 
@@ -94,57 +91,6 @@ const timelineVadItems = [
   { title: 'WebRTC VAD（推荐）', value: 'webrtc' },
   { title: 'RMS 能量阈值（降级）', value: 'rms' },
 ]
-
-const rarContainerInstallCommand = `docker exec -it moviepilot bash
-apt-get update
-apt-get install -y p7zip-full unrar-free`
-const rarStaticInstallCommand = `curl -fsSLo /tmp/mp-7zz.sh \\
-  https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/plugins.v2/subtitlemanualupload/scripts/install-static-7zz.sh
-sudo bash /tmp/mp-7zz.sh
-
-# 脚本默认优先使用清华/中科大 Gentoo distfiles 镜像下载 7zz。
-# 如果自动检测不准，可直接指定 MoviePilot 宿主机映射目录：
-sudo env MP_HOST_ROOT=/volume1/docker/moviepilot bash /tmp/mp-7zz.sh
-
-# 如果需要指定下载源，可覆盖 DOWNLOAD_URL：
-sudo env DOWNLOAD_URL=https://example.com/7zz.tar.xz bash /tmp/mp-7zz.sh
-
-# 按脚本输出的实际路径添加到 MoviePilot volumes：
-volumes:
-  - /volume1/docker/moviepilot/tools/7zz:/usr/local/bin/7z:ro
-
-# 重建或重启 MoviePilot 容器后验证：
-docker exec moviepilot which 7z
-docker exec moviepilot 7z i`
-const rarHelpItems = [
-  {
-    badge: '方案一',
-    title: '容器内临时安装',
-    description: '适合临时测试，容器重建后可能失效。',
-    button: '复制命令',
-    copyLabel: '容器安装命令',
-    command: rarContainerInstallCommand,
-  },
-  {
-    badge: '方案二',
-    title: '静态 7zz 下载并映射',
-    description: '推荐长期使用。脚本默认优先使用清华/中科大镜像下载，会检测或提示输入 MoviePilot 宿主机目录，并设置 0755 执行权限。',
-    button: '复制方案',
-    copyLabel: '静态 7zz 安装映射方案',
-    command: rarStaticInstallCommand,
-  },
-]
-
-async function copyHelpText(text, label) {
-  copyMessage.value = ''
-  copyError.value = ''
-  try {
-    await navigator.clipboard.writeText(text)
-    copyMessage.value = `${label}已复制`
-  } catch (error) {
-    copyError.value = `复制失败，请手动选择命令文本。${error?.message || ''}`.trim()
-  }
-}
 
 function normalizeProviders(value) {
   const allowed = ['subhd', 'zimuku', 'assrt', 'opensubtitles']
@@ -251,7 +197,7 @@ function normalizeConfig(input) {
     rar_dependency_mode: ['none', 'container_install', 'mapped_binary'].includes(input?.rar_dependency_mode)
       ? input.rar_dependency_mode
       : 'none',
-    rar_tool_path: String(input?.rar_tool_path || '/usr/local/bin/7z').trim() || '/usr/local/bin/7z',
+    rar_tool_path: String(input?.rar_tool_path || '/usr/bin/unar').trim() || '/usr/bin/unar',
   }
 }
 
@@ -569,23 +515,15 @@ onMounted(() => {
           <div class="config-section">
             <div>
               <div class="config-section-title">RAR / 7Z 解压器</div>
-              <p>RAR 和 7Z 都依赖容器内可执行解压器；宿主机静态 7zz 映射更适合长期使用。</p>
+              <p>RAR / 7Z 默认使用 MoviePilot 容器内的 <code>/usr/bin/unar</code>。</p>
             </div>
-            <VBtn
-              color="primary"
-              variant="tonal"
-              prepend-icon="mdi-tools"
-              @click="rarHelpDialog = true"
-            >
-              查看安装教程
-            </VBtn>
           </div>
 
           <div class="config-grid">
             <VSelect
               v-model="localConfig.rar_dependency_mode"
               :items="rarDependencyModes"
-              label="RAR 解压器处理方式"
+              label="压缩包解压器处理方式"
               variant="outlined"
               density="comfortable"
               hide-details
@@ -593,7 +531,7 @@ onMounted(() => {
             <VTextField
               v-model="localConfig.rar_tool_path"
               label="容器内映射路径"
-              placeholder="/usr/local/bin/7z"
+              placeholder="/usr/bin/unar"
               variant="outlined"
               density="comfortable"
               hide-details
@@ -603,77 +541,11 @@ onMounted(() => {
             class="mt-4"
             type="info"
             variant="tonal"
-            text="自动安装只适合临时测试；长期建议在宿主机把静态 7zz 放到 MoviePilot 部署目录的 tools/7zz，并映射为容器内 /usr/local/bin/7z。插件不会主动重启 Docker 容器。"
+            text="当前 MoviePilot 容器内置 unar 时无需额外安装；如使用映射文件，请把 unar 映射到容器内 /usr/bin/unar。插件不会主动重启 Docker 容器。"
           />
         </VCardText>
       </VCard>
     </div>
-
-    <VDialog v-model="rarHelpDialog" max-width="820">
-      <VCard class="rar-help-dialog" rounded="xl">
-        <VCardTitle class="dialog-title">
-          <span>RAR / 7Z 解压器说明</span>
-          <VBtn icon="mdi-close" variant="text" @click="rarHelpDialog = false" />
-        </VCardTitle>
-        <VDivider />
-        <VCardText>
-          <div class="rar-help-summary">
-            <p><strong>说明：</strong><code>rarfile</code> 只是 Python 调用封装，不是独立解压器。</p>
-            <p><strong>要求：</strong>MoviePilot 容器内需要能执行 <code>unrar</code>、<code>7z</code>、<code>7za</code>、<code>7zz</code> 或 <code>bsdtar</code>。</p>
-            <p><strong>方案：</strong>临时测试可在容器内安装；长期使用推荐通过国内镜像下载宿主机静态 <code>7zz</code>，设置执行权限后映射到容器内 <code>/usr/local/bin/7z</code>。</p>
-          </div>
-
-          <div class="rar-help-list">
-            <section
-              v-for="item in rarHelpItems"
-              :key="item.title"
-              class="rar-help-row"
-            >
-              <div class="rar-help-row-head">
-                <div class="rar-help-row-title">
-                  <span class="rar-help-step">{{ item.badge }}</span>
-                  <strong>{{ item.title }}</strong>
-                </div>
-                <VBtn
-                  color="primary"
-                  variant="flat"
-                  size="small"
-                  @click="copyHelpText(item.command, item.copyLabel)"
-                >
-                  {{ item.button }}
-                </VBtn>
-              </div>
-              <p>{{ item.description }}</p>
-              <div class="command-block">
-                <pre>{{ item.command }}</pre>
-              </div>
-            </section>
-          </div>
-
-          <VAlert
-            v-if="copyMessage"
-            class="mt-4"
-            type="success"
-            variant="tonal"
-            :text="copyMessage"
-          />
-          <VAlert
-            v-else-if="copyError"
-            class="mt-4"
-            type="warning"
-            variant="tonal"
-            :text="copyError"
-          />
-
-          <VAlert
-            class="mt-4"
-            type="info"
-            variant="tonal"
-            text="插件不会主动重启 Docker 容器。映射文件后需要按你的部署方式重建或重启 MoviePilot 容器；安装或映射完成后，刷新插件状态即可重新检测。"
-          />
-        </VCardText>
-      </VCard>
-    </VDialog>
   </div>
 </template>
 
@@ -729,92 +601,6 @@ onMounted(() => {
   justify-content: space-between;
 }
 
-.rar-help-dialog {
-  background: #fffaf2;
-}
-
-.rar-help-summary {
-  display: grid;
-  gap: 6px;
-  padding: 12px 14px;
-  border: 1px solid rgba(91, 109, 100, 0.12);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.64);
-  color: #52635d;
-  line-height: 1.7;
-}
-
-.rar-help-summary p {
-  margin: 0;
-}
-
-.rar-help-summary code {
-  padding: 1px 5px;
-  border-radius: 6px;
-  background: #efe6d8;
-}
-
-.rar-help-list {
-  display: grid;
-  gap: 12px;
-  margin-top: 16px;
-}
-
-.rar-help-row {
-  display: grid;
-  gap: 10px;
-  padding: 14px;
-  border: 1px solid rgba(91, 109, 100, 0.14);
-  border-radius: 18px;
-  background: rgba(255, 255, 255, 0.74);
-}
-
-.rar-help-row-head {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.rar-help-row-title {
-  display: flex;
-  min-width: 0;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-}
-
-.rar-help-step {
-  padding: 3px 8px;
-  border-radius: 999px;
-  background: #efe6d8;
-  color: #8a6b3f;
-  font-size: 12px;
-  font-weight: 900;
-}
-
-.command-block {
-  min-width: 0;
-}
-
-.command-block pre {
-  padding: 10px;
-  margin: 0;
-  overflow-x: auto;
-  border-radius: 12px;
-  background: #2f443d;
-  color: #fff6e8;
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.rar-help-row p {
-  margin: 0;
-  color: #687873;
-  font-size: 12px;
-  line-height: 1.6;
-}
-
 @media (max-width: 760px) {
   .config-grid.two-column {
     grid-template-columns: 1fr;
@@ -825,9 +611,5 @@ onMounted(() => {
     flex-direction: column;
   }
 
-  .rar-help-row-head {
-    align-items: stretch;
-    flex-direction: column;
-  }
 }
 </style>

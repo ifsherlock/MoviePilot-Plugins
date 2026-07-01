@@ -141,6 +141,173 @@ def test_manual_providers_keep_subhd_zimuku_links_only():
     assert status["zimuku"]["manual_only"] is False
 
 
+def test_online_subtitle_models_are_reexported_from_common():
+    module = load_online_module()
+    models_module = sys.modules[module.OnlineSubtitleResult.__module__]
+    package_name = models_module.__name__.rsplit(".", 1)[0]
+    common_module = sys.modules[f"{package_name}.common"]
+
+    assert common_module.OnlineSubtitleResult is models_module.OnlineSubtitleResult
+    assert common_module.HtmlLink is models_module.HtmlLink
+    assert common_module.CaptchaRequiredError is models_module.CaptchaRequiredError
+
+    result = module.OnlineSubtitleResult(
+        provider="assrt",
+        result_id="1",
+        title="Example",
+        page_url="https://example.invalid/subtitles/1",
+        language="简体中文",
+    )
+    payload = result.to_dict()
+
+    assert payload["provider_label"] == "assrt"
+    assert payload["language_category"] == "chinese"
+    assert payload["result_years"] == []
+
+    error = module.CaptchaRequiredError("需要验证码", provider="subhd", verify_url="https://subhd.tv/captcha")
+
+    assert error.to_payload() == {
+        "captcha_required": True,
+        "provider": "subhd",
+        "message": "需要验证码",
+        "verify_url": "https://subhd.tv/captcha",
+        "captcha_image": "",
+        "captcha_hint": "需要验证码",
+    }
+
+
+def test_online_clients_are_reexported_from_common():
+    module = load_online_module()
+    clients_module = sys.modules[module.OnlinePageClient.__module__]
+    package_name = clients_module.__name__.rsplit(".", 1)[0]
+    common_module = sys.modules[f"{package_name}.common"]
+
+    for name in (
+        "OnlinePageClient",
+        "OnlineDirectDownloader",
+        "normalize_online_engine",
+        "_decode_bytes",
+        "_format_network_error",
+        "_is_retryable_network_error",
+    ):
+        assert getattr(common_module, name) is getattr(clients_module, name)
+
+    assert module.normalize_online_engine("mp") == "mp_browser"
+    assert module.OnlinePageClient().status()["engine"] == "api"
+    assert clients_module._decode_bytes("字幕".encode("gb18030"), None) == "字幕"
+
+    class ResetError(Exception):
+        reason = "Connection reset by peer"
+
+    error = ResetError()
+
+    assert clients_module._is_retryable_network_error(error) is True
+    assert "连接被重置" in clients_module._format_network_error("https://example.invalid/search", error)
+
+
+def test_keyword_builder_is_reexported_from_common():
+    module = load_online_module()
+    keyword_module = sys.modules[module.build_search_keywords.__module__]
+    package_name = keyword_module.__name__.rsplit(".", 1)[0]
+    common_module = sys.modules[f"{package_name}.common"]
+
+    for name in (
+        "build_search_keywords",
+        "extract_title_aliases",
+        "_region_bucket",
+        "_query_source_for_keyword",
+        "_clean_keyword",
+        "_unique_keywords",
+    ):
+        assert getattr(common_module, name) is getattr(keyword_module, name)
+
+    media = {"media_type": "tv", "title": "中文剧名", "en_title": "Example Show", "original_language": "zh"}
+    targets = [{"media_type": "tv", "title": "中文剧名", "en_title": "Example Show", "season": 1, "episode": 2}]
+
+    assert module.build_search_keywords(media, targets, "episode")[:2] == [
+        "Example Show S01E02",
+        "中文剧名 S01E02",
+    ]
+    assert module.extract_title_aliases('[{\"title\":\"Example Alt\"},{\"title\":\"English\"}]') == ["Example Alt"]
+    assert keyword_module._region_bucket(media, targets) == "chinese"
+
+
+def test_language_helpers_are_reexported_from_common():
+    module = load_online_module()
+    language_module = sys.modules[module._language_category_from_text.__module__]
+    package_name = language_module.__name__.rsplit(".", 1)[0]
+    common_module = sys.modules[f"{package_name}.common"]
+
+    for name in (
+        "_guess_language_label",
+        "_language_category_from_text",
+        "_language_label_from_category",
+        "_language_priority",
+        "_guess_subtitle_format",
+    ):
+        assert getattr(common_module, name) is getattr(language_module, name)
+
+    assert module._guess_language_label("chs&eng.ass") == "简英双语"
+    assert module._language_label_from_category("chinese", "ze") == "中英双语"
+    assert module._guess_subtitle_format("Example.zh.ass.srt") == "ASS / SRT"
+    assert module.OnlineSubtitleResult(
+        provider="assrt",
+        result_id="lang",
+        title="Example",
+        page_url="https://example.invalid/subtitles/lang",
+        language="ze",
+    ).to_dict()["language_category"] == "chinese"
+
+
+def test_matcher_helpers_are_reexported_from_common():
+    module = load_online_module()
+    matcher_module = sys.modules[module._assess_result_match.__module__]
+    package_name = matcher_module.__name__.rsplit(".", 1)[0]
+    common_module = sys.modules[f"{package_name}.common"]
+
+    for name in (
+        "_assess_result_match",
+        "_score_result",
+        "_identity_priority",
+        "_opensubtitles_metadata_conflicts",
+        "_target_year_from_targets",
+        "_target_episode_from_targets",
+        "_safe_opensubtitles_title_identity",
+        "_episode_from_text",
+        "_episode_include_for_title",
+        "_safe_int",
+    ):
+        assert getattr(common_module, name) is getattr(matcher_module, name)
+
+    targets = [{"media_type": "tv", "title": "Example Show", "season": 1, "episode": 2, "year": "2025"}]
+    assessment = module._assess_result_match(title="Example Show S01E02 简英双语", keyword="Example Show S01E02", targets=targets)
+
+    assert assessment["identity_status"] == "strong"
+    assert "季集一致" in assessment["match_detail"]
+    assert module._opensubtitles_metadata_conflicts({"feature_details": {"tmdb_id": 200}}, [{"tmdb_id": 100}]) is True
+
+
+def test_provider_and_service_import_real_online_subtitle_modules():
+    root = Path(__file__).resolve().parents[1] / "plugins.v2" / "subtitlemanualupload" / "online_subtitles"
+    paths = [
+        root / "service.py",
+        *(root / "providers").glob("*.py"),
+    ]
+    forbidden = (
+        "from .common import",
+        "from ..common import",
+        "from plugins.v2.subtitlemanualupload.online_subtitles.common import",
+    )
+
+    offenders = [
+        path.relative_to(root).as_posix()
+        for path in paths
+        if any(pattern in path.read_text(encoding="utf-8") for pattern in forbidden)
+    ]
+
+    assert offenders == []
+
+
 def test_opensubtitles_search_all_prefers_tmdb_then_title_then_imdb():
     module = load_online_module()
     provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key")

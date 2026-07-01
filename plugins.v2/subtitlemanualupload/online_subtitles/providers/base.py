@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from ..common import *  # noqa: F401,F403
+from ..clients import *  # noqa: F401,F403
+from ..models import *  # noqa: F401,F403
+from ..shared import *  # noqa: F401,F403
 
 class BaseSubtitleProvider:
     provider_id = ""

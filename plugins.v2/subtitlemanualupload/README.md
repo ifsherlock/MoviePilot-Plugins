@@ -2,6 +2,32 @@
 
 MoviePilot V2 插件，提供手动上传字幕并匹配改名的页面。
 
+## v0.1.75 更新
+
+- 启用 MoviePilot 插件商店版本历史安装能力，字幕匹配会通过 GitHub Release 工作流生成规范版本包。
+- 当前版本对应 Release tag `SubtitleManualUpload_v0.1.75`，安装资产名为 `subtitlemanualupload_v0.1.75.zip`。
+- 如升级后遇到问题，请在插件商店的版本历史弹窗中选择上一版本 `v0.1.74` 回退安装，确认稳定后再升级新版。
+
+## v0.1.74 更新
+
+- 主入口进一步瘦身为 MoviePilot 插件壳，剩余运行时 helper、服务访问器和服务代理迁移到独立模块。
+- 完成真实 Chrome 浏览器验收，覆盖资源选择、外挂字幕、OpenSubtitles 在线预览、AI 状态和响应式页面。
+
+## v0.1.73 更新
+
+- 移除 `compat.py`、`compat_core.py` 和 `compat_services.py` 兼容层，运行时服务装配改为显式模块。
+- 清理兼容库存脚本和旧私有入口测试，后续维护以 API、服务对象和纯函数边界为准。
+
+## v0.1.72 更新
+
+- 拆分插件 API 编排到 `api/` 领域模块，主入口继续收缩为生命周期、配置初始化、事件入口和服务装配。
+- 保持原有 API 端点、配置字段和页面操作路径兼容，降低后续继续清理兼容层的风险。
+
+## v0.1.71 更新
+
+- 拆分字幕匹配主入口职责，提取兼容层、配置、上传会话、目标解析、字幕写入和匹配历史等模块，降低后续维护成本。
+- 保持现有 API、配置项和页面入口兼容，升级后功能行为不做额外变化。
+
 ## v0.1.70 更新
 
 - 放宽 `rarfile`、`numpy`、`pysubs2`、`webrtcvad-wheels` 依赖版本约束，兼容 MoviePilot 运行环境中已安装的更高版本依赖。
@@ -63,8 +89,8 @@ MoviePilot V2 插件，提供手动上传字幕并匹配改名的页面。
 - `.strm` 会按本地视频目标参与统计和匹配。
 - 上传字幕文件：`.srt`、`.ass`、`.ssa`、`.sbv`、`.sub`、`.vtt`、`.webvtt`。
 - 上传 `.zip`、`.rar`、`.7z` 压缩包并自动解包其中的字幕文件。
-- 新增轻量 Python RAR 依赖 `rarfile` 声明；上传 `.rar` 或 `.7z` 压缩包时仍需要容器内 `unrar`、`bsdtar`、`7z`、`7za` 或 `7zz` 负责实际解包，缺失时会明确提示。
-- 上传弹窗和插件设置内可点开“RAR / 7Z 解压器说明”，查看两套处理方案：容器内临时安装，或宿主机通过国内镜像下载静态 `7zz` 后映射到容器。
+- 新增轻量 Python RAR 依赖 `rarfile` 声明；上传 `.rar` 或 `.7z` 压缩包时默认使用容器内 `unar` / `lsar` 解包，缺失时会明确提示。
+- 上传弹窗和插件设置会直接显示当前解压器状态；如缺失，可选择容器内临时安装 `unar`，或宿主机映射 `unar` 到容器。
 - 插件设置可选择 RAR / 7Z 解压器处理方式：不处理、加载插件时尝试容器内安装、使用宿主机映射文件。
 - 写入前可选“智能调轴”：优先用视频内置文本字幕做基准，没有内置字幕时用 `ffmpeg` 抽取音频并通过 FFT 互相关计算整体偏移；该功能可能占用 CPU 并造成短暂卡顿。
 - 按目标视频文件名生成外挂字幕名并直接落盘。
@@ -84,44 +110,16 @@ MoviePilot V2 插件，提供手动上传字幕并匹配改名的页面。
 - 射手网(伪) 配置 API Key 后访问 `https://api.assrt.net` 官方接口；未配置时不参与自动搜索。
 - OpenSubtitles 配置 API Key 后访问 `https://api.opensubtitles.com/api/v1` 搜索中文、英文、日文字幕；下载时由插件使用 OpenSubtitles 用户名和密码后台登录换取 token。
 - 自定义站点地址只填写根地址，例如 `https://subhd.tv` 或反代入口；插件会按各站当前路径拼接搜索页。
-- `rarfile` 是最轻量的 Python RAR 封装层，但不是纯 Python 解压器；RAR5/压缩内容仍依赖外部解压程序。
-- 临时测试可在插件设置中选择“加载插件时尝试容器内安装”，或进入 MoviePilot 容器安装 `p7zip-full` / `unrar-free` / `unrar`；容器重建后可能失效。
-- 长期建议在宿主机把静态 `7zz` 放到 MoviePilot 部署目录的 `tools/7zz`，设置可执行权限，并映射为容器内 `/usr/local/bin/7z`；脚本默认优先使用清华/中科大 Gentoo distfiles 镜像下载，普通系统 `7z` 可能还要一并映射动态库，静态 `7zz` 更省心。
+- `rarfile` 是最轻量的 Python RAR 封装层，但不是纯 Python 解压器；RAR5/压缩内容默认交给 `unar` 处理。
+- 临时测试可在插件设置中选择“加载插件时尝试容器内安装”，或进入 MoviePilot 容器安装 `unar`；容器重建后可能失效。
+- 长期建议直接使用 MoviePilot 容器内置的 `/usr/bin/unar`；如果容器没有内置，可把宿主机 `unar` 映射到容器内 `/usr/bin/unar`，并确保同目录或 PATH 中可找到 `lsar`。
 - 智能调轴依赖容器内 `ffmpeg`、`ffprobe`、`numpy`、`pysubs2`；插件会通过 `requirements.txt` 声明 `pysubs2`，缺失时页面会禁用调轴开关。
 - 当前版本会去掉同目录里已有字幕文件名中的 `.default` / `.forced` 标记，但不会自动新增这些标记。
 
-宿主机静态 7zz 一键脚本：
-
-```bash
-curl -fsSLo /tmp/mp-7zz.sh \
-  https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/plugins.v2/subtitlemanualupload/scripts/install-static-7zz.sh
-sudo bash /tmp/mp-7zz.sh
-```
-
-脚本下载顺序为：清华 Gentoo distfiles 镜像、中科大 Gentoo distfiles 镜像、7-Zip 官方站、GitHub Release；如果需要固定下载源，可以设置 `DOWNLOAD_URL` 覆盖。
-
-脚本会优先自动识别运行中的 MoviePilot 容器挂载目录；如果无法确认，会提示输入 MoviePilot 的宿主机映射目录，直接回车则使用默认目录。飞牛常见会落在 `/vol1/1000/docker/moviepilot/tools/7zz`，群晖常见会落在 `/volume1/docker/moviepilot/tools/7zz`；如果识别不到，默认使用 `/volume1/docker/moviepilot/tools/7zz`。脚本会把二进制文件安装为 `0755` 权限。
-
-然后按脚本输出的实际路径给 MoviePilot 服务增加映射，例如：
+如果需要宿主机映射，按实际路径给 MoviePilot 服务增加映射，例如：
 
 ```yaml
 volumes:
-  - /volume1/docker/moviepilot/tools/7zz:/usr/local/bin/7z:ro
-```
-
-如果你的 MoviePilot 路径比较特殊，可以手动指定宿主机 MoviePilot 目录：
-
-```bash
-sudo env MP_HOST_ROOT=/volume1/docker/moviepilot bash /tmp/mp-7zz.sh
-```
-
-也可以直接指定二进制文件完整路径：
-
-```bash
-sudo env INSTALL_PATH=/volume1/docker/moviepilot/tools/7zz bash /tmp/mp-7zz.sh
-```
-
-如需手动指定下载源：
-```bash
-sudo env DOWNLOAD_URL=https://example.com/7zz.tar.xz bash /tmp/mp-7zz.sh
+  - /usr/bin/unar:/usr/bin/unar:ro
+  - /usr/bin/lsar:/usr/bin/lsar:ro
 ```

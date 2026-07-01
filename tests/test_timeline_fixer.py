@@ -12,9 +12,18 @@ import pytest
 
 def load_timeline_module():
     root = Path(__file__).resolve().parents[1]
-    module_path = root / "plugins.v2" / "subtitlemanualupload" / "timeline_fixer.py"
-    module_name = "subtitlemanualupload_timeline_fixer_testpkg"
-    sys.modules.pop(module_name, None)
+    package_dir = root / "plugins.v2" / "subtitlemanualupload"
+    module_path = package_dir / "timeline_fixer.py"
+    package_name = "subtitlemanualupload_timeline_fixer_testpkg"
+    module_name = f"{package_name}.timeline_fixer"
+    for name in list(sys.modules):
+        if name == package_name or name.startswith(f"{package_name}."):
+            sys.modules.pop(name, None)
+    package = importlib.util.module_from_spec(
+        importlib.util.spec_from_loader(package_name, loader=None, is_package=True)
+    )
+    package.__path__ = [str(package_dir)]
+    sys.modules[package_name] = package
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     module = importlib.util.module_from_spec(spec)
     sys.modules[module_name] = module
@@ -33,6 +42,7 @@ def test_normalize_max_offset_defaults_and_caps():
 
 def test_dependency_status_treats_webrtcvad_as_optional(monkeypatch):
     module = load_timeline_module()
+    dependencies = sys.modules[f"{module.__package__}.timeline_dependencies"]
 
     monkeypatch.setattr(module.shutil, "which", lambda name: f"/usr/bin/{name}" if name in {"ffmpeg", "ffprobe"} else None)
     monkeypatch.setattr(
@@ -47,10 +57,20 @@ def test_dependency_status_treats_webrtcvad_as_optional(monkeypatch):
     assert status["available"] is True
     assert status["modules"]["webrtcvad"] is False
     assert "webrtcvad" not in module._missing_dependency_names(status)
+    assert module._missing_dependency_names(status) == dependencies.missing_dependency_names(status)
+    assert status == dependencies.check_timeline_fixer_dependencies(
+        sample_rate=module.SAMPLE_RATE,
+        max_offset_seconds=module.DEFAULT_MAX_OFFSET_SECONDS,
+        min_offset_seconds=module.DEFAULT_MIN_OFFSET_SECONDS,
+        shutil_module=module.shutil,
+        importlib_util_module=module.importlib_util,
+        binary_version_func=module._binary_version,
+    )
 
 
 def test_audio_extraction_timeout_scales_with_video_duration(monkeypatch, tmp_path):
     module = load_timeline_module()
+    vad = sys.modules[f"{module.__package__}.timeline_vad"]
     video = tmp_path / "Movie.mkv"
     video.write_bytes(b"video")
 
@@ -58,10 +78,152 @@ def test_audio_extraction_timeout_scales_with_video_duration(monkeypatch, tmp_pa
 
     assert module._audio_extraction_timeout_seconds(video) > module.AUDIO_EXTRACTION_MIN_TIMEOUT_SECONDS
     assert module._audio_extraction_timeout_seconds(video) <= module.AUDIO_EXTRACTION_MAX_TIMEOUT_SECONDS
+    assert module._audio_extraction_timeout_seconds(video) == vad.audio_extraction_timeout_seconds(
+        video,
+        config=module._timeline_vad_config(),
+        probe_video_duration_seconds=module._probe_video_duration_seconds,
+    )
 
     monkeypatch.setattr(module, "_probe_video_duration_seconds", lambda path: 0.0)
 
     assert module._audio_extraction_timeout_seconds(video) == module.AUDIO_EXTRACTION_MIN_TIMEOUT_SECONDS
+
+
+def test_vad_io_helpers_are_reexported_from_timeline_fixer():
+    module = load_timeline_module()
+    vad = sys.modules[f"{module.__package__}.timeline_vad"]
+
+    raw_text = r"{\an8}<i>Hello</i>\N世界!"
+    assert module._clean_subtitle_text(raw_text) == vad.clean_subtitle_text(raw_text)
+
+    config = module._timeline_vad_config()
+    assert config.sample_rate == module.SAMPLE_RATE
+    assert config.frame_bytes == module.FRAME_BYTES
+    assert set(config.text_subtitle_codecs) == module.TEXT_SUBTITLE_CODECS
+
+
+def test_alignment_helpers_are_reexported_from_timeline_fixer():
+    module = load_timeline_module()
+    alignment = sys.modules[f"{module.__package__}.timeline_alignment"]
+
+    config = module._timeline_alignment_config()
+    assert config.sample_rate == module.SAMPLE_RATE
+    assert config.risky_offset_seconds == module.RISKY_OFFSET_SECONDS
+    assert tuple(config.framerate_ratios) == module.FRAMERATE_RATIOS
+
+    values = [1.0, 1.0 + 1e-8, 0.5]
+    assert module._unique_float_values(values) == alignment.unique_float_values(values)
+    assert module._next_power_of_two(7) == alignment.next_power_of_two(7)
+    assert module._offset_to_convolve_index(32, 8, -3) == alignment.offset_to_convolve_index(32, 8, -3)
+
+    kwargs = {
+        "base_name": "audio:rms",
+        "offset_seconds": 130.0,
+        "scale_factor": 1.0,
+        "score": 0.5,
+        "score_margin": 0.1,
+        "active_ratio": 0.2,
+        "base_active_ratio": 0.2,
+        "max_offset_seconds": 300,
+    }
+    assert module._alignment_confidence(**kwargs) == alignment.alignment_confidence(
+        **kwargs,
+        config=config,
+    )
+
+
+def test_cache_helpers_are_reexported_from_timeline_fixer(tmp_path):
+    module = load_timeline_module()
+    cache = sys.modules[f"{module.__package__}.timeline_cache"]
+    cache_dir = tmp_path / "timeline_cache"
+    video = tmp_path / "Movie.mkv"
+    subtitle = tmp_path / "Movie.eng.srt"
+    video.write_bytes(b"video")
+    subtitle.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+
+    assert module._cache_manifest_path(cache_dir) == cache.cache_manifest_path(cache_dir)
+    assert module._file_signature(video) == cache.file_signature(
+        video,
+        cache_version=module.TIMELINE_CACHE_VERSION,
+    )
+    assert module._subtitle_content_signature(subtitle) == cache.subtitle_content_signature(
+        subtitle,
+        cache_version=module.TIMELINE_CACHE_VERSION,
+    )
+    assert module._cached_audio_pcm_path(cache_dir, video) == cache.cached_audio_pcm_path(
+        cache_dir,
+        video,
+        cache_version=module.TIMELINE_CACHE_VERSION,
+    )
+    assert module._cached_vad_path(cache_dir, video, "webrtc") == cache.cached_vad_path(
+        cache_dir,
+        video,
+        "webrtc",
+        cache_version=module.TIMELINE_CACHE_VERSION,
+    )
+    assert module._cached_embedded_subtitle_path(cache_dir, video, 2, 1) == cache.cached_embedded_subtitle_path(
+        cache_dir,
+        video,
+        2,
+        1,
+        cache_version=module.TIMELINE_CACHE_VERSION,
+    )
+    assert module._cached_subtitle_vad_path(cache_dir, subtitle, 1.0) == cache.cached_subtitle_vad_path(
+        cache_dir,
+        subtitle,
+        1.0,
+        cache_version=module.TIMELINE_CACHE_VERSION,
+    )
+
+    key_kwargs = {
+        "video_path": video,
+        "subtitle_path": subtitle,
+        "max_offset_seconds": 120,
+        "min_offset_seconds": 0.2,
+        "vad_mode": "webrtc",
+        "allow_risky_offset": False,
+    }
+    assert module._timeline_result_cache_key(**key_kwargs) == cache.timeline_result_cache_key(
+        **key_kwargs,
+        cache_version=module.TIMELINE_CACHE_VERSION,
+    )
+
+
+def test_save_adjusted_subtitle_delegates_to_timeline_io(tmp_path, monkeypatch):
+    module = load_timeline_module()
+    timeline_io = sys.modules[f"{module.__package__}.timeline_io"]
+    source = tmp_path / "Movie.srt"
+    output = tmp_path / "Movie.fixed.srt"
+    calls = {}
+
+    def fake_save_adjusted_subtitle(
+        pysubs2,
+        source_path,
+        output_path,
+        scale_factor,
+        offset_seconds,
+        *,
+        load_subtitle_file,
+    ):
+        calls["pysubs2"] = pysubs2
+        calls["source_path"] = source_path
+        calls["output_path"] = output_path
+        calls["scale_factor"] = scale_factor
+        calls["offset_seconds"] = offset_seconds
+        calls["load_subtitle_file"] = load_subtitle_file
+
+    monkeypatch.setattr(timeline_io, "save_adjusted_subtitle", fake_save_adjusted_subtitle)
+
+    module._save_adjusted_subtitle("pysubs2", source, output, 1.25, -2.5)
+
+    assert calls == {
+        "pysubs2": "pysubs2",
+        "source_path": source,
+        "output_path": output,
+        "scale_factor": 1.25,
+        "offset_seconds": -2.5,
+        "load_subtitle_file": module._load_subtitle_file,
+    }
 
 
 def test_alignment_confidence_rejects_over_configured_max_and_flags_over_120():

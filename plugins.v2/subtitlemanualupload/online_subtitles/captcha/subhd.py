@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from ..common import *  # noqa: F401,F403
+from ..shared import *  # noqa: F401,F403
 
 class SubHDSvgCaptchaSolver:
     LENGTH_MAP = {
