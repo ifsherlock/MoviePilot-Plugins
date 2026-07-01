@@ -378,6 +378,63 @@ def test_fallback_mode_accepts_subtitle_fallback_tasks(tmp_path):
     assert len(plugin._tasks) == 1
 
 
+def test_monitor_service_adds_new_media_task(tmp_path):
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._generation_mode = module.GenerationMode.MONITOR.value
+    video = tmp_path / "Movie.mkv"
+    video.write_bytes(b"video")
+
+    plugin._add_monitor_task(str(video))
+    task = next(iter(plugin._tasks.values()))
+
+    assert len(plugin._tasks) == 1
+    assert task.video_file == str(video)
+    assert task.source == module.TaskSource.EVENT
+    assert task.trigger == module.TriggerType.MANUAL.value
+
+
+def test_monitor_service_skips_new_media_when_subtitlemanualupload_takes_over(tmp_path):
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._generation_mode = module.GenerationMode.MONITOR.value
+    video = tmp_path / "Movie.mkv"
+    video.write_bytes(b"video")
+
+    class FakeSubtitleManualUpload:
+        _auto_search_on_transfer = True
+        _ai_link_enabled = True
+        _auto_transfer_subtitle_strategy = "online_then_ai_source"
+
+        def get_state(self):
+            return True
+
+    module.PluginManager = lambda: types.SimpleNamespace(
+        running_plugins={"SubtitleManualUpload": FakeSubtitleManualUpload()}
+    )
+
+    plugin._add_monitor_task(str(video))
+
+    assert plugin._tasks == {}
+
+
+def test_run_at_once_adds_supported_media_from_directory(tmp_path):
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._generation_mode = module.GenerationMode.MONITOR.value
+    video = tmp_path / "Movie.mp4"
+    ignored = tmp_path / "Movie.txt"
+    video.write_bytes(b"video")
+    ignored.write_text("ignored")
+
+    plugin._run_at_once([str(tmp_path)])
+    task = next(iter(plugin._tasks.values()))
+
+    assert len(plugin._tasks) == 1
+    assert task.video_file == str(video)
+    assert task.source == module.TaskSource.MANUAL
+
+
 def test_independent_monitor_is_blocked_when_subtitlemanualupload_auto_transfer_enabled():
     module = load_plugin_module()
     plugin = make_plugin(module)

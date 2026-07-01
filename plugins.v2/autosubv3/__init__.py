@@ -1,20 +1,16 @@
 ﻿import os
 import re
 import tempfile
-import traceback
 from datetime import datetime
 from pathlib import Path
 from typing import Tuple, Dict, Any, List, Optional
 from threading import Event, Lock
-from watchdog.events import FileSystemEventHandler
-from watchdog.observers import Observer
 import iso639
 import srt
 from lxml import etree
 from app.core.config import settings
 from app.core.context import MediaInfo
-from app.core.event import eventmanager, Event as MPEvent
-from app.schemas import TransferInfo
+from app.core.event import eventmanager
 from app.schemas.types import EventType
 from app.log import logger
 from app.plugins import _PluginBase
@@ -41,6 +37,7 @@ from .core.models import (
     UserInterruptException,
 )
 from .ffmpeg import Ffmpeg
+from .monitoring.monitor_service import FileMonitorHandler, MonitorService
 from .pipeline.asr_service import AsrService
 from .pipeline.generation_pipeline import GenerationPipeline
 from .pipeline.source_resolver import SourceResolver
@@ -56,22 +53,6 @@ try:
     from app.core.plugin import PluginManager
 except Exception:
     PluginManager = None
-
-
-class FileMonitorHandler(FileSystemEventHandler):
-    """
-    目录监控响应类，监听新增文件事件
-    """
-
-    def __init__(self, mon_path: str, plugin):
-        super(FileMonitorHandler, self).__init__()
-        self._watch_path = mon_path
-        self._plugin = plugin
-
-    def on_created(self, event):
-        if not event.is_directory:
-            logger.debug(f"检测到新文件：{event.src_path}")
-            self._plugin._add_monitor_task(event.src_path)
 
 
 class AutoSubv3(_PluginBase):
@@ -137,6 +118,7 @@ class AutoSubv3(_PluginBase):
     _asr_service = None
     _translation_service = None
     _generation_pipeline = None
+    _monitor_service = None
     _observer = None
     _monitor_paths = None
     _lock = Lock()
@@ -321,6 +303,16 @@ class AutoSubv3(_PluginBase):
             self._generation_pipeline = GenerationPipeline(self, logger)
         return self._generation_pipeline
 
+    def _get_monitor_service(self) -> MonitorService:
+        if not self._monitor_service:
+            self._monitor_service = MonitorService(
+                self,
+                settings.RMT_MEDIAEXT,
+                logger,
+                lambda: PluginManager,
+            )
+        return self._monitor_service
+
     def load_tasks(self) -> Dict[str, TaskItem]:
         return self._get_task_store().load_tasks()
 
@@ -438,33 +430,7 @@ class AutoSubv3(_PluginBase):
 
     @staticmethod
     def _subtitlemanualupload_auto_transfer_enabled() -> bool:
-        if PluginManager is None:
-            return False
-        try:
-            running_plugins = PluginManager().running_plugins or {}
-        except Exception as exc:
-            logger.warning("[AutoSubv3] 读取字幕匹配插件状态失败: %s", exc)
-            return False
-        plugin = running_plugins.get("SubtitleManualUpload") or running_plugins.get("subtitlemanualupload")
-        if not plugin:
-            for candidate in running_plugins.values():
-                if candidate.__class__.__name__ == "SubtitleManualUpload":
-                    plugin = candidate
-                    break
-        if not plugin:
-            return False
-        try:
-            enabled = bool(plugin.get_state()) if hasattr(plugin, "get_state") else bool(getattr(plugin, "_enabled", False))
-            auto_transfer = bool(getattr(plugin, "_auto_search_on_transfer", False))
-            ai_link_enabled = bool(getattr(plugin, "_ai_link_enabled", True))
-            strategy = str(getattr(plugin, "_auto_transfer_subtitle_strategy", "") or "").strip()
-        except Exception as exc:
-            logger.warning("[AutoSubv3] 判断字幕匹配入库自动处理状态失败: %s", exc)
-            return False
-        # 只有会触发 AI 来源生成的字幕匹配策略才接管 AutoSubv3 独立监控；
-        # online_source_only 只负责在线字幕来源，应允许 AutoSubv3 独立监控并行工作。
-        ai_takeover_strategies = {"online_then_ai_source", "ai_source_only"}
-        return enabled and auto_transfer and ai_link_enabled and strategy in ai_takeover_strategies
+        return MonitorService.check_subtitlemanualupload_auto_transfer_enabled(lambda: PluginManager, logger)
 
     def _queue_positions(self) -> Dict[str, int]:
         return self._get_queue_worker().positions()
@@ -627,116 +593,16 @@ class AutoSubv3(_PluginBase):
     # 监听媒体入库事件，每个事件触发一次自动字幕任务
     @eventmanager.register(EventType.TransferComplete)
     def _start_file_monitor(self):
-        """启动目录监控"""
-        # 停止现有 observer
-        if self._observer:
-            try:
-                self._observer.stop()
-                self._observer.join(timeout=5)
-            except Exception:
-                pass
-            self._observer = None
-
-        if not self._monitor_paths:
-            logger.info("未配置监控路径，不启动目录监控")
-            return
-        if self._generation_mode == GenerationMode.FALLBACK.value:
-            logger.info("AI 字幕生成当前为后备模式，不启动主动目录监控")
-            return
-        if self._subtitlemanualupload_auto_transfer_enabled():
-            logger.info("字幕匹配入库自动处理已启用，AutoSubv3 不启动独立目录监控")
-            return
-
-        # 全量扫描（仅处理新增关闭时）
-        if not self._process_new_only:
-            logger.info("仅处理新增关闭，开始全量扫描监控路径 ...")
-            for mon_path in self._monitor_paths:
-                if os.path.isdir(mon_path):
-                    for video_file in self._get_library_files(mon_path):
-                        self.add_task(
-                            video_file,
-                            TaskSource.EVENT,
-                            trigger=TriggerType.MANUAL.value,
-                            source_policy=SourcePolicy.AUTO.value,
-                            overwrite_policy=OverwritePolicy.SKIP.value,
-                        )
-            logger.info("全量扫描完成")
-
-        # 启动 watchdog 监控
-        try:
-            self._observer = Observer(timeout=10)
-            for mon_path in self._monitor_paths:
-                if os.path.isdir(mon_path):
-                    handler = FileMonitorHandler(mon_path, self)
-                    self._observer.schedule(handler, path=mon_path, recursive=True)
-                    logger.info(f"启动目录监控：{mon_path}")
-            self._observer.daemon = True
-            self._observer.start()
-            logger.info("目录监控服务已启动")
-        except Exception as e:
-            logger.error(f"启动目录监控失败：{e}")
-            logger.error(traceback.format_exc())
+        return self._get_monitor_service().start_file_monitor()
 
     def _add_monitor_task(self, file_path: str):
-        """监控处理器回调，添加新文件任务"""
-        if not os.path.exists(file_path):
-            return
-        ext = os.path.splitext(file_path)[-1].lower()
-        if ext not in settings.RMT_MEDIAEXT:
-            return
-        if self._generation_mode == GenerationMode.FALLBACK.value:
-            logger.info("AI 字幕生成当前为后备模式，忽略主动监控新增文件：%s", file_path)
-            return
-        if self._subtitlemanualupload_auto_transfer_enabled():
-            logger.info("字幕匹配入库自动处理已启用，忽略 AutoSubv3 独立监控新增文件：%s", file_path)
-            return
-        with self._lock:
-            self.add_task(
-                file_path,
-                TaskSource.EVENT,
-                trigger=TriggerType.MANUAL.value,
-                source_policy=SourcePolicy.AUTO.value,
-                overwrite_policy=OverwritePolicy.SKIP.value,
-            )
+        return self._get_monitor_service().add_monitor_task(file_path)
 
     def _run_at_once(self, path_list: List[str]):
-        # 立即执行一次：执行配置的媒体库目录，不受白名单限制
-        # 白名单仅在自动入库事件中生效
-        for path in path_list:
-            if not os.path.exists(path) or not os.path.isabs(path):
-                logger.warn(f"目录/文件无效，不进行处理:{path}")
-                continue
-            if os.path.isdir(path):
-                for video_file in self.__get_library_files(path):
-                    self.add_task(
-                        video_file,
-                        TaskSource.MANUAL,
-                        trigger=TriggerType.MANUAL.value,
-                        source_policy=SourcePolicy.AUTO.value,
-                        overwrite_policy=OverwritePolicy.SKIP.value,
-                    )
-            elif os.path.splitext(path)[-1].lower() in settings.RMT_MEDIAEXT:
-                self.add_task(
-                    path,
-                    TaskSource.MANUAL,
-                    trigger=TriggerType.MANUAL.value,
-                    source_policy=SourcePolicy.AUTO.value,
-                    overwrite_policy=OverwritePolicy.SKIP.value,
-                )
+        return self._get_monitor_service().run_at_once(path_list)
 
     def __check_asr(self):
-        if not self._faster_whisper_model_path or not self._faster_whisper_model:
-            logger.warn(f"faster-whisper配置信息不完整，不进行处理")
-            return False
-        if not os.path.exists(self._faster_whisper_model_path):
-            logger.info(f"创建faster-whisper模型目录：{self._faster_whisper_model_path}")
-            os.mkdir(self._faster_whisper_model_path)
-        try:
-            from faster_whisper import WhisperModel, download_model
-        except ImportError:
-            logger.warn(f"faster-whisper 未安装，不进行处理")
-            return False
-        return True
+        return self._get_monitor_service().check_asr()
 
     @staticmethod
     def _is_subtitle_manual_upload_source(source: Any) -> bool:
@@ -1014,20 +880,7 @@ class AutoSubv3(_PluginBase):
         """
         获取目录媒体文件列表
         """
-        if not os.path.isdir(in_path):
-            yield in_path
-            return
-
-        for root, dirs, files in os.walk(in_path):
-            if exclude_path and any(os.path.abspath(root).startswith(os.path.abspath(path))
-                                    for path in exclude_path.split(",")):
-                continue
-
-            for file in files:
-                cur_path = os.path.join(root, file)
-                # 检查后缀
-                if os.path.splitext(file)[-1].lower() in settings.RMT_MEDIAEXT:
-                    yield cur_path
+        yield from MonitorService.library_files(in_path, settings.RMT_MEDIAEXT, exclude_path)
 
     @staticmethod
     def __load_srt(file_path):
@@ -1165,13 +1018,8 @@ class AutoSubv3(_PluginBase):
                     task.complete_time = datetime.now()
             self.save_tasks()  # 持久化更新后的任务列表
         if self._observer:
-            try:
-                self._observer.stop()
-                self._observer.join(timeout=5)
-                logger.info("目录监控已停止")
-            except Exception:
-                pass
-            self._observer = None
+            self._get_monitor_service().stop_observer()
+            logger.info("目录监控已停止")
         self._running = False
         self._event.clear()
         logger.info(f"自动字幕生成服务已停止")
