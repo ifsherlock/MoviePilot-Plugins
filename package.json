@@ -40,7 +40,7 @@
         "name": "字幕匹配",
         "description": "手动上传字幕、ZIP/RAR/7Z，选择本地已有电影/剧集后自动匹配并按媒体文件名落盘；网盘挂载暂不保证完整可用性。",
         "labels": "字幕,媒体库,整理",
-        "version": "0.1.75",
+        "version": "0.1.77",
         "icon": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/subtitle-match.png",
         "author": "ifsherlock",
         "author_url": "https://github.com/ifsherlock",
@@ -48,6 +48,8 @@
         "system_version": ">=2.13.5",
         "release": true,
         "history": {
+            "v0.1.77": "修复工作流调用插件动作列表 500 导致下拉无数据的问题，补齐 action_id 和执行返回契约；如新版异常，可在插件版本历史中回退安装稳定版 v0.1.70",
+            "v0.1.76": "新增 MoviePilot 工作流动作和 AI 智能体工具，支持查询状态、刷新索引、在线匹配、AI 生成和智能调轴；写入类能力默认预检，需显式确认才执行，公共服务仍不注册",
             "v0.1.75": "启用字幕匹配 GitHub Release 自动打包和插件商店历史版本安装；如新版异常，可在插件版本历史中回退安装稳定版 v0.1.70",
             "v0.1.74": "主入口瘦身为 MoviePilot 插件壳，移除剩余动态辅助安装并补充真实浏览器验收",
             "v0.1.73": "移除兼容层和动态兼容安装，服务装配改为显式模块并清理旧私有入口测试",

@@ -163,7 +163,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "字幕匹配"
     plugin_desc = "手动上传字幕、ZIP 或 RAR，匹配电影/剧集并按媒体文件名落盘，可选智能调轴。"
     plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/subtitle-match.png"
-    plugin_version = "0.1.75"
+    plugin_version = "0.1.77"
     plugin_author = "ifsherlock"
     author_url = "https://github.com/ifsherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -304,6 +304,16 @@ class SubtitleManualUpload(_PluginBase):
     @staticmethod
     def get_command() -> List[Dict[str, Any]]:
         return []
+
+    def get_actions(self) -> List[Dict[str, Any]]:
+        from .workflow_actions import build_actions
+
+        return build_actions(self)
+
+    def get_agent_tools(self) -> List[type]:
+        from .agent_tools import get_agent_tools
+
+        return get_agent_tools()
 
     @staticmethod
     def get_render_mode() -> Tuple[str, str]:
