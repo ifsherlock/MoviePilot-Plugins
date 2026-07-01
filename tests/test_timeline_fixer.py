@@ -70,6 +70,7 @@ def test_dependency_status_treats_webrtcvad_as_optional(monkeypatch):
 
 def test_audio_extraction_timeout_scales_with_video_duration(monkeypatch, tmp_path):
     module = load_timeline_module()
+    vad = sys.modules[f"{module.__package__}.timeline_vad"]
     video = tmp_path / "Movie.mkv"
     video.write_bytes(b"video")
 
@@ -77,10 +78,28 @@ def test_audio_extraction_timeout_scales_with_video_duration(monkeypatch, tmp_pa
 
     assert module._audio_extraction_timeout_seconds(video) > module.AUDIO_EXTRACTION_MIN_TIMEOUT_SECONDS
     assert module._audio_extraction_timeout_seconds(video) <= module.AUDIO_EXTRACTION_MAX_TIMEOUT_SECONDS
+    assert module._audio_extraction_timeout_seconds(video) == vad.audio_extraction_timeout_seconds(
+        video,
+        config=module._timeline_vad_config(),
+        probe_video_duration_seconds=module._probe_video_duration_seconds,
+    )
 
     monkeypatch.setattr(module, "_probe_video_duration_seconds", lambda path: 0.0)
 
     assert module._audio_extraction_timeout_seconds(video) == module.AUDIO_EXTRACTION_MIN_TIMEOUT_SECONDS
+
+
+def test_vad_io_helpers_are_reexported_from_timeline_fixer():
+    module = load_timeline_module()
+    vad = sys.modules[f"{module.__package__}.timeline_vad"]
+
+    raw_text = r"{\an8}<i>Hello</i>\N世界!"
+    assert module._clean_subtitle_text(raw_text) == vad.clean_subtitle_text(raw_text)
+
+    config = module._timeline_vad_config()
+    assert config.sample_rate == module.SAMPLE_RATE
+    assert config.frame_bytes == module.FRAME_BYTES
+    assert set(config.text_subtitle_codecs) == module.TEXT_SUBTITLE_CODECS
 
 
 def test_alignment_confidence_rejects_over_configured_max_and_flags_over_120():
