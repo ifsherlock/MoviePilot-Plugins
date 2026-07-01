@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-ui-backend-refactor-phased-plan.md",
   "status": {
     "phase": "phase-8",
-    "task": "8.2",
-    "next_allowed_action": "Implement only task 8.2"
+    "task": "8.3",
+    "next_allowed_action": "Implement only task 8.3"
   },
   "execution_rules": {
     "branch": "codex/subtitlemanualupload-ui-backend-refactor",
@@ -1773,9 +1773,50 @@
         {
           "id": "8.2",
           "title": "Run true Chrome browser verification with cache control",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            {
+              "command": "git log --oneline -15",
+              "result": "passed",
+              "evidence": "8.2 verification ran after commits 96bfee3/9ff482b for 8.1 and source fix edff265 for unar-only archive tool detection"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "after source fix edff265, backend focused smoke collected 247 items and passed with 245 passed, 2 skipped in 10.03s"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py -q -k \"archive_tool_detection or rar_extraction_prefers_unar or 7z_archive_extraction\"",
+              "result": "passed",
+              "evidence": "3 passed, 133 deselected in 0.26s, proving legacy 7z configuration is ignored, RAR prefers unar and true .7z magic still extracts through unar"
+            },
+            {
+              "command": "built-in browser CDP cache-busting asset fetch for remoteEntry.js, AppPage JS and AppPage CSS",
+              "result": "passed",
+              "evidence": "remote assets returned 200 and matched local SHA256: remoteEntry.js 42d02f699618a44d432e1bbad33b096664513dceac20146a7dc843951410dfac, __federation_expose_AppPage-1B5zwRPz.js 9ecd0f8c6327dd370b3ff4438a18cb27ff72c1116d352bda0170c57d67fbac8f, __federation_expose_AppPage-VpMapb5k.css c6769d0a3afd5ae018efeebe8535d092b9abc0272c9dcb1e0b7805034e746b3f"
+            },
+            {
+              "command": "built-in browser CDP non-destructive entry/detail/upload/online/history/AI smoke on https://mp.jaysherlock.top:5443/#/plugin-app/SubtitleManualUpload/main",
+              "result": "passed",
+              "evidence": "entry rendered 字幕匹配/资源选择 and login=false; 百万英镑 detail rendered 本地目标, /vol paths, 批量调轴, AI 生成字幕, 搜索在线字幕 and 单集上传; upload dialog rendered SRT / ASS / ZIP / RAR / 7Z, 选择文件, 智能调轴 and archiveToolLine=压缩包解压器：unar with 压缩包解压器：7z=false; online dialog rendered SubHD/OpenSubtitles/选择要下载的字幕/手动搜索/跳转字幕站; history tab rendered 历史记录 and 暂无已匹配字幕记录; AI status strip opened/read without destructive actions"
+            },
+            {
+              "command": "built-in browser CDP Network/Runtime observation during 8.2 smoke",
+              "result": "passed",
+              "evidence": "remoteEntry/AppPage assets plus search, auto_transfer_queue, status, targets, ai_tasks, timeline_tasks, online_status, online_manual_links and online_search_provider returned 200; Runtime.exceptionThrown/Log.entryAdded events were empty; no write/delete/restore/timeline action was clicked"
+            },
+            {
+              "command": "runtime install/reload note",
+              "result": "passed",
+              "evidence": "Codex in-app browser does not support file uploads for the local plugin installer, so the verified local fix was installed by copying upload_session.py into moviepilot-v2 and restarting the container after hot reload did not reload the running plugin instance; post-restart browser DOM proved the running UI shows 压缩包解压器：unar"
+            },
+            {
+              "command": "git status --short",
+              "result": "passed",
+              "evidence": "after source commit edff265 and browser verification there were no tracked source/dist changes; only pre-existing untracked docs/autosubv3/zip artifacts remained untracked"
+            }
+          ],
+          "commit": "edff265"
         },
         {
           "id": "8.3",
@@ -2230,6 +2271,19 @@
         "backend inventory exited 0 with auto_transfer.py line_count=546, online_subtitles.common.py line_count=12, target_resolver.py line_count=396 facade_symbol_count=29, timeline_fixer.py line_count=755 facade_symbol_count=28 and imported_symbols_missing_from_module=[]",
         "git status after build showed no tracked source/dist changes; only pre-existing untracked docs/autosubv3/zip artifacts remain outside this work unit",
         "next task is phase-8 task 8.2"
+      ]
+    },
+    {
+      "task": "8.2",
+      "status": "completed",
+      "summary": "Ran cache-controlled browser verification in the logged-in built-in browser. During the check, the upload dialog exposed an old 7z runtime label, so source commit edff265 made archive tool detection ignore legacy 7z configuration and accept only executable unar. After installing the fix and restarting moviepilot-v2, the browser showed 压缩包解压器：unar and the 8.2 non-destructive flows passed.",
+      "evidence": [
+        "source commit edff265 updated upload_session.py to accept only executable unar for RAR/7Z command extraction and added a regression for legacy 7z configuration fallback to unar",
+        "directed archive tests passed with 3 passed, 133 deselected in 0.26s; backend focused smoke passed with 245 passed, 2 skipped in 10.03s",
+        "cache-busting browser fetch proved remoteEntry.js, AppPage JS and AppPage CSS returned 200 and matched local SHA256 values 42d02f699618a44d432e1bbad33b096664513dceac20146a7dc843951410dfac, 9ecd0f8c6327dd370b3ff4438a18cb27ff72c1116d352bda0170c57d67fbac8f and c6769d0a3afd5ae018efeebe8535d092b9abc0272c9dcb1e0b7805034e746b3f",
+        "browser entry/detail/upload/online/history/AI smoke passed without destructive actions; upload dialog showed archiveToolLine=压缩包解压器：unar and 压缩包解压器：7z=false",
+        "browser network observation showed plugin assets plus search, auto_transfer_queue, status, targets, ai_tasks, timeline_tasks, online_status, online_manual_links and online_search_provider returned 200; Runtime.exceptionThrown/Log.entryAdded events were empty",
+        "next task is phase-8 task 8.3"
       ]
     }
   ],
