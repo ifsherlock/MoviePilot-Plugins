@@ -8,7 +8,7 @@ import json
 import shutil
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
-from .online_subtitle import build_search_keywords
+from .online.online_subtitle import build_search_keywords
 
 
 @dataclass(frozen=True)

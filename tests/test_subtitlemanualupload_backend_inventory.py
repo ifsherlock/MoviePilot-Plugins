@@ -55,6 +55,9 @@ def test_backend_inventory_cli_outputs_valid_json_for_big_modules():
     assert "subtitle_inventory" not in remaining_root_modules
     assert "target_normalizers" not in remaining_root_modules
     assert "target_resolver" not in remaining_root_modules
+    assert "online_ai" not in remaining_root_modules
+    assert "online_subtitle" not in remaining_root_modules
+    assert "upload_session" not in remaining_root_modules
 
     target_packages = {item["name"]: item for item in inventory["target_subpackages"]}
     for name in (
@@ -106,6 +109,12 @@ def test_backend_inventory_cli_outputs_valid_json_for_big_modules():
                 "timeline_tasks.py",
                 "timeline_vad.py",
             ]
+        elif name == "online":
+            assert target_packages[name]["contains_only_init"] is False
+            assert target_packages[name]["python_files"] == ["__init__.py", "online_ai.py", "online_subtitle.py"]
+        elif name == "upload":
+            assert target_packages[name]["contains_only_init"] is False
+            assert target_packages[name]["python_files"] == ["__init__.py", "upload_session.py"]
         else:
             assert target_packages[name]["contains_only_init"] is True
 
@@ -131,6 +140,9 @@ def test_backend_inventory_cli_outputs_valid_json_for_big_modules():
     assert migration_targets["subtitle_inventory"]["migrated"] is True
     assert migration_targets["target_normalizers"]["migrated"] is True
     assert migration_targets["target_resolver"]["migrated"] is True
+    assert migration_targets["online_ai"]["migrated"] is True
+    assert migration_targets["online_subtitle"]["migrated"] is True
+    assert migration_targets["upload_session"]["migrated"] is True
     assert migration_targets["target_resolver"]["target_subpackage"] == "catalog"
     assert migration_targets["timeline_fixer"]["target_subpackage"] == "timeline"
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 import re
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
-from ..online_subtitle import (
+from ..online.online_subtitle import (
     DEFAULT_ASSRT_API_URL,
     DEFAULT_ENGINE,
     DEFAULT_OPENSUBTITLES_API_URL,

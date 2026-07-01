@@ -11,7 +11,7 @@ from starlette.concurrency import run_in_threadpool
 from app.log import logger
 
 from ..config.config_schema import host_from_url, normalize_provider_ids
-from ..online_subtitle import CaptchaRequiredError, build_search_keywords
+from ..online.online_subtitle import CaptchaRequiredError, build_search_keywords
 from .request_helpers import (
     filter_unlocked_target_ids,
     locked_target_ids_from_body,

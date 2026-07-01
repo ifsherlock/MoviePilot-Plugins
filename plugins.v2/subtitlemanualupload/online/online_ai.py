@@ -4,10 +4,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .api.online_api import download_online_results_to_uploads
+from ..api.online_api import download_online_results_to_uploads
 from .online_subtitle import CaptchaRequiredError
-from .matching.subtitle_language import auto_subtitle_sort_key, autosub_lang_from_suffix, is_chinese_language_suffix
-from .catalog.target_resolver import (
+from ..matching.subtitle_language import auto_subtitle_sort_key, autosub_lang_from_suffix, is_chinese_language_suffix
+from ..catalog.target_resolver import (
     auto_fill_missing_targets as fill_missing_target_ids,
     suggest_target as suggest_target_id,
 )

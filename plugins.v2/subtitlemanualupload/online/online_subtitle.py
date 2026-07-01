@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 try:
-    from .online_subtitles.core import *  # noqa: F401,F403
+    from ..online_subtitles.core import *  # noqa: F401,F403
 except ImportError:
     import importlib.util
     import types
     import sys
     from pathlib import Path
 
-    package_path = Path(__file__).with_name("online_subtitles")
+    package_path = Path(__file__).resolve().parents[1] / "online_subtitles"
     package_name = "_subtitlemanualupload_online_subtitles"
     module_path = package_path / "core.py"
     package = types.ModuleType(package_name)

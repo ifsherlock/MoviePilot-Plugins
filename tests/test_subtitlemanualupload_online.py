@@ -8,7 +8,7 @@ from pathlib import Path
 
 def load_online_module():
     root = Path(__file__).resolve().parents[1]
-    module_path = root / "plugins.v2" / "subtitlemanualupload" / "online_subtitle.py"
+    module_path = root / "plugins.v2" / "subtitlemanualupload" / "online" / "online_subtitle.py"
 
     app_module = types.ModuleType("app")
     core_module = types.ModuleType("app.core")

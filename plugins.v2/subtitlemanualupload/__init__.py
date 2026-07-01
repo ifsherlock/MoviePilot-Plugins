@@ -60,7 +60,7 @@ except Exception:
     MPEvent = Any
     EventType = _NoopEventType
 
-from .online_subtitle import (
+from .online.online_subtitle import (
     OnlineSubtitleSearchService,
     build_search_keywords,
     check_online_rate_limit,

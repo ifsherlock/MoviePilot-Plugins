@@ -185,7 +185,7 @@ def test_media_metadata_helpers_are_reexported_from_target_resolver():
     module, _, _ = load_plugin_module()
     target_resolver = plugin_submodule(module, "catalog.target_resolver")
     media_metadata = plugin_submodule(module, "catalog.media_metadata")
-    online_subtitle = plugin_submodule(module, "online_subtitle")
+    online_subtitle = plugin_submodule(module, "online.online_subtitle")
     runtime_helpers = plugin_submodule(module, "runtime_helpers")
 
     for name in [
@@ -773,7 +773,7 @@ def test_target_has_chinese_subtitle_checks_external_and_embedded_tracks():
 def test_online_download_name_prefers_archive_magic_over_filename_suffix():
     module, _, _ = load_plugin_module()
     language = plugin_submodule(module, "matching.subtitle_language")
-    upload_session = plugin_submodule(module, "upload_session")
+    upload_session = plugin_submodule(module, "upload.upload_session")
     cls = module.SubtitleManualUpload
 
     rar_named_zip = upload_session.normalize_online_download_name(
@@ -802,7 +802,7 @@ def test_online_download_name_prefers_archive_magic_over_filename_suffix():
 def test_online_download_name_detects_7z_magic():
     module, _, _ = load_plugin_module()
     language = plugin_submodule(module, "matching.subtitle_language")
-    upload_session = plugin_submodule(module, "upload_session")
+    upload_session = plugin_submodule(module, "upload.upload_session")
     cls = module.SubtitleManualUpload
 
     assert upload_session.normalize_online_download_name(
@@ -845,7 +845,7 @@ def _zip_payload(entries):
 
 
 def _limited_upload_session_service(module, tmp_path, **limit_overrides):
-    upload_session = plugin_submodule(module, "upload_session")
+    upload_session = plugin_submodule(module, "upload.upload_session")
     runtime_helpers = plugin_submodule(module, "runtime_helpers")
     cls = module.SubtitleManualUpload
     limits = upload_session.ArchiveResourceLimits(**limit_overrides)
@@ -916,7 +916,7 @@ def test_archive_total_size_limit_rejects_zip_subtitles(tmp_path):
 
 def test_archive_dependency_service_reports_mapped_binary_missing():
     module, _, _ = load_plugin_module()
-    upload_session = plugin_submodule(module, "upload_session")
+    upload_session = plugin_submodule(module, "upload.upload_session")
     statuses = []
 
     service = upload_session.ArchiveDependencyService(
@@ -955,7 +955,7 @@ def test_archive_subtitle_count_limit_rejects_zip_subtitles(tmp_path):
 
 def test_rarfile_resource_limit_error_does_not_fallback(tmp_path):
     module, _, _ = load_plugin_module()
-    upload_session = plugin_submodule(module, "upload_session")
+    upload_session = plugin_submodule(module, "upload.upload_session")
     runtime_helpers = plugin_submodule(module, "runtime_helpers")
     fallback_called = False
 
@@ -1021,7 +1021,7 @@ def test_rarfile_resource_limit_error_does_not_fallback(tmp_path):
 
 def test_archive_subtitle_extractor_uses_dependency_service_for_7z(tmp_path):
     module, _, _ = load_plugin_module()
-    upload_session = plugin_submodule(module, "upload_session")
+    upload_session = plugin_submodule(module, "upload.upload_session")
     calls = []
 
     class FakeArchiveDependency:
@@ -1065,7 +1065,7 @@ def test_archive_subtitle_extractor_uses_dependency_service_for_7z(tmp_path):
 
 def test_unar_archive_commands_use_lsar_json_and_stdout_extract(tmp_path):
     module, _, _ = load_plugin_module()
-    upload_session = plugin_submodule(module, "upload_session")
+    upload_session = plugin_submodule(module, "upload.upload_session")
     archive_path = tmp_path / "sample.rar"
     archive_path.write_bytes(b"Rar!\x1a\x07\x01\x00")
     unar_path = tmp_path / "unar"
@@ -1113,7 +1113,7 @@ def test_unar_archive_commands_use_lsar_json_and_stdout_extract(tmp_path):
 
 def test_rar_extraction_prefers_unar_over_rarfile_when_available(tmp_path):
     module, _, _ = load_plugin_module()
-    upload_session = plugin_submodule(module, "upload_session")
+    upload_session = plugin_submodule(module, "upload.upload_session")
     archive_path = tmp_path / "sample.rar"
     archive_path.write_bytes(b"Rar!\x1a\x07\x01\x00")
     calls = []
@@ -1143,7 +1143,7 @@ def test_rar_extraction_prefers_unar_over_rarfile_when_available(tmp_path):
 
 def test_archive_tool_detection_ignores_legacy_7z_configuration(tmp_path, monkeypatch):
     module, _, _ = load_plugin_module()
-    upload_session = plugin_submodule(module, "upload_session")
+    upload_session = plugin_submodule(module, "upload.upload_session")
     unar_path = tmp_path / "unar"
     sevenzip_path = tmp_path / "7z"
     unar_path.write_text("", encoding="utf-8")
@@ -1418,7 +1418,7 @@ def test_online_download_preview_uses_upload_session_service(tmp_path):
 def test_7z_archive_extraction_with_unar_tool(tmp_path):
     module, _, _ = load_plugin_module()
     cls = module.SubtitleManualUpload
-    upload_session = plugin_submodule(module, "upload_session")
+    upload_session = plugin_submodule(module, "upload.upload_session")
     original_which = upload_session.shutil.which
     original_run = upload_session.subprocess.run
     unar_path = tmp_path / "unar"
@@ -3424,7 +3424,7 @@ def test_online_ai_submit_requires_timeline_fixer_before_download(tmp_path):
 
 def test_tmdb_aliases_reuse_online_title_cleaner():
     module, _, _ = load_plugin_module()
-    online_subtitle = plugin_submodule(module, "online_subtitle")
+    online_subtitle = plugin_submodule(module, "online.online_subtitle")
     runtime_helpers = plugin_submodule(module, "runtime_helpers")
 
     aliases = runtime_helpers.tmdb_aliases(
@@ -3445,7 +3445,7 @@ def test_tmdb_aliases_reuse_online_title_cleaner():
 
 def test_tmdb_detail_payload_prefers_real_english_translation_title():
     module, _, _ = load_plugin_module()
-    online_subtitle = plugin_submodule(module, "online_subtitle")
+    online_subtitle = plugin_submodule(module, "online.online_subtitle")
     runtime_helpers = plugin_submodule(module, "runtime_helpers")
 
     payload = runtime_helpers.tmdb_detail_payload(
