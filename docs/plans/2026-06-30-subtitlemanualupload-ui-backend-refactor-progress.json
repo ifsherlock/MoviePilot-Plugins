@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-ui-backend-refactor-phased-plan.md",
   "status": {
     "phase": "phase-7",
-    "task": "7.3",
-    "next_allowed_action": "Implement only task 7.3"
+    "task": "7.4",
+    "next_allowed_action": "Implement only task 7.4"
   },
   "execution_rules": {
     "branch": "codex/subtitlemanualupload-ui-backend-refactor",
@@ -1576,9 +1576,50 @@
         {
           "id": "7.3",
           "title": "Extract alignment and confidence scoring",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile plugins.v2/subtitlemanualupload/timeline_alignment.py plugins.v2/subtitlemanualupload/timeline_fixer.py tests/test_timeline_fixer.py",
+              "result": "passed",
+              "evidence": "timeline_alignment.py, timeline_fixer.py and tests/test_timeline_fixer.py compiled successfully"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_timeline_fixer.py -q",
+              "result": "passed",
+              "evidence": "15 passed, 2 skipped in 0.45s; real media fixture tests kept their existing explicit skip conditions"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "backend focused smoke passed with 242 passed, 2 skipped in 9.60s"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_backend_inventory.py --details",
+              "result": "passed",
+              "evidence": "backend inventory exited 0; timeline_fixer.py line_count=856, facade_symbol_count=28, imported_symbols_missing_from_module=[] and public imports remained TimelineFixResult/check_timeline_fixer_dependencies/fix_subtitle_timeline"
+            },
+            {
+              "command": "git diff --check -- plugins.v2/subtitlemanualupload/timeline_alignment.py plugins.v2/subtitlemanualupload/timeline_fixer.py tests/test_timeline_fixer.py",
+              "result": "passed",
+              "evidence": "diff check exited 0 for touched 7.3 files"
+            },
+            {
+              "command": "scp to NAS staging dir then docker cp into moviepilot-v2; docker exec moviepilot-v2 sha256sum and python -m py_compile timeline_fixer.py timeline_alignment.py",
+              "result": "passed",
+              "evidence": "container SHA256 printed timeline_fixer.py 1f15161698e2befad405ad07b7bc7273a24e922e4f43b9bab2aba7544c1df1c5 and timeline_alignment.py e909096c48607173b3260bc49089de62b58971b20067a6423807db5c0e22eaa0; py_compile exited 0"
+            },
+            {
+              "command": "docker exec moviepilot-v2 python - import/behavior check",
+              "result": "passed",
+              "evidence": "stdout printed 100 120 8 8 low, proving timeline_fixer._timeline_alignment_config exposes expected sample/risk settings, next_power_of_two delegates consistently and >120s RMS confidence remains low"
+            },
+            {
+              "command": "logged-in built-in browser non-destructive target-detail DOM check",
+              "result": "not_run",
+              "evidence": "browser control listed the Codex In-app Browser, but reading its selected tab timed out twice after hot-load; no DOM/console pass is claimed for 7.3. This was a backend-only algorithm split and phase-7 browser acceptance remains to be proven in a later task."
+            }
+          ],
+          "commit": "7a7c308"
         },
         {
           "id": "7.4",
@@ -2022,6 +2063,20 @@
         "container import/behavior check printed 100 320 Hello世界 Hello世界 True, proving timeline_fixer wrapper config and clean-text delegation match timeline_vad",
         "logged-in built-in browser opened 百万英镑 (1954) target detail and rendered 批量调轴, AI 生成字幕, 搜索在线字幕, 单集上传, subtitle state, 2 个本地目标 and /vol paths; loginHint=false and consoleErrors=[]",
         "next task is phase-7 task 7.3"
+      ]
+    },
+    {
+      "task": "7.3",
+      "status": "completed",
+      "summary": "Extracted FFT alignment fitting, second-peak scoring, local activity risk checks, confidence calculation and auto-approval decision logic into timeline_alignment.py. timeline_fixer.py now keeps compatibility wrappers and the public fix_subtitle_timeline entry, while cache manifest/result cache logic is intentionally left for 7.4.",
+      "evidence": [
+        "source commit 7a7c308 created timeline_alignment.py, reduced timeline_fixer.py to 856 lines and kept all 28 facade symbols importable with imported_symbols_missing_from_module=[]",
+        "py_compile passed for timeline_alignment.py, timeline_fixer.py and tests/test_timeline_fixer.py; timeline tests passed with 15 passed, 2 skipped; backend focused smoke passed with 242 passed, 2 skipped in 9.60s",
+        "backend inventory exited 0 and showed timeline_fixer.py line_count=856, facade_symbol_count=28 and imported_symbols_missing_from_module=[]",
+        "moviepilot-v2 hot-loaded timeline_fixer.py and timeline_alignment.py; container SHA256 printed timeline_fixer.py 1f15161698e2befad405ad07b7bc7273a24e922e4f43b9bab2aba7544c1df1c5 and timeline_alignment.py e909096c48607173b3260bc49089de62b58971b20067a6423807db5c0e22eaa0; py_compile passed",
+        "container import/behavior check printed 100 120 8 8 low, proving timeline_fixer wrapper config and confidence delegation match timeline_alignment",
+        "browser control listed the logged-in Codex In-app Browser but selected-tab reading timed out twice after hot-load, so 7.3 records no DOM/console pass; phase-7 browser acceptance remains pending for a later task",
+        "next task is phase-7 task 7.4"
       ]
     }
   ],
