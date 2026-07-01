@@ -97,3 +97,6 @@ class CaptchaRequiredError(ValueError):
             "captcha_image": self.captcha_image,
             "captcha_hint": self.captcha_hint,
         }
+
+
+__all__ = [name for name in globals() if not name.startswith("__")]

@@ -1,6 +1,11 @@
 from __future__ import annotations
 
-from ..common import *  # noqa: F401,F403
+from ..clients import *  # noqa: F401,F403
+from ..keyword_builder import *  # noqa: F401,F403
+from ..language import *  # noqa: F401,F403
+from ..matcher import *  # noqa: F401,F403
+from ..models import *  # noqa: F401,F403
+from ..shared import *  # noqa: F401,F403
 from .base import BaseSubtitleProvider
 
 class OpenSubtitlesProvider(BaseSubtitleProvider):

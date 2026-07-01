@@ -287,6 +287,27 @@ def test_matcher_helpers_are_reexported_from_common():
     assert module._opensubtitles_metadata_conflicts({"feature_details": {"tmdb_id": 200}}, [{"tmdb_id": 100}]) is True
 
 
+def test_provider_and_service_import_real_online_subtitle_modules():
+    root = Path(__file__).resolve().parents[1] / "plugins.v2" / "subtitlemanualupload" / "online_subtitles"
+    paths = [
+        root / "service.py",
+        *(root / "providers").glob("*.py"),
+    ]
+    forbidden = (
+        "from .common import",
+        "from ..common import",
+        "from plugins.v2.subtitlemanualupload.online_subtitles.common import",
+    )
+
+    offenders = [
+        path.relative_to(root).as_posix()
+        for path in paths
+        if any(pattern in path.read_text(encoding="utf-8") for pattern in forbidden)
+    ]
+
+    assert offenders == []
+
+
 def test_opensubtitles_search_all_prefers_tmdb_then_title_then_imdb():
     module = load_online_module()
     provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key")

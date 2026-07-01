@@ -95,3 +95,6 @@ def _guess_subtitle_format(value: str) -> str:
         if ext in (value or "").lower():
             formats.append(ext.removeprefix(".").upper())
     return " / ".join(formats)
+
+
+__all__ = [name for name in globals() if not name.startswith("__")]

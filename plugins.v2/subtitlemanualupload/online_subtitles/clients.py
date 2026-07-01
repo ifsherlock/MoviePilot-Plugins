@@ -362,3 +362,6 @@ def _compact_error_message(message: str) -> str:
     text = re.sub(r"^<urlopen error \[Errno 104\] Connection reset by peer>$", "连接被重置", text, flags=re.I)
     text = re.sub(r"^<urlopen error ([^>]+)>$", r"\1", text, flags=re.I)
     return text[:160] or "在线请求失败"
+
+
+__all__ = [name for name in globals() if not name.startswith("__")]

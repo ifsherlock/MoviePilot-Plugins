@@ -533,3 +533,6 @@ def _english_search_titles(media: Dict[str, Any], targets: List[Dict[str, Any]])
             if value and not _is_cjk_text(value):
                 values.append(value)
     return _unique_keywords(values)
+
+
+__all__ = [name for name in globals() if not name.startswith("__")]
