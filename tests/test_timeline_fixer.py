@@ -189,6 +189,43 @@ def test_cache_helpers_are_reexported_from_timeline_fixer(tmp_path):
     )
 
 
+def test_save_adjusted_subtitle_delegates_to_timeline_io(tmp_path, monkeypatch):
+    module = load_timeline_module()
+    timeline_io = sys.modules[f"{module.__package__}.timeline_io"]
+    source = tmp_path / "Movie.srt"
+    output = tmp_path / "Movie.fixed.srt"
+    calls = {}
+
+    def fake_save_adjusted_subtitle(
+        pysubs2,
+        source_path,
+        output_path,
+        scale_factor,
+        offset_seconds,
+        *,
+        load_subtitle_file,
+    ):
+        calls["pysubs2"] = pysubs2
+        calls["source_path"] = source_path
+        calls["output_path"] = output_path
+        calls["scale_factor"] = scale_factor
+        calls["offset_seconds"] = offset_seconds
+        calls["load_subtitle_file"] = load_subtitle_file
+
+    monkeypatch.setattr(timeline_io, "save_adjusted_subtitle", fake_save_adjusted_subtitle)
+
+    module._save_adjusted_subtitle("pysubs2", source, output, 1.25, -2.5)
+
+    assert calls == {
+        "pysubs2": "pysubs2",
+        "source_path": source,
+        "output_path": output,
+        "scale_factor": 1.25,
+        "offset_seconds": -2.5,
+        "load_subtitle_file": module._load_subtitle_file,
+    }
+
+
 def test_alignment_confidence_rejects_over_configured_max_and_flags_over_120():
     module = load_timeline_module()
 

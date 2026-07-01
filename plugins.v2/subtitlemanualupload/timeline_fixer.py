@@ -12,6 +12,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from . import timeline_alignment as _timeline_alignment
 from . import timeline_cache as _timeline_cache
 from . import timeline_dependencies as _timeline_dependencies
+from . import timeline_io as _timeline_io
 from . import timeline_vad as _timeline_vad
 
 SAMPLE_RATE = 100
@@ -744,17 +745,11 @@ def _save_adjusted_subtitle(
     scale_factor: float,
     offset_seconds: float,
 ) -> None:
-    subtitles = _load_subtitle_file(pysubs2, source_path)
-    offset_ms = int(round(offset_seconds * 1000))
-    for event in subtitles.events:
-        original_duration = max(1, int(getattr(event, "end", 0)) - int(getattr(event, "start", 0)))
-        scaled_duration = max(1, int(round(original_duration * scale_factor)))
-        new_start = int(round(int(getattr(event, "start", 0)) * scale_factor + offset_ms))
-        new_end = int(round(int(getattr(event, "end", 0)) * scale_factor + offset_ms))
-        if new_start < 0:
-            new_start = 0
-        if new_end <= new_start:
-            new_end = new_start + scaled_duration
-        event.start = new_start
-        event.end = new_end
-    subtitles.save(str(output_path))
+    _timeline_io.save_adjusted_subtitle(
+        pysubs2,
+        source_path,
+        output_path,
+        scale_factor,
+        offset_seconds,
+        load_subtitle_file=_load_subtitle_file,
+    )
