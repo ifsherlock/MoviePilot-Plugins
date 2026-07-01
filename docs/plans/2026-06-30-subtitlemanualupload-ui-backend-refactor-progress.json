@@ -1,9 +1,9 @@
 {
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-ui-backend-refactor-phased-plan.md",
   "status": {
-    "phase": "phase-8",
-    "task": "8.3",
-    "next_allowed_action": "Implement only task 8.3"
+    "phase": "complete",
+    "task": "complete",
+    "next_allowed_action": "Plan completed; release packaging/version history updates remain intentionally skipped unless explicitly requested"
   },
   "execution_rules": {
     "branch": "codex/subtitlemanualupload-ui-backend-refactor",
@@ -1821,9 +1821,40 @@
         {
           "id": "8.3",
           "title": "Run package readiness audit without committing generated artifacts",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            {
+              "command": "git log --oneline -15",
+              "result": "passed",
+              "evidence": "8.3 started after 78cd06f 记录浏览器验证和 unar 解压器验收 and edff265 修复压缩包解压器仅识别 unar"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "backend focused smoke collected 247 items and passed with 245 passed, 2 skipped in 11.45s"
+            },
+            {
+              "command": "git status --short; git diff --stat; git diff --cached --stat",
+              "result": "passed",
+              "evidence": "package audit found no unstaged or staged code/dist diff before the ignore-rule fix; only pre-existing untracked docs/plans autosubv3 plan/progress files, docs/代码审查.md, plugins.v2/autosubv3/queue_worker.py and subtitlemanualupload-0.1.74-init-shell-slimming.zip were outside tracking"
+            },
+            {
+              "command": "git check-ignore -v -- subtitlemanualupload-0.1.74-init-shell-slimming.zip .tmp-test-data .pytest_cache",
+              "result": "passed",
+              "evidence": "source commit 9818811 added *.zip to .gitignore; the generated subtitlemanualupload-0.1.74-init-shell-slimming.zip is now ignored by .gitignore:16, .tmp-test-data is ignored by .gitignore:18, and .pytest_cache is ignored by .gitignore:56"
+            },
+            {
+              "command": "git diff --check; git diff --cached --stat",
+              "result": "passed",
+              "evidence": "diff check exited 0 after the ignore-rule fix; cached diff was empty after source commit 9818811"
+            },
+            {
+              "command": "release packaging/version history audit",
+              "result": "passed",
+              "evidence": "no version number, release history or generated package contents were updated because the user did not explicitly request release packaging"
+            }
+          ],
+          "commit": "9818811"
         }
       ]
     }
@@ -2284,6 +2315,19 @@
         "browser entry/detail/upload/online/history/AI smoke passed without destructive actions; upload dialog showed archiveToolLine=压缩包解压器：unar and 压缩包解压器：7z=false",
         "browser network observation showed plugin assets plus search, auto_transfer_queue, status, targets, ai_tasks, timeline_tasks, online_status, online_manual_links and online_search_provider returned 200; Runtime.exceptionThrown/Log.entryAdded events were empty",
         "next task is phase-8 task 8.3"
+      ]
+    },
+    {
+      "task": "8.3",
+      "status": "completed",
+      "summary": "Completed package readiness audit. The generated zip is now ignored via source commit 9818811, screenshots/test artifacts remain ignored, no source/dist diff is pending, and version/history updates were intentionally skipped because release packaging was not explicitly requested.",
+      "evidence": [
+        "backend focused smoke passed with 245 passed, 2 skipped in 11.45s",
+        "git status/diff audit showed no pending tracked source or dist changes after source commit 9818811; remaining visible untracked files are unrelated local docs/plans/autosubv3 artifacts",
+        "git check-ignore proved subtitlemanualupload-0.1.74-init-shell-slimming.zip is ignored by .gitignore:16, .tmp-test-data by .gitignore:18 and .pytest_cache by .gitignore:56",
+        "release version/history were not updated because the user did not explicitly request release packaging",
+        "phase-8 acceptance satisfied; overall plan is complete",
+        "remaining risk: the repository still contains historical tracked subtitlemanualupload release zip files from earlier work, but 8.3 did not remove tracked history artifacts and new zip outputs are ignored going forward"
       ]
     }
   ],
