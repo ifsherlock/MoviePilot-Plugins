@@ -15,9 +15,7 @@ import iso639
 import psutil
 import srt
 from lxml import etree
-import queue
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import threading
 from uuid import uuid4
 from fastapi import HTTPException, Request
 from app.core.config import settings
@@ -51,6 +49,7 @@ from .core.models import (
 )
 from .ffmpeg import Ffmpeg
 from .storage.task_store import TaskStore
+from .tasks.queue_worker import QueueWorker
 from .translate.openai_translate import OpenAi
 
 try:
@@ -131,6 +130,7 @@ class AutoSubv3(_PluginBase):
     _process_new_only = None
     _generation_mode = None
     _task_store = None
+    _queue_worker = None
     _observer = None
     _monitor_paths = None
     _lock = Lock()
@@ -205,9 +205,8 @@ class AutoSubv3(_PluginBase):
                 return
 
             if not self._running:
-                self._task_queue = queue.Queue()
-                self._consumer_thread = threading.Thread(target=self._consume_tasks, daemon=True)
-                self._consumer_thread.start()
+                worker = self._get_queue_worker()
+                self._task_queue, self._consumer_thread = worker.start()
                 logger.info("任务队列和消费者线程已启动")
                 self._running = True
 
@@ -226,6 +225,26 @@ class AutoSubv3(_PluginBase):
         if not self._task_store:
             self._task_store = TaskStore(self.get_data, self.save_data, logger)
         return self._task_store
+
+    def _set_current_processing_task(self, task: Optional[TaskItem]):
+        self._current_processing_task = task
+
+    def _get_queue_worker(self) -> QueueWorker:
+        if not self._queue_worker:
+            self._queue_worker = QueueWorker(
+                self._event,
+                lambda: self._tasks,
+                self.save_tasks,
+                self.__process_autosub,
+                self._status_message,
+                logger,
+                get_current_task=lambda: self._current_processing_task,
+                set_current_task=self._set_current_processing_task,
+                task_queue=self._task_queue,
+                consumer_thread=self._consumer_thread,
+            )
+        self._queue_worker.sync_legacy_handles(self._task_queue, self._consumer_thread)
+        return self._queue_worker
 
     def load_tasks(self) -> Dict[str, TaskItem]:
         return self._get_task_store().load_tasks()
@@ -370,25 +389,14 @@ class AutoSubv3(_PluginBase):
         return enabled and auto_transfer and ai_link_enabled and strategy in ai_takeover_strategies
 
     def _queue_positions(self) -> Dict[str, int]:
-        positions: Dict[str, int] = {}
-        if self._current_processing_task:
-            positions[self._current_processing_task.task_id] = 0
-        if not self._task_queue:
-            return positions
-        try:
-            with self._task_queue.mutex:
-                for index, task in enumerate(list(self._task_queue.queue), start=1):
-                    positions[task.task_id] = index
-        except Exception:
-            return positions
-        return positions
+        return self._get_queue_worker().positions()
 
     def _task_counts(self) -> Dict[str, int]:
         counts = {status.value: 0 for status in TaskStatus}
         for task in (self._tasks or {}).values():
             key = task.status.value if isinstance(task.status, TaskStatus) else str(task.status)
             counts[key] = counts.get(key, 0) + 1
-        counts["queue_size"] = self._task_queue.qsize() if self._task_queue else 0
+        counts["queue_size"] = self._get_queue_worker().queue_size() if self._task_queue else 0
         return counts
 
     def _task_to_api(self, task: TaskItem, queue_positions: Optional[Dict[str, int]] = None) -> Dict[str, Any]:
@@ -637,16 +645,7 @@ class AutoSubv3(_PluginBase):
             })
 
         if self._task_queue:
-            try:
-                with self._task_queue.mutex:
-                    kept_tasks = [task for task in self._task_queue.queue if task.task_id not in matched_task_ids]
-                    removed_count = len(self._task_queue.queue) - len(kept_tasks)
-                    self._task_queue.queue = type(self._task_queue.queue)(kept_tasks)
-                    self._task_queue.unfinished_tasks = max(0, self._task_queue.unfinished_tasks - removed_count)
-                    if self._task_queue.unfinished_tasks == 0:
-                        self._task_queue.all_tasks_done.notify_all()
-            except Exception as exc:
-                logger.warning("[AutoSubv3] 从队列移除取消任务失败: %s", exc)
+            self._get_queue_worker().remove_pending(matched_task_ids, reason="取消任务")
 
         for item in filter_task_ids:
             if item not in matched_task_ids:
@@ -715,16 +714,7 @@ class AutoSubv3(_PluginBase):
             deleted.append({"task_id": task_id, "path": task.video_file, "status": task.status.value})
 
         if queue_delete_ids and self._task_queue:
-            try:
-                with self._task_queue.mutex:
-                    kept_tasks = [task for task in self._task_queue.queue if task.task_id not in queue_delete_ids]
-                    removed_count = len(self._task_queue.queue) - len(kept_tasks)
-                    self._task_queue.queue = type(self._task_queue.queue)(kept_tasks)
-                    self._task_queue.unfinished_tasks = max(0, self._task_queue.unfinished_tasks - removed_count)
-                    if self._task_queue.unfinished_tasks == 0:
-                        self._task_queue.all_tasks_done.notify_all()
-            except Exception as exc:
-                logger.warning("[AutoSubv3] 从队列移除删除任务失败: %s", exc)
+            self._get_queue_worker().remove_pending(queue_delete_ids, reason="删除任务")
 
         for item in filter_task_ids:
             if item not in matched_task_ids:
@@ -995,7 +985,9 @@ class AutoSubv3(_PluginBase):
             logger.info(f"任务已存在，跳过添加：{video_file}")
             return False
 
-        self._task_queue.put(task)
+        worker = self._get_queue_worker()
+        worker.enqueue(task)
+        self._task_queue = worker.task_queue
         self._tasks[task.task_id] = task
         self.save_tasks()
         logger.info(
@@ -1015,83 +1007,10 @@ class AutoSubv3(_PluginBase):
         logger.info("插件历史任务已清除")
 
     def __is_duplicate_task(self, video_file: str) -> bool:
-        with self._task_queue.mutex:
-            for task in self._task_queue.queue:
-                if task.video_file == video_file and task.status in (TaskStatus.PENDING, TaskStatus.IN_PROGRESS) and not task.cancel_requested:
-                    return True
-            # 还要检查当前正在处理的任务（即可能不在队列中，但正在被消费）
-            if (
-                self._consumer_thread
-                and self._current_processing_task
-                and self._current_processing_task.video_file == video_file
-                and self._current_processing_task.status in (TaskStatus.PENDING, TaskStatus.IN_PROGRESS)
-                and not self._current_processing_task.cancel_requested
-            ):
-                return True
-        return False
+        return self._get_queue_worker().is_duplicate(video_file)
 
     def _consume_tasks(self):
-        while not self._event.is_set():
-            try:
-                task = self._task_queue.get(timeout=1)
-                if task is None:
-                    continue
-                if task.cancel_requested or task.status == TaskStatus.CANCELLED:
-                    task.status = TaskStatus.CANCELLED
-                    task.complete_time = task.complete_time or datetime.now()
-                    task.error_message = task.error_message or "用户已取消"
-                    self._tasks[task.task_id] = task
-                    self.save_tasks()
-                    self._task_queue.task_done()
-                    continue
-                self._current_processing_task = task
-                logger.info(f"开始处理任务 {task.task_id}: {task.video_file}")
-                task.status = TaskStatus.IN_PROGRESS
-                task.error_message = ""
-                self._tasks[task.task_id] = task
-                self.save_tasks()
-                result_status = self.__process_autosub(
-                    task.video_file,
-                    source=task.source,
-                    force_generate=task.force_generate,
-                    source_subtitle_path=task.source_subtitle_path,
-                    source_subtitle_lang=task.source_subtitle_lang,
-                    source_policy=task.source_policy,
-                    overwrite_policy=task.overwrite_policy,
-                    output_variant=task.output_variant,
-                    reuse_output_path=task.reuse_output_path,
-                    reuse_source_lang=task.reuse_source_lang,
-                )
-                if task.cancel_requested or task.status == TaskStatus.CANCELLED:
-                    task.status = TaskStatus.CANCELLED
-                    task.complete_time = task.complete_time or datetime.now()
-                    task.error_message = task.error_message or "用户已取消"
-                else:
-                    task.status = result_status
-                    task.complete_time = datetime.now()
-                    task.error_message = "" if task.status == TaskStatus.COMPLETED else self._status_message(task.status)
-                self._tasks[task.task_id] = task
-                self.save_tasks()
-                self._task_queue.task_done()
-                self._current_processing_task = None
-            except queue.Empty:
-                continue
-            except Exception as e:
-                logger.error(f"消费任务时发生异常: {e}")
-                logger.error(traceback.format_exc())
-                if self._current_processing_task:
-                    if self._current_processing_task.cancel_requested or self._current_processing_task.status == TaskStatus.CANCELLED:
-                        self._current_processing_task.status = TaskStatus.CANCELLED
-                        self._current_processing_task.complete_time = self._current_processing_task.complete_time or datetime.now()
-                        self._current_processing_task.error_message = self._current_processing_task.error_message or "用户已取消"
-                    else:
-                        self._current_processing_task.status = TaskStatus.FAILED
-                        self._current_processing_task.complete_time = datetime.now()
-                        self._current_processing_task.error_message = str(e)
-                    self._tasks[self._current_processing_task.task_id] = self._current_processing_task
-                    self.save_tasks()
-                self._current_processing_task = None
-        logger.info("消费线程已退出")
+        self._get_queue_worker().consume()
 
     # 监听媒体入库事件，每个事件触发一次自动字幕任务
     @eventmanager.register(EventType.TransferComplete)
@@ -1214,12 +1133,10 @@ class AutoSubv3(_PluginBase):
         return str(source or "").strip() == TaskSource.SUBTITLE_MANUAL_UPLOAD.value
 
     def _is_current_task_cancelled(self) -> bool:
-        task = self._current_processing_task
-        return bool(task and (task.cancel_requested or task.status == TaskStatus.CANCELLED))
+        return self._get_queue_worker().is_current_task_cancelled()
 
     def _raise_if_task_cancelled(self):
-        if self._event.is_set() or self._is_current_task_cancelled():
-            raise UserInterruptException("用户中断当前任务")
+        self._get_queue_worker().raise_if_task_cancelled()
 
     @staticmethod
     def __subtitle_lang_suffix(source_lang: Any, output_mode: str = "bilingual") -> str:
@@ -2533,16 +2450,11 @@ class AutoSubv3(_PluginBase):
         """
         if self._running:
             self._event.set()
-        if self._consumer_thread and self._consumer_thread.is_alive():
-            logger.info("正在停止当前任务...")
-            # self._consumer_thread.join(timeout=3)
-            self._consumer_thread.join()
-
-        if self._task_queue:
-            while not self._task_queue.empty():
-                self._task_queue.get_nowait()
-                self._task_queue.task_done()
-            logger.info("任务队列已清空")
+        if self._task_queue or self._consumer_thread or self._queue_worker:
+            worker = self._get_queue_worker()
+            worker.stop()
+            self._task_queue = worker.task_queue
+            self._consumer_thread = worker.consumer_thread
         if self._tasks is not None:
             for task_id in list(self._tasks.keys()):
                 task = self._tasks[task_id]
