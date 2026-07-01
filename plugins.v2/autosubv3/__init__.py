@@ -15,8 +15,6 @@ import iso639
 import psutil
 import srt
 from lxml import etree
-from dataclasses import dataclass
-from enum import Enum
 import queue
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import threading
@@ -30,6 +28,18 @@ from app.schemas.types import NotificationType, EventType
 from app.log import logger
 from app.plugins import _PluginBase
 from app.utils.system import SystemUtils
+from .core.models import (
+    GenerationMode,
+    OverwritePolicy,
+    ResolvedSource,
+    SourcePolicy,
+    TaskItem,
+    TaskSource,
+    TaskStatus,
+    TranslationQualityException,
+    TriggerType,
+    UserInterruptException,
+)
 from .ffmpeg import Ffmpeg
 from .translate.openai_translate import OpenAi
 
@@ -37,92 +47,6 @@ try:
     from app.core.plugin import PluginManager
 except Exception:
     PluginManager = None
-
-
-class UserInterruptException(Exception):
-    """用户中断当前任务的异常"""
-    pass
-
-
-class TranslationQualityException(Exception):
-    """翻译质量未达标，拒绝输出字幕文件"""
-    pass
-
-
-class TaskSource(Enum):
-    MANUAL = "manual"
-    EVENT = "event"
-    SUBTITLE_MANUAL_UPLOAD = "subtitle_manual_upload"
-
-
-class TaskStatus(Enum):
-    PENDING = "pending"
-    IN_PROGRESS = "in_progress"
-    COMPLETED = "completed"
-    IGNORED = "ignored"
-    NO_AUDIO = "no_audio"
-    FAILED = "failed"
-    CANCELLED = "cancelled"
-
-
-class GenerationMode(Enum):
-    FALLBACK = "fallback"
-    MONITOR = "monitor"
-    MIXED = "mixed"
-
-
-class TriggerType(Enum):
-    MANUAL = "manual"
-    SUBTITLE_FALLBACK = "subtitle_fallback"
-
-
-class SourcePolicy(Enum):
-    AUTO = "auto"
-    MATCHED_EXTERNAL = "matched_external"
-    LOCAL_EXTERNAL = "local_external"
-    EMBEDDED = "embedded"
-    ASR = "asr"
-    REUSE = "reuse"
-
-
-class ResolvedSource(Enum):
-    AUTO = "auto"
-    MATCHED_EXTERNAL = "matched_external"
-    LOCAL_EXTERNAL = "local_external"
-    EMBEDDED = "embedded"
-    ASR = "asr"
-
-
-class OverwritePolicy(Enum):
-    SKIP = "skip"
-    BACKUP_REPLACE = "backup_replace"
-    NEW_VARIANT = "new_variant"
-
-
-@dataclass
-class TaskItem:
-    task_id: str
-    video_file: str
-    source: TaskSource
-    add_time: datetime
-    force_generate: bool = False
-    source_subtitle_path: str = ""
-    source_subtitle_lang: str = ""
-    trigger: str = TriggerType.MANUAL.value
-    source_policy: str = SourcePolicy.AUTO.value
-    resolved_source: str = ""
-    source_asset_path: str = ""
-    source_lang: str = ""
-    output_path: str = ""
-    output_variant: str = ""
-    reuse_output_path: str = ""
-    reuse_source_lang: str = ""
-    overwrite_policy: str = OverwritePolicy.SKIP.value
-    rerun_of: str = ""
-    status: TaskStatus = TaskStatus.PENDING
-    complete_time: datetime = None
-    error_message: str = ""
-    cancel_requested: bool = False
 
 
 class FileMonitorHandler(FileSystemEventHandler):
