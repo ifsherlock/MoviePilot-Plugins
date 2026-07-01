@@ -2,6 +2,12 @@
 
 MoviePilot V2 插件，提供手动上传字幕并匹配改名的页面。
 
+## v0.1.75 更新
+
+- 启用 MoviePilot 插件商店版本历史安装能力，字幕匹配会通过 GitHub Release 工作流生成规范版本包。
+- 当前版本对应 Release tag `SubtitleManualUpload_v0.1.75`，安装资产名为 `subtitlemanualupload_v0.1.75.zip`。
+- 如升级后遇到问题，请在插件商店的版本历史弹窗中选择上一版本 `v0.1.74` 回退安装，确认稳定后再升级新版。
+
 ## v0.1.74 更新
 
 - 主入口进一步瘦身为 MoviePilot 插件壳，剩余运行时 helper、服务访问器和服务代理迁移到独立模块。
