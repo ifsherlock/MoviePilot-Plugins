@@ -1,9 +1,9 @@
 {
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-ui-backend-refactor-phased-plan.md",
   "status": {
-    "phase": "phase-7",
-    "task": "7.5",
-    "next_allowed_action": "Implement only task 7.5"
+    "phase": "phase-8",
+    "task": "8.1",
+    "next_allowed_action": "Implement only task 8.1"
   },
   "execution_rules": {
     "branch": "codex/subtitlemanualupload-ui-backend-refactor",
@@ -1672,9 +1672,50 @@
         {
           "id": "7.5",
           "title": "Keep timeline_fixer.py facade stable and remove dead internals",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "pre-work smoke passed with 243 passed, 2 skipped in 11.01s before source commit 156d17a; current post-commit smoke passed with 244 passed, 2 skipped in 9.68s"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile plugins.v2/subtitlemanualupload/timeline_io.py plugins.v2/subtitlemanualupload/timeline_fixer.py tests/test_timeline_fixer.py",
+              "result": "passed",
+              "evidence": "timeline_io.py, timeline_fixer.py and tests/test_timeline_fixer.py compiled successfully"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_timeline_fixer.py -q",
+              "result": "passed",
+              "evidence": "17 passed, 2 skipped in 0.33s; real media fixture tests kept their existing explicit skip conditions"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_backend_inventory.py --details",
+              "result": "passed",
+              "evidence": "backend inventory exited 0; timeline_fixer.py line_count=755, facade_symbol_count=28, imported_symbols_missing_from_module=[] and public imports remained TimelineFixResult/check_timeline_fixer_dependencies/fix_subtitle_timeline"
+            },
+            {
+              "command": "scp to NAS staging dir then docker cp into moviepilot-v2; docker exec moviepilot-v2 sha256sum and python -m py_compile timeline_fixer.py timeline_io.py",
+              "result": "passed",
+              "evidence": "container SHA256 printed timeline_fixer.py aad796519f3f3be056134ec260d88d608bf48f82a7e8487514adcf621282cd25 and timeline_io.py 448ec1e44fd2a34956f2a29bdaebad1b54234e04cf1432c16a029f7c16743f20; py_compile exited 0"
+            },
+            {
+              "command": "docker exec moviepilot-v2 python - import/behavior check",
+              "result": "passed",
+              "evidence": "stdout printed TimelineFixResult True True True 1.234 ['numpy', 'pysubs2', 'webrtcvad'], proving TimelineFixResult/check_timeline_fixer_dependencies/fix_subtitle_timeline and timeline_io.save_adjusted_subtitle are callable"
+            },
+            {
+              "command": "logged-in built-in browser CDP non-destructive target-detail DOM and console check on https://mp.jaysherlock.top:5443/#/plugin-app/SubtitleManualUpload/main",
+              "result": "passed",
+              "evidence": "DOM included 批量调轴=True, AI 生成字幕=True, 搜索在线字幕=True, 单集上传=True, 本地目标=True, /vol=True, 百万英镑=True and 登录=False; Runtime.exceptionThrown/Log.entryAdded events=[]; no write/delete/restore/timeline action was clicked"
+            },
+            {
+              "command": "phase-7 acceptance review",
+              "result": "passed",
+              "evidence": "timeline tests, backend focused smoke, facade inventory and logged-in browser non-destructive调轴状态 check all passed; phase-7 acceptance satisfied and next task is phase-8 task 8.1"
+            }
+          ],
+          "commit": "156d17a"
         }
       ]
     },
@@ -2132,6 +2173,19 @@
         "container import/behavior check printed v4-local-consistency-202606 True True 394d9246dafdb91d032295cbcd5637cebda34c37.json v4-local-consistency-202606 ['audio', 'embedded_subtitles', 'manifest.json', 'results', 'subtitle_activity', 'vad'], proving cache version/path/manifest behavior",
         "browser control listed the logged-in Codex In-app Browser tab at the SubtitleManualUpload URL with title MoviePilot, but DOM snapshot and page evaluation timed out after hot-load; phase-7 browser acceptance remains pending for a later task",
         "next task is phase-7 task 7.5"
+      ]
+    },
+    {
+      "task": "7.5",
+      "status": "completed",
+      "summary": "Extracted adjusted subtitle write/save behavior into timeline_io.py while keeping timeline_fixer.py as the stable public facade for TimelineFixResult, check_timeline_fixer_dependencies and fix_subtitle_timeline.",
+      "evidence": [
+        "source commit 156d17a created timeline_io.py, kept timeline_fixer.py public imports stable and reduced timeline_fixer.py to 755 lines with facade_symbol_count=28 and imported_symbols_missing_from_module=[]",
+        "py_compile passed for timeline_io.py, timeline_fixer.py and tests/test_timeline_fixer.py; timeline tests passed with 17 passed, 2 skipped in 0.33s; backend focused smoke passed with 244 passed, 2 skipped in 9.68s",
+        "moviepilot-v2 hot-loaded timeline_fixer.py and timeline_io.py; container SHA256 printed timeline_fixer.py aad796519f3f3be056134ec260d88d608bf48f82a7e8487514adcf621282cd25 and timeline_io.py 448ec1e44fd2a34956f2a29bdaebad1b54234e04cf1432c16a029f7c16743f20; py_compile passed",
+        "container import/behavior check printed TimelineFixResult True True True 1.234 ['numpy', 'pysubs2', 'webrtcvad'], proving public facade entries and timeline_io.save_adjusted_subtitle are callable",
+        "logged-in built-in browser CDP showed 百万英镑 target detail with 批量调轴, AI 生成字幕, 搜索在线字幕, 单集上传, 本地目标 and /vol paths; Runtime.exceptionThrown/Log.entryAdded events=[]; no destructive action clicked",
+        "phase-7 acceptance satisfied; next task is phase-8 task 8.1"
       ]
     }
   ],
