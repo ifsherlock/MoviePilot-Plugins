@@ -50,6 +50,7 @@ from .core.models import (
     UserInterruptException,
 )
 from .ffmpeg import Ffmpeg
+from .storage.task_store import TaskStore
 from .translate.openai_translate import OpenAi
 
 try:
@@ -129,6 +130,7 @@ class AutoSubv3(_PluginBase):
     _max_segment_chars = None
     _process_new_only = None
     _generation_mode = None
+    _task_store = None
     _observer = None
     _monitor_paths = None
     _lock = Lock()
@@ -220,71 +222,20 @@ class AutoSubv3(_PluginBase):
         else:
             self.stop_service()
 
+    def _get_task_store(self) -> TaskStore:
+        if not self._task_store:
+            self._task_store = TaskStore(self.get_data, self.save_data, logger)
+        return self._task_store
+
     def load_tasks(self) -> Dict[str, TaskItem]:
-        raw_tasks = self.get_data("tasks") or {}
-        tasks = {}
-        for task_id, task_dict in raw_tasks.items():
-            try:
-                task = TaskItem(
-                    task_id=task_dict["task_id"],
-                    video_file=task_dict["video_file"],
-                    source=TaskSource(task_dict["source"]),
-                    add_time=datetime.fromisoformat(task_dict["add_time"]),
-                    force_generate=bool(task_dict.get("force_generate", False)),
-                    source_subtitle_path=task_dict.get("source_subtitle_path", ""),
-                    source_subtitle_lang=task_dict.get("source_subtitle_lang", ""),
-                    trigger=task_dict.get("trigger") or TriggerType.MANUAL.value,
-                    source_policy=task_dict.get("source_policy") or SourcePolicy.AUTO.value,
-                    resolved_source=task_dict.get("resolved_source", ""),
-                    source_asset_path=task_dict.get("source_asset_path", ""),
-                    source_lang=task_dict.get("source_lang", ""),
-                    output_path=task_dict.get("output_path", ""),
-                    output_variant=task_dict.get("output_variant", ""),
-                    reuse_output_path=task_dict.get("reuse_output_path", ""),
-                    reuse_source_lang=task_dict.get("reuse_source_lang", ""),
-                    overwrite_policy=task_dict.get("overwrite_policy") or OverwritePolicy.SKIP.value,
-                    rerun_of=task_dict.get("rerun_of", ""),
-                    status=TaskStatus(task_dict["status"]),
-                    complete_time=datetime.fromisoformat(task_dict["complete_time"])
-                    if task_dict.get("complete_time") else None,
-                    error_message=task_dict.get("error_message", ""),
-                    cancel_requested=bool(task_dict.get("cancel_requested", False)),
-                )
-                tasks[task_id] = task
-            except Exception as e:
-                logger.error(f"恢复任务失败：{e}")
-        return tasks
+        return self._get_task_store().load_tasks()
 
     @staticmethod
     def _serialize_task(task: TaskItem) -> dict:
-        return {
-            "task_id": task.task_id,
-            "video_file": task.video_file,
-            "source": task.source.value,
-            "add_time": task.add_time.isoformat() if task.add_time else None,
-            "force_generate": bool(task.force_generate),
-            "source_subtitle_path": task.source_subtitle_path or "",
-            "source_subtitle_lang": task.source_subtitle_lang or "",
-            "trigger": task.trigger or TriggerType.MANUAL.value,
-            "source_policy": task.source_policy or SourcePolicy.AUTO.value,
-            "resolved_source": task.resolved_source or "",
-            "source_asset_path": task.source_asset_path or "",
-            "source_lang": task.source_lang or "",
-            "output_path": task.output_path or "",
-            "output_variant": task.output_variant or "",
-            "reuse_output_path": task.reuse_output_path or "",
-            "reuse_source_lang": task.reuse_source_lang or "",
-            "overwrite_policy": task.overwrite_policy or OverwritePolicy.SKIP.value,
-            "rerun_of": task.rerun_of or "",
-            "status": task.status.value,
-            "complete_time": task.complete_time.isoformat() if task.complete_time else None,
-            "error_message": task.error_message or "",
-            "cancel_requested": bool(task.cancel_requested),
-        }
+        return TaskStore.serialize_task(task)
 
     def save_tasks(self):
-        tasks_dict = {task_id: self._serialize_task(task) for task_id, task in self._tasks.items()}
-        self.save_data("tasks", tasks_dict)
+        self._get_task_store().save_tasks(self._tasks)
 
     @staticmethod
     def _ok(data: Any = None, message: str = "ok") -> Dict[str, Any]:
@@ -948,26 +899,19 @@ class AutoSubv3(_PluginBase):
 
     def load_skipped_videos(self) -> Dict[str, dict]:
         """加载无声音跳过的视频记录"""
-        return self.get_data("skipped_videos") or {}
+        return self._get_task_store().load_skipped_videos()
 
     def save_skipped_videos(self, skipped: Dict[str, dict]):
         """保存无声音跳过的视频记录"""
-        self.save_data("skipped_videos", skipped)
+        self._get_task_store().save_skipped_videos(skipped)
 
     def add_skipped_video(self, video_file: str):
         """添加无声音跳过的视频记录"""
-        skipped = self.load_skipped_videos()
-        skipped[video_file] = {
-            "skip_time": datetime.now().isoformat(),
-            "reason": "no_audio"
-        }
-        self.save_skipped_videos(skipped)
-        logger.info(f"已记录无声音视频：{video_file}")
+        self._get_task_store().add_skipped_video(video_file)
 
     def is_video_skipped(self, video_file: str) -> bool:
         """检查视频是否因无声音已被跳过"""
-        skipped = self.load_skipped_videos()
-        return video_file in skipped
+        return self._get_task_store().is_video_skipped(video_file)
 
     @staticmethod
     def __is_chinese_lang(lang: str) -> bool:
@@ -985,22 +929,16 @@ class AutoSubv3(_PluginBase):
         return chinese_chars >= 8 and chinese_chars >= latin_chars
 
     def load_skip_chinese_videos(self):
-        return self.get_data("skip_chinese_videos") or {}
+        return self._get_task_store().load_skip_chinese_videos()
 
     def save_skip_chinese_videos(self, skipped):
-        self.save_data("skip_chinese_videos", skipped)
+        self._get_task_store().save_skip_chinese_videos(skipped)
 
     def add_skip_chinese_video(self, video_file: str):
-        skipped = self.load_skip_chinese_videos()
-        skipped[video_file] = {
-            "skip_time": datetime.now().isoformat(),
-            "reason": "chinese"
-        }
-        self.save_skip_chinese_videos(skipped)
-        logger.info(f"已记录中文视频跳过：{video_file}")
+        self._get_task_store().add_skip_chinese_video(video_file)
 
     def is_video_skip_chinese(self, video_file: str) -> bool:
-        return video_file in self.load_skip_chinese_videos()
+        return self._get_task_store().is_video_skip_chinese(video_file)
 
     def add_task(
         self,

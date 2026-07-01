@@ -860,6 +860,46 @@ def test_config_vue_default_fields_match_backend_defaults():
     assert frontend_fields == set(defaults)
 
 
+def test_task_store_loads_legacy_records_and_skips_bad_records():
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._data["tasks"] = {
+        "ok": {
+            "task_id": "ok",
+            "video_file": "/media/Movie.mkv",
+            "source": module.TaskSource.MANUAL.value,
+            "add_time": "2026-07-02T00:00:00",
+            "status": module.TaskStatus.PENDING.value,
+        },
+        "bad": {
+            "task_id": "bad",
+            "video_file": "/media/Broken.mkv",
+        },
+    }
+
+    tasks = plugin.load_tasks()
+
+    assert set(tasks) == {"ok"}
+    task = tasks["ok"]
+    assert task.trigger == module.TriggerType.MANUAL.value
+    assert task.source_policy == module.SourcePolicy.AUTO.value
+    assert task.overwrite_policy == module.OverwritePolicy.SKIP.value
+    assert task.cancel_requested is False
+
+
+def test_task_store_keeps_skip_record_keys():
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+
+    plugin.add_skipped_video("/media/no-audio.mkv")
+    plugin.add_skip_chinese_video("/media/chinese.mkv")
+
+    assert "/media/no-audio.mkv" in plugin._data["skipped_videos"]
+    assert plugin._data["skipped_videos"]["/media/no-audio.mkv"]["reason"] == "no_audio"
+    assert "/media/chinese.mkv" in plugin._data["skip_chinese_videos"]
+    assert plugin._data["skip_chinese_videos"]["/media/chinese.mkv"]["reason"] == "chinese"
+
+
 def test_delete_api_is_registered():
     module = load_plugin_module()
     plugin = make_plugin(module)
