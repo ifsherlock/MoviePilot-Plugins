@@ -37,7 +37,7 @@ from .matching.subtitle_writer import (
     timeline_rejection_message as writer_timeline_rejection_message,
     timeline_result_blocks_auto_write as writer_timeline_result_blocks_auto_write,
 )
-from .timeline_tasks import timeline_task_summary
+from .timeline.timeline_tasks import timeline_task_summary
 
 
 def _service_accessor(service_name: str):

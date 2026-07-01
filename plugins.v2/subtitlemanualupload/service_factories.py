@@ -46,8 +46,8 @@ from .target_resolver import (
     SubtitleInventory,
     TargetEntryCache,
 )
-from .timeline_fixer import TimelineFixResult, check_timeline_fixer_dependencies, fix_subtitle_timeline
-from .timeline_tasks import TimelineTaskStore
+from .timeline.timeline_fixer import TimelineFixResult, check_timeline_fixer_dependencies, fix_subtitle_timeline
+from .timeline.timeline_tasks import TimelineTaskStore
 from .matching.tongwen import convert_subtitle_file_to_simplified
 from .upload_session import (
     ArchiveDependencyService,

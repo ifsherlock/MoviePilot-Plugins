@@ -1575,7 +1575,7 @@ def test_strm_target_skips_timeline_fixing(tmp_path):
 
 def test_timeline_task_store_summary_and_target_mapping(tmp_path):
     module, _, _ = load_plugin_module()
-    timeline_tasks = plugin_submodule(module, "timeline_tasks")
+    timeline_tasks = plugin_submodule(module, "timeline.timeline_tasks")
     runtime_helpers = plugin_submodule(module, "runtime_helpers")
     plugin = make_plugin(module)
     video = tmp_path / "Movie.mkv"

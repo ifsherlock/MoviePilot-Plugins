@@ -42,6 +42,13 @@ def test_backend_inventory_cli_outputs_valid_json_for_big_modules():
     assert "subtitle_language" not in remaining_root_modules
     assert "subtitle_writer" not in remaining_root_modules
     assert "tongwen" not in remaining_root_modules
+    assert "timeline_alignment" not in remaining_root_modules
+    assert "timeline_cache" not in remaining_root_modules
+    assert "timeline_dependencies" not in remaining_root_modules
+    assert "timeline_fixer" not in remaining_root_modules
+    assert "timeline_io" not in remaining_root_modules
+    assert "timeline_tasks" not in remaining_root_modules
+    assert "timeline_vad" not in remaining_root_modules
 
     target_packages = {item["name"]: item for item in inventory["target_subpackages"]}
     for name in (
@@ -70,6 +77,18 @@ def test_backend_inventory_cli_outputs_valid_json_for_big_modules():
                 "subtitle_writer.py",
                 "tongwen.py",
             ]
+        elif name == "timeline":
+            assert target_packages[name]["contains_only_init"] is False
+            assert target_packages[name]["python_files"] == [
+                "__init__.py",
+                "timeline_alignment.py",
+                "timeline_cache.py",
+                "timeline_dependencies.py",
+                "timeline_fixer.py",
+                "timeline_io.py",
+                "timeline_tasks.py",
+                "timeline_vad.py",
+            ]
         else:
             assert target_packages[name]["contains_only_init"] is True
 
@@ -82,6 +101,13 @@ def test_backend_inventory_cli_outputs_valid_json_for_big_modules():
     assert migration_targets["subtitle_language"]["migrated"] is True
     assert migration_targets["subtitle_writer"]["migrated"] is True
     assert migration_targets["tongwen"]["migrated"] is True
+    assert migration_targets["timeline_alignment"]["migrated"] is True
+    assert migration_targets["timeline_cache"]["migrated"] is True
+    assert migration_targets["timeline_dependencies"]["migrated"] is True
+    assert migration_targets["timeline_fixer"]["migrated"] is True
+    assert migration_targets["timeline_io"]["migrated"] is True
+    assert migration_targets["timeline_tasks"]["migrated"] is True
+    assert migration_targets["timeline_vad"]["migrated"] is True
     assert migration_targets["target_resolver"]["target_subpackage"] == "catalog"
     assert migration_targets["timeline_fixer"]["target_subpackage"] == "timeline"
 

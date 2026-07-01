@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Tuple
 
 from fastapi import HTTPException, Request
 
-from ..timeline_fixer import check_timeline_fixer_dependencies
+from ..timeline.timeline_fixer import check_timeline_fixer_dependencies
 from .request_helpers import locked_target_ids_from_body, target_ids_from_body
 
 

@@ -12,7 +12,7 @@ import pytest
 
 def load_timeline_module():
     root = Path(__file__).resolve().parents[1]
-    package_dir = root / "plugins.v2" / "subtitlemanualupload"
+    package_dir = root / "plugins.v2" / "subtitlemanualupload" / "timeline"
     module_path = package_dir / "timeline_fixer.py"
     package_name = "subtitlemanualupload_timeline_fixer_testpkg"
     module_name = f"{package_name}.timeline_fixer"

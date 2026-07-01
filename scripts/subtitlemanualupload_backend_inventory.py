@@ -18,7 +18,7 @@ TARGET_MODULES = {
     "auto_transfer": PLUGIN_ROOT / "auto_transfer.py",
     "online_subtitles.common": PLUGIN_ROOT / "online_subtitles" / "common.py",
     "target_resolver": PLUGIN_ROOT / "target_resolver.py",
-    "timeline_fixer": PLUGIN_ROOT / "timeline_fixer.py",
+    "timeline_fixer": PLUGIN_ROOT / "timeline" / "timeline_fixer.py",
 }
 TARGET_SUBPACKAGES = (
     "automation",
