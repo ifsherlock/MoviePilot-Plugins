@@ -186,7 +186,7 @@ def test_media_metadata_helpers_are_reexported_from_target_resolver():
     target_resolver = plugin_submodule(module, "catalog.target_resolver")
     media_metadata = plugin_submodule(module, "catalog.media_metadata")
     online_subtitle = plugin_submodule(module, "online.online_subtitle")
-    runtime_helpers = plugin_submodule(module, "runtime_helpers")
+    runtime_helpers = plugin_submodule(module, "runtime.runtime_helpers")
 
     for name in [
         "english_title_from_aliases",
@@ -233,7 +233,7 @@ def test_subtitle_inventory_is_reexported_from_target_resolver(tmp_path):
     target_resolver = plugin_submodule(module, "catalog.target_resolver")
     subtitle_inventory = plugin_submodule(module, "catalog.subtitle_inventory")
     subtitle_language = plugin_submodule(module, "matching.subtitle_language")
-    runtime_helpers = plugin_submodule(module, "runtime_helpers")
+    runtime_helpers = plugin_submodule(module, "runtime.runtime_helpers")
 
     assert issubclass(target_resolver.SubtitleInventory, subtitle_inventory.SubtitleInventory)
 
@@ -399,7 +399,7 @@ def test_media_target_resolver_is_reexported_from_target_resolver(tmp_path):
 
 def remember_targets(plugin, module, entries):
     target_resolver = plugin_submodule(module, "catalog.target_resolver")
-    runtime_helpers = plugin_submodule(module, "runtime_helpers")
+    runtime_helpers = plugin_submodule(module, "runtime.runtime_helpers")
     target_resolver.TargetEntryCache(
         plugin._entry_map,
         max_size=plugin._entry_map_max_size,
@@ -408,13 +408,13 @@ def remember_targets(plugin, module, entries):
 
 
 def load_session(plugin, module, session_id):
-    runtime_helpers = plugin_submodule(module, "runtime_helpers")
+    runtime_helpers = plugin_submodule(module, "runtime.runtime_helpers")
     return plugin._upload_session_service().load_session(session_id, normalize_text=runtime_helpers.normalize_text)
 
 
 def test_service_wrappers_delegate_to_services_registry():
     module, _, _ = load_plugin_module()
-    service_registry = plugin_submodule(module, "service_registry")
+    service_registry = plugin_submodule(module, "runtime.service_registry")
     plugin = module.SubtitleManualUpload.__new__(module.SubtitleManualUpload)
 
     assert isinstance(plugin.services, service_registry.SubtitleManualUploadServices)
@@ -730,7 +730,7 @@ def test_entry_map_is_bounded_lru():
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
     target_resolver = plugin_submodule(module, "catalog.target_resolver")
-    runtime_helpers = plugin_submodule(module, "runtime_helpers")
+    runtime_helpers = plugin_submodule(module, "runtime.runtime_helpers")
     cache = target_resolver.TargetEntryCache(
         plugin._entry_map,
         max_size=plugin._entry_map_max_size,
@@ -818,7 +818,7 @@ def test_online_download_name_detects_7z_magic():
 
 def test_upload_session_write_and_load_round_trips_payload(tmp_path):
     module, _, _ = load_plugin_module()
-    runtime_helpers = plugin_submodule(module, "runtime_helpers")
+    runtime_helpers = plugin_submodule(module, "runtime.runtime_helpers")
     plugin = make_plugin(module)
     session_id = f"pytest-{runtime_helpers.hash_text(str(tmp_path))[:8]}"
     payload = {
@@ -846,7 +846,7 @@ def _zip_payload(entries):
 
 def _limited_upload_session_service(module, tmp_path, **limit_overrides):
     upload_session = plugin_submodule(module, "upload.upload_session")
-    runtime_helpers = plugin_submodule(module, "runtime_helpers")
+    runtime_helpers = plugin_submodule(module, "runtime.runtime_helpers")
     cls = module.SubtitleManualUpload
     limits = upload_session.ArchiveResourceLimits(**limit_overrides)
     return upload_session.UploadSessionService(
@@ -956,7 +956,7 @@ def test_archive_subtitle_count_limit_rejects_zip_subtitles(tmp_path):
 def test_rarfile_resource_limit_error_does_not_fallback(tmp_path):
     module, _, _ = load_plugin_module()
     upload_session = plugin_submodule(module, "upload.upload_session")
-    runtime_helpers = plugin_submodule(module, "runtime_helpers")
+    runtime_helpers = plugin_submodule(module, "runtime.runtime_helpers")
     fallback_called = False
 
     class FakeMember:
@@ -1576,7 +1576,7 @@ def test_strm_target_skips_timeline_fixing(tmp_path):
 def test_timeline_task_store_summary_and_target_mapping(tmp_path):
     module, _, _ = load_plugin_module()
     timeline_tasks = plugin_submodule(module, "timeline.timeline_tasks")
-    runtime_helpers = plugin_submodule(module, "runtime_helpers")
+    runtime_helpers = plugin_submodule(module, "runtime.runtime_helpers")
     plugin = make_plugin(module)
     video = tmp_path / "Movie.mkv"
 
@@ -2794,7 +2794,7 @@ def test_subtitle_history_service_persists_and_restores_cache(tmp_path):
     plugin = make_plugin(module)
     history_module = plugin_submodule(module, "matching.subtitle_history")
     target_resolver = plugin_submodule(module, "catalog.target_resolver")
-    runtime_helpers = plugin_submodule(module, "runtime_helpers")
+    runtime_helpers = plugin_submodule(module, "runtime.runtime_helpers")
     history = history_module.SubtitleHistory(
         plugin,
         http_exception=module.HTTPException,
@@ -3204,7 +3204,7 @@ def test_online_ai_submit_endpoint_downloads_fixes_and_does_not_create_preview(t
 
 def test_online_ai_submit_endpoint_uses_online_ai_service(tmp_path):
     module, _, _ = load_plugin_module()
-    runtime_helpers = plugin_submodule(module, "runtime_helpers")
+    runtime_helpers = plugin_submodule(module, "runtime.runtime_helpers")
     plugin = make_plugin(module)
     video = tmp_path / "Movie.mkv"
     video.write_text("video", encoding="utf-8")
@@ -3248,7 +3248,7 @@ def test_online_ai_submit_endpoint_uses_online_ai_service(tmp_path):
 
 def test_online_download_preview_submit_ai_uses_online_ai_service(tmp_path):
     module, _, _ = load_plugin_module()
-    runtime_helpers = plugin_submodule(module, "runtime_helpers")
+    runtime_helpers = plugin_submodule(module, "runtime.runtime_helpers")
     plugin = make_plugin(module)
     video = tmp_path / "Movie.mkv"
     video.write_text("video", encoding="utf-8")
@@ -3425,7 +3425,7 @@ def test_online_ai_submit_requires_timeline_fixer_before_download(tmp_path):
 def test_tmdb_aliases_reuse_online_title_cleaner():
     module, _, _ = load_plugin_module()
     online_subtitle = plugin_submodule(module, "online.online_subtitle")
-    runtime_helpers = plugin_submodule(module, "runtime_helpers")
+    runtime_helpers = plugin_submodule(module, "runtime.runtime_helpers")
 
     aliases = runtime_helpers.tmdb_aliases(
         [
@@ -3446,7 +3446,7 @@ def test_tmdb_aliases_reuse_online_title_cleaner():
 def test_tmdb_detail_payload_prefers_real_english_translation_title():
     module, _, _ = load_plugin_module()
     online_subtitle = plugin_submodule(module, "online.online_subtitle")
-    runtime_helpers = plugin_submodule(module, "runtime_helpers")
+    runtime_helpers = plugin_submodule(module, "runtime.runtime_helpers")
 
     payload = runtime_helpers.tmdb_detail_payload(
         {

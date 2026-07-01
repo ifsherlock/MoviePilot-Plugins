@@ -65,6 +65,11 @@ def test_backend_inventory_cli_outputs_valid_json_for_big_modules():
     assert "auto_transfer_rate_limit" not in remaining_root_modules
     assert "auto_transfer_season" not in remaining_root_modules
     assert "auto_transfer_write" not in remaining_root_modules
+    assert "autosub_bridge" not in remaining_root_modules
+    assert "runtime_helpers" not in remaining_root_modules
+    assert "service_factories" not in remaining_root_modules
+    assert "service_registry" not in remaining_root_modules
+    assert "shell_helpers" not in remaining_root_modules
 
     target_packages = {item["name"]: item for item in inventory["target_subpackages"]}
     for name in (
@@ -134,6 +139,18 @@ def test_backend_inventory_cli_outputs_valid_json_for_big_modules():
         elif name == "upload":
             assert target_packages[name]["contains_only_init"] is False
             assert target_packages[name]["python_files"] == ["__init__.py", "upload_session.py"]
+        elif name == "integrations":
+            assert target_packages[name]["contains_only_init"] is False
+            assert target_packages[name]["python_files"] == ["__init__.py", "autosub_bridge.py"]
+        elif name == "runtime":
+            assert target_packages[name]["contains_only_init"] is False
+            assert target_packages[name]["python_files"] == [
+                "__init__.py",
+                "runtime_helpers.py",
+                "service_factories.py",
+                "service_registry.py",
+                "shell_helpers.py",
+            ]
         else:
             assert target_packages[name]["contains_only_init"] is True
 
@@ -169,6 +186,11 @@ def test_backend_inventory_cli_outputs_valid_json_for_big_modules():
     assert migration_targets["auto_transfer_rate_limit"]["migrated"] is True
     assert migration_targets["auto_transfer_season"]["migrated"] is True
     assert migration_targets["auto_transfer_write"]["migrated"] is True
+    assert migration_targets["autosub_bridge"]["migrated"] is True
+    assert migration_targets["runtime_helpers"]["migrated"] is True
+    assert migration_targets["service_factories"]["migrated"] is True
+    assert migration_targets["service_registry"]["migrated"] is True
+    assert migration_targets["shell_helpers"]["migrated"] is True
     assert migration_targets["target_resolver"]["target_subpackage"] == "catalog"
     assert migration_targets["timeline_fixer"]["target_subpackage"] == "timeline"
 

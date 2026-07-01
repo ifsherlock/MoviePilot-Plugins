@@ -98,7 +98,7 @@ from .config.config_runtime import (
     reset_runtime_state,
     sync_class_runtime_config,
 )
-from .runtime_helpers import (
+from .runtime.runtime_helpers import (
     apply_tmdb_detail as runtime_apply_tmdb_detail,
     brief_ids as runtime_brief_ids,
     cache_loaded_at as runtime_cache_loaded_at,
@@ -134,7 +134,7 @@ from .matching.subtitle_language import (
     normalize_auto_language_priority,
     normalize_language_suffix,
 )
-from .autosub_bridge import AutoSubBridge, autosub_task_summary as bridge_autosub_task_summary
+from .integrations.autosub_bridge import AutoSubBridge, autosub_task_summary as bridge_autosub_task_summary
 from .matching.subtitle_history import SubtitleHistory
 from .matching.subtitle_writer import (
     SubtitleWriter,
@@ -154,9 +154,9 @@ from .catalog.target_resolver import (
 )
 from .timeline.timeline_tasks import timeline_task_summary
 from .auto_transfer import AutoTransferService
-from .service_registry import SubtitleManualUploadServices
+from .runtime.service_registry import SubtitleManualUploadServices
 from .api.routes import build_api_routes
-from .shell_helpers import install_shell_helpers
+from .runtime.shell_helpers import install_shell_helpers
 
 
 class SubtitleManualUpload(_PluginBase):

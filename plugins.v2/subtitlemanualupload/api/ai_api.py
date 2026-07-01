@@ -5,7 +5,7 @@ from typing import Any, Dict
 from fastapi import HTTPException, Request
 from starlette.concurrency import run_in_threadpool
 
-from ..autosub_bridge import autosub_task_summary as bridge_autosub_task_summary
+from ..integrations.autosub_bridge import autosub_task_summary as bridge_autosub_task_summary
 from .request_helpers import (
     filter_unlocked_target_ids,
     locked_target_ids_from_body,

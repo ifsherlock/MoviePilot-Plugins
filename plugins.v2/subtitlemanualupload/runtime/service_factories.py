@@ -32,24 +32,24 @@ except Exception:
 
     MediaType = _NoopMediaType
 
-from .auto_transfer import AutoTransferCollaborators, AutoTransferService
-from .autosub_bridge import AutoSubBridge
-from .online.online_ai import OnlineAiService
-from .online.online_subtitle import OnlineSubtitleSearchService, extract_title_aliases
-from .matching.subtitle_history import SubtitleHistory
-from .matching.subtitle_language import is_chinese_language_suffix
-from .matching.subtitle_writer import SubtitleWriter, subtitle_backup_path as writer_subtitle_backup_path
-from .catalog.target_resolver import (
+from ..auto_transfer import AutoTransferCollaborators, AutoTransferService
+from ..integrations.autosub_bridge import AutoSubBridge
+from ..online.online_ai import OnlineAiService
+from ..online.online_subtitle import OnlineSubtitleSearchService, extract_title_aliases
+from ..matching.subtitle_history import SubtitleHistory
+from ..matching.subtitle_language import is_chinese_language_suffix
+from ..matching.subtitle_writer import SubtitleWriter, subtitle_backup_path as writer_subtitle_backup_path
+from ..catalog.target_resolver import (
     LocalMediaCatalog,
     MediaMetadataService,
     MediaTargetResolver,
     SubtitleInventory,
     TargetEntryCache,
 )
-from .timeline.timeline_fixer import TimelineFixResult, check_timeline_fixer_dependencies, fix_subtitle_timeline
-from .timeline.timeline_tasks import TimelineTaskStore
-from .matching.tongwen import convert_subtitle_file_to_simplified
-from .upload.upload_session import (
+from ..timeline.timeline_fixer import TimelineFixResult, check_timeline_fixer_dependencies, fix_subtitle_timeline
+from ..timeline.timeline_tasks import TimelineTaskStore
+from ..matching.tongwen import convert_subtitle_file_to_simplified
+from ..upload.upload_session import (
     ArchiveDependencyService,
     ArchiveSubtitleExtractor,
     UploadSessionService,

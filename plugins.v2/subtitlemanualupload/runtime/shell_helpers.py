@@ -5,9 +5,9 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
 
-from .autosub_bridge import autosub_task_summary as bridge_autosub_task_summary
-from .config.config_schema import normalize_auto_transfer_subtitle_strategy
-from .online.online_subtitle import check_online_rate_limit, extract_title_aliases
+from ..integrations.autosub_bridge import autosub_task_summary as bridge_autosub_task_summary
+from ..config.config_schema import normalize_auto_transfer_subtitle_strategy
+from ..online.online_subtitle import check_online_rate_limit, extract_title_aliases
 from .runtime_helpers import (
     apply_tmdb_detail as runtime_apply_tmdb_detail,
     brief_ids as runtime_brief_ids,
@@ -31,13 +31,13 @@ from .runtime_helpers import (
     tmdb_detail_payload as runtime_tmdb_detail_payload,
 )
 from .service_registry import SubtitleManualUploadServices
-from .matching.subtitle_language import detect_language_profile, normalize_language_suffix
-from .matching.subtitle_writer import (
+from ..matching.subtitle_language import detect_language_profile, normalize_language_suffix
+from ..matching.subtitle_writer import (
     subtitle_backup_path as writer_subtitle_backup_path,
     timeline_rejection_message as writer_timeline_rejection_message,
     timeline_result_blocks_auto_write as writer_timeline_result_blocks_auto_write,
 )
-from .timeline.timeline_tasks import timeline_task_summary
+from ..timeline.timeline_tasks import timeline_task_summary
 
 
 def _service_accessor(service_name: str):

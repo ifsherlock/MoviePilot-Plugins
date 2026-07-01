@@ -5,7 +5,7 @@ import json
 from datetime import datetime
 from typing import Any, Iterable, Optional
 
-from .catalog.target_resolver import (
+from ..catalog.target_resolver import (
     apply_tmdb_detail as target_apply_tmdb_detail,
     entry_filesystem_signature as target_entry_filesystem_signature,
     entry_matches_keyword as target_entry_matches_keyword,

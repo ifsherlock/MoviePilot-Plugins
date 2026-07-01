@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from .matching.subtitle_language import autosub_lang_from_suffix
+from ..matching.subtitle_language import autosub_lang_from_suffix
 
 
 def autosub_task_summary(tasks: List[Dict[str, Any]]) -> Dict[str, Any]:
