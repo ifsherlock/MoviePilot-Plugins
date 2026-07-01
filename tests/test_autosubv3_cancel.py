@@ -3,6 +3,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import queue
+import re
 import sys
 import tempfile
 import types
@@ -845,6 +846,18 @@ def test_settings_form_uses_compatible_native_schema():
             assert items
             assert all(isinstance(item, dict) for item in items)
             assert all("title" in item and "value" in item for item in items)
+
+
+def test_config_vue_default_fields_match_backend_defaults():
+    module = load_plugin_module()
+    _, defaults = module.AutoSubv3().get_form()
+    root = Path(__file__).resolve().parents[1]
+    config_vue = (root / "plugins.v2" / "autosubv3" / "src" / "components" / "Config.vue").read_text(encoding="utf-8")
+    match = re.search(r"const defaultConfig = \{(?P<body>.*?)\n\}", config_vue, re.S)
+    assert match
+    frontend_fields = set(re.findall(r"^\s{2}([A-Za-z_][A-Za-z0-9_]*)\s*:", match.group("body"), re.M))
+
+    assert frontend_fields == set(defaults)
 
 
 def test_delete_api_is_registered():
