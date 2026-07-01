@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-ui-backend-refactor-phased-plan.md",
   "status": {
     "phase": "phase-8",
-    "task": "8.1",
-    "next_allowed_action": "Implement only task 8.1"
+    "task": "8.2",
+    "next_allowed_action": "Implement only task 8.2"
   },
   "execution_rules": {
     "branch": "codex/subtitlemanualupload-ui-backend-refactor",
@@ -1735,9 +1735,40 @@
         {
           "id": "8.1",
           "title": "Run backend, frontend and inventory verification",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            {
+              "command": "git log --oneline -15",
+              "result": "passed",
+              "evidence": "latest commits began with f972ea4 记录调轴 facade 收尾验收 and 156d17a 保持调轴 facade 稳定并抽取字幕写入 before 8.1 verification"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "backend focused smoke collected 246 items and passed with 244 passed, 2 skipped in 9.98s"
+            },
+            {
+              "command": "$env:PATH='C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\node\\bin;' + $env:PATH; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\bin\\pnpm.cmd' build",
+              "result": "passed",
+              "evidence": "vite build exited 0 in plugins.v2/subtitlemanualupload, transformed 49 modules and generated remoteEntry.js plus AppPage/Page/Config assets"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_frontend_inventory.py --details",
+              "result": "passed",
+              "evidence": "frontend inventory exited 0; AppPage line_count=1077 with script/template/style line counts 681/326/65, endpoint_count=25, defineExpose count=15, component_template_count=10 and component_style_count=10"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_backend_inventory.py --details",
+              "result": "passed",
+              "evidence": "backend inventory exited 0; auto_transfer.py line_count=546 facade_symbol_count=2, online_subtitles.common.py line_count=12, target_resolver.py line_count=396 facade_symbol_count=29, timeline_fixer.py line_count=755 facade_symbol_count=28, and all imported_symbols_missing_from_module=[]"
+            },
+            {
+              "command": "git status --short",
+              "result": "passed",
+              "evidence": "after 8.1 build and inventory checks there were no tracked source/dist changes; only pre-existing untracked docs/autosubv3/zip artifacts remained untracked"
+            }
+          ],
+          "commit": "verification-only"
         },
         {
           "id": "8.2",
@@ -2186,6 +2217,19 @@
         "container import/behavior check printed TimelineFixResult True True True 1.234 ['numpy', 'pysubs2', 'webrtcvad'], proving public facade entries and timeline_io.save_adjusted_subtitle are callable",
         "logged-in built-in browser CDP showed 百万英镑 target detail with 批量调轴, AI 生成字幕, 搜索在线字幕, 单集上传, 本地目标 and /vol paths; Runtime.exceptionThrown/Log.entryAdded events=[]; no destructive action clicked",
         "phase-7 acceptance satisfied; next task is phase-8 task 8.1"
+      ]
+    },
+    {
+      "task": "8.1",
+      "status": "completed",
+      "summary": "Ran final backend, frontend build and inventory verification without source edits. The checks proved the reduced AppPage shell, extracted components and backend facade modules are still stable after phase-7.",
+      "evidence": [
+        "backend focused smoke passed with 244 passed, 2 skipped in 9.98s",
+        "pnpm build in plugins.v2/subtitlemanualupload passed; Vite transformed 49 modules and generated remoteEntry.js plus AppPage/Page/Config assets",
+        "frontend inventory exited 0 with AppPage line_count=1077, script/template/style line counts 681/326/65, endpoint_count=25, defineExpose count=15 and 10 component templates/styles inventoried",
+        "backend inventory exited 0 with auto_transfer.py line_count=546, online_subtitles.common.py line_count=12, target_resolver.py line_count=396 facade_symbol_count=29, timeline_fixer.py line_count=755 facade_symbol_count=28 and imported_symbols_missing_from_module=[]",
+        "git status after build showed no tracked source/dist changes; only pre-existing untracked docs/autosubv3/zip artifacts remain outside this work unit",
+        "next task is phase-8 task 8.2"
       ]
     }
   ],
