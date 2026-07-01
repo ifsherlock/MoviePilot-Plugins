@@ -1,17 +1,16 @@
 from __future__ import annotations
 
-import json
 import math
 import re
 import shutil
 import subprocess
 from dataclasses import asdict, dataclass
-from hashlib import sha1
 from importlib import util as importlib_util
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from . import timeline_alignment as _timeline_alignment
+from . import timeline_cache as _timeline_cache
 from . import timeline_dependencies as _timeline_dependencies
 from . import timeline_vad as _timeline_vad
 
@@ -584,169 +583,98 @@ def _next_power_of_two(value: int) -> int:
 
 
 def _file_signature(path: Path) -> str:
-    try:
-        stat = path.stat()
-        raw = f"{TIMELINE_CACHE_VERSION}|{path.resolve()}|{stat.st_size}|{stat.st_mtime_ns}"
-    except Exception:
-        raw = f"{TIMELINE_CACHE_VERSION}|{path}"
-    return sha1(raw.encode("utf-8", errors="ignore")).hexdigest()
+    return _timeline_cache.file_signature(path, cache_version=TIMELINE_CACHE_VERSION)
 
 
 def _subtitle_content_signature(path: Path) -> str:
-    try:
-        stat = path.stat()
-        digest = sha1()
-        digest.update(f"{TIMELINE_CACHE_VERSION}|{path.resolve()}|{stat.st_size}|{stat.st_mtime_ns}|".encode("utf-8", errors="ignore"))
-        with path.open("rb") as fh:
-            for chunk in iter(lambda: fh.read(1024 * 1024), b""):
-                digest.update(chunk)
-        return digest.hexdigest()
-    except Exception:
-        return _file_signature(path)
+    return _timeline_cache.subtitle_content_signature(path, cache_version=TIMELINE_CACHE_VERSION)
 
 
 def _cache_manifest_path(cache_dir: Optional[Path]) -> Optional[Path]:
-    if not cache_dir:
-        return None
-    return Path(cache_dir) / "manifest.json"
+    return _timeline_cache.cache_manifest_path(cache_dir)
 
 
 def _prepare_timeline_cache(cache_dir: Path, *, ttl_seconds: int, max_bytes: int) -> None:
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    for name in ("audio", "embedded_subtitles", "vad", "subtitle_activity", "results"):
-        (cache_dir / name).mkdir(parents=True, exist_ok=True)
-    manifest = _cache_manifest_path(cache_dir)
-    if manifest and not manifest.exists():
-        manifest.write_text(json.dumps({"version": TIMELINE_CACHE_VERSION, "items": {}}, ensure_ascii=False), encoding="utf-8")
-    _cleanup_timeline_cache(cache_dir, ttl_seconds=ttl_seconds, max_bytes=max_bytes)
+    _timeline_cache.prepare_timeline_cache(
+        cache_dir,
+        cache_version=TIMELINE_CACHE_VERSION,
+        ttl_seconds=ttl_seconds,
+        max_bytes=max_bytes,
+        now_ts_func=_now_ts,
+    )
 
 
 def _read_cache_manifest(cache_dir: Optional[Path]) -> Dict[str, Any]:
-    manifest = _cache_manifest_path(cache_dir)
-    if not manifest or not manifest.exists():
-        return {"version": TIMELINE_CACHE_VERSION, "items": {}}
-    try:
-        payload = json.loads(manifest.read_text(encoding="utf-8"))
-    except Exception:
-        return {"version": TIMELINE_CACHE_VERSION, "items": {}}
-    if payload.get("version") != TIMELINE_CACHE_VERSION:
-        return {"version": TIMELINE_CACHE_VERSION, "items": {}}
-    if not isinstance(payload.get("items"), dict):
-        payload["items"] = {}
-    return payload
+    return _timeline_cache.read_cache_manifest(cache_dir, cache_version=TIMELINE_CACHE_VERSION)
 
 
 def _write_cache_manifest(cache_dir: Optional[Path], payload: Dict[str, Any]) -> None:
-    manifest = _cache_manifest_path(cache_dir)
-    if not manifest:
-        return
-    manifest.parent.mkdir(parents=True, exist_ok=True)
-    manifest.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    _timeline_cache.write_cache_manifest(cache_dir, payload)
 
 
 def _record_cache_entry(path: Path, *, kind: str, source: str, metadata: Optional[Dict[str, Any]] = None) -> None:
-    cache_dir = _timeline_cache_root_for(path)
-    if not cache_dir:
-        return
-    payload = _read_cache_manifest(cache_dir)
-    rel_path = str(path.relative_to(cache_dir)).replace("\\", "/")
-    try:
-        size = path.stat().st_size
-    except Exception:
-        size = 0
-    payload["items"][rel_path] = {
-        "kind": kind,
-        "source": source,
-        "size": int(size),
-        "updated_at": int(_now_ts()),
-        "metadata": metadata or {},
-    }
-    _write_cache_manifest(cache_dir, payload)
+    _timeline_cache.record_cache_entry(
+        path,
+        cache_version=TIMELINE_CACHE_VERSION,
+        kind=kind,
+        source=source,
+        metadata=metadata,
+        now_ts_func=_now_ts,
+    )
 
 
 def _timeline_cache_root_for(path: Path) -> Optional[Path]:
-    known_subdirs = {"audio", "embedded_subtitles", "vad", "subtitle_activity", "results"}
-    if path.parent.name in known_subdirs:
-        return path.parent.parent
-    parts = path.parts
-    for index, part in enumerate(parts):
-        if part == "timeline_cache":
-            return Path(*parts[: index + 1])
-    for parent in path.parents:
-        if parent.name == "timeline_cache":
-            return parent
-    return None
+    return _timeline_cache.timeline_cache_root_for(path)
 
 
 def _cleanup_timeline_cache(cache_dir: Path, *, ttl_seconds: int, max_bytes: int) -> None:
-    payload = _read_cache_manifest(cache_dir)
-    now = _now_ts()
-    items = payload.get("items") or {}
-    changed = False
-    for rel_path, item in list(items.items()):
-        path = cache_dir / rel_path
-        updated_at = float((item or {}).get("updated_at") or 0)
-        if not path.exists() or (ttl_seconds > 0 and now - updated_at > ttl_seconds):
-            path.unlink(missing_ok=True)
-            items.pop(rel_path, None)
-            changed = True
-
-    file_items = []
-    total_size = 0
-    for rel_path, item in list(items.items()):
-        path = cache_dir / rel_path
-        try:
-            stat = path.stat()
-        except Exception:
-            items.pop(rel_path, None)
-            changed = True
-            continue
-        size = int(stat.st_size)
-        total_size += size
-        file_items.append((float((item or {}).get("updated_at") or stat.st_mtime), size, rel_path, path))
-
-    if max_bytes > 0 and total_size > max_bytes:
-        for _, size, rel_path, path in sorted(file_items):
-            if total_size <= max_bytes:
-                break
-            path.unlink(missing_ok=True)
-            items.pop(rel_path, None)
-            total_size -= size
-            changed = True
-    if changed:
-        payload["items"] = items
-        _write_cache_manifest(cache_dir, payload)
+    _timeline_cache.cleanup_timeline_cache(
+        cache_dir,
+        cache_version=TIMELINE_CACHE_VERSION,
+        ttl_seconds=ttl_seconds,
+        max_bytes=max_bytes,
+        now_ts_func=_now_ts,
+    )
 
 
 def _now_ts() -> float:
-    import time
-
-    return time.time()
+    return _timeline_cache.now_ts()
 
 
 def _cached_vad_path(cache_dir: Optional[Path], video_path: Path, vad_mode: str) -> Optional[Path]:
-    if not cache_dir:
-        return None
-    return Path(cache_dir) / "vad" / f"{_file_signature(video_path)}.{vad_mode}.npy"
+    return _timeline_cache.cached_vad_path(
+        cache_dir,
+        video_path,
+        vad_mode,
+        cache_version=TIMELINE_CACHE_VERSION,
+    )
 
 
 def _cached_audio_pcm_path(cache_dir: Optional[Path], video_path: Path) -> Optional[Path]:
-    if not cache_dir:
-        return None
-    return Path(cache_dir) / "audio" / f"{_file_signature(video_path)}.s16le"
+    return _timeline_cache.cached_audio_pcm_path(
+        cache_dir,
+        video_path,
+        cache_version=TIMELINE_CACHE_VERSION,
+    )
 
 
 def _cached_embedded_subtitle_path(cache_dir: Optional[Path], video_path: Path, stream_index: int, order: int) -> Optional[Path]:
-    if not cache_dir:
-        return None
-    return Path(cache_dir) / "embedded_subtitles" / f"{_file_signature(video_path)}.{order}.{stream_index}.srt"
+    return _timeline_cache.cached_embedded_subtitle_path(
+        cache_dir,
+        video_path,
+        stream_index,
+        order,
+        cache_version=TIMELINE_CACHE_VERSION,
+    )
 
 
 def _cached_subtitle_vad_path(cache_dir: Optional[Path], subtitle_path: Path, scale_factor: float) -> Optional[Path]:
-    if not cache_dir:
-        return None
-    ratio_key = f"{float(scale_factor):.8f}".replace(".", "_")
-    return Path(cache_dir) / "subtitle_activity" / f"{_subtitle_content_signature(subtitle_path)}.{ratio_key}.npy"
+    return _timeline_cache.cached_subtitle_vad_path(
+        cache_dir,
+        subtitle_path,
+        scale_factor,
+        cache_version=TIMELINE_CACHE_VERSION,
+    )
 
 
 def _subtitle_events_to_vad_cached(
@@ -757,20 +685,15 @@ def _subtitle_events_to_vad_cached(
     subtitle_path: Path,
     cache_dir: Optional[Path],
 ) -> Any:
-    cache_path = _cached_subtitle_vad_path(cache_dir, subtitle_path, scale_factor)
-    if cache_path and cache_path.exists():
-        return np.load(str(cache_path)).astype(np.float32)
-    vad = _subtitle_events_to_vad(np, events, scale_factor)
-    if cache_path:
-        cache_path.parent.mkdir(parents=True, exist_ok=True)
-        np.save(str(cache_path), vad)
-        _record_cache_entry(
-            cache_path,
-            kind="subtitle_activity",
-            source=str(subtitle_path),
-            metadata={"scale_factor": float(scale_factor)},
-        )
-    return vad
+    return _timeline_cache.subtitle_events_to_vad_cached(
+        np=np,
+        events=events,
+        scale_factor=scale_factor,
+        subtitle_path=subtitle_path,
+        cache_dir=cache_dir,
+        cache_version=TIMELINE_CACHE_VERSION,
+        subtitle_events_to_vad=_subtitle_events_to_vad,
+    )
 
 
 def _timeline_result_cache_key(
@@ -782,55 +705,36 @@ def _timeline_result_cache_key(
     vad_mode: str,
     allow_risky_offset: bool,
 ) -> str:
-    raw = "|".join(
-        [
-            TIMELINE_CACHE_VERSION,
-            "result",
-            _file_signature(video_path),
-            _subtitle_content_signature(subtitle_path),
-            str(int(max_offset_seconds)),
-            f"{float(min_offset_seconds):.3f}",
-            str(vad_mode or "webrtc"),
-            "risky" if allow_risky_offset else "safe",
-        ]
+    return _timeline_cache.timeline_result_cache_key(
+        video_path=video_path,
+        subtitle_path=subtitle_path,
+        max_offset_seconds=max_offset_seconds,
+        min_offset_seconds=min_offset_seconds,
+        vad_mode=vad_mode,
+        allow_risky_offset=allow_risky_offset,
+        cache_version=TIMELINE_CACHE_VERSION,
     )
-    return sha1(raw.encode("utf-8", errors="ignore")).hexdigest()
 
 
 def _cached_result_path(cache_dir: Optional[Path], key: str) -> Optional[Path]:
-    if not cache_dir:
-        return None
-    return Path(cache_dir) / "results" / f"{key}.json"
+    return _timeline_cache.cached_result_path(cache_dir, key)
 
 
 def _load_timeline_result_cache(cache_dir: Optional[Path], key: str) -> Optional[Dict[str, Any]]:
-    path = _cached_result_path(cache_dir, key)
-    if not path or not path.exists():
-        return None
-    try:
-        payload = json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
-        return None
-    if payload.get("version") != TIMELINE_CACHE_VERSION:
-        return None
-    result = payload.get("result")
-    if not isinstance(result, dict):
-        return None
-    return payload
+    return _timeline_cache.load_timeline_result_cache(
+        cache_dir,
+        key,
+        cache_version=TIMELINE_CACHE_VERSION,
+    )
 
 
 def _store_timeline_result_cache(cache_dir: Optional[Path], key: str, result: TimelineFixResult) -> None:
-    path = _cached_result_path(cache_dir, key)
-    if not path:
-        return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "version": TIMELINE_CACHE_VERSION,
-        "key": key,
-        "result": result.to_dict(),
-    }
-    path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
-    _record_cache_entry(path, kind="result", source=key, metadata={"confidence": result.confidence})
+    _timeline_cache.store_timeline_result_cache(
+        cache_dir,
+        key,
+        result,
+        cache_version=TIMELINE_CACHE_VERSION,
+    )
 
 
 def _save_adjusted_subtitle(

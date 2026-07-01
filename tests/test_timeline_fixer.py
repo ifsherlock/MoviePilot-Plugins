@@ -132,6 +132,63 @@ def test_alignment_helpers_are_reexported_from_timeline_fixer():
     )
 
 
+def test_cache_helpers_are_reexported_from_timeline_fixer(tmp_path):
+    module = load_timeline_module()
+    cache = sys.modules[f"{module.__package__}.timeline_cache"]
+    cache_dir = tmp_path / "timeline_cache"
+    video = tmp_path / "Movie.mkv"
+    subtitle = tmp_path / "Movie.eng.srt"
+    video.write_bytes(b"video")
+    subtitle.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+
+    assert module._cache_manifest_path(cache_dir) == cache.cache_manifest_path(cache_dir)
+    assert module._file_signature(video) == cache.file_signature(
+        video,
+        cache_version=module.TIMELINE_CACHE_VERSION,
+    )
+    assert module._subtitle_content_signature(subtitle) == cache.subtitle_content_signature(
+        subtitle,
+        cache_version=module.TIMELINE_CACHE_VERSION,
+    )
+    assert module._cached_audio_pcm_path(cache_dir, video) == cache.cached_audio_pcm_path(
+        cache_dir,
+        video,
+        cache_version=module.TIMELINE_CACHE_VERSION,
+    )
+    assert module._cached_vad_path(cache_dir, video, "webrtc") == cache.cached_vad_path(
+        cache_dir,
+        video,
+        "webrtc",
+        cache_version=module.TIMELINE_CACHE_VERSION,
+    )
+    assert module._cached_embedded_subtitle_path(cache_dir, video, 2, 1) == cache.cached_embedded_subtitle_path(
+        cache_dir,
+        video,
+        2,
+        1,
+        cache_version=module.TIMELINE_CACHE_VERSION,
+    )
+    assert module._cached_subtitle_vad_path(cache_dir, subtitle, 1.0) == cache.cached_subtitle_vad_path(
+        cache_dir,
+        subtitle,
+        1.0,
+        cache_version=module.TIMELINE_CACHE_VERSION,
+    )
+
+    key_kwargs = {
+        "video_path": video,
+        "subtitle_path": subtitle,
+        "max_offset_seconds": 120,
+        "min_offset_seconds": 0.2,
+        "vad_mode": "webrtc",
+        "allow_risky_offset": False,
+    }
+    assert module._timeline_result_cache_key(**key_kwargs) == cache.timeline_result_cache_key(
+        **key_kwargs,
+        cache_version=module.TIMELINE_CACHE_VERSION,
+    )
+
+
 def test_alignment_confidence_rejects_over_configured_max_and_flags_over_120():
     module = load_timeline_module()
 
