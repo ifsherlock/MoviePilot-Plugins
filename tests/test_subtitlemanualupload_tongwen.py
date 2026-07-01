@@ -6,7 +6,7 @@ from pathlib import Path
 
 def load_tongwen_module():
     root = Path(__file__).resolve().parents[1]
-    module_path = root / "plugins.v2" / "subtitlemanualupload" / "tongwen.py"
+    module_path = root / "plugins.v2" / "subtitlemanualupload" / "matching" / "tongwen.py"
     spec = importlib.util.spec_from_file_location("subtitlemanualupload_tongwen", module_path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

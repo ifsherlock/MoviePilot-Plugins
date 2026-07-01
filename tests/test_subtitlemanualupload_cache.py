@@ -232,7 +232,7 @@ def test_subtitle_inventory_is_reexported_from_target_resolver(tmp_path):
     module, _, _ = load_plugin_module()
     target_resolver = plugin_submodule(module, "target_resolver")
     subtitle_inventory = plugin_submodule(module, "subtitle_inventory")
-    subtitle_language = plugin_submodule(module, "subtitle_language")
+    subtitle_language = plugin_submodule(module, "matching.subtitle_language")
     runtime_helpers = plugin_submodule(module, "runtime_helpers")
 
     assert issubclass(target_resolver.SubtitleInventory, subtitle_inventory.SubtitleInventory)
@@ -746,7 +746,7 @@ def test_entry_map_is_bounded_lru():
 
 def test_target_has_chinese_subtitle_checks_external_and_embedded_tracks():
     module, _, _ = load_plugin_module()
-    subtitle_language = plugin_submodule(module, "subtitle_language")
+    subtitle_language = plugin_submodule(module, "matching.subtitle_language")
 
     assert subtitle_language.target_has_chinese_subtitle({"subtitles": [{"language_suffix": "chi"}]})
     assert subtitle_language.target_has_chinese_subtitle({"embedded_subtitles": [{"language": "zh-Hant"}]})
@@ -772,7 +772,7 @@ def test_target_has_chinese_subtitle_checks_external_and_embedded_tracks():
 
 def test_online_download_name_prefers_archive_magic_over_filename_suffix():
     module, _, _ = load_plugin_module()
-    language = plugin_submodule(module, "subtitle_language")
+    language = plugin_submodule(module, "matching.subtitle_language")
     upload_session = plugin_submodule(module, "upload_session")
     cls = module.SubtitleManualUpload
 
@@ -801,7 +801,7 @@ def test_online_download_name_prefers_archive_magic_over_filename_suffix():
 
 def test_online_download_name_detects_7z_magic():
     module, _, _ = load_plugin_module()
-    language = plugin_submodule(module, "subtitle_language")
+    language = plugin_submodule(module, "matching.subtitle_language")
     upload_session = plugin_submodule(module, "upload_session")
     cls = module.SubtitleManualUpload
 
@@ -1501,7 +1501,7 @@ def test_7z_archive_extraction_with_unar_tool(tmp_path):
 
 def test_language_suffix_supports_bilingual_codes():
     module, _, _ = load_plugin_module()
-    language = plugin_submodule(module, "subtitle_language")
+    language = plugin_submodule(module, "matching.subtitle_language")
 
     assert language.normalize_language_suffix("chi&eng") == "chi&eng"
     assert language.normalize_language_suffix("zh/en") == "chi&eng"
@@ -1512,7 +1512,7 @@ def test_language_suffix_supports_bilingual_codes():
 
 def test_detect_language_profile_marks_bilingual_subtitles():
     module, _, _ = load_plugin_module()
-    language = plugin_submodule(module, "subtitle_language")
+    language = plugin_submodule(module, "matching.subtitle_language")
     cls = module.SubtitleManualUpload
 
     chinese = "这是中文字幕文本" * 30
@@ -1527,7 +1527,7 @@ def test_detect_language_profile_marks_bilingual_subtitles():
 
 def test_detect_language_profile_prefers_suffix_token_before_subtitle_extension():
     module, _, _ = load_plugin_module()
-    language = plugin_submodule(module, "subtitle_language")
+    language = plugin_submodule(module, "matching.subtitle_language")
     cls = module.SubtitleManualUpload
 
     name = "Jack.Reacher.Never.Go.Back.2016.1080p.KORSUB.HDRip.x264.AAC2.0-STUTTERSHIT.eng.srt"
@@ -1720,7 +1720,7 @@ def test_write_operations_rejects_low_confidence_timeline_result(tmp_path):
 
 def test_low_confidence_timeline_result_blocks_auto_write():
     module, _, _ = load_plugin_module()
-    subtitle_writer = plugin_submodule(module, "subtitle_writer")
+    subtitle_writer = plugin_submodule(module, "matching.subtitle_writer")
 
     result = module.TimelineFixResult(
         enabled=True,
@@ -1740,7 +1740,7 @@ def test_low_confidence_timeline_result_blocks_auto_write():
 
 def test_offset_below_threshold_with_blocking_risk_still_blocks_auto_write():
     module, _, _ = load_plugin_module()
-    subtitle_writer = plugin_submodule(module, "subtitle_writer")
+    subtitle_writer = plugin_submodule(module, "matching.subtitle_writer")
 
     result = module.TimelineFixResult(
         enabled=True,
@@ -2792,7 +2792,7 @@ def test_match_history_cache_invalidates_when_external_subtitle_changes(tmp_path
 def test_subtitle_history_service_persists_and_restores_cache(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
-    history_module = plugin_submodule(module, "subtitle_history")
+    history_module = plugin_submodule(module, "matching.subtitle_history")
     target_resolver = plugin_submodule(module, "target_resolver")
     runtime_helpers = plugin_submodule(module, "runtime_helpers")
     history = history_module.SubtitleHistory(

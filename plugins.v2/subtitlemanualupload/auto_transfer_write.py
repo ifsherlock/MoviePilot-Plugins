@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .config.config_schema import normalize_auto_multi_subtitle_mode
-from .subtitle_language import auto_subtitle_sort_key, is_chinese_language_suffix
+from .matching.subtitle_language import auto_subtitle_sort_key, is_chinese_language_suffix
 from .target_resolver import (
     auto_fill_missing_targets as fill_missing_target_ids,
     suggest_target as suggest_target_id,

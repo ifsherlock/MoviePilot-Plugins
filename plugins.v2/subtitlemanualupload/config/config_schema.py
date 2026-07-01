@@ -11,7 +11,7 @@ from ..online_subtitle import (
     normalize_online_engine,
     normalize_provider_roots,
 )
-from ..subtitle_language import (
+from ..matching.subtitle_language import (
     DEFAULT_AUTO_FORMAT_PRIORITY,
     DEFAULT_AUTO_LANGUAGE_PRIORITY,
     normalize_auto_format_priority,

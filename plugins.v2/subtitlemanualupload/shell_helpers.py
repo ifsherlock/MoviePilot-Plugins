@@ -31,8 +31,8 @@ from .runtime_helpers import (
     tmdb_detail_payload as runtime_tmdb_detail_payload,
 )
 from .service_registry import SubtitleManualUploadServices
-from .subtitle_language import detect_language_profile, normalize_language_suffix
-from .subtitle_writer import (
+from .matching.subtitle_language import detect_language_profile, normalize_language_suffix
+from .matching.subtitle_writer import (
     subtitle_backup_path as writer_subtitle_backup_path,
     timeline_rejection_message as writer_timeline_rejection_message,
     timeline_result_blocks_auto_write as writer_timeline_result_blocks_auto_write,

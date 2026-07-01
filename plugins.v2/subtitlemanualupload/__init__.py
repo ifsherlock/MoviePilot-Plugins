@@ -120,7 +120,7 @@ from .runtime_helpers import (
     tmdb_aliases as runtime_tmdb_aliases,
     tmdb_detail_payload as runtime_tmdb_detail_payload,
 )
-from .subtitle_language import (
+from .matching.subtitle_language import (
     DEFAULT_AUTO_FORMAT_PRIORITY,
     DEFAULT_AUTO_LANGUAGE_PRIORITY,
     LANGUAGE_SUFFIX_ALIASES,
@@ -135,8 +135,8 @@ from .subtitle_language import (
     normalize_language_suffix,
 )
 from .autosub_bridge import AutoSubBridge, autosub_task_summary as bridge_autosub_task_summary
-from .subtitle_history import SubtitleHistory
-from .subtitle_writer import (
+from .matching.subtitle_history import SubtitleHistory
+from .matching.subtitle_writer import (
     SubtitleWriter,
     backup_subtitle_if_needed as writer_backup_subtitle_if_needed,
     build_destination_name as writer_build_destination_name,
@@ -146,7 +146,7 @@ from .subtitle_writer import (
     timeline_result_blocks_auto_write as writer_timeline_result_blocks_auto_write,
 )
 from .timeline_fixer import TimelineFixResult, check_timeline_fixer_dependencies, fix_subtitle_timeline
-from .tongwen import convert_subtitle_file_to_simplified
+from .matching.tongwen import convert_subtitle_file_to_simplified
 from .target_resolver import (
     LocalMediaCatalog,
     MediaTargetResolver,

@@ -36,9 +36,9 @@ from .auto_transfer import AutoTransferCollaborators, AutoTransferService
 from .autosub_bridge import AutoSubBridge
 from .online_ai import OnlineAiService
 from .online_subtitle import OnlineSubtitleSearchService, extract_title_aliases
-from .subtitle_history import SubtitleHistory
-from .subtitle_language import is_chinese_language_suffix
-from .subtitle_writer import SubtitleWriter, subtitle_backup_path as writer_subtitle_backup_path
+from .matching.subtitle_history import SubtitleHistory
+from .matching.subtitle_language import is_chinese_language_suffix
+from .matching.subtitle_writer import SubtitleWriter, subtitle_backup_path as writer_subtitle_backup_path
 from .target_resolver import (
     LocalMediaCatalog,
     MediaMetadataService,
@@ -48,7 +48,7 @@ from .target_resolver import (
 )
 from .timeline_fixer import TimelineFixResult, check_timeline_fixer_dependencies, fix_subtitle_timeline
 from .timeline_tasks import TimelineTaskStore
-from .tongwen import convert_subtitle_file_to_simplified
+from .matching.tongwen import convert_subtitle_file_to_simplified
 from .upload_session import (
     ArchiveDependencyService,
     ArchiveSubtitleExtractor,

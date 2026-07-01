@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Dict, Tuple
 
 
-RESOURCE_DIR = Path(__file__).resolve().parent / "resources" / "tongwen"
+RESOURCE_DIR = Path(__file__).resolve().parents[1] / "resources" / "tongwen"
 PHRASE_DICT = RESOURCE_DIR / "t2s-phrase.min.json"
 CHAR_DICT = RESOURCE_DIR / "t2s-char.min.json"
 

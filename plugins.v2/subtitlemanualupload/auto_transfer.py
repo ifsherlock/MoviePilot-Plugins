@@ -8,7 +8,7 @@ from .auto_transfer_queue import AutoTransferQueue
 from .auto_transfer_rate_limit import AutoTransferRateLimiter
 from .auto_transfer_season import AutoTransferSeasonCache, AutoTransferSeasonCollaborators
 from .auto_transfer_write import AutoTransferWriteCollaborators, AutoTransferWriteStrategy
-from .subtitle_language import (
+from .matching.subtitle_language import (
     auto_subtitle_sort_key,
     auto_target_has_chinese_subtitle as language_auto_target_has_chinese_subtitle,
     is_chinese_language_suffix,
