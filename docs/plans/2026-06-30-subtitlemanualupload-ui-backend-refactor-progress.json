@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-ui-backend-refactor-phased-plan.md",
   "status": {
     "phase": "phase-7",
-    "task": "7.2",
-    "next_allowed_action": "Implement only task 7.2"
+    "task": "7.3",
+    "next_allowed_action": "Implement only task 7.3"
   },
   "execution_rules": {
     "branch": "codex/subtitlemanualupload-ui-backend-refactor",
@@ -1528,9 +1528,50 @@
         {
           "id": "7.2",
           "title": "Extract VAD building and audio/subtitle IO",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "pre-work smoke passed with 240 passed, 2 skipped before the 7.2 edit; post-extraction smoke passed with 241 passed, 2 skipped in 10.37s"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile plugins.v2/subtitlemanualupload/timeline_vad.py plugins.v2/subtitlemanualupload/timeline_fixer.py tests/test_timeline_fixer.py",
+              "result": "passed",
+              "evidence": "timeline_vad.py, timeline_fixer.py and timeline tests compiled successfully"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_timeline_fixer.py -q",
+              "result": "passed",
+              "evidence": "14 passed, 2 skipped in 0.24s; real media fixture tests kept their existing explicit skip conditions"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_backend_inventory.py --details",
+              "result": "passed",
+              "evidence": "backend inventory exited 0; timeline_fixer.py line_count=1031, facade_symbol_count=28, imported_symbols_missing_from_module=[] and public imports remained TimelineFixResult/check_timeline_fixer_dependencies/fix_subtitle_timeline"
+            },
+            {
+              "command": "git diff --check -- plugins.v2/subtitlemanualupload/timeline_vad.py plugins.v2/subtitlemanualupload/timeline_fixer.py tests/test_timeline_fixer.py",
+              "result": "passed",
+              "evidence": "diff check exited 0 for touched 7.2 files"
+            },
+            {
+              "command": "scp to NAS 10.10.10.189 then docker cp into moviepilot-v2; docker exec moviepilot-v2 sha256sum and python -m py_compile timeline_fixer.py timeline_vad.py",
+              "result": "passed",
+              "evidence": "container SHA256 printed timeline_fixer.py 341d74f47ed6e3a560a67083ba3a0154bd38bfdfda95e9443a9ac749bb446bdb and timeline_vad.py 0beca9632a770ce8d3990dc5a125b82df6963353e9ef3d55bb70a17184a1947b; py_compile exited 0"
+            },
+            {
+              "command": "docker exec moviepilot-v2 python - import/behavior check",
+              "result": "passed",
+              "evidence": "stdout printed 100 320 Hello世界 Hello世界 True, proving timeline_fixer._timeline_vad_config exposes the expected sample/frame settings and _clean_subtitle_text delegates consistently to timeline_vad.clean_subtitle_text"
+            },
+            {
+              "command": "logged-in built-in browser non-destructive target-detail DOM check on https://mp.jaysherlock.top:5443/#/plugin-app/SubtitleManualUpload/main",
+              "result": "passed",
+              "evidence": "in-app browser opened 百万英镑 (1954) detail and rendered 批量调轴, AI 生成字幕, 搜索在线字幕, 单集上传, subtitle state, 2 个本地目标 and /vol paths; loginHint=false and consoleErrors=[]"
+            }
+          ],
+          "commit": "724bd0f"
         },
         {
           "id": "7.3",
@@ -1967,6 +2008,20 @@
         "container import check printed dependency status available=True, ffmpeg=True, ffprobe=True, modules=['numpy', 'pysubs2', 'webrtcvad'], missing=[]",
         "logged-in in-app browser observed /status 200 and target detail rendered 批量调轴 with no console errors",
         "next task is phase-7 task 7.2"
+      ]
+    },
+    {
+      "task": "7.2",
+      "status": "completed",
+      "summary": "Extracted VAD construction plus audio PCM, embedded subtitle probing, subtitle event loading and subtitle text cleaning into timeline_vad.py. timeline_fixer.py now keeps compatibility wrappers for the moved helpers and still owns alignment/cache manifest logic for later 7.3/7.4 units.",
+      "evidence": [
+        "source commit 724bd0f created timeline_vad.py, reduced timeline_fixer.py to 1031 lines and kept all 28 facade symbols importable with imported_symbols_missing_from_module=[]",
+        "py_compile passed for timeline_vad.py, timeline_fixer.py and tests/test_timeline_fixer.py; timeline tests passed with 14 passed, 2 skipped; backend focused smoke passed with 241 passed, 2 skipped in 10.37s",
+        "backend inventory exited 0 and showed timeline_fixer.py line_count=1031, facade_symbol_count=28 and imported_symbols_missing_from_module=[]",
+        "moviepilot-v2 on NAS 10.10.10.189 hot-loaded timeline_fixer.py and timeline_vad.py; container SHA256 printed timeline_fixer.py 341d74f47ed6e3a560a67083ba3a0154bd38bfdfda95e9443a9ac749bb446bdb and timeline_vad.py 0beca9632a770ce8d3990dc5a125b82df6963353e9ef3d55bb70a17184a1947b; py_compile passed",
+        "container import/behavior check printed 100 320 Hello世界 Hello世界 True, proving timeline_fixer wrapper config and clean-text delegation match timeline_vad",
+        "logged-in built-in browser opened 百万英镑 (1954) target detail and rendered 批量调轴, AI 生成字幕, 搜索在线字幕, 单集上传, subtitle state, 2 个本地目标 and /vol paths; loginHint=false and consoleErrors=[]",
+        "next task is phase-7 task 7.3"
       ]
     }
   ],
