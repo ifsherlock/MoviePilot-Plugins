@@ -2,6 +2,14 @@
 
 MoviePilot V2 插件，提供手动上传字幕并匹配改名的页面。
 
+## v0.1.76 更新
+
+- 新增 MoviePilot 工作流动作：查询状态、刷新本地索引、在线自动匹配、AI 生成字幕、智能调轴。
+- 新增 AI 智能体工具：可被智能体发现并调用字幕状态查询、在线匹配、AI 生成、任务状态和智能调轴能力。
+- 写入类能力默认只做预检；必须显式传入 `confirm_write=true`、`confirm_submit=true` 或 `confirm_fix=true` 才会真正写入字幕、提交 AI 或执行调轴。
+- 当前本地测试包名为 `subtitlemanualupload_v0.1.76.zip`；合入并执行 Release 后对应 tag 为 `SubtitleManualUpload_v0.1.76`。
+- 如升级后遇到问题，请在插件商店的版本历史弹窗中选择稳定版 `v0.1.70` 回退安装，确认稳定后再升级新版。
+
 ## v0.1.75 更新
 
 - 启用 MoviePilot 插件商店版本历史安装能力，字幕匹配会通过 GitHub Release 工作流生成规范版本包。
