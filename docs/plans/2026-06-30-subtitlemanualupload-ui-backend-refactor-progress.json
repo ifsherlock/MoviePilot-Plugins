@@ -1768,7 +1768,7 @@
               "evidence": "after 8.1 build and inventory checks there were no tracked source/dist changes; only pre-existing untracked docs/autosubv3/zip artifacts remained untracked"
             }
           ],
-          "commit": "verification-only"
+          "commit": "9ff482b"
         },
         {
           "id": "8.2",
