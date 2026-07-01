@@ -259,6 +259,34 @@ def test_language_helpers_are_reexported_from_common():
     ).to_dict()["language_category"] == "chinese"
 
 
+def test_matcher_helpers_are_reexported_from_common():
+    module = load_online_module()
+    matcher_module = sys.modules[module._assess_result_match.__module__]
+    package_name = matcher_module.__name__.rsplit(".", 1)[0]
+    common_module = sys.modules[f"{package_name}.common"]
+
+    for name in (
+        "_assess_result_match",
+        "_score_result",
+        "_identity_priority",
+        "_opensubtitles_metadata_conflicts",
+        "_target_year_from_targets",
+        "_target_episode_from_targets",
+        "_safe_opensubtitles_title_identity",
+        "_episode_from_text",
+        "_episode_include_for_title",
+        "_safe_int",
+    ):
+        assert getattr(common_module, name) is getattr(matcher_module, name)
+
+    targets = [{"media_type": "tv", "title": "Example Show", "season": 1, "episode": 2, "year": "2025"}]
+    assessment = module._assess_result_match(title="Example Show S01E02 简英双语", keyword="Example Show S01E02", targets=targets)
+
+    assert assessment["identity_status"] == "strong"
+    assert "季集一致" in assessment["match_detail"]
+    assert module._opensubtitles_metadata_conflicts({"feature_details": {"tmdb_id": 200}}, [{"tmdb_id": 100}]) is True
+
+
 def test_opensubtitles_search_all_prefers_tmdb_then_title_then_imdb():
     module = load_online_module()
     provider = module.OpenSubtitlesProvider(FakeFetcher(), api_key="test-key")
