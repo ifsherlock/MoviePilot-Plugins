@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-ui-backend-refactor-phased-plan.md",
   "status": {
     "phase": "phase-5",
-    "task": "5.3",
-    "next_allowed_action": "Implement only task 5.3"
+    "task": "5.4",
+    "next_allowed_action": "Implement only task 5.4"
   },
   "execution_rules": {
     "branch": "codex/subtitlemanualupload-ui-backend-refactor",
@@ -1042,9 +1042,45 @@
         {
           "id": "5.3",
           "title": "Extract keyword builder and title alias utilities",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "pre-work focused smoke passed with 234 passed in 8.13s; post-extraction focused smoke passed with 234 passed in 8.13s after adding the keyword builder re-export/order regression"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile plugins.v2/subtitlemanualupload/online_subtitles/common.py plugins.v2/subtitlemanualupload/online_subtitles/keyword_builder.py plugins.v2/subtitlemanualupload/online_subtitles/clients.py plugins.v2/subtitlemanualupload/online_subtitle.py tests/test_subtitlemanualupload_online.py",
+              "result": "passed",
+              "evidence": "common.py, keyword_builder.py, clients.py, online_subtitle.py and online subtitle regression tests compiled successfully"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_online.py -q",
+              "result": "passed",
+              "evidence": "45 passed in 0.71s, including keyword_builder.py direct import, common.py re-export identity, TV keyword order, title alias filtering and region bucket checks"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_backend_inventory.py --details",
+              "result": "passed",
+              "evidence": "backend inventory exited 0; online_subtitles.common line_count=855 after moving build_search_keywords, title alias extraction, region bucket logic and keyword normalization into keyword_builder.py, imported_symbols_missing_from_module=[]"
+            },
+            {
+              "command": "ssh root@10.10.10.189 \"docker cp ... moviepilot-v2:/app/app/plugins/subtitlemanualupload/online_subtitles/ && docker exec moviepilot-v2 python -m py_compile ... && docker exec moviepilot-v2 sha256sum ...\"",
+              "result": "passed",
+              "evidence": "moviepilot-v2 on NAS 10.10.10.189 hot-loaded common.py, keyword_builder.py, clients.py and models.py; container SHA256 matched local common.py 87816f5611d63b580de39a3f0c57bddc5a12cc3f554468d908be5f7a412a3aba, keyword_builder.py f0d66e0361aaeca8584fbff5c21dd98dedb2f5f3dd6aa5b444c604af9d962cc4, clients.py f4e81ca3df6564c982eeecab66e86871adf5dc91a4234c697c244103360fd0d5 and models.py 4c81ffc83cbb5f740791cf8a5f52c843aa659c7b8fb3cb2e6d61c03157f950e8"
+            },
+            {
+              "command": "ssh root@10.10.10.189 'docker exec moviepilot-v2 python -c ...'",
+              "result": "passed",
+              "evidence": "container import printed: build_search_keywords extract_title_aliases True True ['Example Show S01E02', '中文剧名 S01E02'] chinese ['Example Alt'], proving keyword_builder.py and common.py re-export compatibility plus TV keyword ordering and alias filtering"
+            },
+            {
+              "command": "git diff --check -- plugins.v2/subtitlemanualupload/online_subtitles/common.py plugins.v2/subtitlemanualupload/online_subtitles/keyword_builder.py tests/test_subtitlemanualupload_online.py",
+              "result": "passed",
+              "evidence": "diff check exited 0 for task 5.3 source and test files; only expected LF/CRLF warnings were printed before staging"
+            }
+          ],
+          "commit": "0942525"
         },
         {
           "id": "5.4",
@@ -1442,6 +1478,19 @@
         "moviepilot-v2 on NAS 10.10.10.189 hot-loaded common.py, clients.py and models.py; local and container SHA256 matched, py_compile passed, and container import printed OnlinePageClient OnlineDirectDownloader True True mp_browser False api 字幕 True",
         "browser-client control for the logged-in in-app browser is still unavailable with the trust error; phase-5 browser happy-path acceptance remains pending until a logged-in controllable browser is available",
         "next task is phase-5 task 5.3"
+      ]
+    },
+    {
+      "task": "5.3",
+      "status": "completed",
+      "summary": "Extracted online subtitle keyword construction, title alias parsing, region bucket detection, query source labeling and keyword/title normalization into online_subtitles/keyword_builder.py while common.py keeps the compatibility re-export surface for current provider/service imports.",
+      "evidence": [
+        "source commit 0942525 created keyword_builder.py, removed the keyword/alias/region helper implementations from common.py and added a regression proving keyword_builder.py and common.py expose the same helper objects",
+        "online subtitle tests passed with 45 passed in 0.71s; backend focused smoke passed with 234 passed in 8.13s",
+        "backend inventory exited 0 and showed online_subtitles.common line_count=855 with imported_symbols_missing_from_module=[]",
+        "moviepilot-v2 on NAS 10.10.10.189 hot-loaded common.py, keyword_builder.py, clients.py and models.py; local and container SHA256 matched, py_compile passed, and container import printed build_search_keywords extract_title_aliases True True ['Example Show S01E02', '中文剧名 S01E02'] chinese ['Example Alt']",
+        "browser-client control for the logged-in in-app browser is still unavailable with the trust error; phase-5 browser happy-path acceptance remains pending until a logged-in controllable browser is available",
+        "next task is phase-5 task 5.4"
       ]
     }
   ],
