@@ -181,6 +181,53 @@ def test_target_normalizers_are_reexported_from_target_resolver(tmp_path):
     assert target_resolver.entry_matches_keyword(entry, "example s01e02") == target_normalizers.entry_matches_keyword(entry, "example s01e02")
 
 
+def test_media_metadata_helpers_are_reexported_from_target_resolver():
+    module, _, _ = load_plugin_module()
+    target_resolver = plugin_submodule(module, "target_resolver")
+    media_metadata = plugin_submodule(module, "media_metadata")
+    online_subtitle = plugin_submodule(module, "online_subtitle")
+    runtime_helpers = plugin_submodule(module, "runtime_helpers")
+
+    for name in [
+        "english_title_from_aliases",
+        "tmdb_aliases",
+        "tmdb_detail_payload",
+        "auto_media_for_entry",
+        "is_chinese_transfer_media",
+        "MediaMetadataService",
+    ]:
+        assert hasattr(target_resolver, name)
+        assert hasattr(media_metadata, name)
+
+    detail = {
+        "original_language": "zh",
+        "origin_country": ["CN"],
+        "translations": [
+            {"iso_639_1": "en", "data": {"title": "The Wandering Earth"}},
+            {"iso_639_1": "zh", "data": {"title": "流浪地球"}},
+        ],
+    }
+    kwargs = {"extract_title_aliases_func": online_subtitle.extract_title_aliases}
+    assert target_resolver.tmdb_detail_payload(detail, **kwargs) == media_metadata.tmdb_detail_payload(detail, **kwargs)
+    assert target_resolver.tmdb_detail_payload(detail, **kwargs)["en_title"] == "The Wandering Earth"
+
+    entry = {"tmdb_id": 123, "media_type": "movie", "title": "流浪地球"}
+    transfer_kwargs = {
+        "auto_media_for_entry_func": lambda _entry: {"tmdb_id": 123, "original_language": "zh-Hans"},
+        "normalize_text": runtime_helpers.normalize_text,
+        "chinese_language_codes": module.SubtitleManualUpload._chinese_media_language_codes,
+        "chinese_country_codes": module.SubtitleManualUpload._chinese_media_country_codes,
+        "chinese_region_names": module.SubtitleManualUpload._chinese_media_region_names,
+        "chinese_category_pattern": module.SubtitleManualUpload._chinese_media_category_pattern,
+    }
+    assert target_resolver.is_chinese_transfer_media(entry, **transfer_kwargs) == media_metadata.is_chinese_transfer_media(
+        entry,
+        **transfer_kwargs,
+    )
+    assert target_resolver.is_chinese_transfer_media(entry, **transfer_kwargs) == (True, "TMDB original_language=zh-hans")
+    assert issubclass(target_resolver.MediaMetadataService, media_metadata.MediaMetadataService)
+
+
 def remember_targets(plugin, module, entries):
     target_resolver = plugin_submodule(module, "target_resolver")
     runtime_helpers = plugin_submodule(module, "runtime_helpers")
