@@ -1,9 +1,9 @@
 {
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-ui-backend-refactor-phased-plan.md",
   "status": {
-    "phase": "phase-6",
-    "task": "6.5",
-    "next_allowed_action": "Implement only task 6.5"
+    "phase": "phase-7",
+    "task": "7.1",
+    "next_allowed_action": "Implement only task 7.1"
   },
   "execution_rules": {
     "branch": "codex/subtitlemanualupload-ui-backend-refactor",
@@ -1414,9 +1414,55 @@
         {
           "id": "6.5",
           "title": "Extract media target resolver facade",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py::test_media_target_resolver_is_reexported_from_target_resolver tests/test_subtitlemanualupload_cache.py::test_api_targets_uses_media_target_resolver_directly -q",
+              "result": "passed",
+              "evidence": "2 passed in 0.34s, covering target_resolver.MediaTargetResolver facade subclassing and the /targets API delegation path"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile plugins.v2/subtitlemanualupload/media_target_resolver.py plugins.v2/subtitlemanualupload/target_resolver.py tests/test_subtitlemanualupload_cache.py",
+              "result": "passed",
+              "evidence": "media_target_resolver.py, target_resolver.py and cache tests compiled successfully"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py -q",
+              "result": "passed",
+              "evidence": "135 passed in 7.31s; an earlier parallel run hit a Windows file-lock PermissionError on .tmp-test-data/local_entries_cache.json while the focused smoke was using the same cache file, and the isolated rerun passed"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "pre-work smoke passed with 239 passed, 2 skipped in 9.74s; post-extraction smoke passed with 240 passed, 2 skipped in 10.45s"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_backend_inventory.py --details",
+              "result": "passed",
+              "evidence": "backend inventory exited 0; target_resolver.py line_count=396, facade_symbol_count=29, import_reference_count=6 and imported_symbols_missing_from_module=[]"
+            },
+            {
+              "command": "git diff --check -- plugins.v2/subtitlemanualupload/target_resolver.py plugins.v2/subtitlemanualupload/media_target_resolver.py tests/test_subtitlemanualupload_cache.py",
+              "result": "passed",
+              "evidence": "diff check exited 0 for touched 6.5 files"
+            },
+            {
+              "command": "scp to NAS 10.10.10.189 then docker cp into moviepilot-v2; docker exec moviepilot-v2 sha256sum and python -m py_compile target_resolver.py media_target_resolver.py",
+              "result": "passed",
+              "evidence": "container SHA256 matched local for target_resolver.py 664cd6db3e536f7f6683c688dc72677f8d40755c1702ba91a8ce305c56bf7891 and media_target_resolver.py 8672c049c29ee4b3983897bc49e263b8794f06c270c6452213dc8d30857d7c76; py_compile exited 0"
+            },
+            {
+              "command": "docker exec moviepilot-v2 python -c import check",
+              "result": "passed",
+              "evidence": "stdout printed 'MediaTargetResolver MediaTargetResolver True', proving target_resolver facade subclasses media_target_resolver implementation in the real container"
+            },
+            {
+              "command": "logged-in in-app browser CDP and visible DOM check on https://mp.jaysherlock.top:5443/#/plugin-app/SubtitleManualUpload/main",
+              "result": "passed",
+              "evidence": "/api/v1/plugin/SubtitleManualUpload/targets?media_type=movie&tmdb_id=34000&title=百万英镑&year=1954&season=all returned status=200 mimeType=application/json; visible DOM rendered 百万英镑 (1954), 2 个本地目标, /vol2 and /vol3 paths, subtitle state and 单集上传 actions; loginHint=false and consoleErrors=[]"
+            }
+          ],
+          "commit": "c8cdc4e"
         }
       ]
     },
@@ -1854,11 +1900,25 @@
         "built-in browser rendered 百万英镑 (1954) target detail with 2 个本地目标, /vol local paths, subtitle state and 单集上传 actions; loginHint=false and consoleErrors=[]",
         "next task is phase-6 task 6.5"
       ]
+    },
+    {
+      "task": "6.5",
+      "status": "completed",
+      "summary": "Extracted MediaTargetResolver into media_target_resolver.py while keeping target_resolver.py as the compatible facade. Added a regression proving the facade subclass and target payload behavior, hot-loaded the split into moviepilot-v2, and captured logged-in browser /targets 200 evidence for 百万英镑 (1954).",
+      "evidence": [
+        "source commit c8cdc4e created media_target_resolver.py, reduced target_resolver.py to 396 lines, and kept all 29 facade symbols importable with imported_symbols_missing_from_module=[]",
+        "directed 6.5 tests passed with 2 passed in 0.34s; full cache tests passed with 135 passed in 7.31s; backend focused smoke passed with 240 passed, 2 skipped in 10.45s",
+        "moviepilot-v2 on NAS 10.10.10.189 hot-loaded target_resolver.py and media_target_resolver.py; local/container SHA256 matched and py_compile passed",
+        "container import check printed MediaTargetResolver MediaTargetResolver True",
+        "logged-in in-app browser captured /targets status=200 for 百万英镑 (1954), rendered 2 个本地目标 with /vol2 and /vol3 paths, subtitle state and 单集上传 actions, with loginHint=false and consoleErrors=[]",
+        "phase-6 acceptance satisfied; next task is phase-7 task 7.1"
+      ]
     }
   ],
   "residual_risk": [
     "Phase-5 browser-control risk from earlier tasks is retired by task 5.6 in-app browser evidence; later phases still require their own logged-in browser checks after target_resolver and timeline_fixer splits.",
     "Task 6.1 proved browser visible target-detail state and console health after hot-load, but CDP network recapture for /targets timed out; the phase-6 acceptance browser check still needs fresh /targets 2xx evidence after the remaining target_resolver splits.",
-    "Task 6.2 browser visible target-detail state and console health passed after hot-load, but direct browser-control /targets network recapture timed out via CDP/new-tab attempts; phase-6 acceptance still needs fresh /targets 2xx evidence after the remaining target_resolver splits."
+    "Task 6.2 browser visible target-detail state and console health passed after hot-load, but direct browser-control /targets network recapture timed out via CDP/new-tab attempts; phase-6 acceptance still needs fresh /targets 2xx evidence after the remaining target_resolver splits.",
+    "Phase-6 /targets network recapture risk from tasks 6.1 and 6.2 is retired by task 6.5 logged-in in-app browser CDP evidence: /targets returned 200 and target detail DOM rendered expected labels, paths, subtitle state and actions."
   ]
 }
