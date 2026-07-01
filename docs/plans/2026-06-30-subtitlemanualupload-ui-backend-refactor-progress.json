@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-06-30-subtitlemanualupload-ui-backend-refactor-phased-plan.md",
   "status": {
     "phase": "phase-6",
-    "task": "6.2",
-    "next_allowed_action": "Implement only task 6.2"
+    "task": "6.3",
+    "next_allowed_action": "Implement only task 6.3"
   },
   "execution_rules": {
     "branch": "codex/subtitlemanualupload-ui-backend-refactor",
@@ -1265,9 +1265,50 @@
         {
           "id": "6.2",
           "title": "Extract media metadata service",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_init_inventory.py tests/test_subtitlemanualupload_cache.py tests/test_subtitlemanualupload_online.py tests/test_subtitlemanualupload_request_helpers.py tests/test_subtitlemanualupload_tongwen.py tests/test_timeline_fixer.py tests/test_autosubv3_cancel.py",
+              "result": "passed",
+              "evidence": "pre-work smoke passed with 236 passed, 2 skipped in 8.82s; post-extraction smoke passed with 237 passed, 2 skipped in 8.77s"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m py_compile plugins.v2/subtitlemanualupload/media_metadata.py plugins.v2/subtitlemanualupload/target_resolver.py tests/test_subtitlemanualupload_cache.py",
+              "result": "passed",
+              "evidence": "media_metadata.py, target_resolver.py and cache tests compiled successfully"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py::test_media_metadata_helpers_are_reexported_from_target_resolver tests/test_subtitlemanualupload_cache.py::test_tmdb_aliases_reuse_online_title_cleaner tests/test_subtitlemanualupload_cache.py::test_tmdb_detail_payload_prefers_real_english_translation_title tests/test_subtitlemanualupload_cache.py::test_auto_transfer_skips_chinese_media_by_tmdb_language tests/test_subtitlemanualupload_cache.py::test_auto_transfer_chinese_title_is_not_skip_evidence_without_tmdb_match -q",
+              "result": "passed",
+              "evidence": "5 passed in 0.73s, covering target_resolver facade re-exports, TMDB aliases/detail English title selection, and Chinese media skip evidence"
+            },
+            {
+              "command": "$env:PYTHONPATH='.'; & 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' -m pytest tests/test_subtitlemanualupload_cache.py -q",
+              "result": "passed",
+              "evidence": "132 passed in 6.58s"
+            },
+            {
+              "command": "& 'C:\\Users\\jaysh\\.cache\\codex-runtimes\\codex-primary-runtime\\dependencies\\python\\python.exe' scripts/subtitlemanualupload_backend_inventory.py --details",
+              "result": "passed",
+              "evidence": "backend inventory exited 0; target_resolver.py line_count=1464, facade_symbol_count=29, imported_symbols_missing_from_module=[]"
+            },
+            {
+              "command": "scp to NAS then docker cp into moviepilot-v2; docker exec moviepilot-v2 sha256sum and python -m py_compile target_resolver.py media_metadata.py",
+              "result": "passed",
+              "evidence": "container SHA256 matched local for target_resolver.py 01895ad4390a5356e442560924e8e29deb32f24ac99b7382267bd836fadb130e and media_metadata.py 1894debb7a47ec20f13ac89f69eb3964b6513450c94dc91364aeef789e07f691; py_compile exited 0"
+            },
+            {
+              "command": "docker exec -i moviepilot-v2 python import/behavior check",
+              "result": "passed",
+              "evidence": "stdout included 'MediaMetadataService MediaMetadataService The Wandering Earth (True, 'TMDB original_language=zh-hans')'"
+            },
+            {
+              "command": "built-in browser visible DOM and console check on logged-in SubtitleManualUpload page",
+              "result": "passed_with_residual_risk",
+              "evidence": "page rendered SubtitleManualUpload target detail for 百万英镑 (1954), local /vol paths, 单集上传 actions, loginHint=false and consoleErrors=[]; browser-control /targets network recapture timed out and remains for phase-6 acceptance after later target_resolver splits"
+            }
+          ],
+          "commit": "9930e24"
         },
         {
           "id": "6.3",
@@ -1684,10 +1725,25 @@
         "built-in browser visible DOM stayed on SubtitleManualUpload target detail after hot-load with 搜索此集在线字幕 and 单集上传 actions available; consoleErrors=[]",
         "next task is phase-6 task 6.2"
       ]
+    },
+    {
+      "task": "6.2",
+      "status": "completed",
+      "summary": "Extracted TMDB aliases/detail payload, English title selection, media flattening, Chinese media evidence and MediaMetadataService into media_metadata.py while target_resolver.py keeps facade wrappers for existing imports.",
+      "evidence": [
+        "source commit 9930e24 created media_metadata.py, reduced target_resolver.py metadata ownership and added a regression proving facade helpers align with the real split module",
+        "directed media metadata/cache tests passed with 5 passed in 0.73s; full cache tests passed with 132 passed in 6.58s",
+        "backend focused smoke passed after extraction with 237 passed, 2 skipped in 8.77s",
+        "backend inventory showed target_resolver.py line_count=1464, facade_symbol_count=29 and imported_symbols_missing_from_module=[]",
+        "moviepilot-v2 on NAS 10.10.10.189 hot-loaded target_resolver.py and media_metadata.py; local/container SHA256 matched, py_compile passed, and container import printed MediaMetadataService MediaMetadataService The Wandering Earth plus TMDB original_language=zh-hans evidence",
+        "built-in browser visible DOM rendered 百万英镑 (1954) target detail, /vol local paths and 单集上传 actions with loginHint=false and consoleErrors=[]; /targets network recapture timed out in browser-control and is retained as phase-6 residual risk",
+        "next task is phase-6 task 6.3"
+      ]
     }
   ],
   "residual_risk": [
     "Phase-5 browser-control risk from earlier tasks is retired by task 5.6 in-app browser evidence; later phases still require their own logged-in browser checks after target_resolver and timeline_fixer splits.",
-    "Task 6.1 proved browser visible target-detail state and console health after hot-load, but CDP network recapture for /targets timed out; the phase-6 acceptance browser check still needs fresh /targets 2xx evidence after the remaining target_resolver splits."
+    "Task 6.1 proved browser visible target-detail state and console health after hot-load, but CDP network recapture for /targets timed out; the phase-6 acceptance browser check still needs fresh /targets 2xx evidence after the remaining target_resolver splits.",
+    "Task 6.2 browser visible target-detail state and console health passed after hot-load, but direct browser-control /targets network recapture timed out via CDP/new-tab attempts; phase-6 acceptance still needs fresh /targets 2xx evidence after the remaining target_resolver splits."
   ]
 }
