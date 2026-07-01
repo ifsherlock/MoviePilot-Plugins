@@ -4,9 +4,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from .config.config_schema import normalize_auto_multi_subtitle_mode
-from .matching.subtitle_language import auto_subtitle_sort_key, is_chinese_language_suffix
-from .catalog.target_resolver import (
+from ..config.config_schema import normalize_auto_multi_subtitle_mode
+from ..matching.subtitle_language import auto_subtitle_sort_key, is_chinese_language_suffix
+from ..catalog.target_resolver import (
     auto_fill_missing_targets as fill_missing_target_ids,
     suggest_target as suggest_target_id,
 )

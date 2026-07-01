@@ -58,6 +58,13 @@ def test_backend_inventory_cli_outputs_valid_json_for_big_modules():
     assert "online_ai" not in remaining_root_modules
     assert "online_subtitle" not in remaining_root_modules
     assert "upload_session" not in remaining_root_modules
+    assert "auto_transfer" not in remaining_root_modules
+    assert "auto_transfer_models" not in remaining_root_modules
+    assert "auto_transfer_processor" not in remaining_root_modules
+    assert "auto_transfer_queue" not in remaining_root_modules
+    assert "auto_transfer_rate_limit" not in remaining_root_modules
+    assert "auto_transfer_season" not in remaining_root_modules
+    assert "auto_transfer_write" not in remaining_root_modules
 
     target_packages = {item["name"]: item for item in inventory["target_subpackages"]}
     for name in (
@@ -77,6 +84,18 @@ def test_backend_inventory_cli_outputs_valid_json_for_big_modules():
         if name == "config":
             assert target_packages[name]["contains_only_init"] is False
             assert target_packages[name]["python_files"] == ["__init__.py", "config_runtime.py", "config_schema.py"]
+        elif name == "auto_transfer":
+            assert target_packages[name]["contains_only_init"] is False
+            assert target_packages[name]["python_files"] == [
+                "__init__.py",
+                "auto_transfer.py",
+                "auto_transfer_models.py",
+                "auto_transfer_processor.py",
+                "auto_transfer_queue.py",
+                "auto_transfer_rate_limit.py",
+                "auto_transfer_season.py",
+                "auto_transfer_write.py",
+            ]
         elif name == "catalog":
             assert target_packages[name]["contains_only_init"] is False
             assert target_packages[name]["python_files"] == [
@@ -143,6 +162,13 @@ def test_backend_inventory_cli_outputs_valid_json_for_big_modules():
     assert migration_targets["online_ai"]["migrated"] is True
     assert migration_targets["online_subtitle"]["migrated"] is True
     assert migration_targets["upload_session"]["migrated"] is True
+    assert migration_targets["auto_transfer"]["migrated"] is True
+    assert migration_targets["auto_transfer_models"]["migrated"] is True
+    assert migration_targets["auto_transfer_processor"]["migrated"] is True
+    assert migration_targets["auto_transfer_queue"]["migrated"] is True
+    assert migration_targets["auto_transfer_rate_limit"]["migrated"] is True
+    assert migration_targets["auto_transfer_season"]["migrated"] is True
+    assert migration_targets["auto_transfer_write"]["migrated"] is True
     assert migration_targets["target_resolver"]["target_subpackage"] == "catalog"
     assert migration_targets["timeline_fixer"]["target_subpackage"] == "timeline"
 

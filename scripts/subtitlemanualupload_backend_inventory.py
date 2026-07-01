@@ -15,7 +15,7 @@ SEARCH_ROOTS = (
     REPO_ROOT / "tests",
 )
 TARGET_MODULES = {
-    "auto_transfer": PLUGIN_ROOT / "auto_transfer.py",
+    "auto_transfer": PLUGIN_ROOT / "auto_transfer" / "auto_transfer.py",
     "online_subtitles.common": PLUGIN_ROOT / "online_subtitles" / "common.py",
     "target_resolver": PLUGIN_ROOT / "catalog" / "target_resolver.py",
     "timeline_fixer": PLUGIN_ROOT / "timeline" / "timeline_fixer.py",
