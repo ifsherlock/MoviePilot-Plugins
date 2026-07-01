@@ -1,17 +1,15 @@
-﻿import copy
-import os
+﻿import os
 import re
 import tempfile
 import time
 import traceback
-from datetime import timedelta, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Tuple, Dict, Any, List, Optional
 from threading import Event, Lock
 from watchdog.events import FileSystemEventHandler
 from watchdog.observers import Observer
 import iso639
-import psutil
 import srt
 from lxml import etree
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -45,6 +43,8 @@ from .core.models import (
     UserInterruptException,
 )
 from .ffmpeg import Ffmpeg
+from .pipeline.asr_service import AsrService
+from .pipeline.source_resolver import SourceResolver
 from .pipeline.subtitle_output import SubtitleOutputService
 from .storage.task_store import TaskStore
 from .tasks.api import AutoSubTaskApi
@@ -134,6 +134,7 @@ class AutoSubv3(_PluginBase):
     _task_service = None
     _task_api = None
     _subtitle_output = None
+    _asr_service = None
     _observer = None
     _monitor_paths = None
     _lock = Lock()
@@ -271,6 +272,24 @@ class AutoSubv3(_PluginBase):
                 Ffmpeg,
             )
         return self._subtitle_output
+
+    def _get_asr_service(self) -> AsrService:
+        if not self._asr_service:
+            self._asr_service = AsrService(
+                logger,
+                self._event,
+                self._is_current_task_cancelled,
+                self._raise_if_task_cancelled,
+                self.__is_chinese_lang,
+                lambda: self._faster_whisper_model_path,
+                lambda: self._faster_whisper_model,
+                lambda: bool(self._huggingface_proxy),
+                lambda: settings.PROXY,
+                lambda: self._max_segment_duration,
+                lambda: self._max_segment_chars,
+                etree.HTML,
+            )
+        return self._asr_service
 
     def load_tasks(self) -> Dict[str, TaskItem]:
         return self._get_task_store().load_tasks()
@@ -907,136 +926,12 @@ class AutoSubv3(_PluginBase):
             return TaskStatus.FAILED
 
     def __do_speech_recognition(self, audio_lang, audio_file, video_file=None):
-        """
-        语音识别, 生成字幕
-        :param audio_lang:
-        :param audio_file:
-        :param video_file: 视频文件路径（用于日志显示）
-        :return:
-        """
-        lang = audio_lang
-        video_name = os.path.basename(video_file) if video_file else os.path.basename(audio_file)
-        logger.info(f"[Whisper音频提取文本] 开始处理: {video_name}")
-        try:
-            from faster_whisper import WhisperModel, download_model
-            logger.info(f"[Whisper音频提取文本] {video_name} - 加载模型中...")
-            # 设置缓存目录, 防止缓存同目录出现 cross-device 错误
-            cache_dir = os.path.join(self._faster_whisper_model_path, "cache")
-            if not os.path.exists(cache_dir):
-                os.mkdir(cache_dir)
-            os.environ["HF_HUB_CACHE"] = cache_dir
-            if self._huggingface_proxy:
-                os.environ["HTTP_PROXY"] = settings.PROXY['http']
-                os.environ["HTTPS_PROXY"] = settings.PROXY['https']
-
-            # 模型下载重试机制
-            max_retries = 3
-            model = None
-            for attempt in range(max_retries):
-                try:
-                    model_path = download_model(self._faster_whisper_model, local_files_only=False, cache_dir=cache_dir)
-                    if model_path is None:
-                        raise ValueError("模型下载返回空路径")
-                    model = WhisperModel(model_path, device="cpu", compute_type="int8", cpu_threads=psutil.cpu_count(logical=False))
-                    break
-                except Exception as e:
-                    if attempt < max_retries - 1:
-                        logger.warn(f"[Whisper音频提取文本] {video_name} - 模型下载失败（第{attempt+1}次），30秒后重试... 错误: {e}")
-                        time.sleep(30)
-                    else:
-                        logger.error(f"[Whisper音频提取文本] {video_name} - 模型下载失败，已重试{max_retries}次。请检查：1) 网络连接 2) 代理配置 3) HuggingFace访问。错误: {e}")
-                        return False, None
-
-            try:
-                segments, info = model.transcribe(audio_file,
-                                                  language=lang if lang != 'auto' else None,
-                                                  word_timestamps=True,
-                                                  vad_filter=True,
-                                                  temperature=0,
-                                                  beam_size=5)
-                logger.info(f"[Whisper音频提取文本] {video_name} - 检测到语言：{info.language}（置信度 {info.language_probability:.2%}）")
-
-                detected_lang = info.language
-                if lang == 'auto':
-                    lang = detected_lang
-
-                if self._skip_chinese and self.__is_chinese_lang(lang):
-                    logger.info(f"[Whisper音频提取文本] {video_name} - 检测到中文且已开启中文视频不翻译，立即跳过后续字幕提取")
-                    return "skip_chinese", lang
-
-                logger.info(f"[Whisper音频提取文本] {video_name} - 开始提取字幕内容，语言：{lang}")
-                extract_start_time = time.time()
-            except ValueError as e:
-                if "max() iterable argument is empty" in str(e):
-                    logger.info(f"[Whisper音频提取文本] {video_name} - 音频文件中未检测到任何语言内容，标记为无声音")
-                    # 返回 None 表示无声音，不生成空字幕文件
-                    return None, None
-                else:
-                    raise e
-
-            # 先遍历一次获取总时长，用于百分比进度显示
-            seg_list = list(segments)
-            total_duration = seg_list[-1].end if seg_list else 0
-            total_count = len(seg_list)
-            subs = []
-            idx = 0
-            last_pct = 0
-            for segment in seg_list:
-                if self._event.is_set() or self._is_current_task_cancelled():
-                    logger.info(f"[Whisper音频提取文本] {video_name} - 用户中断，停止提取")
-                    raise UserInterruptException(f"用户中断当前任务")
-                pct = int(segment.end / total_duration * 100) if total_duration > 0 else 0
-                if pct >= last_pct + 10:
-                    logger.info(f"[Whisper音频提取文本] {video_name} - 提取进度：{pct}%（{segment.end:.1f}s / {total_duration:.1f}s）")
-                    last_pct = pct
-                if segment.words:
-                    for word in segment.words:
-                        idx += 1
-                        subs.append(srt.Subtitle(index=idx,
-                                                 start=timedelta(seconds=word.start),
-                                                 end=timedelta(seconds=word.end),
-                                                 content=word.word))
-                else:
-                    idx += 1
-                    subs.append(srt.Subtitle(index=idx,
-                                             start=timedelta(seconds=segment.start),
-                                             end=timedelta(seconds=segment.end),
-                                             content=segment.text))
-            # 按最大时长和最大字数合并
-            subs = self.__merge_srt(subs)
-
-            # 计算提取耗时
-            extract_elapsed = time.time() - extract_start_time
-            logger.info(f"[Whisper音频提取文本] {video_name} - 提取完成，共处理 {total_count} 段，合并后 {idx} 条字幕，耗时 {extract_elapsed:.1f} 秒")
-
-            # 性能警告（基于提取时长与视频时长的比例）
-            if total_duration > 0:
-                ratio = extract_elapsed / total_duration
-                if ratio >= 0.8:
-                    logger.warning(f"[Whisper音频提取文本] {video_name} - 提取耗时过长（{extract_elapsed:.1f}秒 / 视频{total_duration:.1f}秒 = {ratio:.0%}），强烈建议：1) 使用更快模型（tiny/base）2) 启用GPU加速 3) 检查CPU负载")
-                elif ratio >= 0.6:
-                    logger.warning(f"[Whisper音频提取文本] {video_name} - 提取耗时较长（{extract_elapsed:.1f}秒 / 视频{total_duration:.1f}秒 = {ratio:.0%}），建议：1) 使用更快模型（tiny/base）2) 启用GPU加速")
-                elif ratio >= 0.3:
-                    logger.info(f"[Whisper音频提取文本] {video_name} - 提取速度可优化（{extract_elapsed:.1f}秒 / 视频{total_duration:.1f}秒 = {ratio:.0%}），可考虑使用更快模型（tiny/base）")
-
-            # 检查是否提取到了有效字幕内容
-            if not subs:
-                logger.info(f"[Whisper音频提取文本] {video_name} - 提取的字幕内容为空，标记为无声音")
-                return None, None
-
-            self._raise_if_task_cancelled()
-            self.__save_srt(f"{audio_file}.srt", subs)
-            logger.info(f"[Whisper音频提取文本] {video_name} - 音轨转字幕完成")
-            return True, lang
-        except ImportError:
-            logger.warn(f"[Whisper音频提取文本] faster-whisper 未安装，不进行处理")
-            return False, None
-        except UserInterruptException:
-            raise
-        except Exception as e:
-            traceback.print_exc()
-            logger.error(f"[Whisper音频提取文本] {video_name} - 处理异常：{e}")
-            return False, None
+        return self._get_asr_service().do_speech_recognition(
+            audio_lang,
+            audio_file,
+            video_file,
+            skip_chinese=bool(self._skip_chinese),
+        )
 
     def __generate_subtitle(
         self,
@@ -1170,12 +1065,14 @@ class AutoSubv3(_PluginBase):
                 logger.info(f"字幕源偏好：{self._translate_preference} 未匹配到外挂或内嵌字幕,需要使用asr提取")
         # 提取内嵌字幕
         if extract_subtitle:
-            inner_sub_lang = iso639.to_iso639_1(inner_sub_lang) \
-                if (inner_sub_lang and iso639.find(inner_sub_lang) and iso639.to_iso639_1(inner_sub_lang)) else 'und'
-            extracted_sub_path = f"{subtitle_file}.{inner_sub_lang}.srt"
-            Ffmpeg().extract_subtitle_from_video(video_file, extracted_sub_path, subtitle_index)
-            logger.info(f"提取字幕完成：{extracted_sub_path}")
-            return True, inner_sub_lang, (extracted_sub_path, ResolvedSource.EMBEDDED.value)
+            return SourceResolver.extract_embedded_subtitle(
+                video_file,
+                subtitle_file,
+                subtitle_index,
+                inner_sub_lang,
+                Ffmpeg,
+                logger,
+            )
         # 使用asr音轨识别字幕
         if audio_lang != 'auto':
             audio_lang = iso639.to_iso639_1(audio_lang)
@@ -1187,43 +1084,27 @@ class AutoSubv3(_PluginBase):
             logger.info("已指定音轨 ASR，但 ASR 依赖或 Whisper 配置不可用")
             return False, None, None
 
-        # 清理异常退出的临时文件
-        tempdir = tempfile.gettempdir()
-        for file in os.listdir(tempdir):
-            if file.startswith('autosub-'):
-                os.remove(os.path.join(tempdir, file))
-
-        with tempfile.NamedTemporaryFile(prefix='autosub-', suffix='.wav', delete=True) as audio_file:
-            # 提取音频
-            logger.info(f"[GenSub Step 5a] 提取音频：{audio_file.name}")
-            Ffmpeg().extract_wav_from_video(video_file, audio_file.name, audio_index)
-            logger.info(f"[GenSub Step 5a] 提取音频完成")
-            logger.info(f"[GenSub Step 5b] 开始Whisper识别")
-
-            # 生成字幕
-            logger.info(f"[GenSub Step 5] 开始Whisper识别, 语言 {audio_lang}")
-            ret, lang = self.__do_speech_recognition(audio_lang, audio_file.name, video_file)
-            if ret == "skip_chinese":
-                logger.info(f"视频识别为中文且已开启中文视频不翻译，跳过字幕生成：{video_file}")
-                self.add_skip_chinese_video(video_file)
-                return False, "skip_chinese", None
-            elif ret:
-                logger.info(f"生成字幕成功，原始语言：{lang}")
-                # 复制字幕文件
-                self._raise_if_task_cancelled()
-                SystemUtils.copy(Path(f"{audio_file.name}.srt"), Path(f"{subtitle_file}.{lang}.srt"))
-                logger.info(f"复制字幕文件：{subtitle_file}.{lang}.srt")
-                # 删除临时文件
-                os.remove(f"{audio_file.name}.srt")
-                return ret, lang, (Path(f"{subtitle_file}.{lang}.srt"), ResolvedSource.ASR.value)
-            elif ret is None:
-                # 无声音，跳过并记录
-                logger.info(f"视频无声音，跳过字幕生成：{video_file}")
-                self.add_skipped_video(video_file)
-                return False, None, None
-            else:
-                logger.error("生成字幕失败")
-                return False, None, None
+        ret, lang, output = self._get_asr_service().generate_from_audio(
+            video_file,
+            subtitle_file,
+            audio_index,
+            audio_lang,
+            Ffmpeg,
+            SystemUtils.copy,
+            skip_chinese=bool(self._skip_chinese),
+        )
+        if ret == "skip_chinese":
+            logger.info(f"视频识别为中文且已开启中文视频不翻译，跳过字幕生成：{video_file}")
+            self.add_skip_chinese_video(video_file)
+            return False, "skip_chinese", None
+        if ret:
+            return ret, lang, output
+        if ret is None:
+            logger.info(f"视频无声音，跳过字幕生成：{video_file}")
+            self.add_skipped_video(video_file)
+            return False, None, None
+        logger.error("生成字幕失败")
+        return False, None, None
 
     @staticmethod
     def __get_library_files(in_path, exclude_path=None):
@@ -1247,235 +1128,26 @@ class AutoSubv3(_PluginBase):
 
     @staticmethod
     def __load_srt(file_path):
-        """
-        加载字幕文件
-        :param file_path: 字幕文件路径
-        :return:
-        """
-        with open(file_path, 'r', encoding="utf8") as f:
-            srt_text = f.read()
-        return list(srt.parse(srt_text))
+        return AsrService.load_srt(file_path)
 
     @staticmethod
     def __save_srt(file_path, srt_data):
-        """
-        保存字幕文件
-        :param file_path: 字幕文件路径
-        :param srt_data: 字幕数据
-        :return:
-        """
-        with open(file_path, 'w', encoding="utf8") as f:
-            f.write(srt.compose(srt_data))
+        AsrService.save_srt(file_path, srt_data)
 
     def __merge_srt(self, subtitle_data, max_duration=None, max_chars=None):
-        """
-        将单词级字幕按句子合并，并强制按最大时长/字数切分
-        :param subtitle_data: 单词级字幕列表
-        :param max_duration: 每段最大时长（秒），默认用 self._max_segment_duration
-        :param max_chars: 每段最大字符数，默认用 self._max_segment_chars
-        :return:
-        """
-        if max_duration is None:
-            max_duration = self._max_segment_duration or 8.0
-        if max_chars is None:
-            max_chars = self._max_segment_chars or 30
-
-        subtitle_data = copy.deepcopy(subtitle_data)
-        merged_subtitle = []
-        sentence_end = True
-        end_tokens = ('.', '!', '?', '。', '！', '？', '。"', '！"', '？"', '."', '!"', '?"')
-        soft_break_tokens = (',', ';', ':', '，', '；', '：', '、')
-
-        def text_len(value):
-            return len((value or "").replace(" ", ""))
-
-        def duration_seconds(item):
-            return (item.end - item.start).total_seconds()
-
-        def should_soft_break(item):
-            content = item.content.rstrip()
-            return (
-                content.endswith(soft_break_tokens)
-                and (duration_seconds(item) >= max_duration * 0.55 or text_len(content) >= max_chars * 0.65)
-            )
-
-        def append_or_extend(item):
-            nonlocal sentence_end
-            if not merged_subtitle or sentence_end:
-                merged_subtitle.append(item)
-                sentence_end = False
-                return
-
-            current = merged_subtitle[-1]
-            candidate_duration = (item.end - current.start).total_seconds()
-            candidate_chars = text_len(current.content) + text_len(item.content)
-            force_split = candidate_duration > max_duration or candidate_chars > max_chars
-            if force_split:
-                merged_subtitle.append(item)
-                sentence_end = False
-                return
-
-            current.content = f"{current.content} {item.content}".strip()
-            current.end = item.end
-        for index, item in enumerate(subtitle_data):
-            content = item.content.replace('\n', ' ').strip()
-            parse = etree.HTML(content)
-            if parse is not None:
-                content = parse.xpath('string(.)')
-            if content == '':
-                continue
-            item.content = content
-
-            if self.__is_noisy_subtitle(content):
-                merged_subtitle.append(item)
-                sentence_end = True
-                continue
-
-            append_or_extend(item)
-
-            current = merged_subtitle[-1]
-            if content.endswith(end_tokens):
-                sentence_end = True
-            elif should_soft_break(current):
-                sentence_end = True
-            elif duration_seconds(current) >= max_duration:
-                sentence_end = True
-            elif text_len(current.content) >= max_chars:
-                sentence_end = True
-            else:
-                sentence_end = False
-
-        for index, item in enumerate(merged_subtitle, 1):
-            item.index = index
-        return merged_subtitle
+        return self._get_asr_service().merge_srt(subtitle_data, max_duration, max_chars)
 
     @staticmethod
     def __get_video_prefer_audio(video_meta, prefer_lang=None):
-        """
-        获取视频的首选音轨，如果有多音轨， 优先指定语言音轨，否则获取默认音轨
-        :param video_meta
-        :return:
-        """
-        if type(prefer_lang) == str and prefer_lang:
-            prefer_lang = [prefer_lang]
-
-        # 获取首选音轨
-        audio_lang = None
-        audio_index = None
-        audio_stream = filter(lambda x: x.get('codec_type') == 'audio', video_meta.get('streams', []))
-        for index, stream in enumerate(audio_stream):
-            if audio_index is None:
-                audio_index = index
-                audio_lang = stream.get('tags', {}).get('language', 'und')
-            # 获取默认音轨
-            if stream.get('disposition', {}).get('default'):
-                audio_index = index
-                audio_lang = stream.get('tags', {}).get('language', 'und')
-            # 获取指定语言音轨
-            if prefer_lang and stream.get('tags', {}).get('language') in prefer_lang:
-                audio_index = index
-                audio_lang = stream.get('tags', {}).get('language', 'und')
-                break
-
-        # 如果没有音轨， 则不处理
-        if audio_index is None:
-            logger.warn(f"没有音轨，不进行处理")
-            return False, None, None
-
-        logger.info(f"选中音轨信息：{audio_index}, {audio_lang}")
-        return True, audio_index, audio_lang
+        return SourceResolver.get_video_prefer_audio(video_meta, prefer_lang, logger)
 
     @staticmethod
     def __get_video_prefer_subtitle(video_meta, prefer_lang=None, strict=False, only_srt=True):
-        """
-        获取视频的首选字幕。优先级：1.字幕为偏好语言 2.默认字幕 3.第一个字幕
-        :param video_meta: 视频元数据
-        :param prefer_lang: 字幕偏好语言
-        :param strict: 是否严格模式。如果指定了偏好语言，严格模式下必须返回偏好语言的字幕。
-        :return: (是否命中字幕，字幕index，字幕语言)
-        """
-        # from https://wiki.videolan.org/Subtitles_codecs/
-        """
-        https://trac.ffmpeg.org/wiki/ExtractSubtitles
-        ffmpeg -codecs | grep subtitle
-         DES... ass                  ASS (Advanced SSA) subtitle (decoders: ssa ass ) (encoders: ssa ass )
-         DES... dvb_subtitle         DVB subtitles (decoders: dvbsub ) (encoders: dvbsub )
-         DES... dvd_subtitle         DVD subtitles (decoders: dvdsub ) (encoders: dvdsub )
-         D.S... hdmv_pgs_subtitle    HDMV Presentation Graphic Stream subtitles (decoders: pgssub )
-         ..S... hdmv_text_subtitle   HDMV Text subtitle
-         D.S... jacosub              JACOsub subtitle
-         D.S... microdvd             MicroDVD subtitle
-         D.S... mpl2                 MPL2 subtitle
-         D.S... pjs                  PJS (Phoenix Japanimation Society) subtitle
-         D.S... realtext             RealText subtitle
-         D.S... sami                 SAMI subtitle
-         ..S... srt                  SubRip subtitle with embedded timing
-         ..S... ssa                  SSA (SubStation Alpha) subtitle
-         D.S... stl                  Spruce subtitle format
-         DES... subrip               SubRip subtitle (decoders: srt subrip ) (encoders: srt subrip )
-         D.S... subviewer            SubViewer subtitle
-         D.S... subviewer1           SubViewer v1 subtitle
-         D.S... vplayer              VPlayer subtitle
-         DES... webvtt               WebVTT subtitle
-        """
-        image_based_subtitle_codecs = (
-            'dvd_subtitle',
-            'dvb_subtitle',
-            'hdmv_pgs_subtitle',
-        )
-
-        if prefer_lang is str and prefer_lang:
-            prefer_lang = [prefer_lang]
-
-        # 获取首选字幕
-        subtitle_lang = None
-        subtitle_index = None
-        subtitle_score = 0
-        subtitle_stream = filter(lambda x: x.get('codec_type') == 'subtitle', video_meta.get('streams', []))
-        for index, stream in enumerate(subtitle_stream):
-            # 如果是强制字幕，则跳过
-            if stream.get('disposition', {}).get('forced'):
-                continue
-            # image-based 字幕，跳过
-            if only_srt and (
-                    'width' in stream
-                    or stream.get('codec_name') in image_based_subtitle_codecs
-            ):
-                continue
-            cur_is_default = stream.get('disposition', {}).get('default')
-            cur_lang = stream.get('tags', {}).get('language')
-            # 计算当前字幕得分：1.字幕为偏好语言*4 2.默认字幕*2 3.第一个字幕*1
-            cur_score = 0
-            if prefer_lang and cur_lang in prefer_lang:
-                cur_score += 4
-            if cur_is_default:
-                cur_score += 2
-            if subtitle_index is None:
-                cur_score += 1
-                # 第一个字幕初始化为默认字幕
-                subtitle_lang, subtitle_index, subtitle_score = cur_lang, index, cur_score
-            if cur_score > subtitle_score:
-                subtitle_lang, subtitle_index, subtitle_score = cur_lang, index, cur_score
-
-        # 未找到字幕
-        if subtitle_index is None:
-            logger.debug(f"没有内嵌字幕")
-            return False, None, None
-        if strict and prefer_lang and subtitle_lang not in prefer_lang:
-            logger.warn(f"严格模式,没有偏好语言的字幕")
-            return False, None, None
-        logger.debug(f"命中内嵌字幕信息：{subtitle_index}, {subtitle_lang}, score:{subtitle_score}")
-        return True, subtitle_index, subtitle_lang
+        return SourceResolver.get_video_prefer_subtitle(video_meta, prefer_lang, strict, only_srt, logger)
 
     @staticmethod
     def __is_noisy_subtitle(content):
-        """
-        判断是否为背景音等字幕
-        :param content:
-        :return:
-        """
-        noisy_tokens = [('(', ')'), ('[', ']'), ('{', '}'), ('【', '】'), ('♪', '♪'), ('♫', '♫'), ('♪♪', '♪♪')]
-        return any(content.startswith(t[0]) and content.endswith(t[1]) for t in noisy_tokens)
+        return AsrService.is_noisy_subtitle(content)
 
     @staticmethod
     def __normalize_subtitle_text_line(value: Any) -> str:
