@@ -1,7 +1,6 @@
 ﻿import os
 import re
 import tempfile
-import time
 import traceback
 from datetime import datetime
 from pathlib import Path
@@ -16,7 +15,7 @@ from app.core.config import settings
 from app.core.context import MediaInfo
 from app.core.event import eventmanager, Event as MPEvent
 from app.schemas import TransferInfo
-from app.schemas.types import NotificationType, EventType
+from app.schemas.types import EventType
 from app.log import logger
 from app.plugins import _PluginBase
 from app.utils.system import SystemUtils
@@ -43,6 +42,7 @@ from .core.models import (
 )
 from .ffmpeg import Ffmpeg
 from .pipeline.asr_service import AsrService
+from .pipeline.generation_pipeline import GenerationPipeline
 from .pipeline.source_resolver import SourceResolver
 from .pipeline.subtitle_output import SubtitleOutputService
 from .pipeline.translation_service import TranslationService
@@ -136,6 +136,7 @@ class AutoSubv3(_PluginBase):
     _subtitle_output = None
     _asr_service = None
     _translation_service = None
+    _generation_pipeline = None
     _observer = None
     _monitor_paths = None
     _lock = Lock()
@@ -314,6 +315,11 @@ class AutoSubv3(_PluginBase):
                 lambda: self._max_translation_failure_rate,
             )
         return self._translation_service
+
+    def _get_generation_pipeline(self) -> GenerationPipeline:
+        if not self._generation_pipeline:
+            self._generation_pipeline = GenerationPipeline(self, logger)
+        return self._generation_pipeline
 
     def load_tasks(self) -> Dict[str, TaskItem]:
         return self._get_task_store().load_tasks()
@@ -809,148 +815,18 @@ class AutoSubv3(_PluginBase):
         reuse_output_path: str = "",
         reuse_source_lang: str = "",
     ) -> TaskStatus:
-        if not video_file:
-            logger.error(f"[Step 0] video_file 为空")
-            return TaskStatus.FAILED
-        logger.info(f"[Step 1] 检查文件大小：{video_file}")
-        # 如果文件大小小于指定大小， 则不处理
-        if os.path.getsize(video_file) < self._file_size * 1024 * 1024:
-            logger.info(f"[Step 1] 文件小于最小大小 {self._file_size}MB，跳过")
-            return TaskStatus.IGNORED
-        logger.info(f"[Step 2] 检查是否已标记为无声音跳过")
-        # 检查是否已标记为无声音跳过
-        if self.is_video_skipped(video_file):
-            if force_generate:
-                logger.info(f"[Step 2] 显式重新生成：忽略无声音历史跳过记录：{video_file}")
-            else:
-                logger.info(f"[Step 2] 视频已标记为无声音跳过：{video_file}")
-                return TaskStatus.NO_AUDIO
-        logger.info(f"[Step 3] 开始正式处理")
-        start_time = time.time()
-        file_path, file_ext = os.path.splitext(video_file)
-        file_name = os.path.basename(video_file)
-        linked_force_generate = force_generate or self._is_subtitle_manual_upload_source(source)
-        if self._skip_chinese and self.is_video_skip_chinese(video_file):
-            if linked_force_generate:
-                logger.info(f"[Step 3] 联动强制生成：跳过中文视频历史忽略记录")
-            else:
-                logger.info(f"[Step 3] 视频已标记为中文跳过翻译：{video_file}")
-                message = f" 媒体: {file_name}\n 中文视频跳过翻译"
-                if self._send_notify:
-                    self.post_message(mtype=NotificationType.Plugin, title="【自动字幕生成】", text=message)
-                return TaskStatus.IGNORED
-
-        try:
-            self._raise_if_task_cancelled()
-            logger.info(f"[Step 4] 判断目的字幕是否已存在：{video_file}")
-            # 字幕匹配来源是用户显式触发，允许绕过已有外挂/内嵌字幕检查；监控规则保持原样。
-            if not linked_force_generate and self.__target_subtitle_exists(video_file):
-                logger.warn(f"[Step 4] 字幕文件已经存在，不进行处理")
-                return TaskStatus.IGNORED
-            if linked_force_generate:
-                logger.info(f"[Step 4] 联动强制生成：跳过已有外挂/内嵌字幕检查 source={source.value if isinstance(source, TaskSource) else source}")
-            logger.info(f"[Step 5] 生成字幕")
-            # 生成字幕
-            ret, lang, gen_sub_path = self.__generate_subtitle(
-                video_file,
-                file_path,
-                self._enable_asr,
-                source_subtitle_path=source_subtitle_path,
-                source_subtitle_lang=source_subtitle_lang,
-                source_policy=source_policy,
-            )
-            resolved_source = ResolvedSource.AUTO.value
-            if isinstance(gen_sub_path, tuple):
-                gen_sub_path, resolved_source = gen_sub_path
-            if self._current_processing_task:
-                self._current_processing_task.resolved_source = resolved_source or ""
-                self._current_processing_task.source_lang = lang or ""
-                if reuse_source_lang and lang and self._normalize_text(reuse_source_lang).lower() != self._normalize_text(lang).lower():
-                    logger.info(
-                        "重跑沿用原输出路径，检测语言发生变化 old=%s new=%s output=%s",
-                        reuse_source_lang,
-                        lang,
-                        reuse_output_path or "-",
-                    )
-            self._raise_if_task_cancelled()
-            if not ret:
-                # 检查是否是无声音跳过（刚记录的）
-                if self.is_video_skipped(video_file):
-                    message = f" 媒体: {file_name}\n 无声音跳过"
-                    if self._send_notify:
-                        self.post_message(mtype=NotificationType.Plugin, title="【自动字幕生成】", text=message)
-                    return TaskStatus.NO_AUDIO
-                if lang == "skip_chinese" or self.is_video_skip_chinese(video_file):
-                    message = f" 媒体: {file_name}\n 中文视频跳过翻译"
-                    if self._send_notify:
-                        self.post_message(mtype=NotificationType.Plugin, title="【自动字幕生成】", text=message)
-                    return TaskStatus.IGNORED
-                message = f" 媒体: {file_name}\n 生成字幕失败，跳过后续处理"
-                if self._send_notify:
-                    self.post_message(mtype=NotificationType.Plugin, title="【自动字幕生成】", text=message)
-                return TaskStatus.FAILED
-
-            logger.info(f"[Step 6] 翻译字幕（如果需要）")
-            translated_to_zh = False
-            if self._translate_zh:
-                # 翻译字幕（即使源语言是中文，也过LLM处理病句、繁转简、去空格）
-                logger.info(f"开始翻译字幕为中文 ...")
-                translated_subtitle, output_variant = self._prepare_output_path(
-                    file_path,
-                    lang,
-                    self._subtitle_output_mode,
-                    resolved_source,
-                    overwrite_policy,
-                    inherited_variant=output_variant,
-                    inherited_output_path=reuse_output_path,
-                )
-                normalized_overwrite = self._normalize_overwrite_policy(overwrite_policy)
-                if os.path.exists(translated_subtitle):
-                    if normalized_overwrite == OverwritePolicy.SKIP.value:
-                        logger.info(f"目标字幕已存在，按覆盖策略跳过：{translated_subtitle}")
-                        if self._current_processing_task:
-                            self._current_processing_task.output_path = translated_subtitle
-                            self._current_processing_task.output_variant = output_variant
-                        return TaskStatus.IGNORED
-                    if normalized_overwrite == OverwritePolicy.BACKUP_REPLACE.value:
-                        backup_path = self._backup_existing_file(translated_subtitle)
-                        logger.info(f"覆盖前备份 AI 字幕：{backup_path}")
-                self.__translate_zh_subtitle(lang, gen_sub_path, translated_subtitle,
-                                              output_mode=self._subtitle_output_mode)
-                self._raise_if_task_cancelled()
-                logger.info(f"翻译字幕完成：{os.path.basename(translated_subtitle)}")
-                if self._current_processing_task:
-                    self._current_processing_task.output_path = translated_subtitle
-                    self._current_processing_task.output_variant = output_variant
-                translated_to_zh = True
-
-            end_time = time.time()
-            message = f" 媒体: {file_name}\n 处理完成\n 字幕原始语言: {lang}\n "
-            if translated_to_zh:
-                message += f"字幕翻译语言: zh\n "
-            message += f"耗时：{round(end_time - start_time, 2)}秒"
-            logger.info(f"自动字幕生成 处理完成：{message}")
-            logger.info("")  # 空行分隔
-            logger.info("")  # 空行分隔
-            if self._send_notify:
-                self.post_message(mtype=NotificationType.Plugin, title="【自动字幕生成】", text=message)
-            return TaskStatus.COMPLETED
-        except UserInterruptException:
-            logger.info(f"用户中断当前任务：{video_file}")
-            logger.info("")  # 空行分隔
-            logger.info("")  # 空行分隔
-            return TaskStatus.CANCELLED
-        except Exception as e:
-            logger.error(f"自动字幕生成 处理异常：{e}")
-            end_time = time.time()
-            message = f" 媒体: {file_name}\n 处理失败\n 耗时：{round(end_time - start_time, 2)}秒"
-            if self._send_notify:
-                self.post_message(mtype=NotificationType.Plugin, title="【自动字幕生成】", text=message)
-            # 打印调用栈
-            logger.error(traceback.format_exc())
-            logger.info("")  # 空行分隔
-            logger.info("")  # 空行分隔
-            return TaskStatus.FAILED
+        return self._get_generation_pipeline().process_autosub(
+            video_file,
+            source=source,
+            force_generate=force_generate,
+            source_subtitle_path=source_subtitle_path,
+            source_subtitle_lang=source_subtitle_lang,
+            source_policy=source_policy,
+            overwrite_policy=overwrite_policy,
+            output_variant=output_variant,
+            reuse_output_path=reuse_output_path,
+            reuse_source_lang=reuse_source_lang,
+        )
 
     def __do_speech_recognition(self, audio_lang, audio_file, video_file=None):
         return self._get_asr_service().do_speech_recognition(
