@@ -12,7 +12,6 @@ from watchdog.observers import Observer
 import iso639
 import srt
 from lxml import etree
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from app.core.config import settings
 from app.core.context import MediaInfo
 from app.core.event import eventmanager, Event as MPEvent
@@ -46,6 +45,7 @@ from .ffmpeg import Ffmpeg
 from .pipeline.asr_service import AsrService
 from .pipeline.source_resolver import SourceResolver
 from .pipeline.subtitle_output import SubtitleOutputService
+from .pipeline.translation_service import TranslationService
 from .storage.task_store import TaskStore
 from .tasks.api import AutoSubTaskApi
 from .tasks.queue_worker import QueueWorker
@@ -135,6 +135,7 @@ class AutoSubv3(_PluginBase):
     _task_api = None
     _subtitle_output = None
     _asr_service = None
+    _translation_service = None
     _observer = None
     _monitor_paths = None
     _lock = Lock()
@@ -291,6 +292,29 @@ class AutoSubv3(_PluginBase):
             )
         return self._asr_service
 
+    def _get_translation_service(self) -> TranslationService:
+        if not self._translation_service:
+            self._translation_service = TranslationService(
+                logger,
+                lambda path: self.__load_srt(path),
+                lambda path, items: self.__save_srt(path, items),
+                self.__is_chinese_lang,
+                self.__subtitle_content_looks_chinese,
+                self._raise_if_task_cancelled,
+                lambda: self._openai,
+                lambda: self._stats,
+                lambda: self._subtitle_output_mode,
+                self._set_subtitle_output_mode,
+                lambda: bool(self._skip_chinese),
+                lambda: bool(self._enable_batch),
+                lambda: self._batch_size,
+                lambda: self._parallel_workers,
+                lambda: self._context_window,
+                lambda: self._max_retries,
+                lambda: self._max_translation_failure_rate,
+            )
+        return self._translation_service
+
     def load_tasks(self) -> Dict[str, TaskItem]:
         return self._get_task_store().load_tasks()
 
@@ -304,6 +328,9 @@ class AutoSubv3(_PluginBase):
     @staticmethod
     def _ok(data: Any = None, message: str = "ok") -> Dict[str, Any]:
         return {"success": True, "message": message, "data": data}
+
+    def _set_subtitle_output_mode(self, value: str):
+        self._subtitle_output_mode = value
 
     @staticmethod
     def _normalize_text(value: Any) -> str:
@@ -1151,111 +1178,42 @@ class AutoSubv3(_PluginBase):
 
     @staticmethod
     def __normalize_subtitle_text_line(value: Any) -> str:
-        text = str(value or "")
-        text = text.replace("\\N", " ").replace("\\n", " ").replace("\r", "\n")
-        text = re.sub(r"\s*\n+\s*", " ", text)
-        text = re.sub(r"\s+", " ", text)
-        return text.strip()
+        return TranslationService.normalize_subtitle_text_line(value)
 
     def __format_translated_content(self, original: Any, translated: Any) -> str:
-        trans = self.__normalize_subtitle_text_line(translated)
-        origin = self.__normalize_subtitle_text_line(original)
-        if self._subtitle_output_mode == 'chinese_only':
-            return trans
-        if not origin:
-            return trans
-        if not trans:
-            return origin
-        return f"{trans}\n{origin}"
+        return self._get_translation_service().format_translated_content(original, translated)
 
     def __get_context(self, all_subs: list, target_indices: List[int], is_batch: bool) -> str:
-        """通用上下文获取方法"""
-        min_idx = max(0, min(target_indices) - self._context_window)
-        max_idx = min(len(all_subs) - 1, max(target_indices) + self._context_window) if is_batch else min(
-            target_indices)
-
-        context = []
-        for idx in range(min_idx, max_idx + 1):
-            status = "[待译]" if idx in target_indices else ""
-            content = all_subs[idx].content.replace('\n', ' ').strip()
-            context.append(f"{status}{content}")
-
-        return "\n".join(context)
+        return self._get_translation_service().get_context(all_subs, target_indices, is_batch)
 
     def __process_items(self, all_subs: list, items: list) -> list:
-        """统一处理入口（支持批量和单条）"""
-        if self._enable_batch and len(items) > 1:
-            return self.__process_batch(all_subs, items)
-        return [self.__process_single(all_subs, item) for item in items]
+        return self._get_translation_service().process_items(
+            all_subs,
+            items,
+            process_batch=self.__process_batch,
+            process_single=self.__process_single,
+        )
 
     def __translate_to_zh(self, text: str, context: str = None, max_retries: int = None) -> str:
-        self._raise_if_task_cancelled()
-        if max_retries is None:
-            max_retries = self._max_retries
-        return self._openai.translate_to_zh(text, context, max_retries=max_retries)
+        return self._get_translation_service().translate_to_zh(text, context, max_retries)
 
     def __process_batch(self, all_subs: list, batch: list) -> list:
-        """批量处理逻辑"""
-        indices = [all_subs.index(item) for item in batch]
-        context = self.__get_context(all_subs, indices, is_batch=True) if self._context_window > 0 else None
-        batch_text = '\n'.join([item.content for item in batch])
-
-        try:
-            ret, result = self.__translate_to_zh(batch_text, context)
-            if not ret:
-                raise Exception(result)
-
-            translated = [line.strip() for line in result.split('\n') if line.strip()]
-            if len(translated) != len(batch):
-                raise Exception(f"批次行数不匹配 {len(translated)}/{len(batch)}")
-
-            for item, trans in zip(batch, translated):
-                item.content = self.__format_translated_content(item.content, trans)
-            self._stats['batch_success'] += 1
-            self._stats['translated'] += len(batch)
-            return batch
-        except UserInterruptException:
-            raise
-        except Exception as e:
-            logger.warning(f"[翻译] 批量翻译失败：{e}，降级逐行翻译")
-            self._stats['batch_fail'] += 1
-            return [self.__process_single(all_subs, item) for item in batch]
+        return self._get_translation_service().process_batch(
+            all_subs,
+            batch,
+            process_single=self.__process_single,
+            translate_to_zh=self.__translate_to_zh,
+        )
 
     def __process_single(self, all_subs: List[srt.Subtitle], item: srt.Subtitle) -> srt.Subtitle:
-        """单条处理逻辑"""
-        idx = all_subs.index(item)
-        context = self.__get_context(all_subs, [idx], is_batch=False) if self._context_window > 0 else None
-        success, trans = self.__translate_to_zh(item.content, context)
-
-        if success:
-            item.content = self.__format_translated_content(item.content, trans)
-            self._stats['line_fallback'] += 1
-            self._stats['translated'] += 1
-            return item
-        else:
-            if self._subtitle_output_mode == 'chinese_only':
-                item.content = f"[翻译失败]"
-            else:
-                item.content = self.__format_translated_content(item.content, "[翻译失败]")
-            self._stats['failed'] += 1
-            return item
+        return self._get_translation_service().process_single(
+            all_subs,
+            item,
+            translate_to_zh=self.__translate_to_zh,
+        )
 
     def __enforce_translation_quality(self) -> Tuple[int, int, float]:
-        total = int(self._stats.get('total') or 0)
-        if total <= 0:
-            return 0, 0, 0.0
-        translated = int(self._stats.get('translated') or self._stats.get('line_fallback') or 0)
-        translated = max(0, min(translated, total))
-        failed = total - translated
-        failure_rate = failed / total
-        if failure_rate > self._max_translation_failure_rate:
-            message = (
-                f"翻译失败率过高：失败 {failed}/{total} 条（{failure_rate:.0%}），"
-                f"超过阈值 {self._max_translation_failure_rate:.0%}，已停止输出字幕文件"
-            )
-            logger.error(f"[翻译] {message}")
-            raise TranslationQualityException(message)
-        return translated, failed, failure_rate
+        return self._get_translation_service().enforce_translation_quality()
 
     def __translate_zh_subtitle(self, source_lang: str, source_subtitle: str, dest_subtitle: str,
                                   output_mode: str = None):
@@ -1266,160 +1224,21 @@ class AutoSubv3(_PluginBase):
         :param dest_subtitle: 目标字幕文件路径
         :param output_mode: 输出模式，'bilingual'=双语（翻译+原文），'chinese_only'=纯中文
         """
-        self._stats = {'total': 0, 'batch_success': 0, 'batch_fail': 0, 'line_fallback': 0, 'translated': 0, 'failed': 0}
-        subs = self.__load_srt(source_subtitle)
-        valid_subs = subs  # ASR阶段已统一做word-level合并，翻译时不再重复合并
-        configured_output_mode = output_mode or self._subtitle_output_mode or 'bilingual'
-        effective_output_mode = configured_output_mode
-        chinese_source = self.__is_chinese_lang(source_lang) or self.__subtitle_content_looks_chinese(valid_subs)
-        if not self._skip_chinese and chinese_source:
-            logger.info(f"检测字幕内容为中文，强制使用纯中文字幕输出模式")
-            effective_output_mode = 'chinese_only'
-        previous_output_mode = self._subtitle_output_mode
-        self._subtitle_output_mode = effective_output_mode
-
-        try:
-            if not valid_subs:
-                logger.warning("字幕文件为空或没有有效的字幕条目，跳过翻译")
-                # 创建一个空的字幕文件
-                self.__save_srt(dest_subtitle, [])
-                return
-
-            self._stats['total'] = len(valid_subs)
-            translate_start_time = time.time()
-            if self._enable_batch:
-                processed = self.__translate_parallel(valid_subs)
-            else:
-                logger.info(f"[翻译] 逐条模式 - 共 {len(valid_subs)} 条（效果更好，速度较慢）")
-                processed = [self.__process_single(valid_subs, item) for item in valid_subs]
-            self._raise_if_task_cancelled()
-            translated_count, failed_count, failure_rate = self.__enforce_translation_quality()
-            self.__save_srt(dest_subtitle, processed)
-
-            # 计算翻译耗时和速度
-            translate_elapsed = time.time() - translate_start_time
-            speed = len(valid_subs) / translate_elapsed if translate_elapsed > 0 else 0
-
-            # 统计报告
-            batch_success_count = self._stats['batch_success']
-            batch_fail_count = self._stats['batch_fail']
-            line_fallback_count = self._stats['line_fallback']
-
-            # 构建日志消息
-            log_msg = f"[翻译] 完成 - 总计 {self._stats['total']} 条，耗时 {translate_elapsed:.1f} 秒，速度 {speed:.1f} 条/秒"
-            if self._enable_batch:
-                log_msg += f"，批量成功 {batch_success_count} 批"
-                if batch_fail_count > 0:
-                    log_msg += f"，批量失败 {batch_fail_count} 批（降级成功 {line_fallback_count} 条）"
-            log_msg += f"，翻译成功 {translated_count} 条，失败 {failed_count} 条，失败率 {failure_rate:.0%}"
-
-            logger.info(log_msg)
-
-            # 批量失败次数过多时警告
-            if self._enable_batch and batch_fail_count > 0:
-                fail_rate = batch_fail_count / (batch_success_count + batch_fail_count) if (batch_success_count + batch_fail_count) > 0 else 0
-                if fail_rate > 0.5:
-                    logger.warning(f"[翻译] 批量失败率过高（{fail_rate:.0%}），建议检查：1) LLM API稳定性 2) 降低batch_size 3) 检查prompt格式")
-        finally:
-            self._subtitle_output_mode = previous_output_mode
+        self._stats = TranslationService.initial_stats()
+        return self._get_translation_service().translate_zh_subtitle(
+            source_lang,
+            source_subtitle,
+            dest_subtitle,
+            output_mode,
+            translate_parallel=self.__translate_parallel,
+            process_single=self.__process_single,
+        )
 
     def __translate_parallel(self, valid_subs: list):
-        """
-        并行翻译字幕，使用 ThreadPoolExecutor 多线程并发处理批次
-        批次按原始索引排序合并，保证顺序正确
-        """
-        total = len(valid_subs)
-        batch_size = self._batch_size
-        workers = self._parallel_workers
-
-        # 将字幕拆分为批次，每批包含 (全局索引, 字幕对象)
-        batches = []
-        for i in range(0, total, batch_size):
-            batch_items = valid_subs[i:i + batch_size]
-            # 建立 全局索引->字幕对象 的映射
-            batch_map = {}
-            for j, item in enumerate(batch_items):
-                batch_map[i + j] = item  # 用全局索引 i+j
-            batches.append((i, batch_map))
-
-        logger.info(f"[翻译] 并行模式 - 共 {len(batches)} 批次，每批 {batch_size} 条，并发 {workers} 线程")
-
-        results = {}  # 最终结果：全局idx -> 处理后的字幕对象
-
-        def process_batch(batch_start_idx, batch_map, stats):
-            """在子线程中执行：尝试批量翻译，失败则降级单行"""
-            self._raise_if_task_cancelled()
-            batch_list = list(batch_map.values())
-            indices = list(batch_map.keys())
-
-            # 尝试批量翻译（JSON结构化输出，按id校验）
-            try:
-                batch_texts = [item.content.strip() for item in batch_list]
-                ret, translations = self._openai.translate_batch_to_zh(batch_texts)
-                self._raise_if_task_cancelled()
-                # 严格检查：ret=True 且 translations 不为空 且 所有条目均非 None
-                if ret and translations and all(t is not None for t in translations):
-                    for item, trans in zip(batch_list, translations):
-                        item.content = self.__format_translated_content(item.content, trans)
-                    stats["batch_ok"] += 1
-                    stats["line_ok"] += len(translations)
-                    return {gidx: batch_map[gidx] for gidx in indices}
-            except UserInterruptException:
-                raise
-            except Exception as e:
-                logger.debug(f"批次 {batch_start_idx} 批量翻译异常，降级单行：{e}")
-
-            # 降级：逐行翻译（fallback单条，仅在批次失败后执行）
-            # 逐条调用翻译（不走批量），失败时最多再重试1次，避免对已失败的条目无限重试
-            line_ok_count = 0
-            for gidx in indices:
-                self._raise_if_task_cancelled()
-                item = batch_map[gidx]
-                context = self.__get_context(valid_subs, [gidx], is_batch=False) if self._context_window > 0 else None
-                # 单条翻译，max_retries=1（只重试1次，避免过度调用）
-                success, trans = self.__translate_to_zh(item.content, context, max_retries=1)
-                if success:
-                    line_ok_count += 1
-                    item.content = self.__format_translated_content(item.content, trans)
-                else:
-                    # 单条翻译失败，不重试（避免浪费调用次数）
-                    if self._subtitle_output_mode == 'chinese_only':
-                        item.content = "[翻译失败]"
-                    else:
-                        item.content = self.__format_translated_content(item.content, "[翻译失败]")
-            stats["line_ok"] += line_ok_count
-            stats["batch_fail"] += 1
-            logger.info(f"[翻译] 批次 {batch_start_idx} 降级逐行完成：{line_ok_count}/{len(indices)} 条成功")
-            return {gidx: batch_map[gidx] for gidx in indices}
-
-        # 统计计数器（在多线程间安全共享）
-        stats = {"batch_ok": 0, "batch_fail": 0, "line_ok": 0}
-        last_report_pct = -10  # 上次报告进度百分比，初始-10确保第一条打印
-
-        # 并行执行
-        with ThreadPoolExecutor(max_workers=workers) as executor:
-            futures = {executor.submit(process_batch, start_idx, bmap, stats): start_idx
-                       for start_idx, bmap in batches}
-
-            for future in as_completed(futures):
-                self._raise_if_task_cancelled()
-                batch_results = future.result()
-                results.update(batch_results)
-                done_count = len(results)
-                # 每10%打印一次进度
-                pct = int(done_count / total * 100) if total > 0 else 0
-                if pct >= last_report_pct + 10:
-                    logger.info(f"[翻译] 进度: {pct}% ({done_count}/{total}) - 已完成 {done_count} 条")
-                    last_report_pct = pct
-
-        # 按索引排序返回
-        processed = [results[i] for i in sorted(results.keys())]
-        self._stats['batch_success'] = stats["batch_ok"]
-        self._stats['batch_fail'] = stats["batch_fail"]
-        self._stats['line_fallback'] = stats["line_ok"]
-        self._stats['translated'] = stats["line_ok"]
-        self._stats['failed'] = max(0, total - stats["line_ok"])
-        return processed
+        return self._get_translation_service().translate_parallel(
+            valid_subs,
+            translate_to_zh=self.__translate_to_zh,
+        )
 
     @staticmethod
     def __external_subtitle_exists(video_file, prefer_langs=None, only_srt=False, strict=True):
