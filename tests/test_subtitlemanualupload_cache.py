@@ -228,6 +228,95 @@ def test_media_metadata_helpers_are_reexported_from_target_resolver():
     assert issubclass(target_resolver.MediaMetadataService, media_metadata.MediaMetadataService)
 
 
+def test_subtitle_inventory_is_reexported_from_target_resolver(tmp_path):
+    module, _, _ = load_plugin_module()
+    target_resolver = plugin_submodule(module, "target_resolver")
+    subtitle_inventory = plugin_submodule(module, "subtitle_inventory")
+    subtitle_language = plugin_submodule(module, "subtitle_language")
+    runtime_helpers = plugin_submodule(module, "runtime_helpers")
+
+    assert issubclass(target_resolver.SubtitleInventory, subtitle_inventory.SubtitleInventory)
+
+    video = tmp_path / "Movie.mkv"
+    video.write_text("video", encoding="utf-8")
+    subtitle = tmp_path / "Movie.chi.srt"
+    subtitle.write_text("1\n00:00:01,000 --> 00:00:02,000\n你好\n", encoding="utf-8")
+    backup = tmp_path / "Movie.chi.srt.bak"
+    backup.write_text("backup", encoding="utf-8")
+
+    def detect_language_profile(name, _raw_bytes):
+        suffix = "chi" if "chi" in name else "eng"
+        return {"suffix": suffix, "category": "chinese" if suffix == "chi" else "english"}
+
+    class FakeSubprocess:
+        PIPE = object()
+        TimeoutExpired = TimeoutError
+
+        def __init__(self):
+            self.calls = 0
+
+        def run(self, *args, **kwargs):
+            self.calls += 1
+            return types.SimpleNamespace(
+                stdout=json.dumps(
+                    {
+                        "streams": [
+                            {
+                                "index": 2,
+                                "codec_name": "subrip",
+                                "tags": {"language": "zh-Hans", "title": "Chinese Simplified"},
+                            }
+                        ]
+                    }
+                )
+            )
+
+    fake_subprocess = FakeSubprocess()
+    inventory = target_resolver.SubtitleInventory(
+        subtitle_exts=module.SubtitleManualUpload._subtitle_exts,
+        stream_exts=module.SubtitleManualUpload._stream_exts,
+        embedded_text_codecs=module.SubtitleManualUpload._embedded_subtitle_text_codecs,
+        embedded_image_codecs=module.SubtitleManualUpload._embedded_subtitle_image_codecs,
+        embedded_probe_cache=module.OrderedDict(),
+        embedded_probe_cache_max_size=2,
+        trust_transfer_history_paths=False,
+        normalize_text=runtime_helpers.normalize_text,
+        normalize_language_suffix=subtitle_language.normalize_language_suffix,
+        detect_language_profile=detect_language_profile,
+        is_chinese_language_suffix=subtitle_language.is_chinese_language_suffix,
+        safe_int=runtime_helpers.safe_int,
+        subtitle_backup_path=lambda path: path.with_name(f"{path.name}.bak"),
+        subprocess_module=fake_subprocess,
+        logger_warning=lambda *args, **kwargs: None,
+    )
+
+    subtitles = inventory.subtitle_files_for_target({"storage": "local", "path": str(video)})
+    assert subtitles == [
+        {
+            "name": "Movie.chi.srt",
+            "path": str(subtitle),
+            "relative_path": str(subtitle).replace("\\", "/"),
+            "ext": ".srt",
+            "language_suffix": "chi",
+            "language_category": "chinese",
+            "backup_path": str(backup),
+            "backup_available": True,
+            "size": subtitle.stat().st_size,
+            "modified_at": subtitles[0]["modified_at"],
+        }
+    ]
+
+    assert inventory.embedded_subtitle_tracks_for_target({"storage": "local", "path": str(tmp_path / "Movie.strm")}) == []
+    assert fake_subprocess.calls == 0
+
+    first_probe = inventory.embedded_subtitle_tracks_for_target({"storage": "local", "path": str(video)})
+    second_probe = inventory.embedded_subtitle_tracks_for_target({"storage": "local", "path": str(video)})
+    assert first_probe == second_probe
+    assert first_probe[0]["language_suffix"] == "chi"
+    assert first_probe[0]["is_chinese"] is True
+    assert fake_subprocess.calls == 1
+
+
 def remember_targets(plugin, module, entries):
     target_resolver = plugin_submodule(module, "target_resolver")
     runtime_helpers = plugin_submodule(module, "runtime_helpers")
