@@ -22,6 +22,8 @@ MOVIEPILOT_HOOKS = {
     "get_command",
     "get_render_mode",
     "get_api",
+    "get_actions",
+    "get_agent_tools",
     "get_form",
     "get_page",
     "get_sidebar_nav",

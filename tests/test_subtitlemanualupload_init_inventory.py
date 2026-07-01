@@ -77,6 +77,8 @@ def test_inventory_groups_slim_main_entry_responsibilities_and_references():
     assert groups["service_delegates"]["count"] == 0
     assert groups["service_delegates"]["methods"] == []
     assert "init_plugin" in groups["moviepilot_hooks"]["methods"]
+    assert "get_actions" in groups["moviepilot_hooks"]["methods"]
+    assert "get_agent_tools" in groups["moviepilot_hooks"]["methods"]
     assert "_save_config" in groups["config_runtime"]["methods"]
     assert groups["service_factories"]["methods"] == ["services"]
     assert "_submit_online_ai_translate" not in groups["ai_autosub_facade"]["methods"]

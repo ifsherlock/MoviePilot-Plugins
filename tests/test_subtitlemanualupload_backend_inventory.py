@@ -70,6 +70,9 @@ def test_backend_inventory_cli_outputs_valid_json_for_big_modules():
     assert "service_factories" not in remaining_root_modules
     assert "service_registry" not in remaining_root_modules
     assert "shell_helpers" not in remaining_root_modules
+    assert "agent_tools" not in remaining_root_modules
+    assert "automation_facade" not in remaining_root_modules
+    assert "workflow_actions" not in remaining_root_modules
 
     target_packages = {item["name"]: item for item in inventory["target_subpackages"]}
     for name in (
@@ -86,7 +89,15 @@ def test_backend_inventory_cli_outputs_valid_json_for_big_modules():
         "utils",
     ):
         assert target_packages[name]["exists"] is True
-        if name == "config":
+        if name == "automation":
+            assert target_packages[name]["contains_only_init"] is False
+            assert target_packages[name]["python_files"] == [
+                "__init__.py",
+                "agent_tools.py",
+                "automation_facade.py",
+                "workflow_actions.py",
+            ]
+        elif name == "config":
             assert target_packages[name]["contains_only_init"] is False
             assert target_packages[name]["python_files"] == ["__init__.py", "config_runtime.py", "config_schema.py"]
         elif name == "auto_transfer":
@@ -157,6 +168,9 @@ def test_backend_inventory_cli_outputs_valid_json_for_big_modules():
     migration_targets = {item["module"]: item for item in inventory["migration"]["migration_targets"]}
     assert migration_targets["workflow_actions"]["target_subpackage"] == "automation"
     assert migration_targets["auto_transfer"]["target_subpackage"] == "auto_transfer"
+    assert migration_targets["agent_tools"]["migrated"] is True
+    assert migration_targets["automation_facade"]["migrated"] is True
+    assert migration_targets["workflow_actions"]["migrated"] is True
     assert migration_targets["config_runtime"]["migrated"] is True
     assert migration_targets["config_schema"]["migrated"] is True
     assert migration_targets["subtitle_history"]["migrated"] is True

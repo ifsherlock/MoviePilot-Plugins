@@ -23,7 +23,7 @@ def load_cache_helpers():
 
 
 def automation_facade(module):
-    return importlib.import_module(f"{module.__name__}.automation_facade").SubtitleAutomationFacade
+    return importlib.import_module(f"{module.__name__}.automation.automation_facade").SubtitleAutomationFacade
 
 
 def make_enabled_plugin(tmp_path):
@@ -336,7 +336,7 @@ def test_agent_tools_contract(tmp_path, monkeypatch):
         autosub_bridge=autosub_bridge,
         timeline_tasks=timeline_tasks,
     )
-    agent_module = importlib.import_module(f"{module.__name__}.agent_tools")
+    agent_module = importlib.import_module(f"{module.__name__}.automation.agent_tools")
 
     tools = plugin.get_agent_tools()
     tool_by_name = {tool.name: tool for tool in tools}
