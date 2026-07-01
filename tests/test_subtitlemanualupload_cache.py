@@ -1141,6 +1141,38 @@ def test_rar_extraction_prefers_unar_over_rarfile_when_available(tmp_path):
     assert calls == [("command", "unar")]
 
 
+def test_archive_tool_detection_ignores_legacy_7z_configuration(tmp_path, monkeypatch):
+    module, _, _ = load_plugin_module()
+    upload_session = plugin_submodule(module, "upload_session")
+    unar_path = tmp_path / "unar"
+    sevenzip_path = tmp_path / "7z"
+    unar_path.write_text("", encoding="utf-8")
+    sevenzip_path.write_text("", encoding="utf-8")
+    unar_path.chmod(0o755)
+    sevenzip_path.chmod(0o755)
+
+    def fake_which(tool):
+        if tool == "unar":
+            return str(unar_path)
+        if tool == "7z":
+            return str(sevenzip_path)
+        return ""
+
+    monkeypatch.setattr(upload_session.shutil, "which", fake_which)
+    kwargs = {"normalize_text": lambda value: str(value or "").strip()}
+
+    assert upload_session.find_rar_tool(
+        configured_tool_path=str(sevenzip_path),
+        rar_tools=("7z", "unar"),
+        **kwargs,
+    ) == str(unar_path)
+    assert upload_session.find_sevenzip_tool(
+        configured_tool_path=str(sevenzip_path),
+        sevenzip_tools=("7z", "unar"),
+        **kwargs,
+    ) == str(unar_path)
+
+
 def test_prepare_upload_uses_upload_session_service(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
@@ -1389,9 +1421,19 @@ def test_7z_archive_extraction_with_unar_tool(tmp_path):
     upload_session = plugin_submodule(module, "upload_session")
     original_which = upload_session.shutil.which
     original_run = upload_session.subprocess.run
+    unar_path = tmp_path / "unar"
+    lsar_path = tmp_path / "lsar"
+    unar_path.write_text("", encoding="utf-8")
+    lsar_path.write_text("", encoding="utf-8")
+    unar_path.chmod(0o755)
+    lsar_path.chmod(0o755)
 
     def fake_which(tool):
-        return tool if tool in {"unar", "lsar"} else ""
+        if tool == "unar":
+            return str(unar_path)
+        if tool == "lsar":
+            return str(lsar_path)
+        return ""
 
     def fake_run(args, stdout=None, stderr=None, check=None, timeout=None):
         command = Path(args[0]).name

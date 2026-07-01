@@ -135,6 +135,13 @@ def is_executable_file(path: Path) -> bool:
         return False
 
 
+def _is_unar_executable(path: Any) -> bool:
+    if not path:
+        return False
+    candidate = Path(str(path))
+    return candidate.name.lower() == "unar" and is_executable_file(candidate)
+
+
 def find_rar_tool(
     *,
     configured_tool_path: Any,
@@ -142,13 +149,13 @@ def find_rar_tool(
     rar_tools: Iterable[str],
 ) -> str:
     configured = normalize_text(configured_tool_path)
-    if configured:
-        configured_path = Path(configured)
-        if is_executable_file(configured_path) and configured_path.name.lower() == "unar":
-            return str(configured_path)
+    if _is_unar_executable(configured):
+        return str(Path(configured))
     for tool in rar_tools:
+        if Path(str(tool)).name.lower() != "unar":
+            continue
         found = shutil.which(tool)
-        if found:
+        if _is_unar_executable(found):
             return found
     return ""
 
@@ -171,16 +178,13 @@ def find_sevenzip_tool(
     sevenzip_tools: Iterable[str],
 ) -> str:
     configured = normalize_text(configured_tool_path)
-    if configured:
-        configured_path = Path(configured)
-        if (
-            is_executable_file(configured_path)
-            and configured_path.name.lower() == "unar"
-        ):
-            return str(configured_path)
+    if _is_unar_executable(configured):
+        return str(Path(configured))
     for tool in sevenzip_tools:
+        if Path(str(tool)).name.lower() != "unar":
+            continue
         found = shutil.which(tool)
-        if found:
+        if _is_unar_executable(found):
             return found
     return ""
 
