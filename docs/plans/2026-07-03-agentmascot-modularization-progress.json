@@ -87,7 +87,7 @@
             "manifest source probe confirmed metadata/action/sidebar constants and no extra version constant",
             "phase-1 acceptance passed; dist was not modified in phase-1"
           ],
-          "commit": "pending"
+          "commit": "74e9d75"
         }
       ]
     },
