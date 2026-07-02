@@ -1,0 +1,269 @@
+{
+  "plan": "docs/plans/2026-07-03-agentmascot-modularization-phased-plan.md",
+  "status": {
+    "phase": "phase-1",
+    "task": "1.2",
+    "next_allowed_action": "Implement task 1.2 by extracting loader response generation to loader.py; after verified completion, advance to task 1.3 automatically"
+  },
+  "execution_rules": {
+    "branch": "codex/agentmascot-modularization",
+    "smoke_check": "python .github\\scripts\\check_plugin_versions.py package.json package.v2.json",
+    "commit_each_verified_task": true,
+    "no_commit_on_failed_verification": true,
+    "never_push_merge_or_amend": true,
+    "advance_after_verified_phase": true,
+    "no_user_confirmation_between_phases": true,
+    "only_flip_status_fields": true
+  },
+  "decision_log": [
+    {
+      "decision": "保留 patch adapter，同时提取未来 pluginEntry",
+      "reason": "当前个人使用仍依赖 patch，未来提交 MoviePilot frontend 时应只替换入口适配层",
+      "rejected": "立即删除 patch 或只服务设置页预览",
+      "source": "用户最新方向"
+    },
+    {
+      "decision": "执行计划采用 L 级 phased plan",
+      "reason": "后端、前端 runtime、patch adapter、素材 manifest、构建和浏览器验收均受影响",
+      "rejected": "用单层 checklist 或直接动手重构",
+      "source": "spec-to-goal-plan sizing rules"
+    }
+  ],
+  "phases": [
+    {
+      "id": "phase-1",
+      "goal": "后端插件壳瘦身，提取配置、API、loader 和 manifest",
+      "acceptance": [
+        "python .github\\scripts\\check_plugin_versions.py package.json package.v2.json exits 0",
+        "python -m py_compile plugins.v2\\agentmascot\\__init__.py plugins.v2\\agentmascot\\config.py plugins.v2\\agentmascot\\api.py plugins.v2\\agentmascot\\loader.py plugins.v2\\agentmascot\\manifest.py exits 0",
+        "get_api() exposed paths remain /status, /public_status, /config, and /loader with unchanged auth semantics"
+      ],
+      "tasks": [
+        {
+          "id": "1.1",
+          "title": "提取配置模型和默认值到 config.py",
+          "status": "completed",
+          "verification": [
+            "python .github\\scripts\\check_plugin_versions.py package.json package.v2.json -> Plugin release version gate passed",
+            "python -m py_compile plugins.v2\\agentmascot\\__init__.py plugins.v2\\agentmascot\\config.py -> exits 0",
+            "Select-String checked get_api paths/auth: /status auth=bear, /public_status allow_anonymous=True, /config auth=bear, /loader auth=bear",
+            "git diff scope confirmed no dist changes for task 1.1"
+          ],
+          "commit": "pending"
+        },
+        {
+          "id": "1.2",
+          "title": "提取 loader 响应生成到 loader.py",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "1.3",
+          "title": "提取 API endpoint 编排到 api.py",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "1.4",
+          "title": "提取插件元数据和动作摘要到 manifest.py",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "phase-2",
+      "goal": "统一桌宠运行时核心，让预览和全局替换复用同一套状态机",
+      "acceptance": [
+        "plugins.v2/agentmascot/src/components/AppPage.vue is under 450 lines",
+        "plugins.v2/agentmascot/src/global-loader.js is under 450 lines",
+        "cd plugins.v2\\agentmascot; npm run build exits 0",
+        "runtime core modules do not query .agent-assistant-fab or call MoviePilot API directly"
+      ],
+      "tasks": [
+        {
+          "id": "2.1",
+          "title": "提取前端配置和常量到 mascot/config.js",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "2.2",
+          "title": "提取坐标、anchor、墙面、天花板、地面和 lane 计算",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "2.3",
+          "title": "提取 DOM 表面扫描和多高度 lane 逻辑",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "2.4",
+          "title": "提取鼠标驻留跟随和拖拽释放逻辑",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "2.5",
+          "title": "提取动作状态机和 runtime factory",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "phase-3",
+      "goal": "分离适配层和 Vue UI，保留 patch 并预留正式前端插件入口",
+      "acceptance": [
+        "cd plugins.v2\\agentmascot; npm run build exits 0",
+        "vite federation exposes still include ./Page, ./Config, and ./AppPage",
+        "dist/assets/agentmascot-loader.js remains the fixed global patch loader output",
+        "moviepilotAgentEntry.js is the only source file containing .agent-assistant-fab selectors",
+        "moviepilotAuth.js is the only source file containing JWT storage scanning"
+      ],
+      "tasks": [
+        {
+          "id": "3.1",
+          "title": "建立 moviepilotAuth.js 并迁移鉴权和配置请求",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "3.2",
+          "title": "建立 moviepilotAgentEntry.js 并迁移原生入口隐藏和点击链路",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "3.3",
+          "title": "建立 globalDomAdapter.js 和 patchEntry.js",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "3.4",
+          "title": "拆分 MascotStage、MascotControls 和 useMascotPreview",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "3.5",
+          "title": "建立未来正式前端入口 pluginEntry.js",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "phase-4",
+      "goal": "整理素材 manifest 和动作目录，降低动作锚点维护风险",
+      "acceptance": [
+        "cd plugins.v2\\agentmascot; npm run build exits 0",
+        "asset/action validation command exits 0",
+        "frames.js is under 180 lines and preserves mascotIcon, SHIMEJI_IMAGES, SHIMEJI_ACTIONS, and ACTION_FRAMES exports",
+        "wall action anchors use named constants instead of scattered inline magic arrays"
+      ],
+      "tasks": [
+        {
+          "id": "4.1",
+          "title": "拆分图片 import map、pose helper、action 定义和 ACTION_FRAMES",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "4.2",
+          "title": "建立 actionCatalog.js 动作类别目录",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "4.3",
+          "title": "给墙面和地面锚点建立具名常量",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "4.4",
+          "title": "增加动作素材一致性检查脚本或 npm script",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        }
+      ]
+    },
+    {
+      "id": "phase-5",
+      "goal": "完成构建、版本、安装包和浏览器验收",
+      "acceptance": [
+        "python .github\\scripts\\check_plugin_versions.py package.json package.v2.json exits 0",
+        "cd plugins.v2\\agentmascot; npm run build exits 0",
+        "install zip can be generated and contains dist/assets/agentmascot-loader.js and shime1.png through shime66.png",
+        "MoviePilot browser smoke passes settings page, page view, global replacement, and native assistant click-open flow",
+        "git status proves no zip, tar, node_modules, pnpm-lock.yaml, or pnpm-workspace.yaml is staged"
+      ],
+      "tasks": [
+        {
+          "id": "5.1",
+          "title": "构建前端并确认 dist 入口完整",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "5.2",
+          "title": "如有用户可见变化则同步升版本和 history",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "5.3",
+          "title": "重新生成安装包但不提交 zip/tar",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "5.4",
+          "title": "完成 MoviePilot 浏览器冒烟验收",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        },
+        {
+          "id": "5.5",
+          "title": "记录动作行为人工验收结果",
+          "status": "pending",
+          "verification": [],
+          "commit": null
+        }
+      ]
+    }
+  ],
+  "turn_log": [
+    {
+      "task": "1.1",
+      "action": "Extracted AgentMascot backend config defaults, bounds, normalization, and state application into config.py while keeping API response shape unchanged.",
+      "verification": "check_plugin_versions, py_compile, get_api path/auth inspection",
+      "result": "passed"
+    }
+  ]
+}

@@ -8,6 +8,7 @@ from fastapi.responses import Response
 from app import schemas
 from app.log import logger
 from app.plugins import _PluginBase
+from .config import apply_config_state, current_config_state
 
 
 class AgentMascot(_PluginBase):
@@ -26,15 +27,7 @@ class AgentMascot(_PluginBase):
     auth_level = 1
 
     def init_plugin(self, config: dict = None):
-        config = config or {}
-        self._enabled = bool(config.get("enabled", False))
-        self._replace_agent_entry = bool(config.get("replace_agent_entry", True))
-        self._show_sidebar_nav = bool(config.get("show_sidebar_nav", True))
-        self._scale = self._clamp_number(config.get("scale", 1.0), 0.6, 2.0, 1.0)
-        self._speed = self._clamp_number(config.get("speed", 1.0), 0.4, 2.0, 1.0)
-        self._follow_mouse = bool(config.get("follow_mouse", True))
-        self._auto_roam = bool(config.get("auto_roam", True))
-        self._shadow = bool(config.get("shadow", True))
+        apply_config_state(self, config)
         self._save_config()
 
     def get_state(self) -> bool:
@@ -103,25 +96,8 @@ class AgentMascot(_PluginBase):
     def stop_service(self):
         pass
 
-    @staticmethod
-    def _clamp_number(value: Any, minimum: float, maximum: float, default: float) -> float:
-        try:
-            number = float(value)
-        except (TypeError, ValueError):
-            return default
-        return min(max(number, minimum), maximum)
-
     def _current_config(self) -> Dict[str, Any]:
-        return {
-            "enabled": bool(getattr(self, "_enabled", False)),
-            "replace_agent_entry": bool(getattr(self, "_replace_agent_entry", True)),
-            "show_sidebar_nav": bool(getattr(self, "_show_sidebar_nav", True)),
-            "scale": float(getattr(self, "_scale", 1.0)),
-            "speed": float(getattr(self, "_speed", 1.0)),
-            "follow_mouse": bool(getattr(self, "_follow_mouse", True)),
-            "auto_roam": bool(getattr(self, "_auto_roam", True)),
-            "shadow": bool(getattr(self, "_shadow", True)),
-        }
+        return current_config_state(self)
 
     def _save_config(self) -> None:
         self.update_config(self._current_config())
@@ -179,14 +155,7 @@ class AgentMascot(_PluginBase):
 
     def save_config_api(self, config: dict = Body(...)) -> schemas.Response:
         try:
-            self._enabled = bool(config.get("enabled"))
-            self._replace_agent_entry = bool(config.get("replace_agent_entry", True))
-            self._show_sidebar_nav = bool(config.get("show_sidebar_nav", True))
-            self._scale = self._clamp_number(config.get("scale"), 0.6, 2.0, 1.0)
-            self._speed = self._clamp_number(config.get("speed"), 0.4, 2.0, 1.0)
-            self._follow_mouse = bool(config.get("follow_mouse", True))
-            self._auto_roam = bool(config.get("auto_roam", True))
-            self._shadow = bool(config.get("shadow", True))
+            apply_config_state(self, config)
             self._save_config()
             return schemas.Response(success=True, data=self.get_status().data)
         except Exception as err:
