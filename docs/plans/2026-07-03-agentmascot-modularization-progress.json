@@ -113,7 +113,7 @@
             "dist/assets/agentmascot-loader.js contains AgentMascot, agentmascot-global-root, and public_status",
             "rg confirmed duplicated config/runtime constants now live only in src/mascot/config.js for this task scope"
           ],
-          "commit": "pending"
+          "commit": "c7c49d7"
         },
         {
           "id": "2.2",
