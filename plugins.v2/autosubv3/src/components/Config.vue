@@ -63,6 +63,7 @@ const saving = ref(false)
 const loadingModels = ref(false)
 const testingModel = ref(false)
 const error = ref('')
+const apiError = ref('')
 const apiMessage = ref('')
 const remoteModels = ref([])
 const pluginBase = computed(() => `plugin/${props.pluginId || 'AutoSubv3'}`)
@@ -98,6 +99,13 @@ watch(
     Object.assign(config, normalizeInitialConfig(value))
   },
 )
+watch(
+  () => [config.openai_url, config.openai_key, config.openai_model, config.openai_proxy, config.compatible],
+  () => {
+    apiError.value = ''
+    apiMessage.value = ''
+  },
+)
 
 function unwrapResponse(response) {
   return response?.data?.data || response?.data || response || {}
@@ -128,7 +136,7 @@ function apiClient() {
 
 async function fetchModels() {
   loadingModels.value = true
-  error.value = ''
+  apiError.value = ''
   apiMessage.value = ''
   try {
     const response = await apiClient().post(`${pluginBase.value}/models`, apiPayload())
@@ -136,7 +144,7 @@ async function fetchModels() {
     remoteModels.value = data.models || []
     apiMessage.value = responseMessage(response) || `已获取 ${remoteModels.value.length} 个模型`
   } catch (err) {
-    error.value = errorMessage(err, '获取模型列表失败')
+    apiError.value = errorMessage(err, '获取模型列表失败')
   } finally {
     loadingModels.value = false
   }
@@ -144,14 +152,14 @@ async function fetchModels() {
 
 async function testModel() {
   testingModel.value = true
-  error.value = ''
+  apiError.value = ''
   apiMessage.value = ''
   try {
     const response = await apiClient().post(`${pluginBase.value}/test_model`, apiPayload())
     const data = unwrapResponse(response)
     apiMessage.value = responseMessage(response) || `模型 ${data.model || config.openai_model} 可用`
   } catch (err) {
-    error.value = errorMessage(err, '测试模型失败')
+    apiError.value = errorMessage(err, '测试模型失败')
   } finally {
     testingModel.value = false
   }
@@ -183,7 +191,6 @@ function save() {
 
     <div class="config-shell">
       <VAlert v-if="error" class="mb-4" type="error" variant="tonal" density="compact" :text="error" />
-      <VAlert v-if="apiMessage" class="mb-4" type="success" variant="tonal" density="compact" :text="apiMessage" />
 
       <section class="config-section">
         <div class="section-title">基础设置</div>
@@ -229,25 +236,91 @@ function save() {
       </section>
 
       <section class="config-section">
-        <div class="section-title">路径</div>
+        <div class="section-title">API 配置</div>
         <VRow>
-          <VCol cols="12">
-            <VTextarea
-              v-model="config.path_whitelist"
-              label="监控路径（每行一个）"
-              :rows="3"
-              placeholder="/mnt/media/movies&#10;/downloads"
-              hint="目录变化时自动触发字幕生成"
-              persistent-hint
+          <VCol cols="12" md="6">
+            <VTextField v-model="config.openai_url" label="API URL" placeholder="https://api.siliconflow.cn" />
+          </VCol>
+          <VCol cols="12" md="6">
+            <VTextField v-model="config.openai_key" label="API 密钥" type="password" placeholder="sk-xxx" />
+          </VCol>
+        </VRow>
+
+        <VRow align="center">
+          <VCol cols="12" md="6">
+            <VCombobox
+              v-model="config.openai_model"
+              :items="modelItems"
+              item-title="title"
+              item-value="value"
+              label="模型"
+              placeholder="inclusionAI/Ling-flash-2.0"
             />
           </VCol>
-          <VCol cols="12">
-            <VTextarea
-              v-model="config.path_list"
-              label="媒体路径（手动执行时使用）"
-              :rows="3"
-              placeholder="绝对路径，每行一个，支持文件和文件夹"
+          <VCol cols="12" md="6" class="api-actions">
+            <VBtn
+              color="primary"
+              variant="tonal"
+              prepend-icon="mdi-format-list-bulleted"
+              :loading="loadingModels"
+              :disabled="testingModel || !apiReady"
+              @click="fetchModels"
+            >
+              获取模型
+            </VBtn>
+            <VBtn
+              color="secondary"
+              variant="tonal"
+              prepend-icon="mdi-check-circle-outline"
+              :loading="testingModel"
+              :disabled="loadingModels || !apiReady"
+              @click="testModel"
+            >
+              测试模型
+            </VBtn>
+          </VCol>
+        </VRow>
+
+        <VRow>
+          <VCol cols="12" md="3">
+            <VSwitch v-model="config.openai_proxy" label="使用代理服务器" hide-details />
+          </VCol>
+          <VCol cols="12" md="3">
+            <VSwitch v-model="config.compatible" label="兼容模式" hide-details />
+          </VCol>
+          <VCol cols="12" md="6">
+            <VAlert
+              v-if="apiError || apiMessage"
+              class="api-feedback"
+              :type="apiError ? 'error' : 'success'"
+              variant="tonal"
+              density="compact"
+              :text="apiError || apiMessage"
             />
+          </VCol>
+        </VRow>
+      </section>
+
+      <section class="config-section">
+        <div class="section-title">翻译参数</div>
+        <VRow>
+          <VCol cols="12" md="4">
+            <VTextField v-model="config.context_window" label="上下文窗口大小" placeholder="5" />
+          </VCol>
+          <VCol cols="12" md="4">
+            <VTextField v-model="config.max_retries" label="LLM 请求重试次数" placeholder="3" />
+          </VCol>
+          <VCol cols="12" md="4">
+            <VSwitch v-model="config.enable_batch" label="启用批量翻译" hide-details />
+          </VCol>
+        </VRow>
+
+        <VRow>
+          <VCol cols="12" md="6">
+            <VTextField v-model="config.batch_size" label="每批翻译行数" placeholder="20（建议不超过30）" />
+          </VCol>
+          <VCol cols="12" md="6">
+            <VTextField v-model="config.parallel_workers" label="并发线程数" placeholder="10" />
           </VCol>
         </VRow>
       </section>
@@ -295,84 +368,35 @@ function save() {
       </section>
 
       <section class="config-section">
-        <div class="section-title">翻译参数</div>
+        <div class="section-title">路径</div>
         <VRow>
-          <VCol cols="12" md="4">
-            <VTextField v-model="config.context_window" label="上下文窗口大小" placeholder="5" />
+          <VCol cols="12">
+            <VTextarea
+              v-model="config.path_whitelist"
+              label="监控路径（每行一个）"
+              :rows="3"
+              placeholder="/mnt/media/movies&#10;/downloads"
+              hint="目录变化时自动触发字幕生成"
+              persistent-hint
+            />
           </VCol>
-          <VCol cols="12" md="4">
-            <VTextField v-model="config.max_retries" label="LLM 请求重试次数" placeholder="3" />
-          </VCol>
-          <VCol cols="12" md="4">
-            <VSwitch v-model="config.enable_batch" label="启用批量翻译" hide-details />
-          </VCol>
-        </VRow>
-
-        <VRow>
-          <VCol cols="12" md="6">
-            <VTextField v-model="config.batch_size" label="每批翻译行数" placeholder="20（建议不超过30）" />
-          </VCol>
-          <VCol cols="12" md="6">
-            <VTextField v-model="config.parallel_workers" label="并发线程数" placeholder="10" />
-          </VCol>
-        </VRow>
-      </section>
-
-      <section class="config-section">
-        <div class="section-title">API 配置</div>
-        <VRow>
-          <VCol cols="12" md="6">
-            <VSwitch v-model="config.openai_proxy" label="使用代理服务器" hide-details />
-          </VCol>
-          <VCol cols="12" md="6">
-            <VSwitch v-model="config.compatible" label="兼容模式" hide-details />
-          </VCol>
-        </VRow>
-
-        <VRow>
-          <VCol cols="12" md="4">
-            <VTextField v-model="config.openai_url" label="API URL" placeholder="https://api.siliconflow.cn" />
-          </VCol>
-          <VCol cols="12" md="4">
-            <VTextField v-model="config.openai_key" label="API 密钥" type="password" placeholder="sk-xxx" />
-          </VCol>
-          <VCol cols="12" md="4">
-            <VCombobox
-              v-model="config.openai_model"
-              :items="modelItems"
-              item-title="title"
-              item-value="value"
-              label="模型"
-              placeholder="inclusionAI/Ling-flash-2.0"
+          <VCol cols="12">
+            <VTextarea
+              v-model="config.path_list"
+              label="媒体路径（手动执行时使用）"
+              :rows="3"
+              placeholder="绝对路径，每行一个，支持文件和文件夹"
             />
           </VCol>
         </VRow>
-
-        <VRow>
-          <VCol cols="12" class="api-actions">
-            <VBtn
-              color="primary"
-              variant="tonal"
-              prepend-icon="mdi-format-list-bulleted"
-              :loading="loadingModels"
-              :disabled="testingModel || !apiReady"
-              @click="fetchModels"
-            >
-              获取模型
-            </VBtn>
-            <VBtn
-              color="secondary"
-              variant="tonal"
-              prepend-icon="mdi-check-circle-outline"
-              :loading="testingModel"
-              :disabled="loadingModels || !apiReady"
-              @click="testModel"
-            >
-              测试模型
-            </VBtn>
-          </VCol>
-        </VRow>
       </section>
+
+      <div class="config-footer">
+        <VBtn variant="text" prepend-icon="mdi-format-list-bulleted" @click="emit('switch')">查看任务</VBtn>
+        <VSpacer />
+        <VBtn variant="text" @click="emit('close')">关闭</VBtn>
+        <VBtn color="primary" prepend-icon="mdi-content-save" :loading="saving" @click="save">保存</VBtn>
+      </div>
     </div>
 
   </div>
@@ -402,5 +426,18 @@ function save() {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
+  align-items: center;
+}
+
+.api-feedback {
+  margin-top: 2px;
+}
+
+.config-footer {
+  align-items: center;
+  border-top: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+  display: flex;
+  gap: 10px;
+  padding-top: 16px;
 }
 </style>
