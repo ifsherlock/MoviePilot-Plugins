@@ -1,4 +1,3 @@
-import re
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
@@ -9,6 +8,7 @@ from app import schemas
 from app.log import logger
 from app.plugins import _PluginBase
 from .config import apply_config_state, current_config_state
+from .loader import build_loader_response
 
 
 class AgentMascot(_PluginBase):
@@ -129,29 +129,7 @@ class AgentMascot(_PluginBase):
         )
 
     def get_loader(self) -> Response:
-        try:
-            dist_dir = Path(__file__).resolve().parent / "dist" / "assets"
-            loader_path = dist_dir / "agentmascot-loader.js"
-            loader_code = loader_path.read_text(encoding="utf-8")
-            match = re.search(r"^import\s+\{([^}]+)\}\s+from\s+'\.\/([^']+)';\s*", loader_code)
-            if match:
-                provider_path = dist_dir / match.group(2)
-                provider_code = provider_path.read_text(encoding="utf-8")
-                provider_code = re.sub(r"\n?export\s+\{[^}]+\};?\s*$", "", provider_code, flags=re.S)
-                loader_code = loader_code[match.end():]
-                loader_code = f"{provider_code}\nconst unwrapResponse = u;\nconst DEFAULT_CONFIG = D;\nconst SHIMEJI_ACTIONS = S;\n{loader_code}"
-            return Response(
-                content=loader_code,
-                media_type="application/javascript; charset=utf-8",
-                headers={"Cache-Control": "no-store"},
-            )
-        except Exception as err:
-            logger.error(f"获取 Agent 桌宠全局入口脚本失败: {err}")
-            return Response(
-                content=f"console.error('AgentMascot loader failed: {str(err)}');",
-                media_type="application/javascript; charset=utf-8",
-                status_code=500,
-            )
+        return build_loader_response(Path(__file__).resolve().parent)
 
     def save_config_api(self, config: dict = Body(...)) -> schemas.Response:
         try:

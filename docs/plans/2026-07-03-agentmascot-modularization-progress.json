@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-07-03-agentmascot-modularization-phased-plan.md",
   "status": {
     "phase": "phase-1",
-    "task": "1.2",
-    "next_allowed_action": "Implement task 1.2 by extracting loader response generation to loader.py; after verified completion, advance to task 1.3 automatically"
+    "task": "1.3",
+    "next_allowed_action": "Implement task 1.3 by extracting API endpoint orchestration to api.py; after verified completion, advance to task 1.4 automatically"
   },
   "execution_rules": {
     "branch": "codex/agentmascot-modularization",
@@ -54,9 +54,15 @@
         {
           "id": "1.2",
           "title": "提取 loader 响应生成到 loader.py",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            "python .github\\scripts\\check_plugin_versions.py package.json package.v2.json -> Plugin release version gate passed",
+            "python -m py_compile plugins.v2\\agentmascot\\__init__.py plugins.v2\\agentmascot\\config.py plugins.v2\\agentmascot\\loader.py -> exits 0",
+            "loader.py static probe confirmed Cache-Control no-store, JavaScript media type, error JS response, and provider alias strings",
+            "dist/assets/agentmascot-loader.js still imports provider and contains agentmascot-global-root",
+            "Select-String checked get_api paths/auth unchanged"
+          ],
+          "commit": "pending"
         },
         {
           "id": "1.3",
@@ -263,6 +269,12 @@
       "task": "1.1",
       "action": "Extracted AgentMascot backend config defaults, bounds, normalization, and state application into config.py while keeping API response shape unchanged.",
       "verification": "check_plugin_versions, py_compile, get_api path/auth inspection",
+      "result": "passed"
+    },
+    {
+      "task": "1.2",
+      "action": "Extracted global loader code assembly and Response generation into loader.py while keeping provider inlining, no-store headers, media type, and JavaScript error response semantics.",
+      "verification": "check_plugin_versions, py_compile, loader static probe, dist loader root-id probe, get_api path/auth inspection",
       "result": "passed"
     }
   ]
