@@ -147,7 +147,7 @@
             "rg confirmed DOM_SURFACE_SELECTORS/querySelector remain in global-loader.js adapter while surfaces.js exposes collect/build helpers",
             "git diff --check -> exits 0"
           ],
-          "commit": "pending"
+          "commit": "b2a500a"
         },
         {
           "id": "2.4",
