@@ -126,7 +126,7 @@
         "name": "AI字幕生成(联动版)",
         "description": "自动生成字幕并翻译成中文，支持 faster-whisper 识别、字幕提取和大模型并发翻译，可联动字幕匹配功能。",
         "labels": "字幕,AI,翻译",
-        "version": "3.5.50",
+        "version": "3.5.57",
         "icon": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/autosubtitles.jpeg",
         "author": "ifsherlock",
         "author_url": "https://github.com/ifsherlock",
@@ -134,6 +134,9 @@
         "system_version": ">=2.13.5",
         "v2": true,
         "history": {
+            "v3.5.57": "优化设置页布局，API 模型获取和测试结果改为就近显示，底部新增保存操作",
+            "v3.5.56": "字幕联动设置页新增获取模型和测试模型功能，补充模型配置接口测试",
+            "v3.5.55": "后端按职责拆分为 core、storage、tasks、pipeline、monitoring 等分层模块，前端任务页组件化并补充分层合同测试",
             "v3.5.50": "中文内嵌或外挂字幕提交 AI 处理时强制使用纯中文输出，避免双语排版重复原文",
             "v3.5.49": "调整 Vue 设置页按钮布局，移除底部重复保存按钮，将查看任务移动到右上角并补充保存按钮文案",
             "v3.5.48": "补齐 Vue 设置页 Config 组件，修复设置弹窗闪退；任务列表新增单个和批量删除任务记录",

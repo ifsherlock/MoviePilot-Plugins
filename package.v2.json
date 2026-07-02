@@ -133,7 +133,7 @@
         "name": "AI字幕生成(联动版)",
         "description": "自动生成字幕并翻译成中文，支持 faster-whisper 识别、字幕提取和大模型并发翻译，可联动字幕匹配功能。",
         "labels": "字幕,AI,翻译",
-        "version": "3.5.54",
+        "version": "3.5.57",
         "icon": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/autosubtitles.jpeg",
         "author": "ifsherlock",
         "author_url": "https://github.com/ifsherlock",
@@ -141,6 +141,9 @@
         "system_version": ">=2.13.5",
         "v2": true,
         "history": {
+            "v3.5.57": "优化设置页布局，API 模型获取和测试结果改为就近显示，底部新增保存操作",
+            "v3.5.56": "字幕联动设置页新增获取模型和测试模型功能，补充模型配置接口测试",
+            "v3.5.55": "后端按职责拆分为 core、storage、tasks、pipeline、monitoring 等分层模块，前端任务页组件化并补充分层合同测试",
             "v3.5.54": "优化 ASR 字幕分段，减少长句断句和空白片段对后续翻译的影响",
             "v3.5.53": "修正字幕匹配联动与 AI 监控优先级，避免独立监控和联动任务互相误判",
             "v3.5.52": "新增 AI 字幕生成模式、来源策略和重新生成入口，输出来源变体采用播放器兼容的单段 ai 后缀",
