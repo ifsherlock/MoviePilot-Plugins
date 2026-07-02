@@ -1,41 +1,41 @@
 
-.agentmascot-shell[data-v-2f9698c9] {
+.agentmascot-shell[data-v-c8091ad9] {
   min-height: 100%;
   padding: 18px;
   color: rgb(var(--v-theme-on-surface));
 }
-.agentmascot-header[data-v-2f9698c9],
-.agentmascot-controls[data-v-2f9698c9] {
+.agentmascot-header[data-v-c8091ad9],
+.agentmascot-controls[data-v-c8091ad9] {
   display: flex;
   gap: 12px;
   align-items: center;
   justify-content: space-between;
   flex-wrap: wrap;
 }
-.agentmascot-title[data-v-2f9698c9] {
+.agentmascot-title[data-v-c8091ad9] {
   display: flex;
   align-items: center;
   gap: 12px;
 }
-.agentmascot-title img[data-v-2f9698c9] {
+.agentmascot-title img[data-v-c8091ad9] {
   width: 44px;
   height: 44px;
   object-fit: contain;
 }
-.agentmascot-title h2[data-v-2f9698c9] {
+.agentmascot-title h2[data-v-c8091ad9] {
   margin: 0;
   font-size: 1.35rem;
   line-height: 1.2;
 }
-.agentmascot-title p[data-v-2f9698c9] {
+.agentmascot-title p[data-v-c8091ad9] {
   margin: 2px 0 0;
   opacity: 0.72;
 }
-.agentmascot-actions[data-v-2f9698c9] {
+.agentmascot-actions[data-v-c8091ad9] {
   display: flex;
   gap: 4px;
 }
-.agentmascot-stage[data-v-2f9698c9] {
+.agentmascot-stage[data-v-c8091ad9] {
   position: relative;
   min-height: min(72vh, 760px);
   height: clamp(520px, 72vh, 820px);
@@ -50,7 +50,7 @@
   touch-action: none;
   user-select: none;
 }
-.stage-grid[data-v-2f9698c9] {
+.stage-grid[data-v-c8091ad9] {
   position: absolute;
   inset: 0;
   opacity: 0.18;
@@ -59,7 +59,7 @@
     linear-gradient(90deg, rgba(255, 255, 255, 0.18) 1px, transparent 1px);
   background-size: 44px 44px;
 }
-.stage-panel[data-v-2f9698c9] {
+.stage-panel[data-v-c8091ad9] {
   position: absolute;
   top: 22px;
   left: 22px;
@@ -71,18 +71,18 @@
   background: rgba(8, 13, 18, 0.76);
   box-shadow: 0 8px 18px rgba(0, 0, 0, 0.18);
 }
-.panel-title[data-v-2f9698c9] {
+.panel-title[data-v-c8091ad9] {
   font-size: 1rem;
   font-weight: 700;
   line-height: 1.25;
 }
-.panel-copy[data-v-2f9698c9] {
+.panel-copy[data-v-c8091ad9] {
   margin-top: 4px;
   font-size: 0.82rem;
   line-height: 1.4;
   color: #dbe5ea;
 }
-.stage-chip[data-v-2f9698c9] {
+.stage-chip[data-v-c8091ad9] {
   position: absolute;
   top: 22px;
   right: 22px;
@@ -94,7 +94,7 @@
   background: rgba(8, 13, 18, 0.44);
   cursor: pointer;
 }
-.mascot[data-v-2f9698c9] {
+.mascot[data-v-c8091ad9] {
   position: absolute;
   top: 0;
   left: 0;
@@ -106,17 +106,17 @@
   will-change: transform;
   z-index: 3;
 }
-.mascot[data-v-2f9698c9]:active {
+.mascot[data-v-c8091ad9]:active {
   cursor: grabbing;
 }
-.mascot img[data-v-2f9698c9] {
+.mascot img[data-v-c8091ad9] {
   width: 100%;
   height: 100%;
   object-fit: contain;
   image-rendering: auto;
   pointer-events: none;
 }
-.mascot-shadow[data-v-2f9698c9]::after {
+.mascot-shadow[data-v-c8091ad9]::after {
   content: '';
   position: absolute;
   left: 17%;
@@ -129,40 +129,40 @@
   transform: scaleX(var(--pet-facing, 1));
   z-index: -1;
 }
-.agentmascot-controls[data-v-2f9698c9] {
+.agentmascot-controls[data-v-c8091ad9] {
   margin-top: 14px;
   padding: 12px 14px;
   border: 1px solid rgba(var(--v-border-color), var(--v-border-opacity));
   border-radius: 8px;
 }
-.control-slider[data-v-2f9698c9] {
+.control-slider[data-v-c8091ad9] {
   display: grid;
   grid-template-columns: 42px minmax(160px, 240px);
   align-items: center;
   gap: 10px;
 }
-.control-slider span[data-v-2f9698c9] {
+.control-slider span[data-v-c8091ad9] {
   font-size: 0.9rem;
   opacity: 0.78;
 }
 @media (max-width: 720px) {
-.agentmascot-shell[data-v-2f9698c9] {
+.agentmascot-shell[data-v-c8091ad9] {
     padding: 12px;
 }
-.agentmascot-stage[data-v-2f9698c9] {
+.agentmascot-stage[data-v-c8091ad9] {
     height: 66vh;
     min-height: 430px;
 }
-.stage-panel[data-v-2f9698c9] {
+.stage-panel[data-v-c8091ad9] {
     left: 12px;
     right: 12px;
 }
-.stage-chip[data-v-2f9698c9] {
+.stage-chip[data-v-c8091ad9] {
     top: auto;
     right: 12px;
     bottom: 12px;
 }
-.control-slider[data-v-2f9698c9] {
+.control-slider[data-v-c8091ad9] {
     width: 100%;
     grid-template-columns: 42px 1fr;
 }

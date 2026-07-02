@@ -9,14 +9,12 @@ import {
   AIR_GRAVITY,
   FOLLOW_DEAD_ZONE,
   GROUND_PADDING,
-  LANE_MIN_GAP,
   MAX_GROUND_STEP,
   REST_ACTIONS,
   ROAM_INTERVAL,
   ROAM_REST_MIN,
   ROAM_REST_RANGE,
   RUN_DISTANCE,
-  SHIMEJI_CANVAS_SIZE,
   SHIMEJI_TICK_MS,
   WALL_MARGIN,
   WALL_REST_MIN,
@@ -27,6 +25,20 @@ import {
   Y_FOLLOW_MIN_DELTA,
   Y_FOLLOW_MOUSE_SPEED_MAX,
 } from '../mascot/config'
+import {
+  ceilingAnchorY as calculateCeilingAnchorY,
+  clampAnchorX as calculateClampAnchorX,
+  clampAnchorY as calculateClampAnchorY,
+  groundAnchorY as calculateGroundAnchorY,
+  laneGap as calculateLaneGap,
+  normalizeLaneY as calculateNormalizeLaneY,
+  petSize as calculatePetSize,
+  poseScale as calculatePoseScale,
+  randomGroundX as calculateRandomGroundX,
+  visualAnchor as calculateVisualAnchor,
+  wallAnchorX as calculateWallAnchorX,
+  wallTargetY as calculateWallTargetY,
+} from '../mascot/geometry'
 
 const props = defineProps({
   api: {
@@ -100,8 +112,8 @@ const currentPose = computed(() => {
   return poses[poseIndex.value % poses.length] || SHIMEJI_ACTIONS.stand.poses[0]
 })
 const currentFrame = computed(() => currentPose.value.image)
-const petSize = computed(() => Math.round(92 * Number(config.value.scale || 1)))
-const poseScale = computed(() => petSize.value / SHIMEJI_CANVAS_SIZE)
+const petSize = computed(() => calculatePetSize(config.value.scale))
+const poseScale = computed(() => calculatePoseScale(petSize.value))
 const stageStyle = computed(() => ({
   '--pet-size': `${petSize.value}px`,
 }))
@@ -175,38 +187,27 @@ function clampPet() {
 }
 
 function groundAnchorY() {
-  const bounds = stageBounds()
-  return Math.max(bounds.height - GROUND_PADDING, 0)
+  return calculateGroundAnchorY(stageBounds(), GROUND_PADDING)
 }
 
 function visualAnchor(pose) {
-  const scaledAnchorX = pose.anchor[0] * poseScale.value
-  return {
-    x: pet.lookRight ? petSize.value - scaledAnchorX : scaledAnchorX,
-    y: pose.anchor[1] * poseScale.value,
-  }
+  return calculateVisualAnchor(pose, petSize.value, poseScale.value, pet.lookRight)
 }
 
 function clampAnchorX(anchorX) {
-  const bounds = stageBounds()
-  const anchor = visualAnchor(currentPose.value)
-  const minX = anchor.x
-  const maxX = Math.max(bounds.width - (petSize.value - anchor.x), minX)
-  return Math.min(Math.max(anchorX, minX), maxX)
+  return calculateClampAnchorX(anchorX, stageBounds(), currentPose.value, petSize.value, poseScale.value, pet.lookRight)
 }
 
 function clampAnchorY(anchorY) {
-  const anchor = visualAnchor(currentPose.value)
-  return Math.min(Math.max(anchorY, anchor.y), groundAnchorY())
+  return calculateClampAnchorY(anchorY, stageBounds(), currentPose.value, petSize.value, poseScale.value, pet.lookRight, GROUND_PADDING)
 }
 
 function laneGap() {
-  return Math.max(LANE_MIN_GAP * poseScale.value, petSize.value * 0.42)
+  return calculateLaneGap(petSize.value, poseScale.value)
 }
 
 function normalizeLaneY(anchorY) {
-  const minY = ceilingAnchorY() + 28 * poseScale.value
-  return Math.min(Math.max(anchorY, minY), groundAnchorY())
+  return calculateNormalizeLaneY(anchorY, stageBounds(), currentPose.value, petSize.value, poseScale.value, pet.lookRight, GROUND_PADDING)
 }
 
 function surfaceLanes() {
@@ -313,20 +314,24 @@ function applyMouseYFollow(timestamp) {
 }
 
 function wallAnchorX(side) {
-  const bounds = stageBounds()
-  if (side === 'left') return 0
-  return bounds.width
+  return calculateWallAnchorX(side, stageBounds())
 }
 
 function ceilingAnchorY() {
-  return visualAnchor(currentPose.value).y
+  return calculateCeilingAnchorY(currentPose.value, petSize.value, poseScale.value, pet.lookRight)
 }
 
 function wallTargetY() {
-  const bounds = stageBounds()
-  const top = Math.max(WALL_MARGIN * poseScale.value, ceilingAnchorY() + 24 * poseScale.value)
-  const bottom = Math.max(groundAnchorY() - WALL_MARGIN * poseScale.value, top)
-  return top + Math.random() * Math.max(bottom - top, 1)
+  return calculateWallTargetY(
+    stageBounds(),
+    currentPose.value,
+    petSize.value,
+    poseScale.value,
+    pet.lookRight,
+    GROUND_PADDING,
+    0,
+    WALL_MARGIN,
+  )
 }
 
 function pickRoamTarget() {
@@ -467,11 +472,7 @@ function startLeap(timestamp, side = Math.random() < 0.5 ? 'left' : 'right') {
 }
 
 function randomGroundX() {
-  const bounds = stageBounds()
-  const margin = petSize.value * 0.5
-  const minX = margin
-  const maxX = Math.max(bounds.width - margin, minX)
-  return minX + Math.random() * (maxX - minX)
+  return calculateRandomGroundX(stageBounds(), petSize.value)
 }
 
 function chooseGroundBehavior(timestamp) {
@@ -808,9 +809,8 @@ function onDrag(event) {
   pet.anchorX = event.clientX - stage.left - pointerOffset.x
   pet.anchorY = event.clientY - stage.top - pointerOffset.y
   if (Math.abs(event.movementX) > 0) pet.lookRight = event.movementX > 0
-  const bounds = stageBounds()
   pet.anchorX = clampAnchorX(pet.anchorX)
-  pet.anchorY = Math.min(Math.max(pet.anchorY, currentPose.value.anchor[1] * poseScale.value), bounds.height - GROUND_PADDING)
+  pet.anchorY = clampAnchorY(pet.anchorY)
   pet.surface = 'air'
 }
 

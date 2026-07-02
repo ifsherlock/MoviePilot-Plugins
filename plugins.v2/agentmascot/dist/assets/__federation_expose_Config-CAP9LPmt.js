@@ -1,6 +1,6 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import AppPage from './__federation_expose_AppPage-C3KD7Day.js';
-import { c as cloneConfig } from './provider-DmELBvnQ.js';
+import AppPage from './__federation_expose_AppPage-CBJEhnF8.js';
+import { c as cloneConfig } from './geometry--8IyZp0h.js';
 
 const {createElementVNode:_createElementVNode,resolveComponent:_resolveComponent,createVNode:_createVNode,withCtx:_withCtx,openBlock:_openBlock,createElementBlock:_createElementBlock} = await importShared('vue');
 

@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { c as cloneConfig, S as SHIMEJI_ACTIONS, a as SHIMEJI_CANVAS_SIZE, m as mascotIcon, R as ROAM_INTERVAL, u as unwrapResponse, G as GROUND_PADDING, L as LANE_MIN_GAP, M as MAX_GROUND_STEP, b as REST_ACTIONS, d as ROAM_REST_MIN, e as ROAM_REST_RANGE, Y as Y_FOLLOW_DWELL_MS, f as Y_FOLLOW_LANE_RADIUS, g as Y_FOLLOW_MIN_DELTA, A as ACTION_MIN_DURATION, h as RUN_DISTANCE, i as Y_FOLLOW_COOLDOWN_MS, j as AIR_DRAG_X, k as AIR_DRAG_Y, l as AIR_GRAVITY, W as WALL_REST_MIN, n as WALL_REST_RANGE, F as FOLLOW_DEAD_ZONE, o as Y_FOLLOW_MOUSE_SPEED_MAX, p as WALL_MARGIN, q as SHIMEJI_TICK_MS } from './provider-DmELBvnQ.js';
+import { c as cloneConfig, S as SHIMEJI_ACTIONS, p as petSize, a as poseScale, v as visualAnchor, m as mascotIcon, R as ROAM_INTERVAL, u as unwrapResponse, n as normalizeLaneY, l as laneGap, g as groundAnchorY, M as MAX_GROUND_STEP, b as REST_ACTIONS, d as ROAM_REST_MIN, e as ROAM_REST_RANGE, Y as Y_FOLLOW_DWELL_MS, f as Y_FOLLOW_LANE_RADIUS, h as Y_FOLLOW_MIN_DELTA, A as ACTION_MIN_DURATION, i as clampAnchorX, j as clampAnchorY, k as RUN_DISTANCE, o as Y_FOLLOW_COOLDOWN_MS, q as AIR_DRAG_X, r as AIR_DRAG_Y, s as AIR_GRAVITY, w as wallAnchorX, t as ceilingAnchorY, W as WALL_REST_MIN, x as WALL_REST_RANGE, F as FOLLOW_DEAD_ZONE, y as randomGroundX, z as Y_FOLLOW_MOUSE_SPEED_MAX, B as wallTargetY, G as GROUND_PADDING, C as WALL_MARGIN, D as SHIMEJI_TICK_MS } from './geometry--8IyZp0h.js';
 
 const _export_sfc = (sfc, props) => {
   const target = sfc.__vccOpts || sfc;
@@ -105,13 +105,13 @@ const currentPose = computed(() => {
   return poses[poseIndex.value % poses.length] || SHIMEJI_ACTIONS.stand.poses[0]
 });
 const currentFrame = computed(() => currentPose.value.image);
-const petSize = computed(() => Math.round(92 * Number(config.value.scale || 1)));
-const poseScale = computed(() => petSize.value / SHIMEJI_CANVAS_SIZE);
+const petSize$1 = computed(() => petSize(config.value.scale));
+const poseScale$1 = computed(() => poseScale(petSize$1.value));
 const stageStyle = computed(() => ({
-  '--pet-size': `${petSize.value}px`,
+  '--pet-size': `${petSize$1.value}px`,
 }));
 const petStyle = computed(() => {
-  const anchor = visualAnchor(currentPose.value);
+  const anchor = visualAnchor$1(currentPose.value);
   const left = pet.anchorX - anchor.x;
   const top = pet.anchorY - anchor.y;
   return {
@@ -174,78 +174,67 @@ function stageBounds() {
   }
 }
 
-function groundAnchorY() {
-  const bounds = stageBounds();
-  return Math.max(bounds.height - GROUND_PADDING, 0)
+function groundAnchorY$1() {
+  return groundAnchorY(stageBounds(), GROUND_PADDING)
 }
 
-function visualAnchor(pose) {
-  const scaledAnchorX = pose.anchor[0] * poseScale.value;
-  return {
-    x: pet.lookRight ? petSize.value - scaledAnchorX : scaledAnchorX,
-    y: pose.anchor[1] * poseScale.value,
-  }
+function visualAnchor$1(pose) {
+  return visualAnchor(pose, petSize$1.value, poseScale$1.value, pet.lookRight)
 }
 
-function clampAnchorX(anchorX) {
-  const bounds = stageBounds();
-  const anchor = visualAnchor(currentPose.value);
-  const minX = anchor.x;
-  const maxX = Math.max(bounds.width - (petSize.value - anchor.x), minX);
-  return Math.min(Math.max(anchorX, minX), maxX)
+function clampAnchorX$1(anchorX) {
+  return clampAnchorX(anchorX, stageBounds(), currentPose.value, petSize$1.value, poseScale$1.value, pet.lookRight)
 }
 
-function clampAnchorY(anchorY) {
-  const anchor = visualAnchor(currentPose.value);
-  return Math.min(Math.max(anchorY, anchor.y), groundAnchorY())
+function clampAnchorY$1(anchorY) {
+  return clampAnchorY(anchorY, stageBounds(), currentPose.value, petSize$1.value, poseScale$1.value, pet.lookRight, GROUND_PADDING)
 }
 
-function laneGap() {
-  return Math.max(LANE_MIN_GAP * poseScale.value, petSize.value * 0.42)
+function laneGap$1() {
+  return laneGap(petSize$1.value, poseScale$1.value)
 }
 
-function normalizeLaneY(anchorY) {
-  const minY = ceilingAnchorY() + 28 * poseScale.value;
-  return Math.min(Math.max(anchorY, minY), groundAnchorY())
+function normalizeLaneY$1(anchorY) {
+  return normalizeLaneY(anchorY, stageBounds(), currentPose.value, petSize$1.value, poseScale$1.value, pet.lookRight, GROUND_PADDING)
 }
 
 function surfaceLanes() {
   const bounds = stageBounds();
-  const candidates = [0.3, 0.44, 0.58, 0.72, 0.86].map(ratio => normalizeLaneY(bounds.height * ratio));
-  candidates.push(groundAnchorY());
+  const candidates = [0.3, 0.44, 0.58, 0.72, 0.86].map(ratio => normalizeLaneY$1(bounds.height * ratio));
+  candidates.push(groundAnchorY$1());
   const sorted = candidates.filter(Number.isFinite).sort((a, b) => a - b);
   const lanes = [];
-  const gap = laneGap();
+  const gap = laneGap$1();
   for (const lane of sorted) {
     if (!lanes.some(existing => Math.abs(existing - lane) < gap)) lanes.push(lane);
   }
-  const ground = groundAnchorY();
+  const ground = groundAnchorY$1();
   if (!lanes.some(lane => Math.abs(lane - ground) < gap * 0.5)) lanes.push(ground);
   return lanes.sort((a, b) => a - b)
 }
 
 function nearestLaneToY(anchorY) {
   const lanes = surfaceLanes();
-  return lanes.reduce((best, lane) => (Math.abs(lane - anchorY) < Math.abs(best - anchorY) ? lane : best), lanes[0] ?? groundAnchorY())
+  return lanes.reduce((best, lane) => (Math.abs(lane - anchorY) < Math.abs(best - anchorY) ? lane : best), lanes[0] ?? groundAnchorY$1())
 }
 
 function chooseLaneY(preferCurrent = true) {
   const lanes = surfaceLanes();
   const current = pet.laneY || nearestLaneToY(pet.anchorY);
   if (preferCurrent && Math.random() < 0.62) return nearestLaneToY(current)
-  const playable = lanes.filter(lane => Math.abs(lane - current) > laneGap() * 0.8);
+  const playable = lanes.filter(lane => Math.abs(lane - current) > laneGap$1() * 0.8);
   const candidates = playable.length ? playable : lanes;
-  return candidates[Math.floor(Math.random() * candidates.length)] ?? groundAnchorY()
+  return candidates[Math.floor(Math.random() * candidates.length)] ?? groundAnchorY$1()
 }
 
 function setLaneY(anchorY) {
-  pet.laneY = normalizeLaneY(anchorY);
+  pet.laneY = normalizeLaneY$1(anchorY);
   pet.anchorY = pet.laneY;
   pet.targetY = pet.laneY;
 }
 
 function crossedLandingY(previousY, currentY) {
-  const tolerance = Math.max(8 * poseScale.value, 4);
+  const tolerance = Math.max(8 * poseScale$1.value, 4);
   return surfaceLanes().find(lane => lane >= previousY - tolerance && lane <= currentY + tolerance) ?? null
 }
 
@@ -266,8 +255,8 @@ function updateMouseIntent(x, y, timestamp = performance.now()) {
 
   const targetLaneY = nearestLaneToY(mouse.y);
   const currentLaneY = pet.laneY || nearestLaneToY(pet.anchorY);
-  const closeToLane = Math.abs(targetLaneY - mouse.y) <= Y_FOLLOW_LANE_RADIUS * poseScale.value;
-  const meaningfulShift = Math.abs(targetLaneY - currentLaneY) >= Y_FOLLOW_MIN_DELTA * poseScale.value;
+  const closeToLane = Math.abs(targetLaneY - mouse.y) <= Y_FOLLOW_LANE_RADIUS * poseScale$1.value;
+  const meaningfulShift = Math.abs(targetLaneY - currentLaneY) >= Y_FOLLOW_MIN_DELTA * poseScale$1.value;
 
   if (!closeToLane || !meaningfulShift) {
     mouse.candidateLaneY = null;
@@ -289,7 +278,7 @@ function canFollowMouseY(timestamp) {
   if (timestamp - mouse.candidateSince < Y_FOLLOW_DWELL_MS) return false
   if (pet.surface !== 'ground') return false
   if (pet.state === 'rest' || pet.state === 'bounce' || pet.state === 'toWall') return false
-  return Math.abs(mouse.candidateLaneY - (pet.laneY || pet.anchorY)) >= Y_FOLLOW_MIN_DELTA * poseScale.value
+  return Math.abs(mouse.candidateLaneY - (pet.laneY || pet.anchorY)) >= Y_FOLLOW_MIN_DELTA * poseScale$1.value
 }
 
 function applyMouseYFollow(timestamp) {
@@ -300,7 +289,7 @@ function applyMouseYFollow(timestamp) {
   mouse.candidateSince = 0;
   mouse.yCooldownUntil = timestamp + Y_FOLLOW_COOLDOWN_MS;
 
-  if (Math.abs(deltaY) <= laneGap() * 0.9) {
+  if (Math.abs(deltaY) <= laneGap$1() * 0.9) {
     setLaneY(targetLaneY);
     return true
   }
@@ -312,26 +301,30 @@ function applyMouseYFollow(timestamp) {
   return true
 }
 
-function wallAnchorX(side) {
-  const bounds = stageBounds();
-  if (side === 'left') return 0
-  return bounds.width
+function wallAnchorX$1(side) {
+  return wallAnchorX(side, stageBounds())
 }
 
-function ceilingAnchorY() {
-  return visualAnchor(currentPose.value).y
+function ceilingAnchorY$1() {
+  return ceilingAnchorY(currentPose.value, petSize$1.value, poseScale$1.value, pet.lookRight)
 }
 
-function wallTargetY() {
-  stageBounds();
-  const top = Math.max(WALL_MARGIN * poseScale.value, ceilingAnchorY() + 24 * poseScale.value);
-  const bottom = Math.max(groundAnchorY() - WALL_MARGIN * poseScale.value, top);
-  return top + Math.random() * Math.max(bottom - top, 1)
+function wallTargetY$1() {
+  return wallTargetY(
+    stageBounds(),
+    currentPose.value,
+    petSize$1.value,
+    poseScale$1.value,
+    pet.lookRight,
+    GROUND_PADDING,
+    0,
+    WALL_MARGIN,
+  )
 }
 
 function pickRoamTarget() {
   const bounds = stageBounds();
-  const margin = petSize.value * 0.5;
+  const margin = petSize$1.value * 0.5;
   const minX = margin;
   const maxX = Math.max(bounds.width - margin, minX);
   const direction = Math.random() < 0.5 ? -1 : 1;
@@ -398,7 +391,7 @@ function startGroundMove(timestamp, targetX = null, state = 'groundMove') {
   pet.stateUntil = 0;
   const shouldShiftLane = state === 'groundMove' && Math.random() < 0.38;
   setLaneY(chooseLaneY(!shouldShiftLane));
-  pet.targetX = targetX ?? randomGroundX();
+  pet.targetX = targetX ?? randomGroundX$1();
   updateGroundAction(Math.abs(pet.targetX - pet.anchorX), timestamp, false);
 }
 
@@ -407,7 +400,7 @@ function startMoveToWall(timestamp, side = Math.random() < 0.5 ? 'left' : 'right
   pet.state = 'toWall';
   pet.wallSide = side;
   setLaneY(nearestLaneToY(pet.anchorY));
-  pet.targetX = wallAnchorX(side);
+  pet.targetX = wallAnchorX$1(side);
   setAction(Math.abs(pet.targetX - pet.anchorX) > RUN_DISTANCE ? 'run' : 'walk', timestamp, { force: true });
 }
 
@@ -416,8 +409,8 @@ function startWall(side, timestamp, targetY = null) {
   pet.state = 'wallHold';
   pet.wallSide = side;
   pet.targetY = targetY ?? pet.anchorY;
-  pet.anchorX = wallAnchorX(side);
-  pet.anchorY = clampAnchorY(pet.anchorY);
+  pet.anchorX = wallAnchorX$1(side);
+  pet.anchorY = clampAnchorY$1(pet.anchorY);
   pet.lookRight = side === 'right';
   setAction('holdWall', timestamp, { force: true, duration: WALL_REST_MIN });
   pet.stateUntil = timestamp + 1800 + Math.random() * 3200;
@@ -426,16 +419,16 @@ function startWall(side, timestamp, targetY = null) {
 function startWallClimb(timestamp, targetY = null) {
   pet.surface = 'wall';
   pet.state = 'wallClimb';
-  pet.targetY = targetY ?? (Math.random() < 0.62 ? ceilingAnchorY() + 12 * poseScale.value : wallTargetY());
-  pet.anchorX = wallAnchorX(pet.wallSide);
+  pet.targetY = targetY ?? (Math.random() < 0.62 ? ceilingAnchorY$1() + 12 * poseScale$1.value : wallTargetY$1());
+  pet.anchorX = wallAnchorX$1(pet.wallSide);
   setAction(pet.targetY < pet.anchorY ? 'climbWallUp' : 'climbWallDown', timestamp, { force: true });
 }
 
 function startCeiling(timestamp, targetX = null) {
   pet.surface = 'ceiling';
   pet.state = 'ceilingHold';
-  pet.anchorY = ceilingAnchorY();
-  pet.targetX = targetX ?? randomGroundX();
+  pet.anchorY = ceilingAnchorY$1();
+  pet.targetX = targetX ?? randomGroundX$1();
   setAction('holdCeiling', timestamp, { force: true, duration: WALL_REST_MIN });
   pet.stateUntil = timestamp + WALL_REST_MIN + Math.random() * WALL_REST_RANGE;
 }
@@ -443,8 +436,8 @@ function startCeiling(timestamp, targetX = null) {
 function startCeilingCrawl(timestamp, targetX = null) {
   pet.surface = 'ceiling';
   pet.state = 'ceilingCrawl';
-  pet.anchorY = ceilingAnchorY();
-  pet.targetX = targetX ?? randomGroundX();
+  pet.anchorY = ceilingAnchorY$1();
+  pet.targetX = targetX ?? randomGroundX$1();
   setAction('crawlCeiling', timestamp, { force: true });
 }
 
@@ -466,12 +459,8 @@ function startLeap(timestamp, side = Math.random() < 0.5 ? 'left' : 'right') {
   setAction('jump', timestamp, { force: true });
 }
 
-function randomGroundX() {
-  const bounds = stageBounds();
-  const margin = petSize.value * 0.5;
-  const minX = margin;
-  const maxX = Math.max(bounds.width - margin, minX);
-  return minX + Math.random() * (maxX - minX)
+function randomGroundX$1() {
+  return randomGroundX(stageBounds(), petSize$1.value)
 }
 
 function chooseGroundBehavior(timestamp) {
@@ -492,7 +481,7 @@ function chooseGroundBehavior(timestamp) {
 }
 
 function chooseWallBehavior(timestamp) {
-  const nearTop = pet.anchorY <= ceilingAnchorY() + 56 * poseScale.value;
+  const nearTop = pet.anchorY <= ceilingAnchorY$1() + 56 * poseScale$1.value;
   const roll = Math.random();
   if (nearTop && roll < 0.66) {
     startCeiling(timestamp);
@@ -549,7 +538,7 @@ function moveByCurrentPose(elapsedTicks, targetX) {
 
   pet.lookRight = distance > 0;
   const directionMultiplier = pet.lookRight ? -1 : 1;
-  const vx = currentPose.value.velocity[0] * directionMultiplier * poseScale.value * Number(config.value.speed || 1);
+  const vx = currentPose.value.velocity[0] * directionMultiplier * poseScale$1.value * Number(config.value.speed || 1);
   if (vx === 0) return
 
   const step = vx * elapsedTicks;
@@ -567,7 +556,7 @@ function moveWallByCurrentPose(elapsedTicks) {
     return true
   }
   setAction(distance < 0 ? 'climbWallUp' : 'climbWallDown', performance.now(), { force: true });
-  const vy = currentPose.value.velocity[1] * poseScale.value * Number(config.value.speed || 1);
+  const vy = currentPose.value.velocity[1] * poseScale$1.value * Number(config.value.speed || 1);
   const step = vy * elapsedTicks;
   if (!step || Math.sign(step) !== Math.sign(distance) || Math.abs(step) >= Math.abs(distance)) {
     pet.anchorY = pet.targetY;
@@ -585,7 +574,7 @@ function moveCeilingByCurrentPose(elapsedTicks) {
   }
   pet.lookRight = distance > 0;
   const directionMultiplier = pet.lookRight ? -1 : 1;
-  const vx = currentPose.value.velocity[0] * directionMultiplier * poseScale.value * Number(config.value.speed || 1);
+  const vx = currentPose.value.velocity[0] * directionMultiplier * poseScale$1.value * Number(config.value.speed || 1);
   const step = vx * elapsedTicks;
   if (!step || Math.sign(step) !== Math.sign(distance) || Math.abs(step) >= Math.abs(distance)) {
     pet.anchorX = pet.targetX;
@@ -597,22 +586,22 @@ function moveCeilingByCurrentPose(elapsedTicks) {
 
 function updateAir(elapsedTicks, timestamp) {
   const previousY = pet.anchorY;
-  pet.anchorX += pet.vx * elapsedTicks * poseScale.value;
-  pet.anchorY += pet.vy * elapsedTicks * poseScale.value;
+  pet.anchorX += pet.vx * elapsedTicks * poseScale$1.value;
+  pet.anchorY += pet.vy * elapsedTicks * poseScale$1.value;
   pet.vx *= Math.pow(AIR_DRAG_X, elapsedTicks);
   pet.vy = pet.vy * Math.pow(AIR_DRAG_Y, elapsedTicks) + AIR_GRAVITY * elapsedTicks * Number(config.value.speed || 1);
   pet.lookRight = pet.vx > 0;
   setAction(pet.vy < -0.4 ? 'jump' : 'fall', timestamp);
 
   const bounds = stageBounds();
-  const leftX = wallAnchorX('left');
-  const rightX = wallAnchorX('right');
-  const highEnoughForWall = pet.anchorY < groundAnchorY() - 60 * poseScale.value;
+  const leftX = wallAnchorX$1('left');
+  const rightX = wallAnchorX$1('right');
+  const highEnoughForWall = pet.anchorY < groundAnchorY$1() - 60 * poseScale$1.value;
 
   if (pet.anchorX <= leftX) {
     pet.anchorX = leftX;
     if (highEnoughForWall && pet.vx < 0) {
-      startWall('left', timestamp, clampAnchorY(pet.anchorY));
+      startWall('left', timestamp, clampAnchorY$1(pet.anchorY));
       return
     }
     pet.vx = Math.abs(pet.vx) * 0.55;
@@ -621,14 +610,14 @@ function updateAir(elapsedTicks, timestamp) {
   if (pet.anchorX >= rightX) {
     pet.anchorX = rightX;
     if (highEnoughForWall && pet.vx > 0) {
-      startWall('right', timestamp, clampAnchorY(pet.anchorY));
+      startWall('right', timestamp, clampAnchorY$1(pet.anchorY));
       return
     }
     pet.vx = -Math.abs(pet.vx) * 0.55;
   }
 
-  if (pet.anchorY <= ceilingAnchorY()) {
-    pet.anchorY = ceilingAnchorY();
+  if (pet.anchorY <= ceilingAnchorY$1()) {
+    pet.anchorY = ceilingAnchorY$1();
     if (pet.vy < 0 && Math.random() < 0.55) {
       startCeiling(timestamp);
       return
@@ -669,13 +658,13 @@ function animate(timestamp) {
       updateAir(elapsedTicks, timestamp);
       advancePose(elapsedTicks);
     } else if (pet.surface === 'wall') {
-      pet.anchorX = wallAnchorX(pet.wallSide);
+      pet.anchorX = wallAnchorX$1(pet.wallSide);
       if (pet.state === 'wallClimb') {
         const arrived = moveWallByCurrentPose(elapsedTicks);
         advancePose(elapsedTicks);
-        pet.anchorY = clampAnchorY(pet.anchorY);
+        pet.anchorY = clampAnchorY$1(pet.anchorY);
         if (arrived) {
-          if (pet.anchorY <= ceilingAnchorY() + 8 * poseScale.value) {
+          if (pet.anchorY <= ceilingAnchorY$1() + 8 * poseScale$1.value) {
             startCeiling(timestamp);
           } else {
             pet.state = 'wallHold';
@@ -688,11 +677,11 @@ function animate(timestamp) {
         if (timestamp >= pet.stateUntil) chooseWallBehavior(timestamp);
       }
     } else if (pet.surface === 'ceiling') {
-      pet.anchorY = ceilingAnchorY();
+      pet.anchorY = ceilingAnchorY$1();
       if (pet.state === 'ceilingCrawl') {
         const arrived = moveCeilingByCurrentPose(elapsedTicks);
         advancePose(elapsedTicks);
-        pet.anchorX = clampAnchorX(pet.anchorX);
+        pet.anchorX = clampAnchorX$1(pet.anchorX);
         if (arrived) {
           pet.state = 'ceilingHold';
           pet.stateUntil = timestamp + 1600 + Math.random() * 2200;
@@ -717,7 +706,7 @@ function animate(timestamp) {
           roamPausedUntil = 0;
           chooseGroundBehavior(timestamp);
           advancePose(elapsedTicks);
-          pet.anchorX = clampAnchorX(pet.anchorX);
+          pet.anchorX = clampAnchorX$1(pet.anchorX);
           setLaneY(pet.laneY || nearestLaneToY(pet.anchorY));
           pet.lastAnchorX = pet.anchorX;
           pet.lastAnchorY = pet.anchorY;
@@ -744,7 +733,7 @@ function animate(timestamp) {
         }
         advancePose(elapsedTicks);
       }
-      pet.anchorX = clampAnchorX(pet.anchorX);
+      pet.anchorX = clampAnchorX$1(pet.anchorX);
       setLaneY(pet.laneY || nearestLaneToY(pet.anchorY));
     }
   } else {
@@ -808,9 +797,8 @@ function onDrag(event) {
   pet.anchorX = event.clientX - stage.left - pointerOffset.x;
   pet.anchorY = event.clientY - stage.top - pointerOffset.y;
   if (Math.abs(event.movementX) > 0) pet.lookRight = event.movementX > 0;
-  const bounds = stageBounds();
-  pet.anchorX = clampAnchorX(pet.anchorX);
-  pet.anchorY = Math.min(Math.max(pet.anchorY, currentPose.value.anchor[1] * poseScale.value), bounds.height - GROUND_PADDING);
+  pet.anchorX = clampAnchorX$1(pet.anchorX);
+  pet.anchorY = clampAnchorY$1(pet.anchorY);
   pet.surface = 'air';
 }
 
@@ -820,14 +808,14 @@ function endDrag(event) {
   mascotRef.value?.releasePointerCapture?.(event.pointerId);
   roamPausedUntil = 0;
   const nearestLane = nearestLaneToY(pet.anchorY);
-  if (Math.abs(nearestLane - pet.anchorY) <= 24 * poseScale.value) {
+  if (Math.abs(nearestLane - pet.anchorY) <= 24 * poseScale$1.value) {
     setLaneY(nearestLane);
     pet.lastAnchorY = pet.anchorY;
     startGroundMove(performance.now());
-  } else if (pet.anchorY < groundAnchorY() - 16) {
+  } else if (pet.anchorY < groundAnchorY$1() - 16) {
     startFall(performance.now(), event.movementX * 0.08, Math.min(event.movementY * 0.06, 2));
   } else {
-    setLaneY(groundAnchorY());
+    setLaneY(groundAnchorY$1());
     pet.lastAnchorY = pet.anchorY;
     startGroundMove(performance.now());
   }
@@ -1034,6 +1022,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-2f9698c9"]]);
+const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-c8091ad9"]]);
 
 export { _export_sfc as _, AppPage as default };

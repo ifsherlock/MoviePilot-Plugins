@@ -1,4 +1,4 @@
-import { V as VIEWPORT_PADDING, u as unwrapResponse, r as normalizeConfig, D as DEFAULT_CONFIG, S as SHIMEJI_ACTIONS, G as GROUND_PADDING, R as ROAM_INTERVAL, a as SHIMEJI_CANVAS_SIZE, f as Y_FOLLOW_LANE_RADIUS, g as Y_FOLLOW_MIN_DELTA, A as ACTION_MIN_DURATION, s as SURFACE_SCAN_MS, t as DOM_SURFACE_SELECTORS, L as LANE_MIN_GAP, b as REST_ACTIONS, d as ROAM_REST_MIN, e as ROAM_REST_RANGE, F as FOLLOW_DEAD_ZONE, h as RUN_DISTANCE, i as Y_FOLLOW_COOLDOWN_MS, j as AIR_DRAG_X, k as AIR_DRAG_Y, l as AIR_GRAVITY, W as WALL_REST_MIN, n as WALL_REST_RANGE, o as Y_FOLLOW_MOUSE_SPEED_MAX, Y as Y_FOLLOW_DWELL_MS, p as WALL_MARGIN, q as SHIMEJI_TICK_MS } from './provider-DmELBvnQ.js';
+import { i as clampAnchorX$1, V as VIEWPORT_PADDING, j as clampAnchorY$1, G as GROUND_PADDING, u as unwrapResponse, E as normalizeConfig, H as DEFAULT_CONFIG, a as poseScale$1, p as petSize$1, S as SHIMEJI_ACTIONS, y as randomGroundX$1, R as ROAM_INTERVAL, v as visualAnchor$1, f as Y_FOLLOW_LANE_RADIUS, h as Y_FOLLOW_MIN_DELTA, A as ACTION_MIN_DURATION, g as groundAnchorY$1, n as normalizeLaneY$1, I as SURFACE_SCAN_MS, J as DOM_SURFACE_SELECTORS, l as laneGap$1, b as REST_ACTIONS, d as ROAM_REST_MIN, e as ROAM_REST_RANGE, F as FOLLOW_DEAD_ZONE, k as RUN_DISTANCE, o as Y_FOLLOW_COOLDOWN_MS, q as AIR_DRAG_X, r as AIR_DRAG_Y, s as AIR_GRAVITY, w as wallAnchorX$1, t as ceilingAnchorY$1, W as WALL_REST_MIN, x as WALL_REST_RANGE, z as Y_FOLLOW_MOUSE_SPEED_MAX, Y as Y_FOLLOW_DWELL_MS, B as wallTargetY$1, C as WALL_MARGIN, D as SHIMEJI_TICK_MS } from './geometry--8IyZp0h.js';
 
 const PLUGIN_ID = 'AgentMascot';
 const ROOT_ID = 'agentmascot-global-root';
@@ -172,11 +172,11 @@ function viewportBounds() {
 }
 
 function petSize() {
-  return Math.round(92 * Number(config.scale || 1))
+  return petSize$1(config.scale)
 }
 
 function poseScale() {
-  return petSize() / SHIMEJI_CANVAS_SIZE
+  return poseScale$1(petSize())
 }
 
 function currentAction() {
@@ -189,40 +189,49 @@ function currentPose() {
 }
 
 function visualAnchor(pose) {
-  const scaledAnchorX = pose.anchor[0] * poseScale();
-  return {
-    x: pet.lookRight ? petSize() - scaledAnchorX : scaledAnchorX,
-    y: pose.anchor[1] * poseScale(),
-  }
+  return visualAnchor$1(pose, petSize(), poseScale(), pet.lookRight)
 }
 
 function groundAnchorY() {
-  return Math.max(viewportBounds().height - VIEWPORT_PADDING - GROUND_PADDING, 0)
+  return groundAnchorY$1(viewportBounds(), GROUND_PADDING, VIEWPORT_PADDING)
 }
 
 function ceilingAnchorY() {
-  return VIEWPORT_PADDING + visualAnchor(currentPose()).y
+  return ceilingAnchorY$1(currentPose(), petSize(), poseScale(), pet.lookRight, VIEWPORT_PADDING)
 }
 
 function clampAnchorX(anchorX) {
-  const bounds = viewportBounds();
-  const anchor = visualAnchor(currentPose());
-  const minX = VIEWPORT_PADDING + anchor.x;
-  const maxX = Math.max(bounds.width - VIEWPORT_PADDING - (petSize() - anchor.x), minX);
-  return Math.min(Math.max(anchorX, minX), maxX)
+  return clampAnchorX$1(anchorX, viewportBounds(), currentPose(), petSize(), poseScale(), pet.lookRight, VIEWPORT_PADDING)
 }
 
 function clampAnchorY(anchorY) {
-  return Math.min(Math.max(anchorY, ceilingAnchorY()), groundAnchorY())
+  return clampAnchorY$1(
+    anchorY,
+    viewportBounds(),
+    currentPose(),
+    petSize(),
+    poseScale(),
+    pet.lookRight,
+    GROUND_PADDING,
+    VIEWPORT_PADDING,
+  )
 }
 
 function laneGap() {
-  return Math.max(LANE_MIN_GAP * poseScale(), petSize() * 0.42)
+  return laneGap$1(petSize(), poseScale())
 }
 
 function normalizeLaneY(anchorY) {
-  const minY = ceilingAnchorY() + 28 * poseScale();
-  return Math.min(Math.max(anchorY, minY), groundAnchorY())
+  return normalizeLaneY$1(
+    anchorY,
+    viewportBounds(),
+    currentPose(),
+    petSize(),
+    poseScale(),
+    pet.lookRight,
+    GROUND_PADDING,
+    VIEWPORT_PADDING,
+  )
 }
 
 function addSurfaceLane(lanes, anchorY) {
@@ -365,23 +374,24 @@ function applyMouseYFollow(timestamp) {
 }
 
 function wallAnchorX(side) {
-  const bounds = viewportBounds();
-  if (side === 'left') return VIEWPORT_PADDING
-  return Math.max(bounds.width - VIEWPORT_PADDING, VIEWPORT_PADDING)
+  return wallAnchorX$1(side, viewportBounds(), VIEWPORT_PADDING)
 }
 
 function randomGroundX() {
-  const bounds = viewportBounds();
-  const margin = petSize() * 0.5 + VIEWPORT_PADDING;
-  const minX = margin;
-  const maxX = Math.max(bounds.width - margin, minX);
-  return minX + Math.random() * (maxX - minX)
+  return randomGroundX$1(viewportBounds(), petSize(), VIEWPORT_PADDING)
 }
 
 function wallTargetY() {
-  const top = Math.max(WALL_MARGIN * poseScale(), ceilingAnchorY() + 24 * poseScale());
-  const bottom = Math.max(groundAnchorY() - WALL_MARGIN * poseScale(), top);
-  return top + Math.random() * Math.max(bottom - top, 1)
+  return wallTargetY$1(
+    viewportBounds(),
+    currentPose(),
+    petSize(),
+    poseScale(),
+    pet.lookRight,
+    GROUND_PADDING,
+    VIEWPORT_PADDING,
+    WALL_MARGIN,
+  )
 }
 
 function setAction(nextAction, timestamp = performance.now(), options = {}) {
