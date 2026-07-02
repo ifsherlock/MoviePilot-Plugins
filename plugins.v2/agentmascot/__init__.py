@@ -1,0 +1,194 @@
+import re
+from pathlib import Path
+from typing import Any, Dict, List, Tuple
+
+from fastapi import Body
+from fastapi.responses import Response
+
+from app import schemas
+from app.log import logger
+from app.plugins import _PluginBase
+
+
+class AgentMascot(_PluginBase):
+    """
+    MoviePilot Agent 桌宠形象 demo。
+    """
+
+    plugin_name = "Agent 桌宠形象"
+    plugin_desc = "为 MoviePilot 智能体提供可自定义的 Web 桌宠形象，内置小天照 Shimeji demo。"
+    plugin_icon = "agentresourceofficer.png"
+    plugin_version = "0.1.10"
+    plugin_author = "ifsherlock"
+    author_url = "https://github.com/ifsherlock/MoviePilot-Plugins"
+    plugin_config_prefix = "agentmascot_"
+    plugin_order = 47
+    auth_level = 1
+
+    def init_plugin(self, config: dict = None):
+        config = config or {}
+        self._enabled = bool(config.get("enabled", False))
+        self._replace_agent_entry = bool(config.get("replace_agent_entry", True))
+        self._show_sidebar_nav = bool(config.get("show_sidebar_nav", True))
+        self._scale = self._clamp_number(config.get("scale", 1.0), 0.6, 2.0, 1.0)
+        self._speed = self._clamp_number(config.get("speed", 1.0), 0.4, 2.0, 1.0)
+        self._follow_mouse = bool(config.get("follow_mouse", True))
+        self._auto_roam = bool(config.get("auto_roam", True))
+        self._shadow = bool(config.get("shadow", True))
+        self._save_config()
+
+    def get_state(self) -> bool:
+        return bool(getattr(self, "_enabled", False))
+
+    @staticmethod
+    def get_render_mode() -> Tuple[str, str]:
+        return "vue", "dist/assets"
+
+    @staticmethod
+    def get_command() -> List[Dict[str, Any]]:
+        return []
+
+    def get_api(self) -> List[Dict[str, Any]]:
+        return [
+            {
+                "path": "/status",
+                "endpoint": self.get_status,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "获取 Agent 桌宠配置",
+            },
+            {
+                "path": "/public_status",
+                "endpoint": self.get_public_status,
+                "methods": ["GET"],
+                "allow_anonymous": True,
+                "summary": "获取 Agent 桌宠全局入口公开配置",
+            },
+            {
+                "path": "/config",
+                "endpoint": self.save_config_api,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "保存 Agent 桌宠配置",
+            },
+            {
+                "path": "/loader",
+                "endpoint": self.get_loader,
+                "methods": ["GET"],
+                "auth": "bear",
+                "summary": "获取 Agent 桌宠全局入口脚本",
+            },
+        ]
+
+    def get_form(self) -> Tuple[List[dict], Dict[str, Any]]:
+        return [], self._current_config()
+
+    def get_page(self) -> List[dict]:
+        return []
+
+    def get_sidebar_nav(self) -> List[Dict[str, Any]]:
+        if not self.get_state() or not getattr(self, "_show_sidebar_nav", True):
+            return []
+        return [
+            {
+                "nav_key": "main",
+                "title": "Agent 桌宠",
+                "icon": "mdi-paw",
+                "section": "system",
+                "permission": "manage",
+                "order": 47,
+            }
+        ]
+
+    def stop_service(self):
+        pass
+
+    @staticmethod
+    def _clamp_number(value: Any, minimum: float, maximum: float, default: float) -> float:
+        try:
+            number = float(value)
+        except (TypeError, ValueError):
+            return default
+        return min(max(number, minimum), maximum)
+
+    def _current_config(self) -> Dict[str, Any]:
+        return {
+            "enabled": bool(getattr(self, "_enabled", False)),
+            "replace_agent_entry": bool(getattr(self, "_replace_agent_entry", True)),
+            "show_sidebar_nav": bool(getattr(self, "_show_sidebar_nav", True)),
+            "scale": float(getattr(self, "_scale", 1.0)),
+            "speed": float(getattr(self, "_speed", 1.0)),
+            "follow_mouse": bool(getattr(self, "_follow_mouse", True)),
+            "auto_roam": bool(getattr(self, "_auto_roam", True)),
+            "shadow": bool(getattr(self, "_shadow", True)),
+        }
+
+    def _save_config(self) -> None:
+        self.update_config(self._current_config())
+
+    def get_status(self) -> schemas.Response:
+        return schemas.Response(
+            success=True,
+            data={
+                "config": self._current_config(),
+                "summary": {
+                    "enabled": self.get_state(),
+                    "replace_agent_entry": bool(getattr(self, "_replace_agent_entry", True)),
+                    "avatar": "小天照 Shimeji demo",
+                    "actions": ["idle", "walk", "run", "follow", "drag", "sleep", "wall", "ceiling", "fall"],
+                },
+            },
+        )
+
+    def get_public_status(self) -> schemas.Response:
+        return schemas.Response(
+            success=True,
+            data={
+                "config": self._current_config(),
+                "summary": {
+                    "enabled": self.get_state(),
+                    "replace_agent_entry": bool(getattr(self, "_replace_agent_entry", True)),
+                },
+            },
+        )
+
+    def get_loader(self) -> Response:
+        try:
+            dist_dir = Path(__file__).resolve().parent / "dist" / "assets"
+            loader_path = dist_dir / "agentmascot-loader.js"
+            loader_code = loader_path.read_text(encoding="utf-8")
+            match = re.search(r"^import\s+\{([^}]+)\}\s+from\s+'\.\/([^']+)';\s*", loader_code)
+            if match:
+                provider_path = dist_dir / match.group(2)
+                provider_code = provider_path.read_text(encoding="utf-8")
+                provider_code = re.sub(r"\n?export\s+\{[^}]+\};?\s*$", "", provider_code, flags=re.S)
+                loader_code = loader_code[match.end():]
+                loader_code = f"{provider_code}\nconst unwrapResponse = u;\nconst DEFAULT_CONFIG = D;\nconst SHIMEJI_ACTIONS = S;\n{loader_code}"
+            return Response(
+                content=loader_code,
+                media_type="application/javascript; charset=utf-8",
+                headers={"Cache-Control": "no-store"},
+            )
+        except Exception as err:
+            logger.error(f"获取 Agent 桌宠全局入口脚本失败: {err}")
+            return Response(
+                content=f"console.error('AgentMascot loader failed: {str(err)}');",
+                media_type="application/javascript; charset=utf-8",
+                status_code=500,
+            )
+
+    def save_config_api(self, config: dict = Body(...)) -> schemas.Response:
+        try:
+            self._enabled = bool(config.get("enabled"))
+            self._replace_agent_entry = bool(config.get("replace_agent_entry", True))
+            self._show_sidebar_nav = bool(config.get("show_sidebar_nav", True))
+            self._scale = self._clamp_number(config.get("scale"), 0.6, 2.0, 1.0)
+            self._speed = self._clamp_number(config.get("speed"), 0.4, 2.0, 1.0)
+            self._follow_mouse = bool(config.get("follow_mouse", True))
+            self._auto_roam = bool(config.get("auto_roam", True))
+            self._shadow = bool(config.get("shadow", True))
+            self._save_config()
+            return schemas.Response(success=True, data=self.get_status().data)
+        except Exception as err:
+            logger.error(f"保存 Agent 桌宠配置失败: {err}")
+            return schemas.Response(success=False, message=str(err))
