@@ -18,13 +18,15 @@ import {
   WALL_MARGIN,
   WALL_REST_MIN,
   WALL_REST_RANGE,
-  Y_FOLLOW_COOLDOWN_MS,
-  Y_FOLLOW_DWELL_MS,
-  Y_FOLLOW_LANE_RADIUS,
-  Y_FOLLOW_MIN_DELTA,
-  Y_FOLLOW_MOUSE_SPEED_MAX,
   normalizeConfig,
 } from './mascot/config'
+import {
+  dragAnchor as calculateDragAnchor,
+  dragDistance,
+  dragLookRight,
+  pointerOffset as calculatePointerOffset,
+  resolveDragRelease,
+} from './mascot/drag'
 import {
   ceilingAnchorY as calculateCeilingAnchorY,
   clampAnchorX as calculateClampAnchorX,
@@ -45,6 +47,10 @@ import {
   crossedSurfaceLane,
   nearestSurfaceLane,
 } from './mascot/surfaces'
+import {
+  resolveMouseYFollow,
+  updateMouseIntent as updateMouseIntentState,
+} from './mascot/mouse'
 import { unwrapResponse } from './provider'
 
 const PLUGIN_ID = 'AgentMascot'
@@ -354,64 +360,33 @@ function crossedLandingY(previousY, currentY) {
 }
 
 function updateMouseIntent(event, timestamp = performance.now()) {
-  const previousX = mouse.x
-  const previousY = mouse.y
-  const previousMoveAt = mouse.lastMoveAt || timestamp
-  const elapsed = Math.max(timestamp - previousMoveAt, 1)
-
-  mouse.lastX = previousX
-  mouse.lastY = previousY
-  mouse.x = event.clientX
-  mouse.y = event.clientY
-  mouse.lastMoveAt = timestamp
-  mouse.activeUntil = timestamp + Y_FOLLOW_DWELL_MS + 1200
-  mouse.speed = Math.hypot(mouse.x - previousX, mouse.y - previousY) / elapsed
-
-  const targetLaneY = nearestLaneToY(mouse.y)
-  const currentLaneY = pet.laneY || nearestLaneToY(pet.anchorY)
-  const closeToLane = Math.abs(targetLaneY - mouse.y) <= Y_FOLLOW_LANE_RADIUS * poseScale()
-  const meaningfulShift = Math.abs(targetLaneY - currentLaneY) >= Y_FOLLOW_MIN_DELTA * poseScale()
-
-  if (!closeToLane || !meaningfulShift) {
-    mouse.candidateLaneY = null
-    mouse.candidateSince = 0
-    return
-  }
-  if (mouse.candidateLaneY === targetLaneY) return
-  mouse.candidateLaneY = targetLaneY
-  mouse.candidateSince = timestamp
-}
-
-function canFollowMouseY(timestamp) {
-  if (!config.follow_mouse || timestamp >= mouse.activeUntil) return false
-  if (timestamp < mouse.yCooldownUntil) return false
-  if (mouse.candidateLaneY === null || !mouse.candidateSince) return false
-  const idleMs = timestamp - mouse.lastMoveAt
-  const effectiveSpeed = idleMs > 260 ? 0 : mouse.speed
-  if (effectiveSpeed > Y_FOLLOW_MOUSE_SPEED_MAX) return false
-  if (timestamp - mouse.candidateSince < Y_FOLLOW_DWELL_MS) return false
-  if (pet.surface !== 'ground') return false
-  if (['rest', 'bounce', 'toWall'].includes(pet.state)) return false
-  return Math.abs(mouse.candidateLaneY - (pet.laneY || pet.anchorY)) >= Y_FOLLOW_MIN_DELTA * poseScale()
+  mouse.activeUntil = updateMouseIntentState(mouse, { x: event.clientX, y: event.clientY }, {
+    anchorY: pet.anchorY,
+    currentLaneY: pet.laneY || nearestLaneToY(pet.anchorY),
+    nearestLaneToY,
+    scale: poseScale(),
+    timestamp,
+  })
 }
 
 function applyMouseYFollow(timestamp) {
-  if (!canFollowMouseY(timestamp)) return false
-  const targetLaneY = mouse.candidateLaneY
-  const deltaY = targetLaneY - pet.anchorY
-  mouse.candidateLaneY = null
-  mouse.candidateSince = 0
-  mouse.yCooldownUntil = timestamp + Y_FOLLOW_COOLDOWN_MS
-
-  if (Math.abs(deltaY) <= laneGap() * 0.9) {
-    setLaneY(targetLaneY)
+  const result = resolveMouseYFollow(mouse, pet, {
+    activeUntil: mouse.activeUntil,
+    followMouse: config.follow_mouse,
+    laneGap: laneGap(),
+    scale: poseScale(),
+    timestamp,
+  })
+  if (!result.applied) return false
+  if (result.type === 'lane') {
+    setLaneY(result.targetLaneY)
     return true
   }
-  if (deltaY > 0) {
-    startFall(timestamp, 0, 0.8)
+  if (result.type === 'fall') {
+    startFall(timestamp, result.vx, result.vy)
     return true
   }
-  startLeap(timestamp, mouse.x < pet.anchorX ? 'left' : 'right')
+  startLeap(timestamp, result.side)
   return true
 }
 
@@ -842,10 +817,10 @@ function startDrag(event) {
   if (event.button !== 0) return
   event.preventDefault()
   dragStart = { x: event.clientX, y: event.clientY }
-  pointerOffset = {
-    x: event.clientX - pet.anchorX,
-    y: event.clientY - pet.anchorY,
-  }
+  pointerOffset = calculatePointerOffset(
+    { x: event.clientX, y: event.clientY },
+    { x: pet.anchorX, y: pet.anchorY },
+  )
   pet.dragging = true
   setAction('drag', performance.now(), { force: true })
   root?.setPointerCapture?.(event.pointerId)
@@ -853,9 +828,10 @@ function startDrag(event) {
 
 function onDrag(event) {
   if (!pet.dragging) return
-  pet.anchorX = event.clientX - pointerOffset.x
-  pet.anchorY = event.clientY - pointerOffset.y
-  if (Math.abs(event.movementX) > 0) pet.lookRight = event.movementX > 0
+  const anchor = calculateDragAnchor({ x: event.clientX, y: event.clientY }, pointerOffset)
+  pet.anchorX = anchor.x
+  pet.anchorY = anchor.y
+  pet.lookRight = dragLookRight(pet.lookRight, event.movementX)
   pet.anchorX = clampAnchorX(pet.anchorX)
   pet.anchorY = clampAnchorY(pet.anchorY)
   pet.surface = 'air'
@@ -864,18 +840,27 @@ function onDrag(event) {
 
 function endDrag(event) {
   if (!pet.dragging) return
-  const moved = dragStart ? Math.hypot(event.clientX - dragStart.x, event.clientY - dragStart.y) : 0
+  const moved = dragDistance(dragStart, { x: event.clientX, y: event.clientY })
   dragStart = null
   pet.dragging = false
   root?.releasePointerCapture?.(event.pointerId)
   if (moved > 4) suppressClickUntil = performance.now() + 450
   roamPausedUntil = 0
-  const nearestLane = nearestLaneToY(pet.anchorY)
-  if (Math.abs(nearestLane - pet.anchorY) <= 24 * poseScale()) {
-    setLaneY(nearestLane)
+  const release = resolveDragRelease(pet.anchorY, {
+    groundY: groundAnchorY(),
+    movementX: event.movementX,
+    movementY: event.movementY,
+    nearestLaneToY,
+    scale: poseScale(),
+  })
+  if (release.type === 'lane') {
+    setLaneY(release.laneY)
     startGroundMove(performance.now())
-  } else if (pet.anchorY < groundAnchorY() - 16) startFall(performance.now(), event.movementX * 0.08, Math.min(event.movementY * 0.06, 2))
-  else startGroundMove(performance.now())
+  } else if (release.type === 'fall') {
+    startFall(performance.now(), release.vx, release.vy)
+  } else {
+    startGroundMove(performance.now())
+  }
 }
 
 function onClick(event) {

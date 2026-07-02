@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { c as cloneConfig, S as SHIMEJI_ACTIONS, p as petSize, a as poseScale, v as visualAnchor, m as mascotIcon, b as chooseSurfaceLane, R as ROAM_INTERVAL, u as unwrapResponse, n as normalizeLaneY, d as buildSurfaceLanes, e as nearestSurfaceLane, l as laneGap, g as groundAnchorY, M as MAX_GROUND_STEP, f as REST_ACTIONS, h as ROAM_REST_MIN, i as ROAM_REST_RANGE, Y as Y_FOLLOW_DWELL_MS, j as Y_FOLLOW_LANE_RADIUS, k as Y_FOLLOW_MIN_DELTA, A as ACTION_MIN_DURATION, o as clampAnchorX, q as clampAnchorY, G as GROUND_PADDING, r as RUN_DISTANCE, s as Y_FOLLOW_COOLDOWN_MS, t as AIR_DRAG_X, w as AIR_DRAG_Y, x as AIR_GRAVITY, y as wallAnchorX, z as ceilingAnchorY, W as WALL_REST_MIN, B as WALL_REST_RANGE, F as FOLLOW_DEAD_ZONE, C as randomGroundX, D as Y_FOLLOW_MOUSE_SPEED_MAX, E as crossedSurfaceLane, H as wallTargetY, I as WALL_MARGIN, J as SHIMEJI_TICK_MS } from './surfaces-CIB5Bbeg.js';
+import { c as cloneConfig, S as SHIMEJI_ACTIONS, p as petSize, a as poseScale, v as visualAnchor, m as mascotIcon, b as chooseSurfaceLane, R as ROAM_INTERVAL, u as unwrapResponse, r as resolveDragRelease, d as dragAnchor, e as dragLookRight, f as pointerOffset, n as normalizeLaneY, g as buildSurfaceLanes, h as nearestSurfaceLane, l as laneGap, i as groundAnchorY, M as MAX_GROUND_STEP, j as REST_ACTIONS, k as ROAM_REST_MIN, o as ROAM_REST_RANGE, q as updateMouseIntent, A as ACTION_MIN_DURATION, s as clampAnchorX, t as clampAnchorY, G as GROUND_PADDING, w as RUN_DISTANCE, x as resolveMouseYFollow, y as AIR_DRAG_X, z as AIR_DRAG_Y, B as AIR_GRAVITY, C as wallAnchorX, D as ceilingAnchorY, W as WALL_REST_MIN, E as WALL_REST_RANGE, F as FOLLOW_DEAD_ZONE, H as randomGroundX, I as crossedSurfaceLane, J as wallTargetY, K as WALL_MARGIN, L as SHIMEJI_TICK_MS } from './surfaces-CocfElRu.js';
 
 const _export_sfc = (sfc, props) => {
   const target = sfc.__vccOpts || sfc;
@@ -94,7 +94,7 @@ const pet = reactive({
 let roamTimer = 0;
 let rafId = 0;
 let lastTick = 0;
-let pointerOffset = { x: 0, y: 0 };
+let pointerOffset$1 = { x: 0, y: 0 };
 let actionLockedUntil = 0;
 let mouseActiveUntil = 0;
 let roamPausedUntil = 0;
@@ -240,66 +240,36 @@ function crossedLandingY(previousY, currentY) {
   return crossedSurfaceLane(previousY, currentY, surfaceLanes(), tolerance)
 }
 
-function updateMouseIntent(x, y, timestamp = performance.now()) {
-  const previousX = mouse.x;
-  const previousY = mouse.y;
-  const previousMoveAt = mouse.lastMoveAt || timestamp;
-  const elapsed = Math.max(timestamp - previousMoveAt, 1);
-
-  mouse.lastX = previousX;
-  mouse.lastY = previousY;
-  mouse.x = x;
-  mouse.y = y;
-  mouse.lastMoveAt = timestamp;
+function updateMouseIntent$1(x, y, timestamp = performance.now()) {
   mouse.active = true;
-  mouseActiveUntil = timestamp + Y_FOLLOW_DWELL_MS + 1200;
-  mouse.speed = Math.hypot(mouse.x - previousX, mouse.y - previousY) / elapsed;
-
-  const targetLaneY = nearestLaneToY(mouse.y);
-  const currentLaneY = pet.laneY || nearestLaneToY(pet.anchorY);
-  const closeToLane = Math.abs(targetLaneY - mouse.y) <= Y_FOLLOW_LANE_RADIUS * poseScale$1.value;
-  const meaningfulShift = Math.abs(targetLaneY - currentLaneY) >= Y_FOLLOW_MIN_DELTA * poseScale$1.value;
-
-  if (!closeToLane || !meaningfulShift) {
-    mouse.candidateLaneY = null;
-    mouse.candidateSince = 0;
-    return
-  }
-  if (mouse.candidateLaneY === targetLaneY) return
-  mouse.candidateLaneY = targetLaneY;
-  mouse.candidateSince = timestamp;
-}
-
-function canFollowMouseY(timestamp) {
-  if (!config.value.follow_mouse || !mouse.active || timestamp >= mouseActiveUntil) return false
-  if (timestamp < mouse.yCooldownUntil) return false
-  if (mouse.candidateLaneY === null || !mouse.candidateSince) return false
-  const idleMs = timestamp - mouse.lastMoveAt;
-  const effectiveSpeed = idleMs > 260 ? 0 : mouse.speed;
-  if (effectiveSpeed > Y_FOLLOW_MOUSE_SPEED_MAX) return false
-  if (timestamp - mouse.candidateSince < Y_FOLLOW_DWELL_MS) return false
-  if (pet.surface !== 'ground') return false
-  if (pet.state === 'rest' || pet.state === 'bounce' || pet.state === 'toWall') return false
-  return Math.abs(mouse.candidateLaneY - (pet.laneY || pet.anchorY)) >= Y_FOLLOW_MIN_DELTA * poseScale$1.value
+  mouseActiveUntil = updateMouseIntent(mouse, { x, y }, {
+    anchorY: pet.anchorY,
+    currentLaneY: pet.laneY || nearestLaneToY(pet.anchorY),
+    nearestLaneToY,
+    scale: poseScale$1.value,
+    timestamp,
+  });
 }
 
 function applyMouseYFollow(timestamp) {
-  if (!canFollowMouseY(timestamp)) return false
-  const targetLaneY = mouse.candidateLaneY;
-  const deltaY = targetLaneY - pet.anchorY;
-  mouse.candidateLaneY = null;
-  mouse.candidateSince = 0;
-  mouse.yCooldownUntil = timestamp + Y_FOLLOW_COOLDOWN_MS;
-
-  if (Math.abs(deltaY) <= laneGap$1() * 0.9) {
-    setLaneY(targetLaneY);
+  const result = resolveMouseYFollow(mouse, pet, {
+    active: mouse.active,
+    activeUntil: mouseActiveUntil,
+    followMouse: config.value.follow_mouse,
+    laneGap: laneGap$1(),
+    scale: poseScale$1.value,
+    timestamp,
+  });
+  if (!result.applied) return false
+  if (result.type === 'lane') {
+    setLaneY(result.targetLaneY);
     return true
   }
-  if (deltaY > 0) {
-    startFall(timestamp, 0, 0.8);
+  if (result.type === 'fall') {
+    startFall(timestamp, result.vx, result.vy);
     return true
   }
-  startLeap(timestamp, mouse.x < pet.anchorX ? 'left' : 'right');
+  startLeap(timestamp, result.side);
   return true
 }
 
@@ -770,7 +740,7 @@ function stopLoops() {
 function updateMouse(event) {
   const rect = stageRef.value?.getBoundingClientRect();
   if (!rect) return
-  updateMouseIntent(event.clientX - rect.left, event.clientY - rect.top);
+  updateMouseIntent$1(event.clientX - rect.left, event.clientY - rect.top);
   roamPausedUntil = 0;
 }
 
@@ -783,10 +753,10 @@ function startDrag(event) {
   event.preventDefault();
   const stage = stageRef.value?.getBoundingClientRect();
   if (!stage) return
-  pointerOffset = {
-    x: event.clientX - stage.left - pet.anchorX,
-    y: event.clientY - stage.top - pet.anchorY,
-  };
+  pointerOffset$1 = pointerOffset(
+    { x: event.clientX - stage.left, y: event.clientY - stage.top },
+    { x: pet.anchorX, y: pet.anchorY },
+  );
   pet.dragging = true;
   setAction('drag');
   mascotRef.value?.setPointerCapture?.(event.pointerId);
@@ -796,9 +766,13 @@ function onDrag(event) {
   if (!pet.dragging) return
   const stage = stageRef.value?.getBoundingClientRect();
   if (!stage) return
-  pet.anchorX = event.clientX - stage.left - pointerOffset.x;
-  pet.anchorY = event.clientY - stage.top - pointerOffset.y;
-  if (Math.abs(event.movementX) > 0) pet.lookRight = event.movementX > 0;
+  const anchor = dragAnchor(
+    { x: event.clientX - stage.left, y: event.clientY - stage.top },
+    pointerOffset$1,
+  );
+  pet.anchorX = anchor.x;
+  pet.anchorY = anchor.y;
+  pet.lookRight = dragLookRight(pet.lookRight, event.movementX);
   pet.anchorX = clampAnchorX$1(pet.anchorX);
   pet.anchorY = clampAnchorY$1(pet.anchorY);
   pet.surface = 'air';
@@ -809,15 +783,21 @@ function endDrag(event) {
   pet.dragging = false;
   mascotRef.value?.releasePointerCapture?.(event.pointerId);
   roamPausedUntil = 0;
-  const nearestLane = nearestLaneToY(pet.anchorY);
-  if (Math.abs(nearestLane - pet.anchorY) <= 24 * poseScale$1.value) {
-    setLaneY(nearestLane);
+  const release = resolveDragRelease(pet.anchorY, {
+    groundY: groundAnchorY$1(),
+    movementX: event.movementX,
+    movementY: event.movementY,
+    nearestLaneToY,
+    scale: poseScale$1.value,
+  });
+  if (release.type === 'lane') {
+    setLaneY(release.laneY);
     pet.lastAnchorY = pet.anchorY;
     startGroundMove(performance.now());
-  } else if (pet.anchorY < groundAnchorY$1() - 16) {
-    startFall(performance.now(), event.movementX * 0.08, Math.min(event.movementY * 0.06, 2));
+  } else if (release.type === 'fall') {
+    startFall(performance.now(), release.vx, release.vy);
   } else {
-    setLaneY(groundAnchorY$1());
+    setLaneY(release.laneY);
     pet.lastAnchorY = pet.anchorY;
     startGroundMove(performance.now());
   }
@@ -1024,6 +1004,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-21386465"]]);
+const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-0eda8b3d"]]);
 
 export { _export_sfc as _, AppPage as default };

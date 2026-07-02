@@ -19,12 +19,13 @@ import {
   WALL_MARGIN,
   WALL_REST_MIN,
   WALL_REST_RANGE,
-  Y_FOLLOW_COOLDOWN_MS,
-  Y_FOLLOW_DWELL_MS,
-  Y_FOLLOW_LANE_RADIUS,
-  Y_FOLLOW_MIN_DELTA,
-  Y_FOLLOW_MOUSE_SPEED_MAX,
 } from '../mascot/config'
+import {
+  dragAnchor as calculateDragAnchor,
+  dragLookRight,
+  pointerOffset as calculatePointerOffset,
+  resolveDragRelease,
+} from '../mascot/drag'
 import {
   ceilingAnchorY as calculateCeilingAnchorY,
   clampAnchorX as calculateClampAnchorX,
@@ -39,6 +40,10 @@ import {
   wallAnchorX as calculateWallAnchorX,
   wallTargetY as calculateWallTargetY,
 } from '../mascot/geometry'
+import {
+  resolveMouseYFollow,
+  updateMouseIntent as updateMouseIntentState,
+} from '../mascot/mouse'
 import {
   buildSurfaceLanes,
   chooseSurfaceLane,
@@ -259,65 +264,35 @@ function crossedLandingY(previousY, currentY) {
 }
 
 function updateMouseIntent(x, y, timestamp = performance.now()) {
-  const previousX = mouse.x
-  const previousY = mouse.y
-  const previousMoveAt = mouse.lastMoveAt || timestamp
-  const elapsed = Math.max(timestamp - previousMoveAt, 1)
-
-  mouse.lastX = previousX
-  mouse.lastY = previousY
-  mouse.x = x
-  mouse.y = y
-  mouse.lastMoveAt = timestamp
   mouse.active = true
-  mouseActiveUntil = timestamp + Y_FOLLOW_DWELL_MS + 1200
-  mouse.speed = Math.hypot(mouse.x - previousX, mouse.y - previousY) / elapsed
-
-  const targetLaneY = nearestLaneToY(mouse.y)
-  const currentLaneY = pet.laneY || nearestLaneToY(pet.anchorY)
-  const closeToLane = Math.abs(targetLaneY - mouse.y) <= Y_FOLLOW_LANE_RADIUS * poseScale.value
-  const meaningfulShift = Math.abs(targetLaneY - currentLaneY) >= Y_FOLLOW_MIN_DELTA * poseScale.value
-
-  if (!closeToLane || !meaningfulShift) {
-    mouse.candidateLaneY = null
-    mouse.candidateSince = 0
-    return
-  }
-  if (mouse.candidateLaneY === targetLaneY) return
-  mouse.candidateLaneY = targetLaneY
-  mouse.candidateSince = timestamp
-}
-
-function canFollowMouseY(timestamp) {
-  if (!config.value.follow_mouse || !mouse.active || timestamp >= mouseActiveUntil) return false
-  if (timestamp < mouse.yCooldownUntil) return false
-  if (mouse.candidateLaneY === null || !mouse.candidateSince) return false
-  const idleMs = timestamp - mouse.lastMoveAt
-  const effectiveSpeed = idleMs > 260 ? 0 : mouse.speed
-  if (effectiveSpeed > Y_FOLLOW_MOUSE_SPEED_MAX) return false
-  if (timestamp - mouse.candidateSince < Y_FOLLOW_DWELL_MS) return false
-  if (pet.surface !== 'ground') return false
-  if (pet.state === 'rest' || pet.state === 'bounce' || pet.state === 'toWall') return false
-  return Math.abs(mouse.candidateLaneY - (pet.laneY || pet.anchorY)) >= Y_FOLLOW_MIN_DELTA * poseScale.value
+  mouseActiveUntil = updateMouseIntentState(mouse, { x, y }, {
+    anchorY: pet.anchorY,
+    currentLaneY: pet.laneY || nearestLaneToY(pet.anchorY),
+    nearestLaneToY,
+    scale: poseScale.value,
+    timestamp,
+  })
 }
 
 function applyMouseYFollow(timestamp) {
-  if (!canFollowMouseY(timestamp)) return false
-  const targetLaneY = mouse.candidateLaneY
-  const deltaY = targetLaneY - pet.anchorY
-  mouse.candidateLaneY = null
-  mouse.candidateSince = 0
-  mouse.yCooldownUntil = timestamp + Y_FOLLOW_COOLDOWN_MS
-
-  if (Math.abs(deltaY) <= laneGap() * 0.9) {
-    setLaneY(targetLaneY)
+  const result = resolveMouseYFollow(mouse, pet, {
+    active: mouse.active,
+    activeUntil: mouseActiveUntil,
+    followMouse: config.value.follow_mouse,
+    laneGap: laneGap(),
+    scale: poseScale.value,
+    timestamp,
+  })
+  if (!result.applied) return false
+  if (result.type === 'lane') {
+    setLaneY(result.targetLaneY)
     return true
   }
-  if (deltaY > 0) {
-    startFall(timestamp, 0, 0.8)
+  if (result.type === 'fall') {
+    startFall(timestamp, result.vx, result.vy)
     return true
   }
-  startLeap(timestamp, mouse.x < pet.anchorX ? 'left' : 'right')
+  startLeap(timestamp, result.side)
   return true
 }
 
@@ -801,10 +776,10 @@ function startDrag(event) {
   event.preventDefault()
   const stage = stageRef.value?.getBoundingClientRect()
   if (!stage) return
-  pointerOffset = {
-    x: event.clientX - stage.left - pet.anchorX,
-    y: event.clientY - stage.top - pet.anchorY,
-  }
+  pointerOffset = calculatePointerOffset(
+    { x: event.clientX - stage.left, y: event.clientY - stage.top },
+    { x: pet.anchorX, y: pet.anchorY },
+  )
   pet.dragging = true
   setAction('drag')
   mascotRef.value?.setPointerCapture?.(event.pointerId)
@@ -814,9 +789,13 @@ function onDrag(event) {
   if (!pet.dragging) return
   const stage = stageRef.value?.getBoundingClientRect()
   if (!stage) return
-  pet.anchorX = event.clientX - stage.left - pointerOffset.x
-  pet.anchorY = event.clientY - stage.top - pointerOffset.y
-  if (Math.abs(event.movementX) > 0) pet.lookRight = event.movementX > 0
+  const anchor = calculateDragAnchor(
+    { x: event.clientX - stage.left, y: event.clientY - stage.top },
+    pointerOffset,
+  )
+  pet.anchorX = anchor.x
+  pet.anchorY = anchor.y
+  pet.lookRight = dragLookRight(pet.lookRight, event.movementX)
   pet.anchorX = clampAnchorX(pet.anchorX)
   pet.anchorY = clampAnchorY(pet.anchorY)
   pet.surface = 'air'
@@ -827,15 +806,21 @@ function endDrag(event) {
   pet.dragging = false
   mascotRef.value?.releasePointerCapture?.(event.pointerId)
   roamPausedUntil = 0
-  const nearestLane = nearestLaneToY(pet.anchorY)
-  if (Math.abs(nearestLane - pet.anchorY) <= 24 * poseScale.value) {
-    setLaneY(nearestLane)
+  const release = resolveDragRelease(pet.anchorY, {
+    groundY: groundAnchorY(),
+    movementX: event.movementX,
+    movementY: event.movementY,
+    nearestLaneToY,
+    scale: poseScale.value,
+  })
+  if (release.type === 'lane') {
+    setLaneY(release.laneY)
     pet.lastAnchorY = pet.anchorY
     startGroundMove(performance.now())
-  } else if (pet.anchorY < groundAnchorY() - 16) {
-    startFall(performance.now(), event.movementX * 0.08, Math.min(event.movementY * 0.06, 2))
+  } else if (release.type === 'fall') {
+    startFall(performance.now(), release.vx, release.vy)
   } else {
-    setLaneY(groundAnchorY())
+    setLaneY(release.laneY)
     pet.lastAnchorY = pet.anchorY
     startGroundMove(performance.now())
   }

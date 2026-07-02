@@ -556,6 +556,53 @@ function unwrapResponse(response) {
   return response?.data ?? response
 }
 
+function pointerOffset(point, anchor) {
+  return {
+    x: point.x - anchor.x,
+    y: point.y - anchor.y,
+  }
+}
+
+function dragAnchor(point, offset) {
+  return {
+    x: point.x - offset.x,
+    y: point.y - offset.y,
+  }
+}
+
+function dragLookRight(currentLookRight, movementX) {
+  return Math.abs(movementX) > 0 ? movementX > 0 : currentLookRight
+}
+
+function dragDistance(startPoint, point) {
+  if (!startPoint) return 0
+  return Math.hypot(point.x - startPoint.x, point.y - startPoint.y)
+}
+
+function resolveDragRelease(anchorY, options = {}) {
+  const {
+    fallGap = 16,
+    movementX = 0,
+    movementY = 0,
+    nearestLaneToY,
+    groundY,
+    scale = 1,
+    snapBase = 24,
+  } = options;
+  const nearestLane = nearestLaneToY(anchorY);
+  if (Math.abs(nearestLane - anchorY) <= snapBase * scale) {
+    return { laneY: nearestLane, type: 'lane' }
+  }
+  if (anchorY < groundY - fallGap) {
+    return {
+      type: 'fall',
+      vx: movementX * 0.08,
+      vy: Math.min(movementY * 0.06, 2),
+    }
+  }
+  return { laneY: groundY, type: 'ground' }
+}
+
 const BASE_PET_SIZE = 92;
 
 function viewportDimension$1(bounds, key) {
@@ -646,6 +693,95 @@ function wallTargetY(
     top,
   );
   return top + random() * Math.max(bottom - top, 1)
+}
+
+function updateMouseIntent(mouse, point, options = {}) {
+  const {
+    activeExtraMs = 1200,
+    dwellMs = Y_FOLLOW_DWELL_MS,
+    laneRadius = Y_FOLLOW_LANE_RADIUS,
+    minDelta = Y_FOLLOW_MIN_DELTA,
+    nearestLaneToY,
+    scale = 1,
+    timestamp = 0,
+  } = options;
+  const previousX = mouse.x;
+  const previousY = mouse.y;
+  const previousMoveAt = mouse.lastMoveAt || timestamp;
+  const elapsed = Math.max(timestamp - previousMoveAt, 1);
+
+  mouse.lastX = previousX;
+  mouse.lastY = previousY;
+  mouse.x = point.x;
+  mouse.y = point.y;
+  mouse.lastMoveAt = timestamp;
+  mouse.speed = Math.hypot(mouse.x - previousX, mouse.y - previousY) / elapsed;
+
+  const targetLaneY = nearestLaneToY(mouse.y);
+  const currentLaneY = options.currentLaneY ?? nearestLaneToY(options.anchorY ?? mouse.y);
+  const closeToLane = Math.abs(targetLaneY - mouse.y) <= laneRadius * scale;
+  const meaningfulShift = Math.abs(targetLaneY - currentLaneY) >= minDelta * scale;
+
+  if (!closeToLane || !meaningfulShift) {
+    mouse.candidateLaneY = null;
+    mouse.candidateSince = 0;
+    return timestamp + dwellMs + activeExtraMs
+  }
+  if (mouse.candidateLaneY !== targetLaneY) {
+    mouse.candidateLaneY = targetLaneY;
+    mouse.candidateSince = timestamp;
+  }
+  return timestamp + dwellMs + activeExtraMs
+}
+
+function canFollowMouseY(mouse, pet, options = {}) {
+  const {
+    active = true,
+    activeUntil,
+    blockedStates = ['rest', 'bounce', 'toWall'],
+    dwellMs = Y_FOLLOW_DWELL_MS,
+    followMouse = true,
+    minDelta = Y_FOLLOW_MIN_DELTA,
+    scale = 1,
+    speedMax = Y_FOLLOW_MOUSE_SPEED_MAX,
+    timestamp = 0,
+  } = options;
+  if (!followMouse || !active || timestamp >= activeUntil) return false
+  if (timestamp < mouse.yCooldownUntil) return false
+  if (mouse.candidateLaneY === null || !mouse.candidateSince) return false
+  const idleMs = timestamp - mouse.lastMoveAt;
+  const effectiveSpeed = idleMs > 260 ? 0 : mouse.speed;
+  if (effectiveSpeed > speedMax) return false
+  if (timestamp - mouse.candidateSince < dwellMs) return false
+  if (pet.surface !== 'ground') return false
+  if (blockedStates.includes(pet.state)) return false
+  return Math.abs(mouse.candidateLaneY - (pet.laneY || pet.anchorY)) >= minDelta * scale
+}
+
+function resolveMouseYFollow(mouse, pet, options = {}) {
+  const {
+    cooldownMs = Y_FOLLOW_COOLDOWN_MS,
+    laneGap,
+    timestamp = 0,
+  } = options;
+  if (!canFollowMouseY(mouse, pet, options)) return { applied: false, type: 'none' }
+  const targetLaneY = mouse.candidateLaneY;
+  const deltaY = targetLaneY - pet.anchorY;
+  mouse.candidateLaneY = null;
+  mouse.candidateSince = 0;
+  mouse.yCooldownUntil = timestamp + cooldownMs;
+
+  if (Math.abs(deltaY) <= laneGap * 0.9) {
+    return { applied: true, type: 'lane', targetLaneY }
+  }
+  if (deltaY > 0) {
+    return { applied: true, type: 'fall', vx: 0, vy: 0.8 }
+  }
+  return {
+    applied: true,
+    side: mouse.x < pet.anchorX ? 'left' : 'right',
+    type: 'leap',
+  }
 }
 
 const PREVIEW_SURFACE_RATIOS = [0.3, 0.44, 0.58, 0.72, 0.86];
@@ -765,4 +901,4 @@ function crossedSurfaceLane(previousY, currentY, lanes, tolerance) {
   return lanes.find(lane => lane >= previousY - tolerance && lane <= currentY + tolerance) ?? null
 }
 
-export { ACTION_MIN_DURATION as A, WALL_REST_RANGE as B, randomGroundX as C, Y_FOLLOW_MOUSE_SPEED_MAX as D, crossedSurfaceLane as E, FOLLOW_DEAD_ZONE as F, GROUND_PADDING as G, wallTargetY as H, WALL_MARGIN as I, SHIMEJI_TICK_MS as J, normalizeConfig as K, DEFAULT_CONFIG as L, MAX_GROUND_STEP as M, SURFACE_SCAN_MS as N, buildDomSurfaceLanes as O, ROAM_INTERVAL as R, SHIMEJI_ACTIONS as S, VIEWPORT_PADDING as V, WALL_REST_MIN as W, Y_FOLLOW_DWELL_MS as Y, poseScale as a, chooseSurfaceLane as b, cloneConfig as c, buildSurfaceLanes as d, nearestSurfaceLane as e, REST_ACTIONS as f, groundAnchorY as g, ROAM_REST_MIN as h, ROAM_REST_RANGE as i, Y_FOLLOW_LANE_RADIUS as j, Y_FOLLOW_MIN_DELTA as k, laneGap as l, mascotIcon as m, normalizeLaneY as n, clampAnchorX as o, petSize as p, clampAnchorY as q, RUN_DISTANCE as r, Y_FOLLOW_COOLDOWN_MS as s, AIR_DRAG_X as t, unwrapResponse as u, visualAnchor as v, AIR_DRAG_Y as w, AIR_GRAVITY as x, wallAnchorX as y, ceilingAnchorY as z };
+export { ACTION_MIN_DURATION as A, AIR_GRAVITY as B, wallAnchorX as C, ceilingAnchorY as D, WALL_REST_RANGE as E, FOLLOW_DEAD_ZONE as F, GROUND_PADDING as G, randomGroundX as H, crossedSurfaceLane as I, wallTargetY as J, WALL_MARGIN as K, SHIMEJI_TICK_MS as L, MAX_GROUND_STEP as M, normalizeConfig as N, DEFAULT_CONFIG as O, dragDistance as P, SURFACE_SCAN_MS as Q, ROAM_INTERVAL as R, SHIMEJI_ACTIONS as S, buildDomSurfaceLanes as T, VIEWPORT_PADDING as V, WALL_REST_MIN as W, poseScale as a, chooseSurfaceLane as b, cloneConfig as c, dragAnchor as d, dragLookRight as e, pointerOffset as f, buildSurfaceLanes as g, nearestSurfaceLane as h, groundAnchorY as i, REST_ACTIONS as j, ROAM_REST_MIN as k, laneGap as l, mascotIcon as m, normalizeLaneY as n, ROAM_REST_RANGE as o, petSize as p, updateMouseIntent as q, resolveDragRelease as r, clampAnchorX as s, clampAnchorY as t, unwrapResponse as u, visualAnchor as v, RUN_DISTANCE as w, resolveMouseYFollow as x, AIR_DRAG_X as y, AIR_DRAG_Y as z };

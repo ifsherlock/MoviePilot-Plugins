@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-07-03-agentmascot-modularization-phased-plan.md",
   "status": {
     "phase": "phase-2",
-    "task": "2.4",
-    "next_allowed_action": "Implement task 2.4 by extracting mouse dwell/follow and drag release logic; after verified completion, advance to task 2.5 automatically"
+    "task": "2.5",
+    "next_allowed_action": "Implement task 2.5 by extracting motion state machine and runtime factory; after verified completion, evaluate phase-2 acceptance"
   },
   "execution_rules": {
     "branch": "codex/agentmascot-modularization",
@@ -152,9 +152,20 @@
         {
           "id": "2.4",
           "title": "提取鼠标驻留跟随和拖拽释放逻辑",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            "Created src/mascot/mouse.js for pure mouse dwell intent, candidate lane tracking, Y-follow cooldown, and lane/fall/leap follow decisions",
+            "Created src/mascot/drag.js for pointer offset, drag anchor, drag look direction, drag movement distance, and drag release lane/fall/ground decisions",
+            "AppPage.vue now delegates mouse intent/Y-follow and drag calculations to src/mascot/mouse.js and src/mascot/drag.js",
+            "global-loader.js now delegates the same mouse intent/Y-follow and drag calculations while preserving left-button check, dragStart movement distance, suppressClickUntil, render(), and pointer capture/release",
+            "npm install was run to restore missing local vite; npm run build in plugins.v2\\agentmascot -> exits 0; node_modules and package-lock.json were removed after verification",
+            "python .github\\scripts\\check_plugin_versions.py package.json package.v2.json -> Plugin release version gate passed",
+            "python -m py_compile plugins.v2\\agentmascot\\__init__.py plugins.v2\\agentmascot\\config.py plugins.v2\\agentmascot\\api.py plugins.v2\\agentmascot\\loader.py plugins.v2\\agentmascot\\manifest.py -> exits 0",
+            "rg confirmed src/mascot/mouse.js and src/mascot/drag.js have no querySelector, document/window access, agent-assistant selector, api/v1 path, or fetch call",
+            "dist/assets/agentmascot-loader.js contains AgentMascot, agentmascot-global-root, and public_status",
+            "git diff --check -> exits 0"
+          ],
+          "commit": "pending"
         },
         {
           "id": "2.5",
@@ -349,6 +360,12 @@
       "task": "2.3",
       "action": "Created src/mascot/surfaces.js for lane thinning, surface anchor extraction, nearest/choose lane, and landing-cross checks; AppPage and global-loader now delegate shared surface logic while global-loader keeps DOM selectors and document scanning as adapter inputs.",
       "verification": "npm run build, version gate, backend py_compile, dist loader string probe, mascot core DOM/API grep, adapter selector grep, git diff --check, temporary dependency cleanup",
+      "result": "passed"
+    },
+    {
+      "task": "2.4",
+      "action": "Created src/mascot/mouse.js and src/mascot/drag.js; AppPage and global-loader now share mouse dwell/Y-follow decisions and drag offset/release calculations while keeping DOM/event adapter behavior at the entry layer.",
+      "verification": "npm run build, version gate, backend py_compile, dist loader string probe, mouse/drag DOM/API grep, git diff --check, temporary dependency cleanup",
       "result": "passed"
     }
   ]
