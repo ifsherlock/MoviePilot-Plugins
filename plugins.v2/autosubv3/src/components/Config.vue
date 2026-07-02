@@ -1,7 +1,15 @@
 <script setup>
-import { reactive, ref, watch } from 'vue'
+import { computed, reactive, ref, watch } from 'vue'
 
 const props = defineProps({
+  api: {
+    type: Object,
+    default: () => ({}),
+  },
+  pluginId: {
+    type: String,
+    default: 'AutoSubv3',
+  },
   initialConfig: {
     type: Object,
     default: () => ({}),
@@ -52,7 +60,13 @@ function normalizeInitialConfig(value = {}) {
 
 const config = reactive(normalizeInitialConfig(props.initialConfig))
 const saving = ref(false)
+const loadingModels = ref(false)
+const testingModel = ref(false)
 const error = ref('')
+const apiMessage = ref('')
+const remoteModels = ref([])
+const pluginBase = computed(() => `plugin/${props.pluginId || 'AutoSubv3'}`)
+const apiReady = computed(() => typeof props.api?.post === 'function')
 
 const whisperModels = [
   { title: 'tiny', value: 'tiny' },
@@ -71,12 +85,77 @@ const preferences = [
   { title: '英文优先', value: 'english_first' },
   { title: '原音优先', value: 'origin_first' },
 ]
+const modelItems = computed(() => {
+  const items = [...remoteModels.value]
+  if (config.openai_model && !items.some(item => item.value === config.openai_model)) {
+    items.unshift({ title: config.openai_model, value: config.openai_model })
+  }
+  return items
+})
 watch(
   () => props.initialConfig,
   (value) => {
     Object.assign(config, normalizeInitialConfig(value))
   },
 )
+
+function unwrapResponse(response) {
+  return response?.data?.data || response?.data || response || {}
+}
+
+function responseMessage(response) {
+  return response?.data?.message || response?.message || ''
+}
+
+function errorMessage(err, fallback) {
+  return err?.response?.data?.detail || err?.message || fallback
+}
+
+function apiPayload() {
+  return {
+    openai_url: config.openai_url,
+    openai_key: config.openai_key,
+    openai_model: config.openai_model,
+    openai_proxy: config.openai_proxy,
+    compatible: config.compatible,
+  }
+}
+
+function apiClient() {
+  if (!apiReady.value) throw new Error('当前页面未注入插件 API 客户端，请刷新后重试')
+  return props.api
+}
+
+async function fetchModels() {
+  loadingModels.value = true
+  error.value = ''
+  apiMessage.value = ''
+  try {
+    const response = await apiClient().post(`${pluginBase.value}/models`, apiPayload())
+    const data = unwrapResponse(response)
+    remoteModels.value = data.models || []
+    apiMessage.value = responseMessage(response) || `已获取 ${remoteModels.value.length} 个模型`
+  } catch (err) {
+    error.value = errorMessage(err, '获取模型列表失败')
+  } finally {
+    loadingModels.value = false
+  }
+}
+
+async function testModel() {
+  testingModel.value = true
+  error.value = ''
+  apiMessage.value = ''
+  try {
+    const response = await apiClient().post(`${pluginBase.value}/test_model`, apiPayload())
+    const data = unwrapResponse(response)
+    apiMessage.value = responseMessage(response) || `模型 ${data.model || config.openai_model} 可用`
+  } catch (err) {
+    error.value = errorMessage(err, '测试模型失败')
+  } finally {
+    testingModel.value = false
+  }
+}
 
 function save() {
   saving.value = true
@@ -104,6 +183,7 @@ function save() {
 
     <div class="config-shell">
       <VAlert v-if="error" class="mb-4" type="error" variant="tonal" density="compact" :text="error" />
+      <VAlert v-if="apiMessage" class="mb-4" type="success" variant="tonal" density="compact" :text="apiMessage" />
 
       <section class="config-section">
         <div class="section-title">基础设置</div>
@@ -257,7 +337,39 @@ function save() {
             <VTextField v-model="config.openai_key" label="API 密钥" type="password" placeholder="sk-xxx" />
           </VCol>
           <VCol cols="12" md="4">
-            <VTextField v-model="config.openai_model" label="自定义模型" placeholder="inclusionAI/Ling-flash-2.0" />
+            <VCombobox
+              v-model="config.openai_model"
+              :items="modelItems"
+              item-title="title"
+              item-value="value"
+              label="模型"
+              placeholder="inclusionAI/Ling-flash-2.0"
+            />
+          </VCol>
+        </VRow>
+
+        <VRow>
+          <VCol cols="12" class="api-actions">
+            <VBtn
+              color="primary"
+              variant="tonal"
+              prepend-icon="mdi-format-list-bulleted"
+              :loading="loadingModels"
+              :disabled="testingModel || !apiReady"
+              @click="fetchModels"
+            >
+              获取模型
+            </VBtn>
+            <VBtn
+              color="secondary"
+              variant="tonal"
+              prepend-icon="mdi-check-circle-outline"
+              :loading="testingModel"
+              :disabled="loadingModels || !apiReady"
+              @click="testModel"
+            >
+              测试模型
+            </VBtn>
           </VCol>
         </VRow>
       </section>
@@ -284,5 +396,11 @@ function save() {
   font-size: 13px;
   font-weight: 600;
   margin-bottom: 8px;
+}
+
+.api-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
 }
 </style>

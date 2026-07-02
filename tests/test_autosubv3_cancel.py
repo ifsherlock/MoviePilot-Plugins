@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ast
+import asyncio
 import importlib.util
 import json
 import queue
@@ -1002,7 +1003,100 @@ def test_autosubv3_task_apis_are_registered():
             "auth": "bear",
             "summary": "重新生成 AI 字幕任务",
         },
+        "/models": {
+            "methods": ["POST"],
+            "auth": "bear",
+            "summary": "获取 OpenAI 兼容接口模型列表",
+        },
+        "/test_model": {
+            "methods": ["POST"],
+            "auth": "bear",
+            "summary": "测试 OpenAI 兼容模型是否可用",
+        },
     }
+
+
+def test_openai_model_config_apis_use_form_payload():
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    api_module = sys.modules[f"{module.__name__}.tasks.api"]
+    created = []
+
+    class FakeRequest:
+        def __init__(self, body):
+            self._body = body
+
+        async def json(self):
+            return self._body
+
+    class FakeOpenAi:
+        def __init__(self, **kwargs):
+            created.append(kwargs)
+            self.model = kwargs.get("model") or "default-model"
+
+        def list_models(self):
+            return ["z-model", "a-model", "a-model"]
+
+        def test_model(self):
+            return "OK"
+
+    api_module.OpenAi = FakeOpenAi
+    api_module.settings = types.SimpleNamespace(PROXY={"https": "http://proxy.local:7890"})
+
+    api = plugin._get_task_api()
+    body = {
+        "openai_url": "https://api.example.com/",
+        "openai_key": "sk-test",
+        "openai_model": "model-a",
+        "openai_proxy": True,
+        "compatible": True,
+    }
+
+    models = asyncio.run(api.api_models(FakeRequest(body)))
+    test = asyncio.run(api.api_test_model(FakeRequest(body)))
+
+    assert models["data"]["models"] == [
+        {"title": "a-model", "value": "a-model"},
+        {"title": "z-model", "value": "z-model"},
+    ]
+    assert models["data"]["count"] == 2
+    assert test["data"] == {"model": "model-a", "reply": "OK"}
+    assert created[0] == {
+        "api_key": "sk-test",
+        "api_url": "https://api.example.com",
+        "proxy": {"https": "http://proxy.local:7890"},
+        "model": None,
+        "compatible": True,
+    }
+    assert created[1] == {
+        "api_key": "sk-test",
+        "api_url": "https://api.example.com",
+        "proxy": {"https": "http://proxy.local:7890"},
+        "model": "model-a",
+        "compatible": True,
+    }
+
+
+def test_openai_model_test_requires_model_name():
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    api_module = sys.modules[f"{module.__name__}.tasks.api"]
+
+    class FakeRequest:
+        async def json(self):
+            return {
+                "openai_url": "https://api.example.com",
+                "openai_key": "sk-test",
+                "openai_model": "",
+            }
+
+    try:
+        asyncio.run(plugin._get_task_api().api_test_model(FakeRequest()))
+    except api_module.HTTPException as exc:
+        assert exc.status_code == 400
+        assert exc.detail == "请先填写或选择模型"
+    else:
+        raise AssertionError("api_test_model should reject empty model")
 
 
 def test_task_api_payload_keeps_frontend_contract(tmp_path):

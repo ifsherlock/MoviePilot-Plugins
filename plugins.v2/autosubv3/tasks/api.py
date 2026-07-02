@@ -4,6 +4,12 @@ from typing import Any, Dict, List
 from fastapi import HTTPException, Request
 
 from ..core.models import OverwritePolicy, SourcePolicy, TaskSource, TriggerType
+from ..translate.openai_translate import OpenAi
+
+try:
+    from app.core.config import settings
+except Exception:
+    settings = None
 
 
 class AutoSubTaskApi:
@@ -53,6 +59,20 @@ class AutoSubTaskApi:
                 "methods": ["POST"],
                 "auth": "bear",
                 "summary": "重新生成 AI 字幕任务",
+            },
+            {
+                "path": "/models",
+                "endpoint": self.api_models,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "获取 OpenAI 兼容接口模型列表",
+            },
+            {
+                "path": "/test_model",
+                "endpoint": self.api_test_model,
+                "methods": ["POST"],
+                "auth": "bear",
+                "summary": "测试 OpenAI 兼容模型是否可用",
             },
         ]
 
@@ -127,6 +147,36 @@ class AutoSubTaskApi:
             message=f"已重新提交 {len(result.get('added') or [])} 个 AI 字幕任务，跳过 {len(result.get('skipped') or [])} 个，失败 {len(result.get('failed') or [])} 个",
         )
 
+    async def api_models(self, request: Request) -> Dict[str, Any]:
+        body = await request.json()
+        client = self._build_openai_client(body, require_model=False)
+        try:
+            model_ids = sorted(set(client.list_models()))
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"获取模型列表失败：{exc}")
+        return self._plugin._ok(
+            {
+                "models": [{"title": item, "value": item} for item in model_ids],
+                "count": len(model_ids),
+            },
+            message=f"已获取 {len(model_ids)} 个模型",
+        )
+
+    async def api_test_model(self, request: Request) -> Dict[str, Any]:
+        body = await request.json()
+        client = self._build_openai_client(body, require_model=True)
+        try:
+            reply = client.test_model()
+        except Exception as exc:
+            raise HTTPException(status_code=502, detail=f"模型测试失败：{exc}")
+        return self._plugin._ok(
+            {
+                "model": client.model,
+                "reply": reply,
+            },
+            message=f"模型 {client.model} 可用",
+        )
+
     def api_tasks(self, request: Request) -> Dict[str, Any]:
         raw_paths = request.query_params.get("paths") or ""
         filter_paths = set()
@@ -143,3 +193,22 @@ class AutoSubTaskApi:
             limit = 300
         limit = min(max(limit, 1), 1000)
         return self._plugin._ok(self._plugin.tasks_payload(paths=list(filter_paths), limit=limit))
+
+    def _build_openai_client(self, body: Dict[str, Any], require_model: bool) -> OpenAi:
+        api_key = self._plugin._normalize_text(body.get("openai_key"))
+        api_url = self._plugin._normalize_text(body.get("openai_url")) or "https://api.openai.com"
+        model = self._plugin._normalize_text(body.get("openai_model"))
+        if not api_key:
+            raise HTTPException(status_code=400, detail="请先填写 API 密钥")
+        if not api_url:
+            raise HTTPException(status_code=400, detail="请先填写 API URL")
+        if require_model and not model:
+            raise HTTPException(status_code=400, detail="请先填写或选择模型")
+        proxy = getattr(settings, "PROXY", None) if body.get("openai_proxy") and settings else None
+        return OpenAi(
+            api_key=api_key,
+            api_url=api_url.rstrip("/"),
+            proxy=proxy,
+            model=model if require_model else None,
+            compatible=bool(body.get("compatible")),
+        )

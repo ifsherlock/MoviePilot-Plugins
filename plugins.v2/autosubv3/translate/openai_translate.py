@@ -62,6 +62,27 @@ class OpenAi:
                 message = [{"role": "user", "content": message}]
         return self.client.chat.completions.create(model=self._model, messages=message, **kwargs)
 
+    @property
+    def model(self) -> str:
+        return self._model
+
+    def list_models(self) -> List[str]:
+        response = self.client.models.list()
+        models = []
+        for item in getattr(response, "data", []) or []:
+            model_id = getattr(item, "id", None)
+            if model_id:
+                models.append(str(model_id))
+        return sorted(set(models))
+
+    def test_model(self) -> str:
+        completion = self.__get_model(
+            message="请回复 OK，用于测试模型是否可用。",
+            temperature=0,
+            max_tokens=8,
+        )
+        return (completion.choices[0].message.content or "").strip()
+
     @staticmethod
     def __clear_session(session_id: str):
         if OpenAISessionCache.get(session_id):
