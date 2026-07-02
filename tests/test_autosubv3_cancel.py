@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import importlib.util
 import json
 import queue
@@ -1002,6 +1003,142 @@ def test_autosubv3_task_apis_are_registered():
             "summary": "重新生成 AI 字幕任务",
         },
     }
+
+
+def test_task_api_payload_keeps_frontend_contract(tmp_path):
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    subtitle = tmp_path / "online.fixed.srt"
+    output = tmp_path / "Movie.chi.ai.srt"
+    video.write_bytes(b"video")
+    subtitle.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+
+    result = plugin.submit_tasks(
+        [str(video)],
+        source=module.TaskSource.SUBTITLE_MANUAL_UPLOAD.value,
+        subtitle_overrides={
+            str(video): {
+                "subtitle_path": str(subtitle),
+                "lang": "en",
+                "source_policy": "matched_external",
+            }
+        },
+    )
+    assert len(result["added"]) == 1
+    plugin._task_queue.get_nowait()
+    task = next(iter(plugin._tasks.values()))
+    task.status = module.TaskStatus.COMPLETED
+    task.complete_time = module.datetime.now()
+    task.resolved_source = module.ResolvedSource.MATCHED_EXTERNAL.value
+    task.source_lang = "en"
+    task.output_path = str(output)
+    task.output_variant = "ai"
+
+    payload = plugin.tasks_payload(paths=[str(video)], limit=10)
+    api_task = payload["tasks"][0]
+
+    assert {
+        "task_id",
+        "video_file",
+        "video_name",
+        "source",
+        "source_label",
+        "force_generate",
+        "source_subtitle_path",
+        "source_subtitle_name",
+        "source_subtitle_lang",
+        "trigger",
+        "source_policy",
+        "source_policy_label",
+        "resolved_source",
+        "resolved_source_label",
+        "source_asset_path",
+        "source_asset_name",
+        "source_lang",
+        "output_path",
+        "output_name",
+        "output_variant",
+        "reuse_output_path",
+        "reuse_source_lang",
+        "overwrite_policy",
+        "rerun_of",
+        "status",
+        "status_label",
+        "message",
+        "queue_position",
+        "add_time",
+        "complete_time",
+        "cancel_requested",
+        "active",
+    } <= set(api_task)
+    assert {"status", "tasks"} <= set(payload)
+    assert {
+        "available",
+        "enabled",
+        "running",
+        "queue_ready",
+        "counts",
+        "message",
+        "updated_at",
+    } <= set(payload["status"])
+    assert api_task["video_name"] == "Movie.mkv"
+    assert api_task["source_subtitle_name"] == "online.fixed.srt"
+    assert api_task["source_asset_name"] == "online.fixed.srt"
+    assert api_task["output_name"] == "Movie.chi.ai.srt"
+    assert api_task["status"] == "completed"
+    assert api_task["active"] is False
+    assert api_task["cancel_requested"] is False
+
+
+def test_autosubv3_layered_inventory_keeps_plugin_root_small():
+    root = Path(__file__).resolve().parents[1]
+    plugin_dir = root / "plugins.v2" / "autosubv3"
+
+    assert {path.name for path in plugin_dir.glob("*.py")} == {"__init__.py"}
+    for relative in {
+        "core/models.py",
+        "core/config_schema.py",
+        "core/legacy_views.py",
+        "core/compat_methods.py",
+        "storage/task_store.py",
+        "tasks/queue_worker.py",
+        "tasks/task_service.py",
+        "tasks/api.py",
+        "pipeline/subtitle_output.py",
+        "pipeline/source_resolver.py",
+        "pipeline/asr_service.py",
+        "pipeline/translation_service.py",
+        "pipeline/generation_pipeline.py",
+        "monitoring/monitor_service.py",
+    }:
+        assert (plugin_dir / relative).is_file()
+
+
+def test_autosubv3_shell_stays_below_size_budget():
+    root = Path(__file__).resolve().parents[1]
+    init_path = root / "plugins.v2" / "autosubv3" / "__init__.py"
+    source = init_path.read_text(encoding="utf-8-sig")
+    tree = ast.parse(source)
+    plugin_class = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.ClassDef) and node.name == "AutoSubv3"
+    )
+    direct_methods = {
+        node.name
+        for node in plugin_class.body
+        if isinstance(node, ast.FunctionDef)
+    }
+
+    assert len(source.splitlines()) < 800
+    assert len(direct_methods) <= 30
+    assert {
+        "__process_autosub",
+        "__translate_zh_subtitle",
+        "__do_speech_recognition",
+        "_consume_tasks",
+    }.isdisjoint(direct_methods)
 
 
 def test_translation_high_failure_rate_blocks_subtitle_output():
