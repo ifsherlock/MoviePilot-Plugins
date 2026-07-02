@@ -1,4 +1,4 @@
-import { u as unwrapResponse, D as DEFAULT_CONFIG, S as SHIMEJI_ACTIONS } from './provider-DlmSik0E.js';
+import { u as unwrapResponse, D as DEFAULT_CONFIG, S as SHIMEJI_ACTIONS } from './provider-0b6avniP.js';
 
 const PLUGIN_ID = 'AgentMascot';
 const ROOT_ID = 'agentmascot-global-root';

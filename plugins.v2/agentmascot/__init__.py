@@ -18,7 +18,7 @@ class AgentMascot(_PluginBase):
     plugin_name = "Agent 桌宠形象"
     plugin_desc = "为 MoviePilot 智能体提供可自定义的 Web 桌宠形象，内置小天照 Shimeji demo。"
     plugin_icon = "agentresourceofficer.png"
-    plugin_version = "0.1.10"
+    plugin_version = "0.1.11"
     plugin_author = "ifsherlock"
     author_url = "https://github.com/ifsherlock/MoviePilot-Plugins"
     plugin_config_prefix = "agentmascot_"

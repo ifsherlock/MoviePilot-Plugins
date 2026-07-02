@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { c as cloneConfig, S as SHIMEJI_ACTIONS, m as mascotIcon, u as unwrapResponse } from './provider-DlmSik0E.js';
+import { c as cloneConfig, S as SHIMEJI_ACTIONS, m as mascotIcon, u as unwrapResponse } from './provider-0b6avniP.js';
 
 const _export_sfc = (sfc, props) => {
   const target = sfc.__vccOpts || sfc;
@@ -1081,6 +1081,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-2558f33c"]]);
+const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-5c170f7e"]]);
 
 export { _export_sfc as _, AppPage as default };

@@ -76,7 +76,7 @@ $snippetBody = @'
           console.debug("[AgentMascot] loader api failed, trying static file", apiError);
         }
       }
-      await import("/api/v1/plugin/file/agentmascot/dist/assets/agentmascot-loader.js?agentmascot=0.1.10");
+      await import("/api/v1/plugin/file/agentmascot/dist/assets/agentmascot-loader.js?agentmascot=0.1.11");
     } catch (error) {
       agentMascotLoaderStarted = false;
       console.debug("[AgentMascot] loader skipped", error);
@@ -98,13 +98,20 @@ if (!(Test-Path -LiteralPath $indexPath)) {
 }
 
 $content = Get-Content -LiteralPath $indexPath -Raw
+$backupPath = "$indexPath.agentmascot.$(Get-Date -Format 'yyyyMMddHHmmssfff').bak"
+Copy-Item -LiteralPath $indexPath -Destination $backupPath
+
+$markerPattern = "(?s)" + [regex]::Escape($markerStart) + ".*?" + [regex]::Escape($markerEnd)
 if ($content.Contains($markerStart)) {
-  Write-Host "AgentMascot loader patch already exists: $indexPath"
+  if (!$content.Contains($markerEnd)) {
+    throw "AgentMascot loader patch marker is incomplete: $indexPath"
+  }
+  $content = [regex]::Replace($content, $markerPattern, [System.Text.RegularExpressions.MatchEvaluator]{ param($match) $snippet }, 1)
+  Set-Content -LiteralPath $indexPath -Value $content -Encoding UTF8
+  Write-Host "AgentMascot loader patch updated: $indexPath"
+  Write-Host "Backup: $backupPath"
   exit 0
 }
-
-$backupPath = "$indexPath.agentmascot.$(Get-Date -Format 'yyyyMMddHHmmss').bak"
-Copy-Item -LiteralPath $indexPath -Destination $backupPath
 
 if ($content -match "</head>") {
   $content = $content -replace "</head>", "$snippet`n</head>"

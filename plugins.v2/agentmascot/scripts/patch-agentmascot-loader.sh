@@ -11,12 +11,7 @@ if [ ! -f "$INDEX_PATH" ]; then
   exit 1
 fi
 
-if grep -q "$MARKER_START" "$INDEX_PATH"; then
-  echo "AgentMascot loader patch already exists: $INDEX_PATH"
-  exit 0
-fi
-
-BACKUP_PATH="$INDEX_PATH.agentmascot.$(date +%Y%m%d%H%M%S).bak"
+BACKUP_PATH="$INDEX_PATH.agentmascot.$(date +%Y%m%d%H%M%S).$$.bak"
 cp "$INDEX_PATH" "$BACKUP_PATH"
 
 python3 - "$INDEX_PATH" <<'PY'
@@ -25,6 +20,8 @@ import sys
 
 path = Path(sys.argv[1])
 content = path.read_text(encoding="utf-8")
+marker_start = "<!-- AgentMascot global loader start -->"
+marker_end = "<!-- AgentMascot global loader end -->"
 snippet = """<!-- AgentMascot global loader start -->
 <script type="module">
   let agentMascotLoaderStarted = false;
@@ -96,7 +93,7 @@ snippet = """<!-- AgentMascot global loader start -->
           console.debug("[AgentMascot] loader api failed, trying static file", apiError);
         }
       }
-      await import("/api/v1/plugin/file/agentmascot/dist/assets/agentmascot-loader.js?agentmascot=0.1.10");
+      await import("/api/v1/plugin/file/agentmascot/dist/assets/agentmascot-loader.js?agentmascot=0.1.11");
     } catch (error) {
       agentMascotLoaderStarted = false;
       console.debug("[AgentMascot] loader skipped", error);
@@ -111,6 +108,16 @@ snippet = """<!-- AgentMascot global loader start -->
 </script>
 <!-- AgentMascot global loader end -->"""
 
+if marker_start in content:
+    if marker_end not in content:
+        raise SystemExit(f"AgentMascot loader patch marker is incomplete: {path}")
+    start = content.index(marker_start)
+    end = content.index(marker_end, start) + len(marker_end)
+    content = content[:start] + snippet + content[end:]
+    path.write_text(content, encoding="utf-8")
+    print(f"AgentMascot loader patch updated: {path}")
+    raise SystemExit(0)
+
 if "</head>" in content:
     content = content.replace("</head>", snippet + "\n</head>", 1)
 elif "</body>" in content:
@@ -119,7 +126,7 @@ else:
     content = content + "\n" + snippet + "\n"
 
 path.write_text(content, encoding="utf-8")
+print(f"AgentMascot loader patch installed: {path}")
 PY
 
-echo "AgentMascot loader patch installed: $INDEX_PATH"
 echo "Backup: $BACKUP_PATH"
