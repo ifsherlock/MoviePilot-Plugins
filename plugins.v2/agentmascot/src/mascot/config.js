@@ -65,18 +65,6 @@ export const ACTION_MIN_DURATION = {
 
 export const REST_ACTIONS = ['stand', 'sit', 'lie', 'relaxedSit', 'dangleFeet', 'lookUp']
 
-export const DOM_SURFACE_SELECTORS = [
-  'main',
-  '.v-main',
-  '.v-container',
-  '.v-card',
-  '.v-sheet',
-  '.v-window',
-  '.v-table',
-  '[class*="dashboard"]',
-  '[class*="layout"]',
-].join(',')
-
 function clampNumber(value, minimum, maximum, defaultValue) {
   const number = Number(value)
   if (!Number.isFinite(number)) return defaultValue

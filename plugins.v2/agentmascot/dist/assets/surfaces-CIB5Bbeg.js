@@ -521,18 +521,6 @@ const ACTION_MIN_DURATION = {
 
 const REST_ACTIONS = ['stand', 'sit', 'lie', 'relaxedSit', 'dangleFeet', 'lookUp'];
 
-const DOM_SURFACE_SELECTORS = [
-  'main',
-  '.v-main',
-  '.v-container',
-  '.v-card',
-  '.v-sheet',
-  '.v-window',
-  '.v-table',
-  '[class*="dashboard"]',
-  '[class*="layout"]',
-].join(',');
-
 function clampNumber$1(value, minimum, maximum, defaultValue) {
   const number = Number(value);
   if (!Number.isFinite(number)) return defaultValue
@@ -570,7 +558,7 @@ function unwrapResponse(response) {
 
 const BASE_PET_SIZE = 92;
 
-function viewportDimension(bounds, key) {
+function viewportDimension$1(bounds, key) {
   const value = Number(bounds?.[key]);
   return Number.isFinite(value) ? value : 0
 }
@@ -596,7 +584,7 @@ function visualAnchor(pose, size, scale, lookRight = false) {
 }
 
 function groundAnchorY(bounds, groundPadding, viewportPadding = 0) {
-  return Math.max(viewportDimension(bounds, 'height') - viewportPadding - groundPadding, 0)
+  return Math.max(viewportDimension$1(bounds, 'height') - viewportPadding - groundPadding, 0)
 }
 
 function ceilingAnchorY(pose, size, scale, lookRight = false, viewportPadding = 0) {
@@ -606,7 +594,7 @@ function ceilingAnchorY(pose, size, scale, lookRight = false, viewportPadding = 
 function clampAnchorX(anchorX, bounds, pose, size, scale, lookRight = false, viewportPadding = 0) {
   const anchor = visualAnchor(pose, size, scale, lookRight);
   const minX = viewportPadding + anchor.x;
-  const maxX = Math.max(viewportDimension(bounds, 'width') - viewportPadding - (size - anchor.x), minX);
+  const maxX = Math.max(viewportDimension$1(bounds, 'width') - viewportPadding - (size - anchor.x), minX);
   return clampNumber(anchorX, minX, maxX)
 }
 
@@ -628,13 +616,13 @@ function normalizeLaneY(anchorY, bounds, pose, size, scale, lookRight = false, g
 
 function wallAnchorX(side, bounds, viewportPadding = 0) {
   if (side === 'left') return viewportPadding
-  return Math.max(viewportDimension(bounds, 'width') - viewportPadding, viewportPadding)
+  return Math.max(viewportDimension$1(bounds, 'width') - viewportPadding, viewportPadding)
 }
 
 function randomGroundX(bounds, size, viewportPadding = 0, random = Math.random) {
   const margin = size * 0.5 + viewportPadding;
   const minX = margin;
-  const maxX = Math.max(viewportDimension(bounds, 'width') - margin, minX);
+  const maxX = Math.max(viewportDimension$1(bounds, 'width') - margin, minX);
   return minX + random() * (maxX - minX)
 }
 
@@ -660,4 +648,121 @@ function wallTargetY(
   return top + random() * Math.max(bottom - top, 1)
 }
 
-export { ACTION_MIN_DURATION as A, wallTargetY as B, WALL_MARGIN as C, SHIMEJI_TICK_MS as D, normalizeConfig as E, FOLLOW_DEAD_ZONE as F, GROUND_PADDING as G, DEFAULT_CONFIG as H, SURFACE_SCAN_MS as I, DOM_SURFACE_SELECTORS as J, MAX_GROUND_STEP as M, ROAM_INTERVAL as R, SHIMEJI_ACTIONS as S, VIEWPORT_PADDING as V, WALL_REST_MIN as W, Y_FOLLOW_DWELL_MS as Y, poseScale as a, REST_ACTIONS as b, cloneConfig as c, ROAM_REST_MIN as d, ROAM_REST_RANGE as e, Y_FOLLOW_LANE_RADIUS as f, groundAnchorY as g, Y_FOLLOW_MIN_DELTA as h, clampAnchorX as i, clampAnchorY as j, RUN_DISTANCE as k, laneGap as l, mascotIcon as m, normalizeLaneY as n, Y_FOLLOW_COOLDOWN_MS as o, petSize as p, AIR_DRAG_X as q, AIR_DRAG_Y as r, AIR_GRAVITY as s, ceilingAnchorY as t, unwrapResponse as u, visualAnchor as v, wallAnchorX as w, WALL_REST_RANGE as x, randomGroundX as y, Y_FOLLOW_MOUSE_SPEED_MAX as z };
+const PREVIEW_SURFACE_RATIOS = [0.3, 0.44, 0.58, 0.72, 0.86];
+const DOM_SURFACE_RATIOS = [0.32, 0.46, 0.6, 0.74, 0.88];
+
+function viewportDimension(bounds, key) {
+  const value = Number(bounds?.[key]);
+  return Number.isFinite(value) ? value : 0
+}
+
+function normalizeLane(anchorY, context) {
+  return normalizeLaneY(
+    anchorY,
+    context.bounds,
+    context.pose,
+    context.size,
+    context.scale,
+    context.lookRight,
+    context.groundPadding,
+    context.viewportPadding || 0,
+  )
+}
+
+function groundLane(context) {
+  return groundAnchorY(context.bounds, context.groundPadding, context.viewportPadding || 0)
+}
+
+function surfaceGap(context) {
+  return laneGap(context.size, context.scale)
+}
+
+function buildSurfaceLanes(context, options = {}) {
+  const ratios = options.ratios || PREVIEW_SURFACE_RATIOS;
+  const candidates = ratios.map(ratio => viewportDimension(context.bounds, 'height') * ratio);
+  candidates.push(...(options.extraAnchors || []), groundLane(context));
+  return thinSurfaceLanes(candidates, context, options)
+}
+
+function thinSurfaceLanes(lanes, context, options = {}) {
+  const gap = surfaceGap(context);
+  const sorted = lanes
+    .map(lane => normalizeLane(lane, context))
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
+  const thinned = [];
+  for (const lane of sorted) {
+    if (!thinned.some(existing => Math.abs(existing - lane) < gap)) thinned.push(lane);
+  }
+  const ground = groundLane(context);
+  if (!thinned.some(lane => Math.abs(lane - ground) < gap * 0.5)) thinned.push(ground);
+  const result = thinned.sort((a, b) => a - b);
+  return options.limit ? result.slice(-options.limit) : result
+}
+
+function collectElementSurfaceAnchors(elements, bounds, options = {}) {
+  const {
+    getStyle,
+    horizontalPadding = 48,
+    laneOffset = 2,
+    minHeight = 44,
+    minWidth = 160,
+    onError,
+    shouldIgnoreElement,
+    topPadding = 64,
+    viewportPadding = 0,
+  } = options;
+  const anchors = [];
+  for (const element of Array.from(elements || [])) {
+    try {
+      if (!element || shouldIgnoreElement?.(element)) continue
+      const style = getStyle?.(element);
+      if (style?.display === 'none' || style?.visibility === 'hidden' || Number(style?.opacity) === 0) continue
+      const rect = element.getBoundingClientRect?.();
+      if (!rect) continue
+      if (rect.width < minWidth || rect.height < minHeight) continue
+      if (rect.bottom < viewportPadding + topPadding || rect.top > viewportDimension(bounds, 'height') - viewportPadding) continue
+      if (rect.left > viewportDimension(bounds, 'width') - horizontalPadding || rect.right < horizontalPadding) continue
+      anchors.push(rect.top + laneOffset, rect.bottom + laneOffset);
+    } catch (error) {
+      onError?.(error);
+    }
+  }
+  return anchors
+}
+
+function buildDomSurfaceLanes(context, elements, options = {}) {
+  const extraAnchors = collectElementSurfaceAnchors(elements, context.bounds, options);
+  return buildSurfaceLanes(context, {
+    extraAnchors,
+    limit: options.limit || 9,
+    ratios: options.ratios || DOM_SURFACE_RATIOS,
+  })
+}
+
+function nearestSurfaceLane(anchorY, lanes, fallbackLane) {
+  return lanes.reduce(
+    (best, lane) => (Math.abs(lane - anchorY) < Math.abs(best - anchorY) ? lane : best),
+    lanes[0] ?? fallbackLane,
+  )
+}
+
+function chooseSurfaceLane(lanes, options = {}) {
+  const {
+    current,
+    fallbackLane,
+    gap,
+    preferCurrent = true,
+    random = Math.random,
+  } = options;
+  if (preferCurrent && random() < 0.62) return nearestSurfaceLane(current, lanes, fallbackLane)
+  const playable = lanes.filter(lane => Math.abs(lane - current) > gap * 0.8);
+  const candidates = playable.length ? playable : lanes;
+  return candidates[Math.floor(random() * candidates.length)] ?? fallbackLane
+}
+
+function crossedSurfaceLane(previousY, currentY, lanes, tolerance) {
+  return lanes.find(lane => lane >= previousY - tolerance && lane <= currentY + tolerance) ?? null
+}
+
+export { ACTION_MIN_DURATION as A, WALL_REST_RANGE as B, randomGroundX as C, Y_FOLLOW_MOUSE_SPEED_MAX as D, crossedSurfaceLane as E, FOLLOW_DEAD_ZONE as F, GROUND_PADDING as G, wallTargetY as H, WALL_MARGIN as I, SHIMEJI_TICK_MS as J, normalizeConfig as K, DEFAULT_CONFIG as L, MAX_GROUND_STEP as M, SURFACE_SCAN_MS as N, buildDomSurfaceLanes as O, ROAM_INTERVAL as R, SHIMEJI_ACTIONS as S, VIEWPORT_PADDING as V, WALL_REST_MIN as W, Y_FOLLOW_DWELL_MS as Y, poseScale as a, chooseSurfaceLane as b, cloneConfig as c, buildSurfaceLanes as d, nearestSurfaceLane as e, REST_ACTIONS as f, groundAnchorY as g, ROAM_REST_MIN as h, ROAM_REST_RANGE as i, Y_FOLLOW_LANE_RADIUS as j, Y_FOLLOW_MIN_DELTA as k, laneGap as l, mascotIcon as m, normalizeLaneY as n, clampAnchorX as o, petSize as p, clampAnchorY as q, RUN_DISTANCE as r, Y_FOLLOW_COOLDOWN_MS as s, AIR_DRAG_X as t, unwrapResponse as u, visualAnchor as v, AIR_DRAG_Y as w, AIR_GRAVITY as x, wallAnchorX as y, ceilingAnchorY as z };

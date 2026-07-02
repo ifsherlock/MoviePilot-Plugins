@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-07-03-agentmascot-modularization-phased-plan.md",
   "status": {
     "phase": "phase-2",
-    "task": "2.3",
-    "next_allowed_action": "Implement task 2.3 by extracting DOM surface scanning and multi-height lane logic to surfaces.js; after verified completion, advance to task 2.4 automatically"
+    "task": "2.4",
+    "next_allowed_action": "Implement task 2.4 by extracting mouse dwell/follow and drag release logic; after verified completion, advance to task 2.5 automatically"
   },
   "execution_rules": {
     "branch": "codex/agentmascot-modularization",
@@ -134,9 +134,20 @@
         {
           "id": "2.3",
           "title": "提取 DOM 表面扫描和多高度 lane 逻辑",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            "Created src/mascot/surfaces.js for default surface ratios, DOM element anchor extraction, lane thinning, nearest lane, lane choice, and crossed landing checks",
+            "AppPage.vue now delegates preview multi-height lane generation, nearest/choose lane, and crossed landing checks to src/mascot/surfaces.js",
+            "global-loader.js now provides DOM_SURFACE_SELECTORS and document.querySelectorAll as adapter inputs while src/mascot/surfaces.js only accepts element/style callbacks",
+            "npm install was run to restore missing local vite; npm run build in plugins.v2\\agentmascot -> exits 0; node_modules and package-lock.json were removed after verification",
+            "python .github\\scripts\\check_plugin_versions.py package.json package.v2.json -> Plugin release version gate passed",
+            "python -m py_compile plugins.v2\\agentmascot\\__init__.py plugins.v2\\agentmascot\\config.py plugins.v2\\agentmascot\\api.py plugins.v2\\agentmascot\\loader.py plugins.v2\\agentmascot\\manifest.py -> exits 0",
+            "dist/assets/agentmascot-loader.js contains AgentMascot, agentmascot-global-root, and public_status",
+            "rg confirmed src/mascot has no querySelector, document/window access, agent-assistant selector, api/v1 path, fetch call, DOM_SURFACE_SELECTORS, .v-main, or dashboard selector strings",
+            "rg confirmed DOM_SURFACE_SELECTORS/querySelector remain in global-loader.js adapter while surfaces.js exposes collect/build helpers",
+            "git diff --check -> exits 0"
+          ],
+          "commit": "pending"
         },
         {
           "id": "2.4",
@@ -332,6 +343,12 @@
       "task": "2.2",
       "action": "Created src/mascot/geometry.js for pure geometry calculations and wired AppPage/global-loader to delegate anchor, wall, ceiling, ground, lane, and random target math through it while keeping DOM/window bounds reads in the entry files.",
       "verification": "npm run build, version gate, backend py_compile, dist loader string probe, geometry DOM/API grep, git diff --check, temporary dependency cleanup",
+      "result": "passed"
+    },
+    {
+      "task": "2.3",
+      "action": "Created src/mascot/surfaces.js for lane thinning, surface anchor extraction, nearest/choose lane, and landing-cross checks; AppPage and global-loader now delegate shared surface logic while global-loader keeps DOM selectors and document scanning as adapter inputs.",
+      "verification": "npm run build, version gate, backend py_compile, dist loader string probe, mascot core DOM/API grep, adapter selector grep, git diff --check, temporary dependency cleanup",
       "result": "passed"
     }
   ]

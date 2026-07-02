@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { c as cloneConfig, S as SHIMEJI_ACTIONS, p as petSize, a as poseScale, v as visualAnchor, m as mascotIcon, R as ROAM_INTERVAL, u as unwrapResponse, n as normalizeLaneY, l as laneGap, g as groundAnchorY, M as MAX_GROUND_STEP, b as REST_ACTIONS, d as ROAM_REST_MIN, e as ROAM_REST_RANGE, Y as Y_FOLLOW_DWELL_MS, f as Y_FOLLOW_LANE_RADIUS, h as Y_FOLLOW_MIN_DELTA, A as ACTION_MIN_DURATION, i as clampAnchorX, j as clampAnchorY, k as RUN_DISTANCE, o as Y_FOLLOW_COOLDOWN_MS, q as AIR_DRAG_X, r as AIR_DRAG_Y, s as AIR_GRAVITY, w as wallAnchorX, t as ceilingAnchorY, W as WALL_REST_MIN, x as WALL_REST_RANGE, F as FOLLOW_DEAD_ZONE, y as randomGroundX, z as Y_FOLLOW_MOUSE_SPEED_MAX, B as wallTargetY, G as GROUND_PADDING, C as WALL_MARGIN, D as SHIMEJI_TICK_MS } from './geometry--8IyZp0h.js';
+import { c as cloneConfig, S as SHIMEJI_ACTIONS, p as petSize, a as poseScale, v as visualAnchor, m as mascotIcon, b as chooseSurfaceLane, R as ROAM_INTERVAL, u as unwrapResponse, n as normalizeLaneY, d as buildSurfaceLanes, e as nearestSurfaceLane, l as laneGap, g as groundAnchorY, M as MAX_GROUND_STEP, f as REST_ACTIONS, h as ROAM_REST_MIN, i as ROAM_REST_RANGE, Y as Y_FOLLOW_DWELL_MS, j as Y_FOLLOW_LANE_RADIUS, k as Y_FOLLOW_MIN_DELTA, A as ACTION_MIN_DURATION, o as clampAnchorX, q as clampAnchorY, G as GROUND_PADDING, r as RUN_DISTANCE, s as Y_FOLLOW_COOLDOWN_MS, t as AIR_DRAG_X, w as AIR_DRAG_Y, x as AIR_GRAVITY, y as wallAnchorX, z as ceilingAnchorY, W as WALL_REST_MIN, B as WALL_REST_RANGE, F as FOLLOW_DEAD_ZONE, C as randomGroundX, D as Y_FOLLOW_MOUSE_SPEED_MAX, E as crossedSurfaceLane, H as wallTargetY, I as WALL_MARGIN, J as SHIMEJI_TICK_MS } from './surfaces-CIB5Bbeg.js';
 
 const _export_sfc = (sfc, props) => {
   const target = sfc.__vccOpts || sfc;
@@ -198,33 +198,35 @@ function normalizeLaneY$1(anchorY) {
   return normalizeLaneY(anchorY, stageBounds(), currentPose.value, petSize$1.value, poseScale$1.value, pet.lookRight, GROUND_PADDING)
 }
 
-function surfaceLanes() {
-  const bounds = stageBounds();
-  const candidates = [0.3, 0.44, 0.58, 0.72, 0.86].map(ratio => normalizeLaneY$1(bounds.height * ratio));
-  candidates.push(groundAnchorY$1());
-  const sorted = candidates.filter(Number.isFinite).sort((a, b) => a - b);
-  const lanes = [];
-  const gap = laneGap$1();
-  for (const lane of sorted) {
-    if (!lanes.some(existing => Math.abs(existing - lane) < gap)) lanes.push(lane);
+function surfaceContext() {
+  return {
+    bounds: stageBounds(),
+    pose: currentPose.value,
+    size: petSize$1.value,
+    scale: poseScale$1.value,
+    lookRight: pet.lookRight,
+    groundPadding: GROUND_PADDING,
   }
-  const ground = groundAnchorY$1();
-  if (!lanes.some(lane => Math.abs(lane - ground) < gap * 0.5)) lanes.push(ground);
-  return lanes.sort((a, b) => a - b)
+}
+
+function surfaceLanes() {
+  return buildSurfaceLanes(surfaceContext())
 }
 
 function nearestLaneToY(anchorY) {
   const lanes = surfaceLanes();
-  return lanes.reduce((best, lane) => (Math.abs(lane - anchorY) < Math.abs(best - anchorY) ? lane : best), lanes[0] ?? groundAnchorY$1())
+  return nearestSurfaceLane(anchorY, lanes, groundAnchorY$1())
 }
 
 function chooseLaneY(preferCurrent = true) {
   const lanes = surfaceLanes();
   const current = pet.laneY || nearestLaneToY(pet.anchorY);
-  if (preferCurrent && Math.random() < 0.62) return nearestLaneToY(current)
-  const playable = lanes.filter(lane => Math.abs(lane - current) > laneGap$1() * 0.8);
-  const candidates = playable.length ? playable : lanes;
-  return candidates[Math.floor(Math.random() * candidates.length)] ?? groundAnchorY$1()
+  return chooseSurfaceLane(lanes, {
+    current,
+    fallbackLane: groundAnchorY$1(),
+    gap: laneGap$1(),
+    preferCurrent,
+  })
 }
 
 function setLaneY(anchorY) {
@@ -235,7 +237,7 @@ function setLaneY(anchorY) {
 
 function crossedLandingY(previousY, currentY) {
   const tolerance = Math.max(8 * poseScale$1.value, 4);
-  return surfaceLanes().find(lane => lane >= previousY - tolerance && lane <= currentY + tolerance) ?? null
+  return crossedSurfaceLane(previousY, currentY, surfaceLanes(), tolerance)
 }
 
 function updateMouseIntent(x, y, timestamp = performance.now()) {
@@ -1022,6 +1024,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-c8091ad9"]]);
+const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-21386465"]]);
 
 export { _export_sfc as _, AppPage as default };

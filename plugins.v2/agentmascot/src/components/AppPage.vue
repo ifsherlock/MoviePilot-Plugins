@@ -39,6 +39,12 @@ import {
   wallAnchorX as calculateWallAnchorX,
   wallTargetY as calculateWallTargetY,
 } from '../mascot/geometry'
+import {
+  buildSurfaceLanes,
+  chooseSurfaceLane,
+  crossedSurfaceLane,
+  nearestSurfaceLane,
+} from '../mascot/surfaces'
 
 const props = defineProps({
   api: {
@@ -210,33 +216,35 @@ function normalizeLaneY(anchorY) {
   return calculateNormalizeLaneY(anchorY, stageBounds(), currentPose.value, petSize.value, poseScale.value, pet.lookRight, GROUND_PADDING)
 }
 
-function surfaceLanes() {
-  const bounds = stageBounds()
-  const candidates = [0.3, 0.44, 0.58, 0.72, 0.86].map(ratio => normalizeLaneY(bounds.height * ratio))
-  candidates.push(groundAnchorY())
-  const sorted = candidates.filter(Number.isFinite).sort((a, b) => a - b)
-  const lanes = []
-  const gap = laneGap()
-  for (const lane of sorted) {
-    if (!lanes.some(existing => Math.abs(existing - lane) < gap)) lanes.push(lane)
+function surfaceContext() {
+  return {
+    bounds: stageBounds(),
+    pose: currentPose.value,
+    size: petSize.value,
+    scale: poseScale.value,
+    lookRight: pet.lookRight,
+    groundPadding: GROUND_PADDING,
   }
-  const ground = groundAnchorY()
-  if (!lanes.some(lane => Math.abs(lane - ground) < gap * 0.5)) lanes.push(ground)
-  return lanes.sort((a, b) => a - b)
+}
+
+function surfaceLanes() {
+  return buildSurfaceLanes(surfaceContext())
 }
 
 function nearestLaneToY(anchorY) {
   const lanes = surfaceLanes()
-  return lanes.reduce((best, lane) => (Math.abs(lane - anchorY) < Math.abs(best - anchorY) ? lane : best), lanes[0] ?? groundAnchorY())
+  return nearestSurfaceLane(anchorY, lanes, groundAnchorY())
 }
 
 function chooseLaneY(preferCurrent = true) {
   const lanes = surfaceLanes()
   const current = pet.laneY || nearestLaneToY(pet.anchorY)
-  if (preferCurrent && Math.random() < 0.62) return nearestLaneToY(current)
-  const playable = lanes.filter(lane => Math.abs(lane - current) > laneGap() * 0.8)
-  const candidates = playable.length ? playable : lanes
-  return candidates[Math.floor(Math.random() * candidates.length)] ?? groundAnchorY()
+  return chooseSurfaceLane(lanes, {
+    current,
+    fallbackLane: groundAnchorY(),
+    gap: laneGap(),
+    preferCurrent,
+  })
 }
 
 function setLaneY(anchorY) {
@@ -247,7 +255,7 @@ function setLaneY(anchorY) {
 
 function crossedLandingY(previousY, currentY) {
   const tolerance = Math.max(8 * poseScale.value, 4)
-  return surfaceLanes().find(lane => lane >= previousY - tolerance && lane <= currentY + tolerance) ?? null
+  return crossedSurfaceLane(previousY, currentY, surfaceLanes(), tolerance)
 }
 
 function updateMouseIntent(x, y, timestamp = performance.now()) {

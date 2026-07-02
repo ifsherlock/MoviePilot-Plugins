@@ -5,7 +5,6 @@ import {
   AIR_DRAG_Y,
   AIR_GRAVITY,
   DEFAULT_CONFIG,
-  DOM_SURFACE_SELECTORS,
   FOLLOW_DEAD_ZONE,
   GROUND_PADDING,
   REST_ACTIONS,
@@ -40,6 +39,12 @@ import {
   wallAnchorX as calculateWallAnchorX,
   wallTargetY as calculateWallTargetY,
 } from './mascot/geometry'
+import {
+  buildDomSurfaceLanes,
+  chooseSurfaceLane,
+  crossedSurfaceLane,
+  nearestSurfaceLane,
+} from './mascot/surfaces'
 import { unwrapResponse } from './provider'
 
 const PLUGIN_ID = 'AgentMascot'
@@ -49,6 +54,17 @@ const HIDDEN_CLASS = 'agentmascot-native-hidden'
 const STATUS_PATH = `/api/v1/plugin/${PLUGIN_ID}/status`
 const PUBLIC_STATUS_PATH = `/api/v1/plugin/${PLUGIN_ID}/public_status`
 const CONFIG_POLL_MS = 15000
+const DOM_SURFACE_SELECTORS = [
+  'main',
+  '.v-main',
+  '.v-container',
+  '.v-card',
+  '.v-sheet',
+  '.v-window',
+  '.v-table',
+  '[class*="dashboard"]',
+  '[class*="layout"]',
+].join(',')
 let config = { ...DEFAULT_CONFIG }
 let root = null
 let img = null
@@ -277,69 +293,52 @@ function normalizeLaneY(anchorY) {
   )
 }
 
-function addSurfaceLane(lanes, anchorY) {
-  const lane = normalizeLaneY(anchorY)
-  if (!Number.isFinite(lane)) return
-  lanes.push(lane)
-}
-
-function thinSurfaceLanes(lanes) {
-  const gap = laneGap()
-  const sorted = lanes
-    .map(normalizeLaneY)
-    .filter(Number.isFinite)
-    .sort((a, b) => a - b)
-  const thinned = []
-  for (const lane of sorted) {
-    if (!thinned.some(existing => Math.abs(existing - lane) < gap)) thinned.push(lane)
+function surfaceContext() {
+  return {
+    bounds: viewportBounds(),
+    pose: currentPose(),
+    size: petSize(),
+    scale: poseScale(),
+    lookRight: pet.lookRight,
+    groundPadding: GROUND_PADDING,
+    viewportPadding: VIEWPORT_PADDING,
   }
-  const ground = groundAnchorY()
-  if (!thinned.some(lane => Math.abs(lane - ground) < gap * 0.5)) thinned.push(ground)
-  return thinned.sort((a, b) => a - b).slice(-9)
 }
 
 function collectSurfaceLanes(force = false) {
   const now = performance.now()
   if (!force && surfaceLanes.length && now - lastSurfaceScan < SURFACE_SCAN_MS) return surfaceLanes
 
-  const bounds = viewportBounds()
-  const lanes = []
-  ;[0.32, 0.46, 0.6, 0.74, 0.88].forEach(ratio => addSurfaceLane(lanes, bounds.height * ratio))
-  addSurfaceLane(lanes, groundAnchorY())
-
   try {
-    document.querySelectorAll(DOM_SURFACE_SELECTORS).forEach(element => {
-      if (!element || element === root || root?.contains(element) || nativeEntry?.contains(element)) return
-      const style = window.getComputedStyle(element)
-      if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return
-      const rect = element.getBoundingClientRect()
-      if (rect.width < 160 || rect.height < 44) return
-      if (rect.bottom < VIEWPORT_PADDING + 64 || rect.top > bounds.height - VIEWPORT_PADDING) return
-      if (rect.left > bounds.width - 48 || rect.right < 48) return
-      addSurfaceLane(lanes, rect.top + 2)
-      addSurfaceLane(lanes, rect.bottom + 2)
+    surfaceLanes = buildDomSurfaceLanes(surfaceContext(), document.querySelectorAll(DOM_SURFACE_SELECTORS), {
+      getStyle: element => window.getComputedStyle(element),
+      onError: error => console.debug('[AgentMascot] surface element skipped', error),
+      shouldIgnoreElement: element => element === root || root?.contains(element) || nativeEntry?.contains(element),
+      viewportPadding: VIEWPORT_PADDING,
     })
   } catch (error) {
     console.debug('[AgentMascot] surface scan skipped', error)
+    surfaceLanes = buildDomSurfaceLanes(surfaceContext(), [])
   }
 
-  surfaceLanes = thinSurfaceLanes(lanes)
   lastSurfaceScan = now
   return surfaceLanes
 }
 
 function nearestLaneToY(anchorY) {
   const lanes = collectSurfaceLanes()
-  return lanes.reduce((best, lane) => (Math.abs(lane - anchorY) < Math.abs(best - anchorY) ? lane : best), lanes[0] ?? groundAnchorY())
+  return nearestSurfaceLane(anchorY, lanes, groundAnchorY())
 }
 
 function chooseLaneY(preferCurrent = true) {
   const lanes = collectSurfaceLanes()
   const current = pet.laneY || nearestLaneToY(pet.anchorY)
-  if (preferCurrent && Math.random() < 0.62) return nearestLaneToY(current)
-  const playable = lanes.filter(lane => Math.abs(lane - current) > laneGap() * 0.8)
-  const candidates = playable.length ? playable : lanes
-  return candidates[Math.floor(Math.random() * candidates.length)] ?? groundAnchorY()
+  return chooseSurfaceLane(lanes, {
+    current,
+    fallbackLane: groundAnchorY(),
+    gap: laneGap(),
+    preferCurrent,
+  })
 }
 
 function setLaneY(anchorY) {
@@ -351,7 +350,7 @@ function setLaneY(anchorY) {
 function crossedLandingY(previousY, currentY) {
   const lanes = collectSurfaceLanes()
   const tolerance = Math.max(8 * poseScale(), 4)
-  return lanes.find(lane => lane >= previousY - tolerance && lane <= currentY + tolerance) ?? null
+  return crossedSurfaceLane(previousY, currentY, lanes, tolerance)
 }
 
 function updateMouseIntent(event, timestamp = performance.now()) {
