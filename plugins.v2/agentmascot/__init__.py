@@ -5,10 +5,9 @@ from fastapi import Body
 from fastapi.responses import Response
 
 from app import schemas
-from app.log import logger
 from app.plugins import _PluginBase
+from .api import AgentMascotApi
 from .config import apply_config_state, current_config_state
-from .loader import build_loader_response
 
 
 class AgentMascot(_PluginBase):
@@ -27,6 +26,7 @@ class AgentMascot(_PluginBase):
     auth_level = 1
 
     def init_plugin(self, config: dict = None):
+        self._api = AgentMascotApi(self, Path(__file__).resolve().parent)
         apply_config_state(self, config)
         self._save_config()
 
@@ -103,39 +103,13 @@ class AgentMascot(_PluginBase):
         self.update_config(self._current_config())
 
     def get_status(self) -> schemas.Response:
-        return schemas.Response(
-            success=True,
-            data={
-                "config": self._current_config(),
-                "summary": {
-                    "enabled": self.get_state(),
-                    "replace_agent_entry": bool(getattr(self, "_replace_agent_entry", True)),
-                    "avatar": "小天照 Shimeji demo",
-                    "actions": ["idle", "walk", "run", "follow", "drag", "sleep", "wall", "ceiling", "fall"],
-                },
-            },
-        )
+        return self._api.get_status()
 
     def get_public_status(self) -> schemas.Response:
-        return schemas.Response(
-            success=True,
-            data={
-                "config": self._current_config(),
-                "summary": {
-                    "enabled": self.get_state(),
-                    "replace_agent_entry": bool(getattr(self, "_replace_agent_entry", True)),
-                },
-            },
-        )
+        return self._api.get_public_status()
 
     def get_loader(self) -> Response:
-        return build_loader_response(Path(__file__).resolve().parent)
+        return self._api.get_loader()
 
     def save_config_api(self, config: dict = Body(...)) -> schemas.Response:
-        try:
-            apply_config_state(self, config)
-            self._save_config()
-            return schemas.Response(success=True, data=self.get_status().data)
-        except Exception as err:
-            logger.error(f"保存 Agent 桌宠配置失败: {err}")
-            return schemas.Response(success=False, message=str(err))
+        return self._api.save_config(config)
