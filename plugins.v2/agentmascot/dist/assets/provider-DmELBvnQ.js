@@ -465,8 +465,100 @@ const DEFAULT_CONFIG = {
   shadow: true,
 };
 
+const CONFIG_LIMITS = {
+  scale: { min: 0.6, max: 2, defaultValue: 1 },
+  speed: { min: 0.4, max: 2, defaultValue: 1 },
+};
+
+const SHIMEJI_CANVAS_SIZE = 128;
+const SHIMEJI_TICK_MS = 33;
+const ROAM_INTERVAL = 3200;
+const ROAM_REST_MIN = 9000;
+const ROAM_REST_RANGE = 26000;
+const WALL_REST_MIN = 9000;
+const WALL_REST_RANGE = 24000;
+const FOLLOW_DEAD_ZONE = 92;
+const RUN_DISTANCE = 260;
+const VIEWPORT_PADDING = 12;
+const GROUND_PADDING = 18;
+const MAX_GROUND_STEP = 260;
+const WALL_MARGIN = 72;
+const SURFACE_SCAN_MS = 1200;
+const LANE_MIN_GAP = 54;
+const Y_FOLLOW_DWELL_MS = 1100;
+const Y_FOLLOW_COOLDOWN_MS = 4200;
+const Y_FOLLOW_LANE_RADIUS = 120;
+const Y_FOLLOW_MOUSE_SPEED_MAX = 0.45;
+const Y_FOLLOW_MIN_DELTA = 90;
+const AIR_GRAVITY = 1.05;
+const AIR_DRAG_X = 0.982;
+const AIR_DRAG_Y = 0.99;
+
+const ACTION_MIN_DURATION = {
+  stand: 520,
+  walk: 620,
+  run: 700,
+  dash: 700,
+  drag: 0,
+  resist: 0,
+  lie: 9000,
+  sit: 9000,
+  relaxedSit: 9000,
+  sitFeetDown: 5000,
+  dangleFeet: 12000,
+  lookUp: 8000,
+  crawl: 1600,
+  jump: 500,
+  fall: 500,
+  bounce: 450,
+  holdWall: 7000,
+  climbWallUp: 700,
+  climbWallDown: 700,
+  holdCeiling: 7000,
+  crawlCeiling: 700,
+  split: 1500,
+};
+
+const REST_ACTIONS = ['stand', 'sit', 'lie', 'relaxedSit', 'dangleFeet', 'lookUp'];
+
+const DOM_SURFACE_SELECTORS = [
+  'main',
+  '.v-main',
+  '.v-container',
+  '.v-card',
+  '.v-sheet',
+  '.v-window',
+  '.v-table',
+  '[class*="dashboard"]',
+  '[class*="layout"]',
+].join(',');
+
+function clampNumber(value, minimum, maximum, defaultValue) {
+  const number = Number(value);
+  if (!Number.isFinite(number)) return defaultValue
+  return Math.min(Math.max(number, minimum), maximum)
+}
+
+function normalizeConfig(config) {
+  const rawConfig = config || {};
+  const normalized = {
+    ...DEFAULT_CONFIG,
+    ...rawConfig,
+    enabled: Boolean(rawConfig.enabled ?? DEFAULT_CONFIG.enabled),
+    replace_agent_entry: Boolean(rawConfig.replace_agent_entry ?? DEFAULT_CONFIG.replace_agent_entry),
+    show_sidebar_nav: Boolean(rawConfig.show_sidebar_nav ?? DEFAULT_CONFIG.show_sidebar_nav),
+    follow_mouse: Boolean(rawConfig.follow_mouse ?? DEFAULT_CONFIG.follow_mouse),
+    auto_roam: Boolean(rawConfig.auto_roam ?? DEFAULT_CONFIG.auto_roam),
+    shadow: Boolean(rawConfig.shadow ?? DEFAULT_CONFIG.shadow),
+  };
+  for (const [key, limit] of Object.entries(CONFIG_LIMITS)) {
+    normalized[key] = clampNumber(rawConfig[key], limit.min, limit.max, limit.defaultValue);
+  }
+  return normalized
+}
+
 function cloneConfig(config) {
-  return JSON.parse(JSON.stringify({ ...DEFAULT_CONFIG, ...(config || {}) }))
+  return JSON.parse(JSON.stringify(normalizeConfig(config)))
 }
 
 function unwrapResponse(response) {
@@ -476,4 +568,4 @@ function unwrapResponse(response) {
   return response?.data ?? response
 }
 
-export { DEFAULT_CONFIG as D, SHIMEJI_ACTIONS as S, cloneConfig as c, mascotIcon as m, unwrapResponse as u };
+export { ACTION_MIN_DURATION as A, DEFAULT_CONFIG as D, FOLLOW_DEAD_ZONE as F, GROUND_PADDING as G, LANE_MIN_GAP as L, MAX_GROUND_STEP as M, ROAM_INTERVAL as R, SHIMEJI_ACTIONS as S, VIEWPORT_PADDING as V, WALL_REST_MIN as W, Y_FOLLOW_DWELL_MS as Y, SHIMEJI_CANVAS_SIZE as a, REST_ACTIONS as b, cloneConfig as c, ROAM_REST_MIN as d, ROAM_REST_RANGE as e, Y_FOLLOW_LANE_RADIUS as f, Y_FOLLOW_MIN_DELTA as g, RUN_DISTANCE as h, Y_FOLLOW_COOLDOWN_MS as i, AIR_DRAG_X as j, AIR_DRAG_Y as k, AIR_GRAVITY as l, mascotIcon as m, WALL_REST_RANGE as n, Y_FOLLOW_MOUSE_SPEED_MAX as o, WALL_MARGIN as p, SHIMEJI_TICK_MS as q, normalizeConfig as r, SURFACE_SCAN_MS as s, DOM_SURFACE_SELECTORS as t, unwrapResponse as u };

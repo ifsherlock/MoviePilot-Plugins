@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-07-03-agentmascot-modularization-phased-plan.md",
   "status": {
     "phase": "phase-2",
-    "task": "2.1",
-    "next_allowed_action": "Implement task 2.1 by extracting frontend config and constants to src/mascot/config.js; after verified completion, advance to task 2.2 automatically"
+    "task": "2.2",
+    "next_allowed_action": "Implement task 2.2 by extracting geometry, anchor, wall, ceiling, ground, and lane calculations; after verified completion, advance to task 2.3 automatically"
   },
   "execution_rules": {
     "branch": "codex/agentmascot-modularization",
@@ -104,9 +104,16 @@
         {
           "id": "2.1",
           "title": "提取前端配置和常量到 mascot/config.js",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            "npm install was run to restore missing local vite; node_modules and package-lock.json were removed after verification",
+            "npm run build in plugins.v2\\agentmascot -> exits 0",
+            "python .github\\scripts\\check_plugin_versions.py package.json package.v2.json -> Plugin release version gate passed",
+            "python -m py_compile phase-1 backend modules -> exits 0",
+            "dist/assets/agentmascot-loader.js contains AgentMascot, agentmascot-global-root, and public_status",
+            "rg confirmed duplicated config/runtime constants now live only in src/mascot/config.js for this task scope"
+          ],
+          "commit": "pending"
         },
         {
           "id": "2.2",
@@ -304,6 +311,12 @@
       "phase": "phase-1",
       "action": "Completed backend plugin shell slimming.",
       "verification": "phase-1 acceptance passed: version gate, py_compile for __init__/config/api/loader/manifest, endpoint path/auth inspection, no dist changes",
+      "result": "passed"
+    },
+    {
+      "task": "2.1",
+      "action": "Created src/mascot/config.js for frontend default config, normalization, numeric limits, and shared runtime constants; provider/global-loader/AppPage now import those values.",
+      "verification": "npm run build, version gate, backend py_compile, dist loader string probe, duplicate constant grep, temporary dependency cleanup",
       "result": "passed"
     }
   ]

@@ -2,6 +2,31 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue'
 import { SHIMEJI_ACTIONS, mascotIcon } from '../assets/shimeji/frames'
 import { cloneConfig, unwrapResponse } from '../provider'
+import {
+  ACTION_MIN_DURATION,
+  AIR_DRAG_X,
+  AIR_DRAG_Y,
+  AIR_GRAVITY,
+  FOLLOW_DEAD_ZONE,
+  GROUND_PADDING,
+  LANE_MIN_GAP,
+  MAX_GROUND_STEP,
+  REST_ACTIONS,
+  ROAM_INTERVAL,
+  ROAM_REST_MIN,
+  ROAM_REST_RANGE,
+  RUN_DISTANCE,
+  SHIMEJI_CANVAS_SIZE,
+  SHIMEJI_TICK_MS,
+  WALL_MARGIN,
+  WALL_REST_MIN,
+  WALL_REST_RANGE,
+  Y_FOLLOW_COOLDOWN_MS,
+  Y_FOLLOW_DWELL_MS,
+  Y_FOLLOW_LANE_RADIUS,
+  Y_FOLLOW_MIN_DELTA,
+  Y_FOLLOW_MOUSE_SPEED_MAX,
+} from '../mascot/config'
 
 const props = defineProps({
   api: {
@@ -68,53 +93,6 @@ let pointerOffset = { x: 0, y: 0 }
 let actionLockedUntil = 0
 let mouseActiveUntil = 0
 let roamPausedUntil = 0
-
-const SHIMEJI_CANVAS_SIZE = 128
-const SHIMEJI_TICK_MS = 33
-const ROAM_INTERVAL = 3200
-const ROAM_REST_MIN = 9000
-const ROAM_REST_RANGE = 26000
-const WALL_REST_MIN = 9000
-const WALL_REST_RANGE = 24000
-const FOLLOW_DEAD_ZONE = 92
-const RUN_DISTANCE = 260
-const GROUND_PADDING = 18
-const MAX_GROUND_STEP = 260
-const WALL_MARGIN = 72
-const LANE_MIN_GAP = 54
-const Y_FOLLOW_DWELL_MS = 1100
-const Y_FOLLOW_COOLDOWN_MS = 4200
-const Y_FOLLOW_LANE_RADIUS = 120
-const Y_FOLLOW_MOUSE_SPEED_MAX = 0.45
-const Y_FOLLOW_MIN_DELTA = 90
-const AIR_GRAVITY = 1.05
-const AIR_DRAG_X = 0.982
-const AIR_DRAG_Y = 0.99
-const ACTION_MIN_DURATION = {
-  stand: 520,
-  walk: 620,
-  run: 700,
-  dash: 700,
-  drag: 0,
-  resist: 0,
-  lie: 9000,
-  sit: 9000,
-  relaxedSit: 9000,
-  sitFeetDown: 5000,
-  dangleFeet: 12000,
-  lookUp: 8000,
-  crawl: 1600,
-  jump: 500,
-  fall: 500,
-  bounce: 450,
-  holdWall: 7000,
-  climbWallUp: 700,
-  climbWallDown: 700,
-  holdCeiling: 7000,
-  crawlCeiling: 700,
-  split: 1500,
-}
-const REST_ACTIONS = ['stand', 'sit', 'lie', 'relaxedSit', 'dangleFeet', 'lookUp']
 
 const currentAction = computed(() => SHIMEJI_ACTIONS[action.value] || SHIMEJI_ACTIONS.stand)
 const currentPose = computed(() => {

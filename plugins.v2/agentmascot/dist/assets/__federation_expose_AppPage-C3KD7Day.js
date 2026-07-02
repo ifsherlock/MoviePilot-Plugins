@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { c as cloneConfig, S as SHIMEJI_ACTIONS, m as mascotIcon, u as unwrapResponse } from './provider-0b6avniP.js';
+import { c as cloneConfig, S as SHIMEJI_ACTIONS, a as SHIMEJI_CANVAS_SIZE, m as mascotIcon, R as ROAM_INTERVAL, u as unwrapResponse, G as GROUND_PADDING, L as LANE_MIN_GAP, M as MAX_GROUND_STEP, b as REST_ACTIONS, d as ROAM_REST_MIN, e as ROAM_REST_RANGE, Y as Y_FOLLOW_DWELL_MS, f as Y_FOLLOW_LANE_RADIUS, g as Y_FOLLOW_MIN_DELTA, A as ACTION_MIN_DURATION, h as RUN_DISTANCE, i as Y_FOLLOW_COOLDOWN_MS, j as AIR_DRAG_X, k as AIR_DRAG_Y, l as AIR_GRAVITY, W as WALL_REST_MIN, n as WALL_REST_RANGE, F as FOLLOW_DEAD_ZONE, o as Y_FOLLOW_MOUSE_SPEED_MAX, p as WALL_MARGIN, q as SHIMEJI_TICK_MS } from './provider-DmELBvnQ.js';
 
 const _export_sfc = (sfc, props) => {
   const target = sfc.__vccOpts || sfc;
@@ -27,27 +27,6 @@ const _hoisted_9 = { class: "control-slider" };
 
 const {computed,nextTick,onBeforeUnmount,onMounted,reactive,ref,watch} = await importShared('vue');
 
-const SHIMEJI_CANVAS_SIZE = 128;
-const SHIMEJI_TICK_MS = 33;
-const ROAM_INTERVAL = 3200;
-const ROAM_REST_MIN = 9000;
-const ROAM_REST_RANGE = 26000;
-const WALL_REST_MIN = 9000;
-const WALL_REST_RANGE = 24000;
-const FOLLOW_DEAD_ZONE = 92;
-const RUN_DISTANCE = 260;
-const GROUND_PADDING = 18;
-const MAX_GROUND_STEP = 260;
-const WALL_MARGIN = 72;
-const LANE_MIN_GAP = 54;
-const Y_FOLLOW_DWELL_MS = 1100;
-const Y_FOLLOW_COOLDOWN_MS = 4200;
-const Y_FOLLOW_LANE_RADIUS = 120;
-const Y_FOLLOW_MOUSE_SPEED_MAX = 0.45;
-const Y_FOLLOW_MIN_DELTA = 90;
-const AIR_GRAVITY = 1.05;
-const AIR_DRAG_X = 0.982;
-const AIR_DRAG_Y = 0.99;
 
 const _sfc_main = {
   __name: 'AppPage',
@@ -119,32 +98,6 @@ let pointerOffset = { x: 0, y: 0 };
 let actionLockedUntil = 0;
 let mouseActiveUntil = 0;
 let roamPausedUntil = 0;
-
-const ACTION_MIN_DURATION = {
-  stand: 520,
-  walk: 620,
-  run: 700,
-  dash: 700,
-  drag: 0,
-  resist: 0,
-  lie: 9000,
-  sit: 9000,
-  relaxedSit: 9000,
-  sitFeetDown: 5000,
-  dangleFeet: 12000,
-  lookUp: 8000,
-  crawl: 1600,
-  jump: 500,
-  fall: 500,
-  bounce: 450,
-  holdWall: 7000,
-  climbWallUp: 700,
-  climbWallDown: 700,
-  holdCeiling: 7000,
-  crawlCeiling: 700,
-  split: 1500,
-};
-const REST_ACTIONS = ['stand', 'sit', 'lie', 'relaxedSit', 'dangleFeet', 'lookUp'];
 
 const currentAction = computed(() => SHIMEJI_ACTIONS[action.value] || SHIMEJI_ACTIONS.stand);
 const currentPose = computed(() => {
@@ -1081,6 +1034,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-5c170f7e"]]);
+const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-2f9698c9"]]);
 
 export { _export_sfc as _, AppPage as default };

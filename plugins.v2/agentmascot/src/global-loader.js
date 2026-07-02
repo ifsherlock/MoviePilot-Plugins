@@ -1,5 +1,34 @@
 import { SHIMEJI_ACTIONS } from './assets/shimeji/frames'
-import { DEFAULT_CONFIG, unwrapResponse } from './provider'
+import {
+  ACTION_MIN_DURATION,
+  AIR_DRAG_X,
+  AIR_DRAG_Y,
+  AIR_GRAVITY,
+  DEFAULT_CONFIG,
+  DOM_SURFACE_SELECTORS,
+  FOLLOW_DEAD_ZONE,
+  GROUND_PADDING,
+  LANE_MIN_GAP,
+  REST_ACTIONS,
+  ROAM_INTERVAL,
+  ROAM_REST_MIN,
+  ROAM_REST_RANGE,
+  RUN_DISTANCE,
+  SHIMEJI_CANVAS_SIZE,
+  SHIMEJI_TICK_MS,
+  SURFACE_SCAN_MS,
+  VIEWPORT_PADDING,
+  WALL_MARGIN,
+  WALL_REST_MIN,
+  WALL_REST_RANGE,
+  Y_FOLLOW_COOLDOWN_MS,
+  Y_FOLLOW_DWELL_MS,
+  Y_FOLLOW_LANE_RADIUS,
+  Y_FOLLOW_MIN_DELTA,
+  Y_FOLLOW_MOUSE_SPEED_MAX,
+  normalizeConfig,
+} from './mascot/config'
+import { unwrapResponse } from './provider'
 
 const PLUGIN_ID = 'AgentMascot'
 const ROOT_ID = 'agentmascot-global-root'
@@ -8,64 +37,6 @@ const HIDDEN_CLASS = 'agentmascot-native-hidden'
 const STATUS_PATH = `/api/v1/plugin/${PLUGIN_ID}/status`
 const PUBLIC_STATUS_PATH = `/api/v1/plugin/${PLUGIN_ID}/public_status`
 const CONFIG_POLL_MS = 15000
-const SHIMEJI_CANVAS_SIZE = 128
-const SHIMEJI_TICK_MS = 33
-const ROAM_INTERVAL = 3200
-const ROAM_REST_MIN = 9000
-const ROAM_REST_RANGE = 26000
-const WALL_REST_MIN = 9000
-const WALL_REST_RANGE = 24000
-const FOLLOW_DEAD_ZONE = 92
-const RUN_DISTANCE = 260
-const VIEWPORT_PADDING = 12
-const GROUND_PADDING = 18
-const WALL_MARGIN = 72
-const SURFACE_SCAN_MS = 1200
-const LANE_MIN_GAP = 54
-const Y_FOLLOW_DWELL_MS = 1100
-const Y_FOLLOW_COOLDOWN_MS = 4200
-const Y_FOLLOW_LANE_RADIUS = 120
-const Y_FOLLOW_MOUSE_SPEED_MAX = 0.45
-const Y_FOLLOW_MIN_DELTA = 90
-const AIR_GRAVITY = 1.05
-const AIR_DRAG_X = 0.982
-const AIR_DRAG_Y = 0.99
-const DOM_SURFACE_SELECTORS = [
-  'main',
-  '.v-main',
-  '.v-container',
-  '.v-card',
-  '.v-sheet',
-  '.v-window',
-  '.v-table',
-  '[class*="dashboard"]',
-  '[class*="layout"]',
-].join(',')
-const ACTION_MIN_DURATION = {
-  stand: 520,
-  walk: 620,
-  run: 700,
-  dash: 700,
-  drag: 0,
-  resist: 0,
-  lie: 9000,
-  sit: 9000,
-  relaxedSit: 9000,
-  dangleFeet: 12000,
-  lookUp: 8000,
-  crawl: 1600,
-  jump: 500,
-  fall: 500,
-  bounce: 450,
-  holdWall: 7000,
-  climbWallUp: 700,
-  climbWallDown: 700,
-  holdCeiling: 7000,
-  crawlCeiling: 700,
-  split: 1500,
-}
-const REST_ACTIONS = ['stand', 'sit', 'lie', 'relaxedSit', 'dangleFeet', 'lookUp']
-
 let config = { ...DEFAULT_CONFIG }
 let root = null
 let img = null
@@ -212,12 +183,12 @@ async function loadConfig() {
     })
     if (!publicResponse.ok) throw new Error(`AgentMascot public status ${publicResponse.status}`)
     const data = unwrapResponse(await publicResponse.json())
-    config = { ...DEFAULT_CONFIG, ...(data?.config || {}) }
+    config = normalizeConfig(data?.config)
     return config
   }
   if (!response.ok) throw new Error(`AgentMascot status ${response.status}`)
   const data = unwrapResponse(await response.json())
-  config = { ...DEFAULT_CONFIG, ...(data?.config || {}) }
+  config = normalizeConfig(data?.config)
   return config
 }
 
