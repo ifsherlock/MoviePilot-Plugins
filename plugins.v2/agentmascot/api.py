@@ -7,9 +7,7 @@ from app import schemas
 from app.log import logger
 from .config import apply_config_state
 from .loader import build_loader_response
-
-
-ACTION_SUMMARY = ["idle", "walk", "run", "follow", "drag", "sleep", "wall", "ceiling", "fall"]
+from .manifest import ACTION_SUMMARY, AVATAR_SUMMARY
 
 
 class AgentMascotApi:
@@ -25,7 +23,7 @@ class AgentMascotApi:
                 "summary": {
                     "enabled": self._plugin.get_state(),
                     "replace_agent_entry": bool(getattr(self._plugin, "_replace_agent_entry", True)),
-                    "avatar": "小天照 Shimeji demo",
+                    "avatar": AVATAR_SUMMARY,
                     "actions": ACTION_SUMMARY,
                 },
             },

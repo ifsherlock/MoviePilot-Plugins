@@ -8,6 +8,20 @@ from app import schemas
 from app.plugins import _PluginBase
 from .api import AgentMascotApi
 from .config import apply_config_state, current_config_state
+from .manifest import (
+    AUTH_LEVEL,
+    AUTHOR_URL,
+    PLUGIN_AUTHOR,
+    PLUGIN_CONFIG_PREFIX,
+    PLUGIN_DESC,
+    PLUGIN_ICON,
+    PLUGIN_NAME,
+    PLUGIN_ORDER,
+    SIDEBAR_NAV_ICON,
+    SIDEBAR_NAV_PERMISSION,
+    SIDEBAR_NAV_SECTION,
+    SIDEBAR_NAV_TITLE,
+)
 
 
 class AgentMascot(_PluginBase):
@@ -15,15 +29,15 @@ class AgentMascot(_PluginBase):
     MoviePilot Agent 桌宠形象 demo。
     """
 
-    plugin_name = "Agent 桌宠形象"
-    plugin_desc = "为 MoviePilot 智能体提供可自定义的 Web 桌宠形象，内置小天照 Shimeji demo。"
-    plugin_icon = "agentresourceofficer.png"
+    plugin_name = PLUGIN_NAME
+    plugin_desc = PLUGIN_DESC
+    plugin_icon = PLUGIN_ICON
     plugin_version = "0.1.11"
-    plugin_author = "ifsherlock"
-    author_url = "https://github.com/ifsherlock/MoviePilot-Plugins"
-    plugin_config_prefix = "agentmascot_"
-    plugin_order = 47
-    auth_level = 1
+    plugin_author = PLUGIN_AUTHOR
+    author_url = AUTHOR_URL
+    plugin_config_prefix = PLUGIN_CONFIG_PREFIX
+    plugin_order = PLUGIN_ORDER
+    auth_level = AUTH_LEVEL
 
     def init_plugin(self, config: dict = None):
         self._api = AgentMascotApi(self, Path(__file__).resolve().parent)
@@ -85,11 +99,11 @@ class AgentMascot(_PluginBase):
         return [
             {
                 "nav_key": "main",
-                "title": "Agent 桌宠",
-                "icon": "mdi-paw",
-                "section": "system",
-                "permission": "manage",
-                "order": 47,
+                "title": SIDEBAR_NAV_TITLE,
+                "icon": SIDEBAR_NAV_ICON,
+                "section": SIDEBAR_NAV_SECTION,
+                "permission": SIDEBAR_NAV_PERMISSION,
+                "order": PLUGIN_ORDER,
             }
         ]
 
