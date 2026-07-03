@@ -697,7 +697,7 @@ export function createMascotRuntime(options = {}) {
       pet.stateUntil = 0
       setAction('stand', now(), { force: true })
       onUpdate()
-    }, 1600)
+    }, ACTION_MIN_DURATION.split)
     onUpdate()
   }
 

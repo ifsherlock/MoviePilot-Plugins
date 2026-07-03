@@ -6,6 +6,12 @@ import kurisuIdle from '../assets/kurisu/frames/idle.png'
 import kurisuLand from '../assets/kurisu/frames/land.png'
 import kurisuSleep from '../assets/kurisu/frames/sleep.png'
 import kurisuSpin from '../assets/kurisu/frames/spin.png'
+import kurisuSpin1 from '../assets/kurisu/frames/spin1.png'
+import kurisuSpin2 from '../assets/kurisu/frames/spin2.png'
+import kurisuSpin3 from '../assets/kurisu/frames/spin3.png'
+import kurisuSpin4 from '../assets/kurisu/frames/spin4.png'
+import kurisuSpin5 from '../assets/kurisu/frames/spin5.png'
+import kurisuSpin6 from '../assets/kurisu/frames/spin6.png'
 import kurisuSurprise from '../assets/kurisu/frames/surprise.png'
 import kurisuThink from '../assets/kurisu/frames/think.png'
 import kurisuWalk1 from '../assets/kurisu/frames/walk1.png'
@@ -261,19 +267,19 @@ export const MASCOT_PROFILES = {
       shime40: kurisuSurprise,
       shime41: kurisuIdle,
       shime42: kurisuCheer,
-      shime43: kurisuSpin,
-      shime44: kurisuCheer,
-      shime45: kurisuSpin,
-      shime46: kurisuCheer,
+      shime43: kurisuSpin1,
+      shime44: kurisuSpin2,
+      shime45: kurisuSpin3,
+      shime46: kurisuSpin4,
       shime47: kurisuWalk1,
       shime48: kurisuWalk2,
       shime49: kurisuWalk1,
       shime50: kurisuSleep,
       shime51: kurisuIdle,
-      shime52: kurisuCheer,
-      shime53: kurisuSpin,
-      shime54: kurisuCheer,
-      shime55: kurisuSpin,
+      shime52: kurisuSpin5,
+      shime53: kurisuSpin6,
+      shime54: kurisuSpin,
+      shime55: kurisuCheer,
       shime56: kurisuIdle,
       shime57: kurisuThink,
       shime58: kurisuCheer,

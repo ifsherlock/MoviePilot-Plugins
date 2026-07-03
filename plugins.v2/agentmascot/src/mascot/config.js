@@ -61,7 +61,7 @@ export const ACTION_MIN_DURATION = {
   climbWallDown: 700,
   holdCeiling: 7000,
   crawlCeiling: 700,
-  split: 1500,
+  split: 4200,
 }
 
 function clampNumber(value, minimum, maximum, defaultValue) {

@@ -5,6 +5,7 @@ import { fileURLToPath } from 'node:url'
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const sourceRoot = path.join(pluginRoot, 'src')
 const shimejiRoot = path.join(sourceRoot, 'assets', 'shimeji')
+const kurisuRoot = path.join(sourceRoot, 'assets', 'kurisu', 'frames')
 const requiredCatalogKeys = ['ground', 'air', 'wall', 'ceiling', 'drag', 'rest', 'special']
 const failures = []
 
@@ -110,6 +111,17 @@ async function collectAssets(source) {
   return assets
 }
 
+async function readPngInfo(filePath) {
+  const data = await fs.readFile(filePath)
+  if (data.toString('ascii', 1, 4) !== 'PNG') {
+    fail(`Not a PNG file: ${filePath}`)
+    return null
+  }
+  const width = data.readUInt32BE(16)
+  const height = data.readUInt32BE(20)
+  return { data, height, width }
+}
+
 function resolveAnchor(value, anchors) {
   if (!value) return anchors.get('GROUND_FOOT_ANCHOR') || null
   if (anchors.has(value)) return anchors.get(value)
@@ -199,6 +211,22 @@ function validateMascotMotionAssets(source) {
   }
 }
 
+async function validateKurisuSpinFrames() {
+  const required = ['spin.png', 'spin1.png', 'spin2.png', 'spin3.png', 'spin4.png', 'spin5.png', 'spin6.png']
+  for (const fileName of required) {
+    const filePath = path.join(kurisuRoot, fileName)
+    try {
+      const info = await readPngInfo(filePath)
+      if (!info) continue
+      if (info.width !== 384 || info.height !== 384) {
+        fail(`Kurisu ${fileName} must be 384x384, got ${info.width}x${info.height}`)
+      }
+    } catch {
+      fail(`Missing Kurisu spin frame: ${fileName}`)
+    }
+  }
+}
+
 const [assetsSource, actionsSource, anchorsSource, catalogSource] = await Promise.all([
   readSource('mascot/assets.js'),
   readSource('mascot/actions.js'),
@@ -213,6 +241,7 @@ const categories = collectCatalog(catalogSource)
 const poseCount = validatePoses(actionsSource, assets, anchors)
 validateCatalog(categories, actionNames)
 validateMascotMotionAssets(assetsSource)
+await validateKurisuSpinFrames()
 
 if (failures.length) {
   console.error('[AgentMascot] asset/action validation failed')
