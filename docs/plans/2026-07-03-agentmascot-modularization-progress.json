@@ -476,7 +476,7 @@
             "Deployed regenerated package to live moviepilot-v2 for regression; logs show AgentMascot loaded as 0.1.11 and runtime-BcuhrH3S.js exists in live dist/assets",
             "Online Chrome/CDP regression after pointermove and drag: #agentmascot-global-root exists, img naturalWidth > 0, root moved from approx left=40/top=561 to left=303/top=463, click opened .agent-assistant-panel, and console error/AgentMascot anchor events were empty"
           ],
-          "commit": "pending"
+          "commit": "1dc2599"
         }
       ]
     }
