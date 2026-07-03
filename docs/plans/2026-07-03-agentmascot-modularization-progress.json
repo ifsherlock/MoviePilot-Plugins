@@ -250,7 +250,7 @@
             "rg confirmed native assistant selectors remain only in src/adapters/moviepilotAgentEntry.js under src/",
             "git diff --check -> exits 0"
           ],
-          "commit": "pending"
+          "commit": "34f1a20"
         },
         {
           "id": "3.4",
