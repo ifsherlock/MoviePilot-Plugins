@@ -376,7 +376,7 @@
             "git diff --check -> exits 0 with LF conversion warnings only",
             "phase-4 acceptance passed: npm build passed, npm run check:assets passed, frames.js is under 180 lines, and wall/ground anchors are named constants"
           ],
-          "commit": "pending"
+          "commit": "ad7afec"
         }
       ]
     },
