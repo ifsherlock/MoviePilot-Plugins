@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { createServer } from 'vite'
 
 const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const sourceRoot = path.join(pluginRoot, 'src')
@@ -298,22 +299,127 @@ function collectMascotImages(source, mascotName) {
   return images
 }
 
+function collectMascotImportPrefixes(source, mascotName) {
+  const prefix = `${mascotName.charAt(0).toUpperCase()}${mascotName.slice(1)}`
+  const pattern = new RegExp(`^import (${mascotName}\\w+) from '\\.\\.\\/assets\\/${mascotName}\\/frames\\/(\\w+)\\.png'$`, 'gm')
+  const prefixes = new Map()
+  for (const match of source.matchAll(pattern)) {
+    const variableName = match[1]
+    const filePrefix = match[2].replace(/\d+$/, '')
+    prefixes.set(variableName, filePrefix)
+  }
+  if (!prefixes.size) fail(`Missing ${prefix} frame imports`)
+  return prefixes
+}
+
 function validateMascotMotionAssets(source) {
   const nailong = collectMascotImages(source, 'nailong')
+  const nailongPrefixes = collectMascotImportPrefixes(source, 'nailong')
   if (nailong.get('shime2') && nailong.get('shime2') === nailong.get('shime3')) {
     fail('Nailong walk poses shime2 and shime3 must use different frame variables')
   }
+  for (const frameName of ['shime2', 'shime47', 'shime48', 'shime49']) {
+    const variableName = nailong.get(frameName)
+    if (nailongPrefixes.get(variableName) !== 'walk') {
+      fail(`Nailong walk pose ${frameName} must use a walk frame, got ${variableName || '<missing>'}`)
+    }
+  }
   for (const frameName of ['shime3', 'shime15', 'shime16', 'shime17']) {
     const variableName = nailong.get(frameName)
-    if (!/^nailongRun\d$/.test(variableName || '')) {
+    if (nailongPrefixes.get(variableName) !== 'run') {
       fail(`Nailong run pose ${frameName} must use a dedicated run frame, got ${variableName || '<missing>'}`)
     }
   }
 
   const kurisu = collectMascotImages(source, 'kurisu')
-  for (const frameName of ['shime47', 'shime48', 'shime49']) {
-    if (kurisu.get(frameName) === 'kurisuSpin') {
-      fail(`Kurisu movement pose ${frameName} must not use kurisuSpin`)
+  const kurisuPrefixes = collectMascotImportPrefixes(source, 'kurisu')
+  for (const frameName of ['shime47', 'shime48', 'shime49', 'shime52']) {
+    const variableName = kurisu.get(frameName)
+    if (kurisuPrefixes.get(variableName) !== 'walk') {
+      fail(`Kurisu movement pose ${frameName} must use a walk frame, got ${variableName || '<missing>'}`)
+    }
+  }
+}
+
+async function loadValidationModules() {
+  const server = await createServer({
+    configFile: false,
+    logLevel: 'silent',
+    server: { middlewareMode: true },
+  })
+  try {
+    const semanticActions = await server.ssrLoadModule('/src/mascot/semanticActions.js')
+    const actionLab = await server.ssrLoadModule('/src/mascot/actionLab.js')
+    return {
+      actionLab,
+      close: () => server.close(),
+      semanticActions,
+    }
+  } catch (error) {
+    await server.close()
+    throw error
+  }
+}
+
+function validateSemanticProfiles(modules, assetsSource) {
+  const {
+    FEATURE_SEMANTIC_ACTIONS,
+    REQUIRED_SEMANTIC_ACTIONS,
+    legacyActionName,
+    semanticActionFrames,
+  } = modules.semanticActions
+  const requiredByMascot = {
+    chibiterasu: REQUIRED_SEMANTIC_ACTIONS,
+    nailong: [...new Set([...REQUIRED_SEMANTIC_ACTIONS, ...(FEATURE_SEMANTIC_ACTIONS.nailong || [])])],
+    kurisu: [...new Set([...REQUIRED_SEMANTIC_ACTIONS, ...(FEATURE_SEMANTIC_ACTIONS.kurisu || [])])],
+  }
+  const mascotFramePrefixes = {
+    chibiterasu: /^shime\d+$/,
+    nailong: /^nailong/,
+    kurisu: /^kurisu/,
+  }
+  const mascotImages = {
+    chibiterasu: new Map(),
+    nailong: collectMascotImages(assetsSource, 'nailong'),
+    kurisu: collectMascotImages(assetsSource, 'kurisu'),
+  }
+  const resolveFrameVariable = (mascot, frame) => {
+    if (mascot === 'chibiterasu') return frame
+    return mascotImages[mascot]?.get(frame) || ''
+  }
+  const expectedFeatureFrames = {
+    'kurisu:think': ['shime11', 'shime26', 'shime56', 'shime57'],
+    'kurisu:surprise': ['shime15', 'shime16', 'shime17', 'shime27'],
+    'kurisu:cheer': ['shime28', 'shime29', 'shime34', 'shime35'],
+    'kurisu:spinCelebrate': ['shime43', 'shime44', 'shime45', 'shime46', 'shime53', 'shime54', 'shime55', 'shime58'],
+    'kurisu:land': ['shime18', 'shime19', 'shime40', 'shime41'],
+    'nailong:jump': ['shime38', 'shime39', 'shime22', 'shime40'],
+    'nailong:fall': ['shime4', 'shime18'],
+    'nailong:land': ['shime18', 'shime19'],
+  }
+
+  for (const [mascot, semanticNames] of Object.entries(requiredByMascot)) {
+    const profile = modules.actionLab.actionLabGroupsForMascot(mascot)
+    const labActions = new Set(profile.flatMap(group => group.items).filter(item => item.kind === 'action').map(item => item.id))
+    for (const semanticName of semanticNames) {
+      const frames = semanticActionFrames(mascot, semanticName)
+      if (!frames.length) {
+        fail(`Missing semantic action ${semanticName} for ${mascot}`)
+        continue
+      }
+      const key = `${mascot}:${semanticName}`
+      const usesFallback = !frames.every(frame => mascotFramePrefixes[mascot].test(resolveFrameVariable(mascot, frame)))
+      if (usesFallback) {
+        fail(`Semantic action ${semanticName} for ${mascot} falls back outside its mascot frames: ${frames.join(', ')}`)
+      }
+      if ((FEATURE_SEMANTIC_ACTIONS[mascot] || []).includes(semanticName) && !labActions.has(semanticName)) {
+        fail(`Feature semantic action ${semanticName} for ${mascot} has no ActionLab entry`)
+      }
+      const expectedFrames = expectedFeatureFrames[key]
+      if (expectedFrames && !expectedFrames.every(frame => frames.includes(frame))) {
+        fail(`Semantic action ${semanticName} for ${mascot} should include ${expectedFrames.join(', ')}, got ${frames.join(', ')}`)
+      }
+      if (!legacyActionName(semanticName)) fail(`Missing legacy action mapping for semantic action: ${semanticName}`)
     }
   }
 }
@@ -457,6 +563,12 @@ validateMascotMotionAssets(assetsSource)
 await validateKurisuSpinFrames()
 await validateNailongMotionFrames()
 await validateKurisuScaledFrames()
+const validationModules = await loadValidationModules()
+try {
+  validateSemanticProfiles(validationModules, assetsSource)
+} finally {
+  await validationModules.close()
+}
 
 if (failures.length) {
   console.error('[AgentMascot] asset/action validation failed')

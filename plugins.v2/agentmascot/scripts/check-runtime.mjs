@@ -464,6 +464,7 @@ function runActionLabCheck(modules) {
 function runActionLabScenarioCheck(modules) {
   const expectedActionNames = {
     idle: 'stand',
+    land: 'bounce',
     sleep: 'lie',
   }
 

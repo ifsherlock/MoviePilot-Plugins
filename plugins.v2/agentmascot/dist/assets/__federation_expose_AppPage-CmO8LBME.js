@@ -8,6 +8,7 @@ const ACTION_LABELS = {
   run: '跑步',
   jump: '跳跃',
   fall: '下坠',
+  land: '落地',
   sleep: '睡觉',
   drag: '拖拽',
   resist: '挣扎',
@@ -34,7 +35,7 @@ const BEHAVIOR_LABELS = {
 const ACTION_GROUPS = [
   { id: 'daily', title: '日常', actions: ['idle', 'sleep', 'think'] },
   { id: 'move', title: '移动', actions: ['walk', 'run'] },
-  { id: 'air', title: '空中', actions: ['jump', 'fall'] },
+  { id: 'air', title: '空中', actions: ['jump', 'fall', 'land'] },
   { id: 'interact', title: '交互', actions: ['drag', 'resist', 'surprise'] },
   { id: 'feature', title: '角色特色', actions: ['cheer', 'spinCelebrate'] },
 ];
