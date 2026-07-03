@@ -1,9 +1,9 @@
 {
   "plan": "docs/plans/2026-07-03-agentmascot-modularization-phased-plan.md",
   "status": {
-    "phase": "phase-4",
-    "task": "4.4",
-    "next_allowed_action": "Implement task 4.4 by adding a lightweight asset/action validation script or npm script"
+    "phase": "phase-5",
+    "task": "5.1",
+    "next_allowed_action": "Implement task 5.1 by building the frontend and confirming dist loader, remoteEntry, and Page/Config/AppPage federation chunks are generated"
   },
   "execution_rules": {
     "branch": "codex/agentmascot-modularization",
@@ -362,9 +362,21 @@
         {
           "id": "4.4",
           "title": "增加动作素材一致性检查脚本或 npm script",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            "Created scripts/check-actions.mjs to validate shimeji image imports/files, pose image references, anchor arrays/constants, velocity arrays, positive durations, and ACTION_CATALOG categories",
+            "Added npm script check:assets to plugins.v2/agentmascot/package.json",
+            "npm run check:assets -> [AgentMascot] asset/action validation passed: 66 images, 23 actions, 85 poses",
+            "npm install was run to restore missing local vite; npm run check:assets and npm run build in plugins.v2\\agentmascot -> exits 0; node_modules and package-lock.json were removed after verification",
+            "python .github\\scripts\\check_plugin_versions.py package.json package.v2.json -> Plugin release version gate passed",
+            "python -m py_compile plugins.v2\\agentmascot\\__init__.py plugins.v2\\agentmascot\\config.py plugins.v2\\agentmascot\\api.py plugins.v2\\agentmascot\\loader.py plugins.v2\\agentmascot\\manifest.py -> exits 0",
+            "frames.js line count is 3 and exports mascotIcon, SHIMEJI_IMAGES, SHIMEJI_ACTIONS, and ACTION_FRAMES via compatibility re-exports",
+            "dist/assets/remoteEntry.js still exposes ./Page, ./Config, ./AppPage, and ./PluginEntry",
+            "dist/assets/agentmascot-loader.js contains AgentMascot, agentmascot-global-root, public_status, and agent-assistant-fab__trigger",
+            "git diff --check -> exits 0 with LF conversion warnings only",
+            "phase-4 acceptance passed: npm build passed, npm run check:assets passed, frames.js is under 180 lines, and wall/ground anchors are named constants"
+          ],
+          "commit": "pending"
         }
       ]
     },
@@ -536,6 +548,18 @@
       "task": "4.3",
       "action": "Created named anchor constants and updated action pose definitions to reference those constants for ground, wall, ceiling, run, dash, and pull-out anchors.",
       "verification": "npm run build, version gate, backend py_compile, anchor grep, remoteEntry exposes probe, fixed loader string probe, git diff --check, temporary dependency cleanup",
+      "result": "passed"
+    },
+    {
+      "task": "4.4",
+      "action": "Added scripts/check-actions.mjs and npm run check:assets to validate shimeji images, action pose references, anchors, velocities, durations, and action catalog categories.",
+      "verification": "npm run check:assets, npm run build, version gate, backend py_compile, frames.js line count/export probe, remoteEntry exposes probe, fixed loader string probe, git diff --check, temporary dependency cleanup",
+      "result": "passed"
+    },
+    {
+      "phase": "phase-4",
+      "action": "Completed shimeji asset manifest and action catalog cleanup.",
+      "verification": "phase-4 acceptance passed: npm build passed, npm run check:assets passed, frames.js is 3 lines and preserves public exports, and wall/ground anchors are named constants",
       "result": "passed"
     }
   ]
