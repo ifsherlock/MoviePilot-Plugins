@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-07-03-agentmascot-modularization-phased-plan.md",
   "status": {
     "phase": "phase-4",
-    "task": "4.3",
-    "next_allowed_action": "Implement task 4.3 by introducing named wall and ground anchor constants instead of scattered inline magic arrays"
+    "task": "4.4",
+    "next_allowed_action": "Implement task 4.4 by adding a lightweight asset/action validation script or npm script"
   },
   "execution_rules": {
     "branch": "codex/agentmascot-modularization",
@@ -344,9 +344,20 @@
         {
           "id": "4.3",
           "title": "给墙面和地面锚点建立具名常量",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            "Created src/mascot/anchors.js with named ground, wall, ceiling, run, dash, and pull-out anchor constants",
+            "actions.js now imports GROUND_FOOT_ANCHOR, WALL_GRAB_ANCHOR, CEILING_GRAB_ANCHOR, RUN_BODY_ANCHOR, DASH_BODY_ANCHOR, PULL_OUT_BODY_ANCHOR, and ceiling crawl anchors instead of inline anchor arrays",
+            "pose.js now defaults to GROUND_FOOT_ANCHOR and clones anchor/velocity arrays when creating pose objects",
+            "rg confirmed ground/wall/ceiling anchor arrays appear in anchors.js and pose default only; actions.js uses named anchor constants",
+            "npm install was run to restore missing local vite; npm run build in plugins.v2\\agentmascot -> exits 0; node_modules and package-lock.json were removed after verification",
+            "python .github\\scripts\\check_plugin_versions.py package.json package.v2.json -> Plugin release version gate passed",
+            "python -m py_compile plugins.v2\\agentmascot\\__init__.py plugins.v2\\agentmascot\\config.py plugins.v2\\agentmascot\\api.py plugins.v2\\agentmascot\\loader.py plugins.v2\\agentmascot\\manifest.py -> exits 0",
+            "dist/assets/remoteEntry.js still exposes ./Page, ./Config, ./AppPage, and ./PluginEntry",
+            "dist/assets/agentmascot-loader.js contains AgentMascot, agentmascot-global-root, public_status, and agent-assistant-fab__trigger",
+            "git diff --check -> exits 0 with LF conversion warnings only"
+          ],
+          "commit": "pending"
         },
         {
           "id": "4.4",
@@ -519,6 +530,12 @@
       "task": "4.2",
       "action": "Created actionCatalog.js for action categories and rewired runtime scheduling lists to import the catalog instead of keeping inline action arrays.",
       "verification": "npm run build, version gate, backend py_compile, action catalog grep, remoteEntry exposes probe, fixed loader string probe, git diff --check, temporary dependency cleanup",
+      "result": "passed"
+    },
+    {
+      "task": "4.3",
+      "action": "Created named anchor constants and updated action pose definitions to reference those constants for ground, wall, ceiling, run, dash, and pull-out anchors.",
+      "verification": "npm run build, version gate, backend py_compile, anchor grep, remoteEntry exposes probe, fixed loader string probe, git diff --check, temporary dependency cleanup",
       "result": "passed"
     }
   ]

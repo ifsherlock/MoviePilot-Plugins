@@ -203,12 +203,25 @@ const SHIMEJI_IMAGES = {
   shime66,
 };
 
-function pose(name, anchor = [64, 128], velocity = [0, 0], duration = 250) {
+const GROUND_FOOT_ANCHOR = [64, 128];
+const RUN_BODY_ANCHOR = [64, 138];
+const DASH_BODY_ANCHOR = [64, 135];
+const PULL_OUT_BODY_ANCHOR = [96, 128];
+
+const WALL_GRAB_ANCHOR = [41, 128];
+
+const CEILING_GRAB_ANCHOR = [64, 48];
+const CEILING_CRAWL_DROP_ANCHOR = [64, 53];
+const CEILING_CRAWL_LOW_ANCHOR = [64, 55];
+const CEILING_CRAWL_STRETCH_ANCHOR = [64, 58];
+const CEILING_CRAWL_RECOVER_ANCHOR = [64, 52];
+
+function pose(name, anchor = GROUND_FOOT_ANCHOR, velocity = [0, 0], duration = 250) {
   return {
     image: SHIMEJI_IMAGES[name],
     imageName: name,
-    anchor,
-    velocity,
+    anchor: [...anchor],
+    velocity: [...velocity],
     duration,
   }
 }
@@ -227,10 +240,10 @@ const SHIMEJI_ACTIONS = {
     frame: 'ground',
     loop: true,
     poses: [
-      pose('shime1', [64, 128], [-2, 0], 6),
-      pose('shime2', [64, 128], [-2, 0], 6),
-      pose('shime1', [64, 128], [-2, 0], 6),
-      pose('shime3', [64, 128], [-2, 0], 6),
+      pose('shime1', GROUND_FOOT_ANCHOR, [-2, 0], 6),
+      pose('shime2', GROUND_FOOT_ANCHOR, [-2, 0], 6),
+      pose('shime1', GROUND_FOOT_ANCHOR, [-2, 0], 6),
+      pose('shime3', GROUND_FOOT_ANCHOR, [-2, 0], 6),
     ],
   },
   run: {
@@ -238,9 +251,9 @@ const SHIMEJI_ACTIONS = {
     frame: 'ground',
     loop: true,
     poses: [
-      pose('shime47', [64, 138], [-4, 0], 5),
-      pose('shime48', [64, 128], [-4, 0], 3),
-      pose('shime49', [64, 128], [-4, 0], 3),
+      pose('shime47', RUN_BODY_ANCHOR, [-4, 0], 5),
+      pose('shime48', GROUND_FOOT_ANCHOR, [-4, 0], 3),
+      pose('shime49', GROUND_FOOT_ANCHOR, [-4, 0], 3),
     ],
   },
   dash: {
@@ -248,9 +261,9 @@ const SHIMEJI_ACTIONS = {
     frame: 'ground',
     loop: true,
     poses: [
-      pose('shime47', [64, 135], [-8, 0], 5),
-      pose('shime48', [64, 128], [-8, 0], 3),
-      pose('shime49', [64, 128], [-8, 0], 3),
+      pose('shime47', DASH_BODY_ANCHOR, [-8, 0], 5),
+      pose('shime48', GROUND_FOOT_ANCHOR, [-8, 0], 3),
+      pose('shime49', GROUND_FOOT_ANCHOR, [-8, 0], 3),
     ],
   },
   sit: {
@@ -276,10 +289,10 @@ const SHIMEJI_ACTIONS = {
     frame: 'ground',
     loop: true,
     poses: [
-      pose('shime51', [64, 128], [0, 0], 25),
-      pose('shime32', [64, 128], [0, 0], 25),
-      pose('shime51', [64, 128], [0, 0], 25),
-      pose('shime33', [64, 128], [0, 0], 25),
+      pose('shime51', GROUND_FOOT_ANCHOR, [0, 0], 25),
+      pose('shime32', GROUND_FOOT_ANCHOR, [0, 0], 25),
+      pose('shime51', GROUND_FOOT_ANCHOR, [0, 0], 25),
+      pose('shime33', GROUND_FOOT_ANCHOR, [0, 0], 25),
     ],
   },
   lookUp: {
@@ -299,11 +312,11 @@ const SHIMEJI_ACTIONS = {
     frame: 'ground',
     loop: true,
     poses: [
-      pose('shime20', [64, 128], [0, 0], 28),
-      pose('shime20', [64, 128], [-2, 0], 4),
-      pose('shime21', [64, 128], [-2, 0], 4),
-      pose('shime21', [64, 128], [-1, 0], 4),
-      pose('shime21', [64, 128], [0, 0], 24),
+      pose('shime20', GROUND_FOOT_ANCHOR, [0, 0], 28),
+      pose('shime20', GROUND_FOOT_ANCHOR, [-2, 0], 4),
+      pose('shime21', GROUND_FOOT_ANCHOR, [-2, 0], 4),
+      pose('shime21', GROUND_FOOT_ANCHOR, [-1, 0], 4),
+      pose('shime21', GROUND_FOOT_ANCHOR, [0, 0], 24),
     ],
   },
   jump: {
@@ -323,29 +336,29 @@ const SHIMEJI_ACTIONS = {
     frame: 'ground',
     loop: true,
     poses: [
-      pose('shime18', [64, 128], [0, 0], 4),
-      pose('shime19', [64, 128], [0, 0], 4),
+      pose('shime18', GROUND_FOOT_ANCHOR, [0, 0], 4),
+      pose('shime19', GROUND_FOOT_ANCHOR, [0, 0], 4),
     ],
   },
   holdWall: {
     label: '壁に掴まる',
     frame: 'wall',
     loop: true,
-    poses: [pose('shime63', [41, 128], [0, 0], 250)],
+    poses: [pose('shime63', WALL_GRAB_ANCHOR, [0, 0], 250)],
   },
   climbWallUp: {
     label: '壁を登る',
     frame: 'wall',
     loop: true,
     poses: [
-      pose('shime14', [41, 128], [0, 0], 16),
-      pose('shime14', [41, 128], [0, -1], 4),
-      pose('shime12', [41, 128], [0, -1], 4),
-      pose('shime13', [41, 128], [0, -1], 4),
-      pose('shime13', [41, 128], [0, 0], 16),
-      pose('shime13', [41, 128], [0, -2], 4),
-      pose('shime12', [41, 128], [0, -2], 4),
-      pose('shime14', [41, 128], [0, -2], 4),
+      pose('shime14', WALL_GRAB_ANCHOR, [0, 0], 16),
+      pose('shime14', WALL_GRAB_ANCHOR, [0, -1], 4),
+      pose('shime12', WALL_GRAB_ANCHOR, [0, -1], 4),
+      pose('shime13', WALL_GRAB_ANCHOR, [0, -1], 4),
+      pose('shime13', WALL_GRAB_ANCHOR, [0, 0], 16),
+      pose('shime13', WALL_GRAB_ANCHOR, [0, -2], 4),
+      pose('shime12', WALL_GRAB_ANCHOR, [0, -2], 4),
+      pose('shime14', WALL_GRAB_ANCHOR, [0, -2], 4),
     ],
   },
   climbWallDown: {
@@ -353,36 +366,36 @@ const SHIMEJI_ACTIONS = {
     frame: 'wall',
     loop: true,
     poses: [
-      pose('shime14', [41, 128], [0, 0], 16),
-      pose('shime14', [41, 128], [0, 2], 4),
-      pose('shime12', [41, 128], [0, 2], 4),
-      pose('shime13', [41, 128], [0, 2], 4),
-      pose('shime13', [41, 128], [0, 0], 16),
-      pose('shime13', [41, 128], [0, 1], 4),
-      pose('shime12', [41, 128], [0, 1], 4),
-      pose('shime14', [41, 128], [0, 1], 4),
+      pose('shime14', WALL_GRAB_ANCHOR, [0, 0], 16),
+      pose('shime14', WALL_GRAB_ANCHOR, [0, 2], 4),
+      pose('shime12', WALL_GRAB_ANCHOR, [0, 2], 4),
+      pose('shime13', WALL_GRAB_ANCHOR, [0, 2], 4),
+      pose('shime13', WALL_GRAB_ANCHOR, [0, 0], 16),
+      pose('shime13', WALL_GRAB_ANCHOR, [0, 1], 4),
+      pose('shime12', WALL_GRAB_ANCHOR, [0, 1], 4),
+      pose('shime14', WALL_GRAB_ANCHOR, [0, 1], 4),
     ],
   },
   holdCeiling: {
     label: '天井に掴まる',
     frame: 'ceiling',
     loop: true,
-    poses: [pose('shime65', [64, 48], [0, 0], 250)],
+    poses: [pose('shime65', CEILING_GRAB_ANCHOR, [0, 0], 250)],
   },
   crawlCeiling: {
     label: '天井を伝う',
     frame: 'ceiling',
     loop: true,
     poses: [
-      pose('shime23', [64, 48], [0, 0], 16),
-      pose('shime24', [64, 48], [0, 0], 4),
-      pose('shime25', [64, 53], [-11, 0], 1),
-      pose('shime25', [64, 55], [-10, 0], 2),
-      pose('shime25', [64, 58], [-9, 0], 4),
-      pose('shime25', [64, 55], [-8, 0], 3),
-      pose('shime25', [64, 52], [-7, 0], 2),
-      pose('shime64', [64, 48], [0, 0], 5),
-      pose('shime23', [64, 48], [0, 0], 4),
+      pose('shime23', CEILING_GRAB_ANCHOR, [0, 0], 16),
+      pose('shime24', CEILING_GRAB_ANCHOR, [0, 0], 4),
+      pose('shime25', CEILING_CRAWL_DROP_ANCHOR, [-11, 0], 1),
+      pose('shime25', CEILING_CRAWL_LOW_ANCHOR, [-10, 0], 2),
+      pose('shime25', CEILING_CRAWL_STRETCH_ANCHOR, [-9, 0], 4),
+      pose('shime25', CEILING_CRAWL_LOW_ANCHOR, [-8, 0], 3),
+      pose('shime25', CEILING_CRAWL_RECOVER_ANCHOR, [-7, 0], 2),
+      pose('shime64', CEILING_GRAB_ANCHOR, [0, 0], 5),
+      pose('shime23', CEILING_GRAB_ANCHOR, [0, 0], 4),
     ],
   },
   drag: {
@@ -390,11 +403,11 @@ const SHIMEJI_ACTIONS = {
     frame: 'air',
     loop: true,
     poses: [
-      pose('shime9', [64, 128], [0, 0], 5),
-      pose('shime7', [64, 128], [0, 0], 5),
-      pose('shime59', [64, 128], [0, 0], 5),
-      pose('shime8', [64, 128], [0, 0], 5),
-      pose('shime10', [64, 128], [0, 0], 5),
+      pose('shime9', GROUND_FOOT_ANCHOR, [0, 0], 5),
+      pose('shime7', GROUND_FOOT_ANCHOR, [0, 0], 5),
+      pose('shime59', GROUND_FOOT_ANCHOR, [0, 0], 5),
+      pose('shime8', GROUND_FOOT_ANCHOR, [0, 0], 5),
+      pose('shime10', GROUND_FOOT_ANCHOR, [0, 0], 5),
     ],
   },
   resist: {
@@ -402,11 +415,11 @@ const SHIMEJI_ACTIONS = {
     frame: 'air',
     loop: true,
     poses: [
-      pose('shime5', [64, 128], [0, 0], 5),
-      pose('shime6', [64, 128], [0, 0], 5),
-      pose('shime5', [64, 128], [0, 0], 5),
-      pose('shime6', [64, 128], [0, 0], 5),
-      pose('shime59', [64, 128], [0, 0], 50),
+      pose('shime5', GROUND_FOOT_ANCHOR, [0, 0], 5),
+      pose('shime6', GROUND_FOOT_ANCHOR, [0, 0], 5),
+      pose('shime5', GROUND_FOOT_ANCHOR, [0, 0], 5),
+      pose('shime6', GROUND_FOOT_ANCHOR, [0, 0], 5),
+      pose('shime59', GROUND_FOOT_ANCHOR, [0, 0], 50),
     ],
   },
   pullOut: {
@@ -414,13 +427,13 @@ const SHIMEJI_ACTIONS = {
     frame: 'ground',
     loop: false,
     poses: [
-      pose('shime1', [64, 128], [0, 0], 16),
-      pose('shime38', [96, 128], [0, 0], 30),
-      pose('shime39', [96, 128], [0, 0], 20),
-      pose('shime40', [96, 128], [0, 0], 20),
-      pose('shime39', [96, 128], [0, 0], 10),
-      pose('shime40', [96, 128], [0, 0], 10),
-      pose('shime41', [96, 128], [0, 0], 40),
+      pose('shime1', GROUND_FOOT_ANCHOR, [0, 0], 16),
+      pose('shime38', PULL_OUT_BODY_ANCHOR, [0, 0], 30),
+      pose('shime39', PULL_OUT_BODY_ANCHOR, [0, 0], 20),
+      pose('shime40', PULL_OUT_BODY_ANCHOR, [0, 0], 20),
+      pose('shime39', PULL_OUT_BODY_ANCHOR, [0, 0], 10),
+      pose('shime40', PULL_OUT_BODY_ANCHOR, [0, 0], 10),
+      pose('shime41', PULL_OUT_BODY_ANCHOR, [0, 0], 40),
     ],
   },
   split: {
@@ -428,18 +441,18 @@ const SHIMEJI_ACTIONS = {
     frame: 'ground',
     loop: false,
     poses: [
-      pose('shime42', [64, 128], [0, 0], 20),
-      pose('shime43', [64, 128], [0, 0], 10),
-      pose('shime44', [64, 128], [0, 0], 5),
-      pose('shime45', [64, 128], [0, 0], 15),
-      pose('shime46', [64, 128], [0, 0], 5),
-      pose('shime52', [64, 128], [0, 0], 15),
-      pose('shime53', [64, 128], [0, 0], 7),
-      pose('shime54', [64, 128], [0, 0], 5),
-      pose('shime55', [64, 128], [0, 0], 15),
-      pose('shime56', [64, 128], [0, 0], 15),
-      pose('shime57', [64, 128], [0, 0], 10),
-      pose('shime58', [64, 128], [0, 0], 30),
+      pose('shime42', GROUND_FOOT_ANCHOR, [0, 0], 20),
+      pose('shime43', GROUND_FOOT_ANCHOR, [0, 0], 10),
+      pose('shime44', GROUND_FOOT_ANCHOR, [0, 0], 5),
+      pose('shime45', GROUND_FOOT_ANCHOR, [0, 0], 15),
+      pose('shime46', GROUND_FOOT_ANCHOR, [0, 0], 5),
+      pose('shime52', GROUND_FOOT_ANCHOR, [0, 0], 15),
+      pose('shime53', GROUND_FOOT_ANCHOR, [0, 0], 7),
+      pose('shime54', GROUND_FOOT_ANCHOR, [0, 0], 5),
+      pose('shime55', GROUND_FOOT_ANCHOR, [0, 0], 15),
+      pose('shime56', GROUND_FOOT_ANCHOR, [0, 0], 15),
+      pose('shime57', GROUND_FOOT_ANCHOR, [0, 0], 10),
+      pose('shime58', GROUND_FOOT_ANCHOR, [0, 0], 30),
     ],
   },
 };
