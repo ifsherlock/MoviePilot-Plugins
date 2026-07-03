@@ -63,8 +63,6 @@ export const ACTION_MIN_DURATION = {
   split: 1500,
 }
 
-export const REST_ACTIONS = ['stand', 'sit', 'lie', 'relaxedSit', 'dangleFeet', 'lookUp']
-
 function clampNumber(value, minimum, maximum, defaultValue) {
   const number = Number(value)
   if (!Number.isFinite(number)) return defaultValue

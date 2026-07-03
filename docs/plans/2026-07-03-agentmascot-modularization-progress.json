@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-07-03-agentmascot-modularization-phased-plan.md",
   "status": {
     "phase": "phase-4",
-    "task": "4.2",
-    "next_allowed_action": "Implement task 4.2 by establishing actionCatalog.js for ground, air, wall, ceiling, drag, rest, and special action categories"
+    "task": "4.3",
+    "next_allowed_action": "Implement task 4.3 by introducing named wall and ground anchor constants instead of scattered inline magic arrays"
   },
   "execution_rules": {
     "branch": "codex/agentmascot-modularization",
@@ -326,9 +326,20 @@
         {
           "id": "4.2",
           "title": "建立 actionCatalog.js 动作类别目录",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            "Created src/mascot/actionCatalog.js with ground, air, wall, ceiling, drag, rest, and special action categories",
+            "Moved REST_ACTIONS out of src/mascot/config.js and into the action catalog",
+            "runtime.js now imports REST_ACTIONS, GROUND_MOVE_ACTIONS, INTERRUPT_ACTIONS, WALL_REST_ACTIONS, and CEILING_REST_ACTIONS from actionCatalog.js",
+            "runtime.js no longer keeps inline scheduling action arrays for drag/resist/split, walk/run/dash, holdWall, or holdCeiling",
+            "npm install was run to restore missing local vite; npm run build in plugins.v2\\agentmascot -> exits 0; node_modules and package-lock.json were removed after verification",
+            "python .github\\scripts\\check_plugin_versions.py package.json package.v2.json -> Plugin release version gate passed",
+            "python -m py_compile plugins.v2\\agentmascot\\__init__.py plugins.v2\\agentmascot\\config.py plugins.v2\\agentmascot\\api.py plugins.v2\\agentmascot\\loader.py plugins.v2\\agentmascot\\manifest.py -> exits 0",
+            "dist/assets/remoteEntry.js still exposes ./Page, ./Config, ./AppPage, and ./PluginEntry",
+            "dist/assets/agentmascot-loader.js contains AgentMascot, agentmascot-global-root, public_status, and agent-assistant-fab__trigger",
+            "git diff --check -> exits 0 with LF conversion warnings only"
+          ],
+          "commit": "pending"
         },
         {
           "id": "4.3",
@@ -502,6 +513,12 @@
       "task": "4.1",
       "action": "Split the shimeji frame manifest into image assets, pose helper, action definitions, and preview frame mapping while preserving the original frames.js exports.",
       "verification": "npm run build, version gate, backend py_compile, frames.js line count/export probe, remoteEntry exposes probe, fixed loader string probe, git diff --check, temporary dependency cleanup",
+      "result": "passed"
+    },
+    {
+      "task": "4.2",
+      "action": "Created actionCatalog.js for action categories and rewired runtime scheduling lists to import the catalog instead of keeping inline action arrays.",
+      "verification": "npm run build, version gate, backend py_compile, action catalog grep, remoteEntry exposes probe, fixed loader string probe, git diff --check, temporary dependency cleanup",
       "result": "passed"
     }
   ]

@@ -574,8 +574,6 @@ const ACTION_MIN_DURATION = {
   split: 1500,
 };
 
-const REST_ACTIONS = ['stand', 'sit', 'lie', 'relaxedSit', 'dangleFeet', 'lookUp'];
-
 function clampNumber$1(value, minimum, maximum, defaultValue) {
   const number = Number(value);
   if (!Number.isFinite(number)) return defaultValue
@@ -603,6 +601,19 @@ function normalizeConfig(config) {
 function cloneConfig(config) {
   return JSON.parse(JSON.stringify(normalizeConfig(config)))
 }
+
+const ACTION_CATALOG = {
+  drag: ['drag', 'resist'],
+  rest: ['stand', 'sit', 'lie', 'relaxedSit', 'dangleFeet', 'lookUp']};
+
+const GROUND_MOVE_ACTIONS = ['walk', 'run', 'dash'];
+const REST_ACTIONS = ACTION_CATALOG.rest;
+const WALL_REST_ACTIONS = ['holdWall'];
+const CEILING_REST_ACTIONS = ['holdCeiling'];
+const INTERRUPT_ACTIONS = [
+  ...ACTION_CATALOG.drag,
+  'split',
+];
 
 const BASE_PET_SIZE = 92;
 
@@ -949,6 +960,8 @@ function resolveMouseYFollow(mouse, pet, options = {}) {
   }
 }
 
+const BLOCKED_GROUND_ROAM_STATES = ['rest', 'bounce', 'toWall'];
+
 function defaultScheduler() {
   return {
     setInterval: (...args) => globalThis.setInterval?.(...args),
@@ -1097,7 +1110,7 @@ function createMascotRuntime(options = {}) {
 
   function setAction(nextAction, timestamp = now(), actionOptions = {}) {
     if (actionState.name === nextAction) return
-    if (!actionOptions.force && timestamp < actionLockedUntil && !['drag', 'resist', 'split'].includes(nextAction)) return
+    if (!actionOptions.force && timestamp < actionLockedUntil && !INTERRUPT_ACTIONS.includes(nextAction)) return
     actionState.name = nextAction;
     actionState.poseIndex = 0;
     actionState.poseTicks = 0;
@@ -1131,7 +1144,7 @@ function createMascotRuntime(options = {}) {
       setAction('walk', timestamp);
       return
     }
-    if (['walk', 'run', 'dash'].includes(actionState.name)) actionLockedUntil = 0;
+    if (GROUND_MOVE_ACTIONS.includes(actionState.name)) actionLockedUntil = 0;
     setAction('stand', timestamp);
   }
 
@@ -1241,14 +1254,14 @@ function createMascotRuntime(options = {}) {
     const nearTop = pet.anchorY <= ceilingAnchorY$1() + 56 * poseScale$1();
     const roll = random();
     if (nearTop && roll < 0.66) startCeiling(timestamp);
-    else if (roll < 0.3) startRest(timestamp, ['holdWall'], WALL_REST_MIN, WALL_REST_RANGE);
+    else if (roll < 0.3) startRest(timestamp, WALL_REST_ACTIONS, WALL_REST_MIN, WALL_REST_RANGE);
     else if (roll < 0.86) startWallClimb(timestamp);
     else startFall(timestamp, pet.wallSide === 'left' ? 2.2 : -2.2, -2);
   }
 
   function chooseCeilingBehavior(timestamp) {
     const roll = random();
-    if (roll < 0.52) startRest(timestamp, ['holdCeiling'], WALL_REST_MIN, WALL_REST_RANGE);
+    if (roll < 0.52) startRest(timestamp, CEILING_REST_ACTIONS, WALL_REST_MIN, WALL_REST_RANGE);
     else if (roll < 0.88) startCeilingCrawl(timestamp);
     else startFall(timestamp, (random() < 0.5 ? -1 : 1) * (2 + random() * 2), 0.8);
   }
@@ -1462,7 +1475,7 @@ function createMascotRuntime(options = {}) {
     pet.lastAnchorY = pet.anchorY;
     pet.targetX = randomGroundX$1();
     roamTimer = scheduler.setInterval?.(() => {
-      const canScheduleGroundBehavior = pet.surface === 'ground' && !['rest', 'bounce', 'toWall'].includes(pet.state);
+      const canScheduleGroundBehavior = pet.surface === 'ground' && !BLOCKED_GROUND_ROAM_STATES.includes(pet.state);
       if (config().auto_roam && !pet.dragging && !roamPausedUntil && canScheduleGroundBehavior) {
         chooseGroundBehavior(now());
       }
