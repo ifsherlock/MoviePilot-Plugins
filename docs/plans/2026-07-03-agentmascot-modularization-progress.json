@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-07-03-agentmascot-modularization-phased-plan.md",
   "status": {
     "phase": "phase-5",
-    "task": "5.3",
-    "next_allowed_action": "Implement task 5.3 by regenerating the install package without committing zip or tar artifacts"
+    "task": "5.4",
+    "next_allowed_action": "Implement task 5.4 by completing MoviePilot browser smoke for settings page, page view, global replacement, and native assistant click-open flow"
   },
   "execution_rules": {
     "branch": "codex/agentmascot-modularization",
@@ -423,9 +423,16 @@
         {
           "id": "5.3",
           "title": "重新生成安装包但不提交 zip/tar",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            "Generated C:\\Users\\jaysh\\Documents\\桌宠mp\\MoviePilot-Plugins\\plugins.v2\\agentmascot_v0.1.11_install_20260703_modularized.zip from plugins.v2\\agentmascot contents",
+            "Zip root structure matches prior install package style with dist/, scripts/, src/, __init__.py, package.json, and related plugin files at root",
+            "Zip validation confirmed dist/assets/agentmascot-loader.js, dist/assets/remoteEntry.js, __init__.py, package.json, scripts/check-actions.mjs, patch-agentmascot-loader.sh, and patch-agentmascot-loader.ps1 exist",
+            "Zip validation confirmed src/assets/shimeji/shime1.png through shime66.png exist, 66/66",
+            "Zip validation confirmed node_modules, package-lock.json, __pycache__, and .pyc entries are excluded",
+            "Artifact is intentionally untracked and must not be committed"
+          ],
+          "commit": "pending"
         },
         {
           "id": "5.4",
@@ -587,6 +594,12 @@
       "task": "5.2",
       "action": "Reviewed version and history surfaces and kept AgentMascot at 0.1.11 because the changes are internal modularization and developer checks, not user-visible behavior changes.",
       "verification": "version surface grep, package.v2.json inspection, check_plugin_versions",
+      "result": "passed"
+    },
+    {
+      "task": "5.3",
+      "action": "Generated a fresh AgentMascot install zip and validated required loader, remoteEntry, scripts, and shimeji image entries while excluding temporary files.",
+      "verification": "zip generated at plugins.v2\\agentmascot_v0.1.11_install_20260703_modularized.zip, entry assertions, shimeji 66/66 check, temp artifact exclusion check",
       "result": "passed"
     }
   ]
