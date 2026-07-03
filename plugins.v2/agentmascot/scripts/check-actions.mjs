@@ -6,6 +6,7 @@ const pluginRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '.
 const sourceRoot = path.join(pluginRoot, 'src')
 const shimejiRoot = path.join(sourceRoot, 'assets', 'shimeji')
 const kurisuRoot = path.join(sourceRoot, 'assets', 'kurisu', 'frames')
+const nailongRoot = path.join(sourceRoot, 'assets', 'nailong', 'frames')
 const requiredCatalogKeys = ['ground', 'air', 'wall', 'ceiling', 'drag', 'rest', 'special']
 const failures = []
 
@@ -122,7 +123,104 @@ async function readPngInfo(filePath) {
   }
   const width = data.readUInt32BE(16)
   const height = data.readUInt32BE(20)
-  return { data, height, width }
+  const bitDepth = data.readUInt8(24)
+  const colorType = data.readUInt8(25)
+  return { bitDepth, colorType, data, height, width }
+}
+
+function eachPngChunk(data, callback) {
+  let offset = 8
+  while (offset < data.length) {
+    const length = data.readUInt32BE(offset)
+    const type = data.toString('ascii', offset + 4, offset + 8)
+    const start = offset + 8
+    const chunk = data.subarray(start, start + length)
+    callback(type, chunk)
+    offset = start + length + 4
+    if (type === 'IEND') break
+  }
+}
+
+async function readPngMetrics(filePath) {
+  const info = await readPngInfo(filePath)
+  if (!info) return null
+  if (info.bitDepth !== 8 || ![3, 6].includes(info.colorType)) {
+    fail(`${path.basename(filePath)} must be an 8-bit indexed/RGBA PNG`)
+    return null
+  }
+
+  const zlib = await import('node:zlib')
+  const idat = []
+  const paletteAlpha = []
+
+  eachPngChunk(info.data, (type, chunk) => {
+    if (type === 'IDAT') idat.push(chunk)
+    if (type === 'tRNS') {
+      for (const value of chunk.values()) paletteAlpha.push(value)
+    }
+  })
+
+  const bytesPerPixel = info.colorType === 6 ? 4 : 1
+  const raw = zlib.inflateSync(Buffer.concat(idat))
+  const rowLength = info.width * bytesPerPixel
+  let offset = 0
+  let previous = Buffer.alloc(rowLength)
+  let minX = info.width
+  let minY = info.height
+  let maxX = -1
+  let maxY = -1
+  let edgeOpaquePixels = 0
+  let maxAlpha = 0
+
+  for (let y = 0; y < info.height; y += 1) {
+    const filter = raw[offset]
+    offset += 1
+    const scanline = raw.subarray(offset, offset + rowLength)
+    offset += rowLength
+    const row = Buffer.alloc(rowLength)
+
+    for (let index = 0; index < rowLength; index += 1) {
+      const left = index >= bytesPerPixel ? row[index - bytesPerPixel] : 0
+      const up = previous[index]
+      const upLeft = index >= bytesPerPixel ? previous[index - bytesPerPixel] : 0
+      let predictor = 0
+      if (filter === 1) predictor = left
+      else if (filter === 2) predictor = up
+      else if (filter === 3) predictor = Math.floor((left + up) / 2)
+      else if (filter === 4) {
+        const guess = left + up - upLeft
+        const pa = Math.abs(guess - left)
+        const pb = Math.abs(guess - up)
+        const pc = Math.abs(guess - upLeft)
+        predictor = pa <= pb && pa <= pc ? left : pb <= pc ? up : upLeft
+      } else if (filter !== 0) {
+        fail(`${path.basename(filePath)} has unsupported PNG filter: ${filter}`)
+        return null
+      }
+      row[index] = (scanline[index] + predictor) & 0xff
+    }
+
+    for (let x = 0; x < info.width; x += 1) {
+      const alpha = info.colorType === 6 ? row[x * 4 + 3] : (paletteAlpha[row[x]] ?? 255)
+      if (alpha > maxAlpha) maxAlpha = alpha
+      if (alpha <= 8) continue
+      if (x === 0 || y === 0 || x === info.width - 1 || y === info.height - 1) edgeOpaquePixels += 1
+      minX = Math.min(minX, x)
+      minY = Math.min(minY, y)
+      maxX = Math.max(maxX, x)
+      maxY = Math.max(maxY, y)
+    }
+
+    previous = row
+  }
+
+  return {
+    ...info,
+    bbox: maxX >= 0 ? { x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1 } : null,
+    edgeOpaquePixels,
+    maxAlpha,
+    size: info.data.length,
+  }
 }
 
 function resolveAnchor(value, anchors) {
@@ -230,6 +328,64 @@ async function validateKurisuSpinFrames() {
   }
 }
 
+async function validateNailongWalkFrames() {
+  for (const fileName of ['walk1.png', 'walk2.png', 'walk3.png', 'walk4.png']) {
+    const filePath = path.join(nailongRoot, fileName)
+    try {
+      const info = await readPngMetrics(filePath)
+      if (!info) continue
+      if (info.width !== 384 || info.height !== 384) {
+        fail(`Nailong ${fileName} must be 384x384, got ${info.width}x${info.height}`)
+      }
+      if (info.edgeOpaquePixels > 0) {
+        fail(`Nailong ${fileName} has opaque edge pixels; background was not cut out cleanly`)
+      }
+      if (!info.bbox || info.bbox.width < 120 || info.bbox.height < 170) {
+        fail(`Nailong ${fileName} subject is too small after background cutout`)
+      }
+      if (info.size > 60000) {
+        fail(`Nailong ${fileName} is too large after compression: ${info.size} bytes`)
+      }
+    } catch (error) {
+      fail(`Invalid Nailong walk frame ${fileName}: ${error.message}`)
+    }
+  }
+}
+
+async function validateKurisuScaledFrames() {
+  const groups = [
+    ['idle', 260, 120000],
+    ['drag', 270, 130000],
+    ['sleep', 210, 120000],
+    ['think', 300, 130000],
+    ['land', 300, 130000],
+  ]
+
+  for (const [prefix, minHeight, maxSize] of groups) {
+    for (const filePath of (await fs.readdir(kurisuRoot)).filter(name => new RegExp(`^${prefix}\\d+\\.png$`).test(name))) {
+      const fullPath = path.join(kurisuRoot, filePath)
+      try {
+        const info = await readPngMetrics(fullPath)
+        if (!info) continue
+        if (info.width !== 384 || info.height !== 384) {
+          fail(`Kurisu ${filePath} must be 384x384, got ${info.width}x${info.height}`)
+        }
+        if (info.edgeOpaquePixels > 0) {
+          fail(`Kurisu ${filePath} has opaque edge pixels`)
+        }
+        if (!info.bbox || info.bbox.height < minHeight) {
+          fail(`Kurisu ${filePath} subject is too small: ${info.bbox?.height || 0}px tall`)
+        }
+        if (info.size > maxSize) {
+          fail(`Kurisu ${filePath} is too large after compression: ${info.size} bytes`)
+        }
+      } catch (error) {
+        fail(`Invalid Kurisu frame ${filePath}: ${error.message}`)
+      }
+    }
+  }
+}
+
 const [assetsSource, actionsSource, anchorsSource, catalogSource] = await Promise.all([
   readSource('mascot/assets.js'),
   readSource('mascot/actions.js'),
@@ -245,6 +401,8 @@ const poseCount = validatePoses(actionsSource, assets, anchors)
 validateCatalog(categories, actionNames)
 validateMascotMotionAssets(assetsSource)
 await validateKurisuSpinFrames()
+await validateNailongWalkFrames()
+await validateKurisuScaledFrames()
 
 if (failures.length) {
   console.error('[AgentMascot] asset/action validation failed')
