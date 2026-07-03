@@ -185,7 +185,7 @@
             "git diff --check -> exits 0",
             "phase-2 acceptance passed: AppPage/global-loader under 450 lines, npm build passed, and runtime core modules do not query .agent-assistant-fab or call MoviePilot API directly"
           ],
-          "commit": "pending"
+          "commit": "ea94e7b"
         }
       ]
     },
