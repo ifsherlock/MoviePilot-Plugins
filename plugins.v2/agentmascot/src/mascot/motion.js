@@ -1,4 +1,4 @@
-import { SHIMEJI_ACTIONS } from '../assets/shimeji/frames'
+import { SHIMEJI_ACTIONS, resolveMascotAction } from './actions'
 
 export function createActionState(overrides = {}) {
   return {
@@ -47,11 +47,11 @@ export function createPetState(overrides = {}) {
   }
 }
 
-export function resolveAction(actionState) {
-  return SHIMEJI_ACTIONS[actionState.name] || SHIMEJI_ACTIONS.stand
+export function resolveAction(actionState, mascot = 'chibiterasu') {
+  return resolveMascotAction(mascot, actionState.name)
 }
 
-export function resolvePose(actionState) {
-  const action = resolveAction(actionState)
+export function resolvePose(actionState, mascot = 'chibiterasu') {
+  const action = resolveAction(actionState, mascot)
   return action.poses[actionState.poseIndex % action.poses.length] || SHIMEJI_ACTIONS.stand.poses[0]
 }

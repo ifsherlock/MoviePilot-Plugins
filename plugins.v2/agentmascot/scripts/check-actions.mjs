@@ -71,7 +71,10 @@ function collectAnchors(source) {
 }
 
 function collectActionNames(source) {
-  return new Set([...source.matchAll(/^  ([A-Za-z]\w*): \{/gm)].map(match => match[1]))
+  const actionsStart = source.indexOf('export const SHIMEJI_ACTIONS = {')
+  const overridesStart = source.indexOf('const CUSTOM_STAND = {')
+  const actionsSource = source.slice(actionsStart, overridesStart > actionsStart ? overridesStart : undefined)
+  return new Set([...actionsSource.matchAll(/^  ([A-Za-z]\w*): \{/gm)].map(match => match[1]))
 }
 
 function collectCatalog(source) {
@@ -212,7 +215,7 @@ function validateMascotMotionAssets(source) {
 }
 
 async function validateKurisuSpinFrames() {
-  const required = ['spin.png', 'spin1.png', 'spin2.png', 'spin3.png', 'spin4.png', 'spin5.png', 'spin6.png']
+  const required = ['spin.png', 'spin1.png', 'spin2.png', 'spin3.png', 'spin4.png', 'spin5.png', 'spin6.png', 'spin7.png']
   for (const fileName of required) {
     const filePath = path.join(kurisuRoot, fileName)
     try {

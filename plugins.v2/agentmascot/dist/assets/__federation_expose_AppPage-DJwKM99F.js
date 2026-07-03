@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { M as MASCOT_OPTIONS, c as cloneConfig, a as createActionState, b as createMouseState, d as createPetState, e as createMascotRuntime, f as buildSurfaceLanes, r as resolveMascotProfile } from './runtime-Bs9mGye5.js';
+import { M as MASCOT_OPTIONS, c as cloneConfig, a as createActionState, b as createMouseState, d as createPetState, e as createMascotRuntime, f as buildSurfaceLanes, r as resolveMascotProfile } from './runtime-oyqBgBOm.js';
 import { u as unwrapResponse } from './provider-mBbtEwEX.js';
 
 const _export_sfc = (sfc, props) => {

@@ -242,3 +242,99 @@ export const SHIMEJI_ACTIONS = {
     ],
   },
 }
+
+const CUSTOM_STAND = {
+  ...SHIMEJI_ACTIONS.stand,
+  poses: [
+    pose('shime1', GROUND_FOOT_ANCHOR, [0, 0], 24),
+    pose('shime60', GROUND_FOOT_ANCHOR, [0, 0], 12),
+    pose('shime61', GROUND_FOOT_ANCHOR, [0, 0], 18),
+    pose('shime62', GROUND_FOOT_ANCHOR, [0, 0], 24),
+  ],
+}
+
+const CUSTOM_SLEEP = {
+  ...SHIMEJI_ACTIONS.lie,
+  poses: [
+    pose('shime50', GROUND_FOOT_ANCHOR, [0, 0], 30),
+    pose('shime20', GROUND_FOOT_ANCHOR, [0, 0], 30),
+    pose('shime21', GROUND_FOOT_ANCHOR, [0, 0], 30),
+    pose('shime33', GROUND_FOOT_ANCHOR, [0, 0], 30),
+  ],
+}
+
+export const MASCOT_ACTION_OVERRIDES = {
+  nailong: {
+    stand: CUSTOM_STAND,
+    lie: CUSTOM_SLEEP,
+    jump: {
+      ...SHIMEJI_ACTIONS.jump,
+      poses: [
+        pose('shime38', GROUND_FOOT_ANCHOR, [0, 0], 5),
+        pose('shime39', GROUND_FOOT_ANCHOR, [0, 0], 5),
+        pose('shime22', GROUND_FOOT_ANCHOR, [0, 0], 6),
+        pose('shime40', GROUND_FOOT_ANCHOR, [0, 0], 5),
+      ],
+    },
+    fall: {
+      ...SHIMEJI_ACTIONS.fall,
+      poses: [
+        pose('shime4', GROUND_FOOT_ANCHOR, [0, 0], 8),
+        pose('shime18', GROUND_FOOT_ANCHOR, [0, 0], 8),
+      ],
+    },
+    holdWall: {
+      ...SHIMEJI_ACTIONS.holdWall,
+      poses: [
+        pose('shime63', WALL_GRAB_ANCHOR, [0, 0], 90),
+        pose('shime64', WALL_GRAB_ANCHOR, [0, 0], 90),
+      ],
+    },
+  },
+  kurisu: {
+    stand: CUSTOM_STAND,
+    lie: CUSTOM_SLEEP,
+    lookUp: {
+      ...SHIMEJI_ACTIONS.lookUp,
+      poses: [
+        pose('shime11', GROUND_FOOT_ANCHOR, [0, 0], 28),
+        pose('shime26', GROUND_FOOT_ANCHOR, [0, 0], 28),
+        pose('shime57', GROUND_FOOT_ANCHOR, [0, 0], 28),
+        pose('shime56', GROUND_FOOT_ANCHOR, [0, 0], 34),
+      ],
+    },
+    fall: {
+      ...SHIMEJI_ACTIONS.fall,
+      poses: [
+        pose('shime4', GROUND_FOOT_ANCHOR, [0, 0], 8),
+        pose('shime18', GROUND_FOOT_ANCHOR, [0, 0], 8),
+      ],
+    },
+    bounce: {
+      ...SHIMEJI_ACTIONS.bounce,
+      poses: [
+        pose('shime18', GROUND_FOOT_ANCHOR, [0, 0], 5),
+        pose('shime19', GROUND_FOOT_ANCHOR, [0, 0], 5),
+        pose('shime40', GROUND_FOOT_ANCHOR, [0, 0], 5),
+        pose('shime41', GROUND_FOOT_ANCHOR, [0, 0], 8),
+      ],
+    },
+    split: {
+      ...SHIMEJI_ACTIONS.split,
+      poses: [
+        pose('shime43', GROUND_FOOT_ANCHOR, [0, 0], 12),
+        pose('shime44', GROUND_FOOT_ANCHOR, [0, 0], 12),
+        pose('shime45', GROUND_FOOT_ANCHOR, [0, 0], 12),
+        pose('shime46', GROUND_FOOT_ANCHOR, [0, 0], 12),
+        pose('shime52', GROUND_FOOT_ANCHOR, [0, 0], 12),
+        pose('shime53', GROUND_FOOT_ANCHOR, [0, 0], 12),
+        pose('shime54', GROUND_FOOT_ANCHOR, [0, 0], 12),
+        pose('shime58', GROUND_FOOT_ANCHOR, [0, 0], 18),
+      ],
+    },
+  },
+}
+
+export function resolveMascotAction(mascot, actionName) {
+  return MASCOT_ACTION_OVERRIDES[mascot]?.[actionName] || SHIMEJI_ACTIONS[actionName] || SHIMEJI_ACTIONS.stand
+}

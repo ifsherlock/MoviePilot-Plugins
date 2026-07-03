@@ -106,11 +106,11 @@ export function createMascotRuntime(options = {}) {
   }
 
   function currentAction() {
-    return resolveAction(actionState)
+    return resolveAction(actionState, config().mascot)
   }
 
   function currentPose() {
-    return resolvePose(actionState)
+    return resolvePose(actionState, config().mascot)
   }
 
   function currentFrame() {

@@ -1,10 +1,23 @@
 import icon from '../assets/shimeji/icon.png'
 import kurisuCheer from '../assets/kurisu/frames/cheer.png'
 import kurisuClimb from '../assets/kurisu/frames/climb.png'
-import kurisuDrag from '../assets/kurisu/frames/drag.png'
-import kurisuIdle from '../assets/kurisu/frames/idle.png'
-import kurisuLand from '../assets/kurisu/frames/land.png'
-import kurisuSleep from '../assets/kurisu/frames/sleep.png'
+import kurisuDrag1 from '../assets/kurisu/frames/drag1.png'
+import kurisuDrag2 from '../assets/kurisu/frames/drag2.png'
+import kurisuDrag3 from '../assets/kurisu/frames/drag3.png'
+import kurisuDrag4 from '../assets/kurisu/frames/drag4.png'
+import kurisuDrag5 from '../assets/kurisu/frames/drag5.png'
+import kurisuIdle1 from '../assets/kurisu/frames/idle1.png'
+import kurisuIdle2 from '../assets/kurisu/frames/idle2.png'
+import kurisuIdle3 from '../assets/kurisu/frames/idle3.png'
+import kurisuIdle4 from '../assets/kurisu/frames/idle4.png'
+import kurisuLand1 from '../assets/kurisu/frames/land1.png'
+import kurisuLand2 from '../assets/kurisu/frames/land2.png'
+import kurisuLand3 from '../assets/kurisu/frames/land3.png'
+import kurisuLand4 from '../assets/kurisu/frames/land4.png'
+import kurisuSleep1 from '../assets/kurisu/frames/sleep1.png'
+import kurisuSleep2 from '../assets/kurisu/frames/sleep2.png'
+import kurisuSleep3 from '../assets/kurisu/frames/sleep3.png'
+import kurisuSleep4 from '../assets/kurisu/frames/sleep4.png'
 import kurisuSpin from '../assets/kurisu/frames/spin.png'
 import kurisuSpin1 from '../assets/kurisu/frames/spin1.png'
 import kurisuSpin2 from '../assets/kurisu/frames/spin2.png'
@@ -12,17 +25,34 @@ import kurisuSpin3 from '../assets/kurisu/frames/spin3.png'
 import kurisuSpin4 from '../assets/kurisu/frames/spin4.png'
 import kurisuSpin5 from '../assets/kurisu/frames/spin5.png'
 import kurisuSpin6 from '../assets/kurisu/frames/spin6.png'
-import kurisuSurprise from '../assets/kurisu/frames/surprise.png'
-import kurisuThink from '../assets/kurisu/frames/think.png'
+import kurisuSpin7 from '../assets/kurisu/frames/spin7.png'
+import kurisuThink1 from '../assets/kurisu/frames/think1.png'
+import kurisuThink2 from '../assets/kurisu/frames/think2.png'
+import kurisuThink3 from '../assets/kurisu/frames/think3.png'
+import kurisuThink4 from '../assets/kurisu/frames/think4.png'
 import kurisuWalk1 from '../assets/kurisu/frames/walk1.png'
 import kurisuWalk2 from '../assets/kurisu/frames/walk2.png'
-import nailongIcon from '../assets/nailong/frames/idle.png'
-import nailongDrag from '../assets/nailong/frames/drag.png'
-import nailongIdle from '../assets/nailong/frames/idle.png'
-import nailongJump from '../assets/nailong/frames/jump.png'
-import nailongLeap from '../assets/nailong/frames/leap.png'
+import nailongDrag1 from '../assets/nailong/frames/drag1.png'
+import nailongDrag2 from '../assets/nailong/frames/drag2.png'
+import nailongDrag3 from '../assets/nailong/frames/drag3.png'
+import nailongDrag4 from '../assets/nailong/frames/drag4.png'
+import nailongIdle1 from '../assets/nailong/frames/idle1.png'
+import nailongIdle2 from '../assets/nailong/frames/idle2.png'
+import nailongIdle3 from '../assets/nailong/frames/idle3.png'
+import nailongIdle4 from '../assets/nailong/frames/idle4.png'
+import nailongJump1 from '../assets/nailong/frames/jump1.png'
+import nailongJump2 from '../assets/nailong/frames/jump2.png'
+import nailongJump3 from '../assets/nailong/frames/jump3.png'
+import nailongJump4 from '../assets/nailong/frames/jump4.png'
+import nailongLeap1 from '../assets/nailong/frames/leap1.png'
+import nailongLeap2 from '../assets/nailong/frames/leap2.png'
+import nailongLeap3 from '../assets/nailong/frames/leap3.png'
+import nailongLeap4 from '../assets/nailong/frames/leap4.png'
+import nailongSleep1 from '../assets/nailong/frames/sleep1.png'
+import nailongSleep2 from '../assets/nailong/frames/sleep2.png'
+import nailongSleep3 from '../assets/nailong/frames/sleep3.png'
+import nailongSleep4 from '../assets/nailong/frames/sleep4.png'
 import nailongRun from '../assets/nailong/frames/run.png'
-import nailongSleep from '../assets/nailong/frames/sleep.png'
 import nailongWalk from '../assets/nailong/frames/walk.png'
 import shime1 from '../assets/shimeji/shime1.png'
 import shime2 from '../assets/shimeji/shime2.png'
@@ -170,102 +200,102 @@ export const MASCOT_PROFILES = {
     subtitle: 'Shimeji demo',
   },
   nailong: {
-    icon: nailongIcon,
+    icon: nailongIdle1,
     images: {
-      shime1: nailongIdle,
+      shime1: nailongIdle1,
       shime2: nailongWalk,
       shime3: nailongRun,
-      shime4: nailongJump,
-      shime5: nailongDrag,
-      shime6: nailongDrag,
-      shime7: nailongDrag,
-      shime8: nailongDrag,
-      shime9: nailongDrag,
-      shime10: nailongDrag,
-      shime11: nailongIdle,
-      shime12: nailongLeap,
-      shime13: nailongLeap,
-      shime14: nailongLeap,
-      shime18: nailongJump,
-      shime19: nailongJump,
-      shime20: nailongSleep,
-      shime21: nailongSleep,
-      shime22: nailongJump,
-      shime23: nailongLeap,
-      shime24: nailongLeap,
-      shime25: nailongLeap,
-      shime26: nailongIdle,
-      shime30: nailongIdle,
-      shime31: nailongIdle,
-      shime32: nailongIdle,
-      shime33: nailongIdle,
-      shime38: nailongJump,
-      shime39: nailongJump,
-      shime40: nailongJump,
-      shime41: nailongIdle,
-      shime42: nailongIdle,
-      shime43: nailongJump,
-      shime44: nailongJump,
-      shime45: nailongLeap,
-      shime46: nailongIdle,
+      shime4: nailongJump4,
+      shime5: nailongDrag2,
+      shime6: nailongDrag3,
+      shime7: nailongDrag2,
+      shime8: nailongDrag4,
+      shime9: nailongDrag1,
+      shime10: nailongDrag4,
+      shime11: nailongIdle1,
+      shime12: nailongLeap3,
+      shime13: nailongLeap4,
+      shime14: nailongLeap2,
+      shime18: nailongJump4,
+      shime19: nailongIdle1,
+      shime20: nailongSleep2,
+      shime21: nailongSleep3,
+      shime22: nailongJump3,
+      shime23: nailongLeap1,
+      shime24: nailongLeap2,
+      shime25: nailongLeap3,
+      shime26: nailongIdle3,
+      shime30: nailongIdle1,
+      shime31: nailongIdle4,
+      shime32: nailongIdle2,
+      shime33: nailongSleep4,
+      shime38: nailongJump1,
+      shime39: nailongJump2,
+      shime40: nailongJump4,
+      shime41: nailongIdle1,
+      shime42: nailongIdle2,
+      shime43: nailongJump2,
+      shime44: nailongJump3,
+      shime45: nailongLeap2,
+      shime46: nailongIdle4,
       shime47: nailongWalk,
       shime48: nailongRun,
       shime49: nailongWalk,
-      shime50: nailongSleep,
-      shime51: nailongIdle,
-      shime52: nailongJump,
-      shime53: nailongJump,
-      shime54: nailongLeap,
-      shime55: nailongLeap,
-      shime56: nailongIdle,
-      shime57: nailongIdle,
-      shime58: nailongIdle,
-      shime59: nailongDrag,
-      shime60: nailongIdle,
-      shime61: nailongIdle,
-      shime62: nailongIdle,
-      shime63: nailongLeap,
-      shime64: nailongLeap,
-      shime65: nailongLeap,
-      shime66: nailongLeap,
+      shime50: nailongSleep1,
+      shime51: nailongIdle1,
+      shime52: nailongJump2,
+      shime53: nailongJump3,
+      shime54: nailongLeap2,
+      shime55: nailongLeap3,
+      shime56: nailongIdle2,
+      shime57: nailongIdle3,
+      shime58: nailongIdle4,
+      shime59: nailongDrag3,
+      shime60: nailongIdle2,
+      shime61: nailongIdle3,
+      shime62: nailongIdle4,
+      shime63: nailongLeap4,
+      shime64: nailongLeap3,
+      shime65: nailongLeap4,
+      shime66: nailongLeap3,
     },
     label: '奶龙',
     subtitle: 'AI 生成动作帧',
   },
   kurisu: {
-    icon: kurisuIdle,
+    icon: kurisuIdle1,
     images: {
-      shime1: kurisuIdle,
+      shime1: kurisuIdle1,
       shime2: kurisuWalk1,
       shime3: kurisuWalk2,
-      shime4: kurisuSurprise,
-      shime5: kurisuDrag,
-      shime6: kurisuDrag,
-      shime7: kurisuDrag,
-      shime8: kurisuDrag,
-      shime9: kurisuDrag,
-      shime10: kurisuDrag,
-      shime11: kurisuThink,
+      shime4: kurisuLand1,
+      shime5: kurisuDrag2,
+      shime6: kurisuDrag3,
+      shime7: kurisuDrag2,
+      shime8: kurisuDrag4,
+      shime9: kurisuDrag1,
+      shime10: kurisuDrag5,
+      shime11: kurisuThink1,
       shime12: kurisuClimb,
       shime13: kurisuClimb,
       shime14: kurisuClimb,
-      shime18: kurisuLand,
-      shime19: kurisuIdle,
-      shime20: kurisuSleep,
-      shime21: kurisuSleep,
-      shime22: kurisuSurprise,
+      shime18: kurisuLand2,
+      shime19: kurisuLand3,
+      shime20: kurisuSleep2,
+      shime21: kurisuSleep3,
+      shime22: kurisuLand1,
       shime23: kurisuClimb,
       shime24: kurisuClimb,
       shime25: kurisuClimb,
-      shime26: kurisuThink,
-      shime30: kurisuThink,
-      shime31: kurisuThink,
-      shime32: kurisuIdle,
-      shime33: kurisuThink,
-      shime38: kurisuSurprise,
-      shime39: kurisuLand,
-      shime40: kurisuSurprise,
-      shime41: kurisuIdle,
+      shime26: kurisuThink2,
+      shime30: kurisuThink1,
+      shime31: kurisuThink2,
+      shime32: kurisuIdle2,
+      shime33: kurisuSleep4,
+      shime38: kurisuLand1,
+      shime39: kurisuLand2,
+      shime40: kurisuLand3,
+      shime41: kurisuLand4,
       shime42: kurisuCheer,
       shime43: kurisuSpin1,
       shime44: kurisuSpin2,
@@ -274,19 +304,19 @@ export const MASCOT_PROFILES = {
       shime47: kurisuWalk1,
       shime48: kurisuWalk2,
       shime49: kurisuWalk1,
-      shime50: kurisuSleep,
-      shime51: kurisuIdle,
+      shime50: kurisuSleep1,
+      shime51: kurisuIdle1,
       shime52: kurisuSpin5,
       shime53: kurisuSpin6,
-      shime54: kurisuSpin,
+      shime54: kurisuSpin7,
       shime55: kurisuCheer,
-      shime56: kurisuIdle,
-      shime57: kurisuThink,
-      shime58: kurisuCheer,
-      shime59: kurisuDrag,
-      shime60: kurisuThink,
-      shime61: kurisuThink,
-      shime62: kurisuThink,
+      shime56: kurisuThink3,
+      shime57: kurisuThink4,
+      shime58: kurisuSpin,
+      shime59: kurisuDrag3,
+      shime60: kurisuIdle2,
+      shime61: kurisuIdle3,
+      shime62: kurisuIdle4,
       shime63: kurisuClimb,
       shime64: kurisuClimb,
       shime65: kurisuClimb,
