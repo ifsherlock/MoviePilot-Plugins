@@ -1,4 +1,5 @@
-import { S as SURFACE_SCAN_MS, g as buildDomSurfaceLanes, V as VIEWPORT_PADDING, u as unwrapResponse, n as normalizeConfig, D as DEFAULT_CONFIG, e as createMascotRuntime } from './provider-D2ANVpb4.js';
+import { S as SURFACE_SCAN_MS, g as buildDomSurfaceLanes, V as VIEWPORT_PADDING, n as normalizeConfig, D as DEFAULT_CONFIG, a as createMascotRuntime } from './runtime-QAP3gGRk.js';
+import { u as unwrapResponse } from './provider-D-FMQrI5.js';
 
 const ENTRY_SELECTOR = '.agent-assistant-fab';
 const TRIGGER_SELECTOR = '.agent-assistant-fab__trigger';

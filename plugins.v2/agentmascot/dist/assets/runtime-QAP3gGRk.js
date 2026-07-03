@@ -1607,11 +1607,4 @@ function createMascotRuntime(options = {}) {
   }
 }
 
-function unwrapResponse(response) {
-  if (response && Object.prototype.hasOwnProperty.call(response, 'data') && response.success !== undefined) {
-    return response.data
-  }
-  return response?.data ?? response
-}
-
-export { DEFAULT_CONFIG as D, SURFACE_SCAN_MS as S, VIEWPORT_PADDING as V, createActionState as a, createMouseState as b, cloneConfig as c, createPetState as d, createMascotRuntime as e, buildSurfaceLanes as f, buildDomSurfaceLanes as g, mascotIcon as m, normalizeConfig as n, unwrapResponse as u };
+export { DEFAULT_CONFIG as D, SURFACE_SCAN_MS as S, VIEWPORT_PADDING as V, createMascotRuntime as a, buildSurfaceLanes as b, cloneConfig as c, createActionState as d, createMouseState as e, createPetState as f, buildDomSurfaceLanes as g, mascotIcon as m, normalizeConfig as n };

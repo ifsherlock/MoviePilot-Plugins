@@ -31,6 +31,7 @@ export default defineConfig({
         './Page': './src/components/Page.vue',
         './Config': './src/components/Config.vue',
         './AppPage': './src/components/AppPage.vue',
+        './PluginEntry': './src/entry/pluginEntry.js',
       },
       shared: {
         vue: {
