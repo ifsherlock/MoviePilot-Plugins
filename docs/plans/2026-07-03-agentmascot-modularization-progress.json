@@ -406,7 +406,7 @@
             "git diff --check -> exits 0 with LF conversion warnings only",
             "git status showed no node_modules or package-lock.json"
           ],
-          "commit": "pending"
+          "commit": "64be217"
         },
         {
           "id": "5.2",
