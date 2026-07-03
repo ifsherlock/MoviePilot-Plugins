@@ -453,7 +453,7 @@
             "Vue settings/page smoke in browser context: /api/v1/plugin/form/AgentMascot status=200 render_mode=vue and config model keys present; /api/v1/plugin/page/AgentMascot status=200 render_mode=vue; /api/v1/plugin/remotes includes AgentMascot remote; remoteEntry.js status=200 and exposes ./Page, ./Config, ./AppPage, and ./PluginEntry",
             "git diff --check -> exits 0 with LF-to-CRLF warning only"
           ],
-          "commit": "pending"
+          "commit": "5504370"
         },
         {
           "id": "5.5",
