@@ -1045,7 +1045,7 @@ function createMascotRuntime(options = {}) {
   }
 
   function clampAnchorX$1(anchorX) {
-    return clampAnchorX(anchorX, bounds(), petSize$1(), viewportPadding)
+    return clampAnchorX(anchorX, bounds(), currentPose(), petSize$1(), poseScale$1(), pet.lookRight, viewportPadding)
   }
 
   function clampAnchorY$1(anchorY) {

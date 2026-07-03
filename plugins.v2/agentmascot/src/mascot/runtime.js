@@ -137,7 +137,7 @@ export function createMascotRuntime(options = {}) {
   }
 
   function clampAnchorX(anchorX) {
-    return calculateClampAnchorX(anchorX, bounds(), petSize(), viewportPadding)
+    return calculateClampAnchorX(anchorX, bounds(), currentPose(), petSize(), poseScale(), pet.lookRight, viewportPadding)
   }
 
   function clampAnchorY(anchorY) {

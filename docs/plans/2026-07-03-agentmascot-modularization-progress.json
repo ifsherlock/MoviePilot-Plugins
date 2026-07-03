@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-07-03-agentmascot-modularization-phased-plan.md",
   "status": {
     "phase": "phase-5",
-    "task": "5.5",
-    "next_allowed_action": "Implement task 5.5 by recording minimum manual action behavior acceptance results for ground, multi-height lanes, leap, wall, ceiling, fall, and rest duration"
+    "task": "completion-audit",
+    "next_allowed_action": "Run completion audit against the phased plan acceptance criteria and verify git status excludes zip, tar, node_modules, pnpm-lock.yaml, and pnpm-workspace.yaml from staged changes"
   },
   "execution_rules": {
     "branch": "codex/agentmascot-modularization",
@@ -458,9 +458,25 @@
         {
           "id": "5.5",
           "title": "记录动作行为人工验收结果",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            "Runtime behavior harness initially exposed a real movement-path bug: createMascotRuntime.clampAnchorX passed petSize() where geometry.clampAnchorX expected currentPose(), causing moving paths to throw Cannot read properties of undefined (reading 0)",
+            "Fixed src/mascot/runtime.js so clampAnchorX delegates currentPose(), petSize(), poseScale(), pet.lookRight, and viewportPadding to geometry.clampAnchorX",
+            "npm install was run to restore missing local vite; npm run check:assets -> [AgentMascot] asset/action validation passed: 66 images, 23 actions, 85 poses",
+            "npm run build in plugins.v2\\agentmascot -> exits 0 and generated runtime-BcuhrH3S.js plus updated agentmascot-loader.js, remoteEntry.js, and federation chunks; node_modules and package-lock.json were removed after verification",
+            "Runtime harness imported dist/assets/runtime-BcuhrH3S.js and passed bottom_run: stand/groundMove x=120 to run/groundMove x=183 on lane y=300",
+            "Runtime harness passed multi_height_release: drag release resolved laneY=260 and continued groundMove on y=260",
+            "Runtime harness passed leap: roam behavior produced surface=air state=leap action=jump",
+            "Runtime harness passed side_attach: high-speed left air movement reached surface=wall state=wallHold action=holdWall",
+            "Runtime harness passed wall_climb: wallClimb y=620 moved to y=260 and transitioned to holdWall",
+            "Runtime harness passed ceiling_crawl: ceilingCrawl x=220 moved to x=760 and transitioned to holdCeiling at y=35",
+            "Runtime harness passed fall_landing: high air fall observed surface=ground state=bounce action=bounce before returning to ground/rest",
+            "Runtime harness passed rest_duration: ground rest action=stand with duration=11520ms, within ROAM_REST_MIN/ROAM_REST_RANGE bounds",
+            "Regenerated plugins.v2\\agentmascot_v0.1.11_install_20260703_modularized.zip after runtime fix; zip validation confirmed 122 entries, runtime-BcuhrH3S.js, required modules, and shime1.png through shime66.png with temporary files excluded",
+            "Deployed regenerated package to live moviepilot-v2 for regression; logs show AgentMascot loaded as 0.1.11 and runtime-BcuhrH3S.js exists in live dist/assets",
+            "Online Chrome/CDP regression after pointermove and drag: #agentmascot-global-root exists, img naturalWidth > 0, root moved from approx left=40/top=561 to left=303/top=463, click opened .agent-assistant-panel, and console error/AgentMascot anchor events were empty"
+          ],
+          "commit": "pending"
         }
       ]
     }
@@ -620,6 +636,12 @@
       "task": "5.4",
       "action": "Fixed the AgentMascot loader response chunk inlining bug that prevented the online global mascot from mounting, regenerated and deployed the current 0.1.11 package for smoke validation, then verified plugin settings/page APIs, global replacement, native assistant click-open, and cache-disabled asset loading in Chrome/CDP.",
       "verification": "local loader JS parse, version gate, backend py_compile, regenerated install zip validation, live MoviePilot reload to AgentMascot 0.1.11, online loader JS parse, Chrome/CDP DOM smoke, click-open smoke, cache reload smoke, Vue remote/form/page checks",
+      "result": "passed"
+    },
+    {
+      "task": "5.5",
+      "action": "Recorded minimum action behavior acceptance by driving the built shared runtime; fixed the clampAnchorX pose argument bug uncovered by that validation, rebuilt dist, regenerated the install zip, redeployed the live plugin, and confirmed online movement/drag/click regression with no console errors.",
+      "verification": "npm run check:assets, npm run build, dist runtime harness for bottom/multi-height/leap/side/wall/ceiling/fall/rest, regenerated zip validation, live reload to AgentMascot 0.1.11, Chrome/CDP movement and drag regression",
       "result": "passed"
     }
   ]
