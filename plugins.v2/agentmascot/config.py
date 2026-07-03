@@ -3,6 +3,7 @@ from typing import Any, Dict, Mapping, Optional
 
 DEFAULT_CONFIG: Dict[str, Any] = {
     "enabled": False,
+    "mascot": "chibiterasu",
     "replace_agent_entry": True,
     "show_sidebar_nav": True,
     "scale": 1.0,
@@ -14,6 +15,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
 
 CONFIG_ATTRIBUTES = {
     "enabled": "_enabled",
+    "mascot": "_mascot",
     "replace_agent_entry": "_replace_agent_entry",
     "show_sidebar_nav": "_show_sidebar_nav",
     "scale": "_scale",
@@ -24,9 +26,11 @@ CONFIG_ATTRIBUTES = {
 }
 
 NUMERIC_BOUNDS = {
-    "scale": (0.6, 2.0, 1.0),
+    "scale": (0.6, 4.0, 1.0),
     "speed": (0.4, 2.0, 1.0),
 }
+
+MASCOT_CHOICES = {"chibiterasu", "nailong"}
 
 
 def clamp_number(value: Any, minimum: float, maximum: float, default: float) -> float:
@@ -39,8 +43,10 @@ def clamp_number(value: Any, minimum: float, maximum: float, default: float) -> 
 
 def normalize_config(config: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
     raw_config = config or {}
+    mascot = str(raw_config.get("mascot", DEFAULT_CONFIG["mascot"]))
     normalized = {
         "enabled": bool(raw_config.get("enabled", DEFAULT_CONFIG["enabled"])),
+        "mascot": mascot if mascot in MASCOT_CHOICES else DEFAULT_CONFIG["mascot"],
         "replace_agent_entry": bool(raw_config.get("replace_agent_entry", DEFAULT_CONFIG["replace_agent_entry"])),
         "show_sidebar_nav": bool(raw_config.get("show_sidebar_nav", DEFAULT_CONFIG["show_sidebar_nav"])),
         "follow_mouse": bool(raw_config.get("follow_mouse", DEFAULT_CONFIG["follow_mouse"])),

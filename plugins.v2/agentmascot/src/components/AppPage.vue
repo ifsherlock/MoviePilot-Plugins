@@ -1,8 +1,9 @@
 <script setup>
-import { mascotIcon } from '../assets/shimeji/frames'
+import { computed } from 'vue'
 import MascotControls from './MascotControls.vue'
 import MascotStage from './MascotStage.vue'
 import { useMascotPreview } from '../composables/useMascotPreview'
+import { resolveMascotProfile } from '../mascot/assets'
 
 const props = defineProps({
   api: {
@@ -43,6 +44,8 @@ const {
   updatePreviewConfig,
 } = useMascotPreview(props)
 
+const mascotProfile = computed(() => resolveMascotProfile(config.value.mascot))
+
 defineExpose({
   loading,
   saving,
@@ -56,10 +59,10 @@ defineExpose({
   <div class="agentmascot-shell">
     <div v-if="!hideTitle" class="agentmascot-header">
       <div class="agentmascot-title">
-        <img :src="mascotIcon" alt="" />
+        <img :src="mascotProfile.icon" alt="" />
         <div>
           <h2>Agent 桌宠</h2>
-          <p>小天照 Shimeji demo</p>
+          <p>{{ mascotProfile.label }} {{ mascotProfile.subtitle }}</p>
         </div>
       </div>
       <div class="agentmascot-actions">

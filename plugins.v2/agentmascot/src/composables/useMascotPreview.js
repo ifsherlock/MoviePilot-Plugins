@@ -47,7 +47,7 @@ export function useMascotPreview(props) {
   })
 
   const currentPose = computed(() => runtime.currentPose())
-  const currentFrame = computed(() => currentPose.value.image)
+  const currentFrame = computed(() => runtime.currentFrame())
   const petSize = computed(() => runtime.petSize())
   const stageStyle = computed(() => ({
     '--pet-size': `${petSize.value}px`,

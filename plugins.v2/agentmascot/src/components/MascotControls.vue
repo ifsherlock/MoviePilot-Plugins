@@ -1,4 +1,6 @@
 <script setup>
+import { MASCOT_OPTIONS } from '../mascot/assets'
+
 const props = defineProps({
   config: {
     type: Object,
@@ -18,6 +20,16 @@ function updateConfig(key, value) {
 
 <template>
   <div class="agentmascot-controls">
+    <VSelect
+      :items="MASCOT_OPTIONS"
+      :model-value="config.mascot"
+      class="control-select"
+      density="compact"
+      hide-details
+      label="形象"
+      variant="outlined"
+      @update:model-value="updateConfig('mascot', $event)"
+    />
     <VSwitch :model-value="config.enabled" label="启用插件" color="primary" hide-details @update:model-value="updateConfig('enabled', $event)" />
     <VSwitch :model-value="config.replace_agent_entry" label="替换智能体入口" color="primary" hide-details @update:model-value="updateConfig('replace_agent_entry', $event)" />
     <VSwitch :model-value="config.show_sidebar_nav" label="侧栏入口" color="primary" hide-details @update:model-value="updateConfig('show_sidebar_nav', $event)" />
@@ -26,7 +38,7 @@ function updateConfig(key, value) {
     <VSwitch :model-value="config.shadow" label="地面阴影" color="primary" hide-details @update:model-value="updateConfig('shadow', $event)" />
     <div class="control-slider">
       <span>缩放</span>
-      <VSlider :model-value="config.scale" :min="0.6" :max="2" :step="0.05" hide-details color="primary" @update:model-value="updateConfig('scale', $event)" />
+      <VSlider :model-value="config.scale" :min="0.6" :max="4" :step="0.05" hide-details color="primary" @update:model-value="updateConfig('scale', $event)" />
     </div>
     <div class="control-slider">
       <span>速度</span>
@@ -56,6 +68,9 @@ function updateConfig(key, value) {
 .control-slider span {
   font-size: 0.9rem;
   opacity: 0.78;
+}
+.control-select {
+  min-width: 150px;
 }
 
 @media (max-width: 720px) {

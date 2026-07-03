@@ -1,4 +1,12 @@
 import icon from '../assets/shimeji/icon.png'
+import nailongIcon from '../assets/nailong/frames/idle.png'
+import nailongDrag from '../assets/nailong/frames/drag.png'
+import nailongIdle from '../assets/nailong/frames/idle.png'
+import nailongJump from '../assets/nailong/frames/jump.png'
+import nailongLeap from '../assets/nailong/frames/leap.png'
+import nailongRun from '../assets/nailong/frames/run.png'
+import nailongSleep from '../assets/nailong/frames/sleep.png'
+import nailongWalk from '../assets/nailong/frames/walk.png'
 import shime1 from '../assets/shimeji/shime1.png'
 import shime2 from '../assets/shimeji/shime2.png'
 import shime3 from '../assets/shimeji/shime3.png'
@@ -135,4 +143,90 @@ export const SHIMEJI_IMAGES = {
   shime64,
   shime65,
   shime66,
+}
+
+export const MASCOT_PROFILES = {
+  chibiterasu: {
+    icon,
+    images: SHIMEJI_IMAGES,
+    label: '小天照',
+    subtitle: 'Shimeji demo',
+  },
+  nailong: {
+    icon: nailongIcon,
+    images: {
+      shime1: nailongIdle,
+      shime2: nailongWalk,
+      shime3: nailongWalk,
+      shime4: nailongJump,
+      shime5: nailongDrag,
+      shime6: nailongDrag,
+      shime7: nailongDrag,
+      shime8: nailongDrag,
+      shime9: nailongDrag,
+      shime10: nailongDrag,
+      shime11: nailongIdle,
+      shime12: nailongLeap,
+      shime13: nailongLeap,
+      shime14: nailongLeap,
+      shime18: nailongJump,
+      shime19: nailongJump,
+      shime20: nailongSleep,
+      shime21: nailongSleep,
+      shime22: nailongJump,
+      shime23: nailongLeap,
+      shime24: nailongLeap,
+      shime25: nailongLeap,
+      shime26: nailongIdle,
+      shime30: nailongIdle,
+      shime31: nailongIdle,
+      shime32: nailongIdle,
+      shime33: nailongIdle,
+      shime38: nailongJump,
+      shime39: nailongJump,
+      shime40: nailongJump,
+      shime41: nailongIdle,
+      shime42: nailongIdle,
+      shime43: nailongJump,
+      shime44: nailongJump,
+      shime45: nailongLeap,
+      shime46: nailongIdle,
+      shime47: nailongRun,
+      shime48: nailongRun,
+      shime49: nailongRun,
+      shime50: nailongSleep,
+      shime51: nailongIdle,
+      shime52: nailongJump,
+      shime53: nailongJump,
+      shime54: nailongLeap,
+      shime55: nailongLeap,
+      shime56: nailongIdle,
+      shime57: nailongIdle,
+      shime58: nailongIdle,
+      shime59: nailongDrag,
+      shime60: nailongIdle,
+      shime61: nailongIdle,
+      shime62: nailongIdle,
+      shime63: nailongLeap,
+      shime64: nailongLeap,
+      shime65: nailongLeap,
+      shime66: nailongLeap,
+    },
+    label: '奶龙',
+    subtitle: 'AI 生成动作帧',
+  },
+}
+
+export const MASCOT_OPTIONS = Object.entries(MASCOT_PROFILES).map(([value, profile]) => ({
+  title: profile.label,
+  value,
+}))
+
+export function resolveMascotProfile(name) {
+  return MASCOT_PROFILES[name] || MASCOT_PROFILES.chibiterasu
+}
+
+export function resolveMascotImage(name, imageName) {
+  const profile = resolveMascotProfile(name)
+  return profile.images[imageName] || SHIMEJI_IMAGES[imageName] || SHIMEJI_IMAGES.shime1
 }

@@ -6,7 +6,7 @@ function relativeMascotAssets() {
   return {
     name: 'agentmascot-relative-assets',
     generateBundle(_, bundle) {
-      const assetPattern = /(["'])\/assets\/(shime\d+-[^"']+\.png)\1/g
+      const assetPattern = /(["'])\/assets\/([^"']+\.png)\1/g
 
       for (const chunk of Object.values(bundle)) {
         if (chunk.type !== 'chunk') {

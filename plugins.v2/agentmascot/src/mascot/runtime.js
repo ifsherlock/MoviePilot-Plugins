@@ -64,6 +64,7 @@ import {
   resolveMouseYFollow,
   updateMouseIntent as updateMouseIntentState,
 } from './mouse'
+import { resolveMascotImage } from './assets'
 
 const BLOCKED_GROUND_ROAM_STATES = ['rest', 'bounce', 'toWall']
 
@@ -110,6 +111,10 @@ export function createMascotRuntime(options = {}) {
 
   function currentPose() {
     return resolvePose(actionState)
+  }
+
+  function currentFrame() {
+    return resolveMascotImage(config().mascot, currentPose().imageName)
   }
 
   function petSize() {
@@ -694,7 +699,7 @@ export function createMascotRuntime(options = {}) {
     const anchor = visualAnchor(pose)
     return {
       action: SHIMEJI_ACTIONS[actionState.name] ? actionState.name : 'stand',
-      frame: pose.image,
+      frame: currentFrame(),
       left: pet.anchorX - anchor.x,
       pose,
       size: petSize(),
@@ -708,6 +713,7 @@ export function createMascotRuntime(options = {}) {
     clampToBounds,
     config,
     currentAction,
+    currentFrame,
     currentPose,
     endDrag,
     handlePointerLeave,

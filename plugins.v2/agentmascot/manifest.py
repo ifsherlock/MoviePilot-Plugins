@@ -1,5 +1,5 @@
 PLUGIN_NAME = "Agent 桌宠形象"
-PLUGIN_DESC = "为 MoviePilot 智能体提供可自定义的 Web 桌宠形象，内置小天照 Shimeji demo。"
+PLUGIN_DESC = "为 MoviePilot 智能体提供可切换的 Web 桌宠形象，内置小天照和奶龙。"
 PLUGIN_ICON = "agentresourceofficer.png"
 PLUGIN_AUTHOR = "ifsherlock"
 AUTHOR_URL = "https://github.com/ifsherlock/MoviePilot-Plugins"
@@ -12,5 +12,5 @@ SIDEBAR_NAV_ICON = "mdi-paw"
 SIDEBAR_NAV_SECTION = "system"
 SIDEBAR_NAV_PERMISSION = "manage"
 
-AVATAR_SUMMARY = "小天照 Shimeji demo"
+AVATAR_SUMMARY = "小天照、奶龙"
 ACTION_SUMMARY = ["idle", "walk", "run", "follow", "drag", "sleep", "wall", "ceiling", "fall"]

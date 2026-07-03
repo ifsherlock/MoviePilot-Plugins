@@ -1,6 +1,6 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { c as cloneConfig, d as createActionState, e as createMouseState, f as createPetState, a as createMascotRuntime, b as buildSurfaceLanes, m as mascotIcon } from './runtime-BcuhrH3S.js';
-import { u as unwrapResponse } from './provider-D-FMQrI5.js';
+import { M as MASCOT_OPTIONS, c as cloneConfig, a as createActionState, b as createMouseState, d as createPetState, e as createMascotRuntime, f as buildSurfaceLanes, r as resolveMascotProfile } from './runtime-wz8UWxZN.js';
+import { u as unwrapResponse } from './provider-mBbtEwEX.js';
 
 const _export_sfc = (sfc, props) => {
   const target = sfc.__vccOpts || sfc;
@@ -10,7 +10,7 @@ const _export_sfc = (sfc, props) => {
   return target;
 };
 
-const {resolveComponent:_resolveComponent$1,createVNode:_createVNode$1,createElementVNode:_createElementVNode$2,openBlock:_openBlock$2,createElementBlock:_createElementBlock$2} = await importShared('vue');
+const {unref:_unref$1,resolveComponent:_resolveComponent$1,createVNode:_createVNode$1,createElementVNode:_createElementVNode$2,openBlock:_openBlock$2,createElementBlock:_createElementBlock$2} = await importShared('vue');
 
 
 const _hoisted_1$2 = { class: "agentmascot-controls" };
@@ -41,66 +41,77 @@ function updateConfig(key, value) {
 }
 
 return (_ctx, _cache) => {
+  const _component_VSelect = _resolveComponent$1("VSelect");
   const _component_VSwitch = _resolveComponent$1("VSwitch");
   const _component_VSlider = _resolveComponent$1("VSlider");
 
   return (_openBlock$2(), _createElementBlock$2("div", _hoisted_1$2, [
+    _createVNode$1(_component_VSelect, {
+      items: _unref$1(MASCOT_OPTIONS),
+      "model-value": __props.config.mascot,
+      class: "control-select",
+      density: "compact",
+      "hide-details": "",
+      label: "形象",
+      variant: "outlined",
+      "onUpdate:modelValue": _cache[0] || (_cache[0] = $event => (updateConfig('mascot', $event)))
+    }, null, 8, ["items", "model-value"]),
     _createVNode$1(_component_VSwitch, {
       "model-value": __props.config.enabled,
       label: "启用插件",
       color: "primary",
       "hide-details": "",
-      "onUpdate:modelValue": _cache[0] || (_cache[0] = $event => (updateConfig('enabled', $event)))
+      "onUpdate:modelValue": _cache[1] || (_cache[1] = $event => (updateConfig('enabled', $event)))
     }, null, 8, ["model-value"]),
     _createVNode$1(_component_VSwitch, {
       "model-value": __props.config.replace_agent_entry,
       label: "替换智能体入口",
       color: "primary",
       "hide-details": "",
-      "onUpdate:modelValue": _cache[1] || (_cache[1] = $event => (updateConfig('replace_agent_entry', $event)))
+      "onUpdate:modelValue": _cache[2] || (_cache[2] = $event => (updateConfig('replace_agent_entry', $event)))
     }, null, 8, ["model-value"]),
     _createVNode$1(_component_VSwitch, {
       "model-value": __props.config.show_sidebar_nav,
       label: "侧栏入口",
       color: "primary",
       "hide-details": "",
-      "onUpdate:modelValue": _cache[2] || (_cache[2] = $event => (updateConfig('show_sidebar_nav', $event)))
+      "onUpdate:modelValue": _cache[3] || (_cache[3] = $event => (updateConfig('show_sidebar_nav', $event)))
     }, null, 8, ["model-value"]),
     _createVNode$1(_component_VSwitch, {
       "model-value": __props.config.follow_mouse,
       label: "跟随鼠标",
       color: "primary",
       "hide-details": "",
-      "onUpdate:modelValue": _cache[3] || (_cache[3] = $event => (updateConfig('follow_mouse', $event)))
+      "onUpdate:modelValue": _cache[4] || (_cache[4] = $event => (updateConfig('follow_mouse', $event)))
     }, null, 8, ["model-value"]),
     _createVNode$1(_component_VSwitch, {
       "model-value": __props.config.auto_roam,
       label: "自动游走",
       color: "primary",
       "hide-details": "",
-      "onUpdate:modelValue": _cache[4] || (_cache[4] = $event => (updateConfig('auto_roam', $event)))
+      "onUpdate:modelValue": _cache[5] || (_cache[5] = $event => (updateConfig('auto_roam', $event)))
     }, null, 8, ["model-value"]),
     _createVNode$1(_component_VSwitch, {
       "model-value": __props.config.shadow,
       label: "地面阴影",
       color: "primary",
       "hide-details": "",
-      "onUpdate:modelValue": _cache[5] || (_cache[5] = $event => (updateConfig('shadow', $event)))
+      "onUpdate:modelValue": _cache[6] || (_cache[6] = $event => (updateConfig('shadow', $event)))
     }, null, 8, ["model-value"]),
     _createElementVNode$2("div", _hoisted_2$1, [
-      _cache[8] || (_cache[8] = _createElementVNode$2("span", null, "缩放", -1)),
+      _cache[9] || (_cache[9] = _createElementVNode$2("span", null, "缩放", -1)),
       _createVNode$1(_component_VSlider, {
         "model-value": __props.config.scale,
         min: 0.6,
-        max: 2,
+        max: 4,
         step: 0.05,
         "hide-details": "",
         color: "primary",
-        "onUpdate:modelValue": _cache[6] || (_cache[6] = $event => (updateConfig('scale', $event)))
+        "onUpdate:modelValue": _cache[7] || (_cache[7] = $event => (updateConfig('scale', $event)))
       }, null, 8, ["model-value"])
     ]),
     _createElementVNode$2("div", _hoisted_3$1, [
-      _cache[9] || (_cache[9] = _createElementVNode$2("span", null, "速度", -1)),
+      _cache[10] || (_cache[10] = _createElementVNode$2("span", null, "速度", -1)),
       _createVNode$1(_component_VSlider, {
         "model-value": __props.config.speed,
         min: 0.4,
@@ -108,7 +119,7 @@ return (_ctx, _cache) => {
         step: 0.05,
         "hide-details": "",
         color: "primary",
-        "onUpdate:modelValue": _cache[7] || (_cache[7] = $event => (updateConfig('speed', $event)))
+        "onUpdate:modelValue": _cache[8] || (_cache[8] = $event => (updateConfig('speed', $event)))
       }, null, 8, ["model-value"])
     ])
   ]))
@@ -116,7 +127,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const MascotControls = /*#__PURE__*/_export_sfc(_sfc_main$2, [['__scopeId',"data-v-e2d9cdcb"]]);
+const MascotControls = /*#__PURE__*/_export_sfc(_sfc_main$2, [['__scopeId',"data-v-dff81f2d"]]);
 
 const {createElementVNode:_createElementVNode$1,normalizeClass:_normalizeClass,normalizeStyle:_normalizeStyle,openBlock:_openBlock$1,createElementBlock:_createElementBlock$1} = await importShared('vue');
 
@@ -262,7 +273,7 @@ return (_ctx, _cache) => {
 };
 const MascotStage = /*#__PURE__*/_export_sfc(_sfc_main$1, [['__scopeId',"data-v-524b37ef"]]);
 
-const {computed,nextTick,onBeforeUnmount,onMounted,reactive,ref,watch} = await importShared('vue');
+const {computed: computed$1,nextTick,onBeforeUnmount,onMounted,reactive,ref,watch} = await importShared('vue');
 
 function useMascotPreview(props) {
   const loading = ref(false);
@@ -306,13 +317,13 @@ function useMascotPreview(props) {
     snapGroundOnDragRelease: true,
   });
 
-  const currentPose = computed(() => runtime.currentPose());
-  const currentFrame = computed(() => currentPose.value.image);
-  const petSize = computed(() => runtime.petSize());
-  const stageStyle = computed(() => ({
+  computed$1(() => runtime.currentPose());
+  const currentFrame = computed$1(() => runtime.currentFrame());
+  const petSize = computed$1(() => runtime.petSize());
+  const stageStyle = computed$1(() => ({
     '--pet-size': `${petSize.value}px`,
   }));
-  const petStyle = computed(() => {
+  const petStyle = computed$1(() => {
     const state = runtime.renderState();
     return {
       transform: `translate3d(${state.left}px, ${state.top}px, 0) scaleX(${pet.lookRight ? -1 : 1})`,
@@ -440,7 +451,7 @@ function useMascotPreview(props) {
   }
 }
 
-const {unref:_unref,createElementVNode:_createElementVNode,resolveComponent:_resolveComponent,createVNode:_createVNode,openBlock:_openBlock,createElementBlock:_createElementBlock,createCommentVNode:_createCommentVNode,toDisplayString:_toDisplayString,createTextVNode:_createTextVNode,withCtx:_withCtx,createBlock:_createBlock} = await importShared('vue');
+const {createElementVNode:_createElementVNode,toDisplayString:_toDisplayString,unref:_unref,resolveComponent:_resolveComponent,createVNode:_createVNode,openBlock:_openBlock,createElementBlock:_createElementBlock,createCommentVNode:_createCommentVNode,createTextVNode:_createTextVNode,withCtx:_withCtx,createBlock:_createBlock} = await importShared('vue');
 
 
 const _hoisted_1 = { class: "agentmascot-shell" };
@@ -451,6 +462,8 @@ const _hoisted_2 = {
 const _hoisted_3 = { class: "agentmascot-title" };
 const _hoisted_4 = ["src"];
 const _hoisted_5 = { class: "agentmascot-actions" };
+
+const {computed} = await importShared('vue');
 
 
 const _sfc_main = {
@@ -497,6 +510,8 @@ const {
   updatePreviewConfig,
 } = useMascotPreview(props);
 
+const mascotProfile = computed(() => resolveMascotProfile(config.value.mascot));
+
 __expose({
   loading,
   saving,
@@ -514,13 +529,13 @@ return (_ctx, _cache) => {
       ? (_openBlock(), _createElementBlock("div", _hoisted_2, [
           _createElementVNode("div", _hoisted_3, [
             _createElementVNode("img", {
-              src: _unref(mascotIcon),
+              src: mascotProfile.value.icon,
               alt: ""
             }, null, 8, _hoisted_4),
-            _cache[0] || (_cache[0] = _createElementVNode("div", null, [
-              _createElementVNode("h2", null, "Agent 桌宠"),
-              _createElementVNode("p", null, "小天照 Shimeji demo")
-            ], -1))
+            _createElementVNode("div", null, [
+              _cache[0] || (_cache[0] = _createElementVNode("h2", null, "Agent 桌宠", -1)),
+              _createElementVNode("p", null, _toDisplayString(mascotProfile.value.label) + " " + _toDisplayString(mascotProfile.value.subtitle), 1)
+            ])
           ]),
           _createElementVNode("div", _hoisted_5, [
             _createVNode(_component_VBtn, {
@@ -576,6 +591,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-d1dfaebf"]]);
+const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-63f502b9"]]);
 
 export { _export_sfc as _, AppPage as default };
