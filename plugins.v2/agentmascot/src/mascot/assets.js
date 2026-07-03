@@ -1,6 +1,12 @@
 import icon from '../assets/shimeji/icon.png'
-import kurisuCheer from '../assets/kurisu/frames/cheer.png'
-import kurisuClimb from '../assets/kurisu/frames/climb.png'
+import kurisuCheer1 from '../assets/kurisu/frames/cheer1.png'
+import kurisuCheer2 from '../assets/kurisu/frames/cheer2.png'
+import kurisuCheer3 from '../assets/kurisu/frames/cheer3.png'
+import kurisuCheer4 from '../assets/kurisu/frames/cheer4.png'
+import kurisuClimb1 from '../assets/kurisu/frames/climb1.png'
+import kurisuClimb2 from '../assets/kurisu/frames/climb2.png'
+import kurisuClimb3 from '../assets/kurisu/frames/climb3.png'
+import kurisuClimb4 from '../assets/kurisu/frames/climb4.png'
 import kurisuDrag1 from '../assets/kurisu/frames/drag1.png'
 import kurisuDrag2 from '../assets/kurisu/frames/drag2.png'
 import kurisuDrag3 from '../assets/kurisu/frames/drag3.png'
@@ -18,6 +24,10 @@ import kurisuSleep1 from '../assets/kurisu/frames/sleep1.png'
 import kurisuSleep2 from '../assets/kurisu/frames/sleep2.png'
 import kurisuSleep3 from '../assets/kurisu/frames/sleep3.png'
 import kurisuSleep4 from '../assets/kurisu/frames/sleep4.png'
+import kurisuSurprise1 from '../assets/kurisu/frames/surprise1.png'
+import kurisuSurprise2 from '../assets/kurisu/frames/surprise2.png'
+import kurisuSurprise3 from '../assets/kurisu/frames/surprise3.png'
+import kurisuSurprise4 from '../assets/kurisu/frames/surprise4.png'
 import kurisuSpin from '../assets/kurisu/frames/spin.png'
 import kurisuSpin1 from '../assets/kurisu/frames/spin1.png'
 import kurisuSpin2 from '../assets/kurisu/frames/spin2.png'
@@ -32,6 +42,8 @@ import kurisuThink3 from '../assets/kurisu/frames/think3.png'
 import kurisuThink4 from '../assets/kurisu/frames/think4.png'
 import kurisuWalk1 from '../assets/kurisu/frames/walk1.png'
 import kurisuWalk2 from '../assets/kurisu/frames/walk2.png'
+import kurisuWalk3 from '../assets/kurisu/frames/walk3.png'
+import kurisuWalk4 from '../assets/kurisu/frames/walk4.png'
 import nailongDrag1 from '../assets/nailong/frames/drag1.png'
 import nailongDrag2 from '../assets/nailong/frames/drag2.png'
 import nailongDrag3 from '../assets/nailong/frames/drag3.png'
@@ -52,7 +64,10 @@ import nailongSleep1 from '../assets/nailong/frames/sleep1.png'
 import nailongSleep2 from '../assets/nailong/frames/sleep2.png'
 import nailongSleep3 from '../assets/nailong/frames/sleep3.png'
 import nailongSleep4 from '../assets/nailong/frames/sleep4.png'
-import nailongRun from '../assets/nailong/frames/run.png'
+import nailongRun1 from '../assets/nailong/frames/run1.png'
+import nailongRun2 from '../assets/nailong/frames/run2.png'
+import nailongRun3 from '../assets/nailong/frames/run3.png'
+import nailongRun4 from '../assets/nailong/frames/run4.png'
 import nailongWalk from '../assets/nailong/frames/walk.png'
 import nailongWalk1 from '../assets/nailong/frames/walk1.png'
 import nailongWalk2 from '../assets/nailong/frames/walk2.png'
@@ -208,7 +223,7 @@ export const MASCOT_PROFILES = {
     images: {
       shime1: nailongIdle1,
       shime2: nailongWalk1,
-      shime3: nailongRun,
+      shime3: nailongRun1,
       shime4: nailongJump4,
       shime5: nailongDrag2,
       shime6: nailongDrag3,
@@ -220,6 +235,9 @@ export const MASCOT_PROFILES = {
       shime12: nailongLeap3,
       shime13: nailongLeap4,
       shime14: nailongLeap2,
+      shime15: nailongRun2,
+      shime16: nailongRun3,
+      shime17: nailongRun4,
       shime18: nailongJump4,
       shime19: nailongIdle1,
       shime20: nailongSleep2,
@@ -280,40 +298,50 @@ export const MASCOT_PROFILES = {
       shime9: kurisuDrag1,
       shime10: kurisuDrag5,
       shime11: kurisuThink1,
-      shime12: kurisuClimb,
-      shime13: kurisuClimb,
-      shime14: kurisuClimb,
+      shime12: kurisuClimb2,
+      shime13: kurisuClimb3,
+      shime14: kurisuClimb4,
+      shime15: kurisuSurprise1,
+      shime16: kurisuSurprise2,
+      shime17: kurisuSurprise3,
       shime18: kurisuLand2,
       shime19: kurisuLand3,
       shime20: kurisuSleep2,
       shime21: kurisuSleep3,
       shime22: kurisuLand1,
-      shime23: kurisuClimb,
-      shime24: kurisuClimb,
-      shime25: kurisuClimb,
+      shime23: kurisuClimb1,
+      shime24: kurisuClimb2,
+      shime25: kurisuClimb3,
       shime26: kurisuThink2,
+      shime27: kurisuSurprise4,
+      shime28: kurisuCheer1,
+      shime29: kurisuCheer2,
       shime30: kurisuThink1,
       shime31: kurisuThink2,
       shime32: kurisuIdle2,
       shime33: kurisuSleep4,
+      shime34: kurisuCheer3,
+      shime35: kurisuCheer4,
+      shime36: kurisuClimb1,
+      shime37: kurisuClimb4,
       shime38: kurisuLand1,
       shime39: kurisuLand2,
       shime40: kurisuLand3,
       shime41: kurisuLand4,
-      shime42: kurisuCheer,
+      shime42: kurisuCheer1,
       shime43: kurisuSpin1,
       shime44: kurisuSpin2,
       shime45: kurisuSpin3,
       shime46: kurisuSpin4,
       shime47: kurisuWalk1,
       shime48: kurisuWalk2,
-      shime49: kurisuWalk1,
+      shime49: kurisuWalk3,
       shime50: kurisuSleep1,
       shime51: kurisuIdle1,
-      shime52: kurisuSpin5,
-      shime53: kurisuSpin6,
-      shime54: kurisuSpin7,
-      shime55: kurisuCheer,
+      shime52: kurisuWalk4,
+      shime53: kurisuSpin5,
+      shime54: kurisuSpin6,
+      shime55: kurisuSpin7,
       shime56: kurisuThink3,
       shime57: kurisuThink4,
       shime58: kurisuSpin,
@@ -321,10 +349,10 @@ export const MASCOT_PROFILES = {
       shime60: kurisuIdle2,
       shime61: kurisuIdle3,
       shime62: kurisuIdle4,
-      shime63: kurisuClimb,
-      shime64: kurisuClimb,
-      shime65: kurisuClimb,
-      shime66: kurisuClimb,
+      shime63: kurisuClimb1,
+      shime64: kurisuClimb2,
+      shime65: kurisuClimb3,
+      shime66: kurisuClimb4,
     },
     label: '克里斯蒂娜助手',
     subtitle: 'Q 版研究员动作帧',

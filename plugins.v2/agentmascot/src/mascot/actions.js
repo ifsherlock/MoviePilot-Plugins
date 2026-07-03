@@ -275,6 +275,24 @@ export const MASCOT_ACTION_OVERRIDES = {
         pose('shime49', GROUND_FOOT_ANCHOR, [-2, 0], 6),
       ],
     },
+    run: {
+      ...SHIMEJI_ACTIONS.run,
+      poses: [
+        pose('shime3', RUN_BODY_ANCHOR, [-4, 0], 4),
+        pose('shime15', RUN_BODY_ANCHOR, [-4, 0], 4),
+        pose('shime16', RUN_BODY_ANCHOR, [-4, 0], 4),
+        pose('shime17', RUN_BODY_ANCHOR, [-4, 0], 4),
+      ],
+    },
+    dash: {
+      ...SHIMEJI_ACTIONS.dash,
+      poses: [
+        pose('shime3', DASH_BODY_ANCHOR, [-8, 0], 3),
+        pose('shime15', DASH_BODY_ANCHOR, [-8, 0], 3),
+        pose('shime16', DASH_BODY_ANCHOR, [-8, 0], 3),
+        pose('shime17', DASH_BODY_ANCHOR, [-8, 0], 3),
+      ],
+    },
     lie: CUSTOM_SLEEP,
     jump: {
       ...SHIMEJI_ACTIONS.jump,
@@ -302,6 +320,33 @@ export const MASCOT_ACTION_OVERRIDES = {
   },
   kurisu: {
     stand: CUSTOM_STAND,
+    walk: {
+      ...SHIMEJI_ACTIONS.walk,
+      poses: [
+        pose('shime47', GROUND_FOOT_ANCHOR, [-2, 0], 7),
+        pose('shime48', GROUND_FOOT_ANCHOR, [-2, 0], 7),
+        pose('shime49', GROUND_FOOT_ANCHOR, [-2, 0], 7),
+        pose('shime52', GROUND_FOOT_ANCHOR, [-2, 0], 7),
+      ],
+    },
+    run: {
+      ...SHIMEJI_ACTIONS.run,
+      poses: [
+        pose('shime47', RUN_BODY_ANCHOR, [-4, 0], 4),
+        pose('shime48', RUN_BODY_ANCHOR, [-4, 0], 4),
+        pose('shime49', RUN_BODY_ANCHOR, [-4, 0], 4),
+        pose('shime52', RUN_BODY_ANCHOR, [-4, 0], 4),
+      ],
+    },
+    dash: {
+      ...SHIMEJI_ACTIONS.dash,
+      poses: [
+        pose('shime47', DASH_BODY_ANCHOR, [-8, 0], 3),
+        pose('shime48', DASH_BODY_ANCHOR, [-8, 0], 3),
+        pose('shime49', DASH_BODY_ANCHOR, [-8, 0], 3),
+        pose('shime52', DASH_BODY_ANCHOR, [-8, 0], 3),
+      ],
+    },
     lie: CUSTOM_SLEEP,
     lookUp: {
       ...SHIMEJI_ACTIONS.lookUp,
@@ -328,16 +373,31 @@ export const MASCOT_ACTION_OVERRIDES = {
         pose('shime41', GROUND_FOOT_ANCHOR, [0, 0], 8),
       ],
     },
+    pullOut: {
+      ...SHIMEJI_ACTIONS.pullOut,
+      poses: [
+        pose('shime15', GROUND_FOOT_ANCHOR, [0, 0], 14),
+        pose('shime16', GROUND_FOOT_ANCHOR, [0, 0], 14),
+        pose('shime17', GROUND_FOOT_ANCHOR, [0, 0], 14),
+        pose('shime27', GROUND_FOOT_ANCHOR, [0, 0], 14),
+        pose('shime41', GROUND_FOOT_ANCHOR, [0, 0], 28),
+      ],
+    },
     split: {
       ...SHIMEJI_ACTIONS.split,
       poses: [
+        pose('shime28', GROUND_FOOT_ANCHOR, [0, 0], 10),
+        pose('shime29', GROUND_FOOT_ANCHOR, [0, 0], 10),
+        pose('shime34', GROUND_FOOT_ANCHOR, [0, 0], 10),
+        pose('shime35', GROUND_FOOT_ANCHOR, [0, 0], 12),
         pose('shime43', GROUND_FOOT_ANCHOR, [0, 0], 12),
         pose('shime44', GROUND_FOOT_ANCHOR, [0, 0], 12),
         pose('shime45', GROUND_FOOT_ANCHOR, [0, 0], 12),
         pose('shime46', GROUND_FOOT_ANCHOR, [0, 0], 12),
-        pose('shime52', GROUND_FOOT_ANCHOR, [0, 0], 12),
         pose('shime53', GROUND_FOOT_ANCHOR, [0, 0], 12),
         pose('shime54', GROUND_FOOT_ANCHOR, [0, 0], 12),
+        pose('shime55', GROUND_FOOT_ANCHOR, [0, 0], 12),
+        pose('shime35', GROUND_FOOT_ANCHOR, [0, 0], 18),
         pose('shime58', GROUND_FOOT_ANCHOR, [0, 0], 18),
       ],
     },

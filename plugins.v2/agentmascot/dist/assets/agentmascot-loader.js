@@ -1,4 +1,4 @@
-import { S as SURFACE_SCAN_MS, g as buildDomSurfaceLanes, V as VIEWPORT_PADDING, n as normalizeConfig, D as DEFAULT_CONFIG, e as createMascotRuntime } from './runtime-CJepPXQz.js';
+import { S as SURFACE_SCAN_MS, g as buildDomSurfaceLanes, V as VIEWPORT_PADDING, n as normalizeConfig, D as DEFAULT_CONFIG, e as createMascotRuntime } from './runtime-Y3O8ATVv.js';
 import { u as unwrapResponse } from './provider-mBbtEwEX.js';
 
 const ENTRY_SELECTOR = '.agent-assistant-fab';

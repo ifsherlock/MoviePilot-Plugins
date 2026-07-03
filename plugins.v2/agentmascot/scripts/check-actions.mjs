@@ -144,8 +144,8 @@ function eachPngChunk(data, callback) {
 async function readPngMetrics(filePath) {
   const info = await readPngInfo(filePath)
   if (!info) return null
-  if (info.bitDepth !== 8 || ![3, 6].includes(info.colorType)) {
-    fail(`${path.basename(filePath)} must be an 8-bit indexed/RGBA PNG`)
+  if (info.bitDepth !== 8 || info.colorType !== 6) {
+    fail(`${path.basename(filePath)} must be an 8-bit RGBA PNG`)
     return null
   }
 
@@ -303,6 +303,12 @@ function validateMascotMotionAssets(source) {
   if (nailong.get('shime2') && nailong.get('shime2') === nailong.get('shime3')) {
     fail('Nailong walk poses shime2 and shime3 must use different frame variables')
   }
+  for (const frameName of ['shime3', 'shime15', 'shime16', 'shime17']) {
+    const variableName = nailong.get(frameName)
+    if (!/^nailongRun\d$/.test(variableName || '')) {
+      fail(`Nailong run pose ${frameName} must use a dedicated run frame, got ${variableName || '<missing>'}`)
+    }
+  }
 
   const kurisu = collectMascotImages(source, 'kurisu')
   for (const frameName of ['shime47', 'shime48', 'shime49']) {
@@ -328,37 +334,79 @@ async function validateKurisuSpinFrames() {
   }
 }
 
-async function validateNailongWalkFrames() {
-  for (const fileName of ['walk1.png', 'walk2.png', 'walk3.png', 'walk4.png']) {
-    const filePath = path.join(nailongRoot, fileName)
-    try {
-      const info = await readPngMetrics(filePath)
-      if (!info) continue
-      if (info.width !== 384 || info.height !== 384) {
-        fail(`Nailong ${fileName} must be 384x384, got ${info.width}x${info.height}`)
+async function validateNailongMotionFrames() {
+  const groups = [
+    ['idle', ['idle1.png', 'idle2.png', 'idle3.png', 'idle4.png'], { maxHeightDelta: 8, minHeight: 292, maxHeight: 308 }],
+    ['walk', ['walk1.png', 'walk2.png', 'walk3.png', 'walk4.png'], { maxHeightDelta: 6, minHeight: 307, maxHeight: 323 }],
+    ['run', ['run1.png', 'run2.png', 'run3.png', 'run4.png'], { maxHeightDelta: 6, minHeight: 307, maxHeight: 323 }],
+    ['jump', ['jump1.png', 'jump2.png', 'jump3.png', 'jump4.png'], { maxHeightDelta: 8, minHeight: 292, maxHeight: 308 }],
+    ['leap', ['leap1.png', 'leap2.png', 'leap3.png', 'leap4.png'], { maxHeightDelta: 40, minHeight: 255, maxHeight: 308 }],
+    ['drag', ['drag1.png', 'drag2.png', 'drag3.png', 'drag4.png'], { maxHeightDelta: 8, minHeight: 292, maxHeight: 308 }],
+    ['sleep', ['sleep1.png', 'sleep2.png', 'sleep3.png', 'sleep4.png'], { maxWidthDelta: 8, minWidth: 292, maxWidth: 308 }],
+  ]
+
+  for (const [groupName, fileNames, rules] of groups) {
+    const heights = []
+    const widths = []
+    for (const fileName of fileNames) {
+      const filePath = path.join(nailongRoot, fileName)
+      try {
+        const info = await readPngMetrics(filePath)
+        if (!info) continue
+        if (info.width !== 384 || info.height !== 384) {
+          fail(`Nailong ${fileName} must be 384x384, got ${info.width}x${info.height}`)
+        }
+        if (info.edgeOpaquePixels > 0) {
+          fail(`Nailong ${fileName} has opaque edge pixels; background was not cut out cleanly`)
+        }
+        if (!info.bbox) {
+          fail(`Nailong ${fileName} has no visible subject`)
+          continue
+        }
+        if (info.bbox.x < 20 || info.bbox.y < 20 || info.bbox.x + info.bbox.width > 364 || info.bbox.y + info.bbox.height > 364) {
+          fail(`Nailong ${fileName} subject is too close to canvas edge: ${JSON.stringify(info.bbox)}`)
+        }
+        if (rules.minHeight && info.bbox.height < rules.minHeight) {
+          fail(`Nailong ${fileName} subject is too short: ${info.bbox.height}px`)
+        }
+        if (rules.maxHeight && info.bbox.height > rules.maxHeight) {
+          fail(`Nailong ${fileName} subject is too tall: ${info.bbox.height}px`)
+        }
+        if (rules.minWidth && info.bbox.width < rules.minWidth) {
+          fail(`Nailong ${fileName} subject is too narrow: ${info.bbox.width}px`)
+        }
+        if (rules.maxWidth && info.bbox.width > rules.maxWidth) {
+          fail(`Nailong ${fileName} subject is too wide: ${info.bbox.width}px`)
+        }
+        heights.push(info.bbox.height)
+        widths.push(info.bbox.width)
+        if (info.size > 180000) {
+          fail(`Nailong ${fileName} is too large after compression: ${info.size} bytes`)
+        }
+      } catch (error) {
+        fail(`Invalid Nailong ${groupName} frame ${fileName}: ${error.message}`)
       }
-      if (info.edgeOpaquePixels > 0) {
-        fail(`Nailong ${fileName} has opaque edge pixels; background was not cut out cleanly`)
-      }
-      if (!info.bbox || info.bbox.width < 120 || info.bbox.height < 170) {
-        fail(`Nailong ${fileName} subject is too small after background cutout`)
-      }
-      if (info.size > 60000) {
-        fail(`Nailong ${fileName} is too large after compression: ${info.size} bytes`)
-      }
-    } catch (error) {
-      fail(`Invalid Nailong walk frame ${fileName}: ${error.message}`)
+    }
+    if (rules.maxHeightDelta && heights.length === fileNames.length && Math.max(...heights) - Math.min(...heights) > rules.maxHeightDelta) {
+      fail(`Nailong ${groupName} frames have inconsistent subject heights: ${heights.join(', ')}`)
+    }
+    if (rules.maxWidthDelta && widths.length === fileNames.length && Math.max(...widths) - Math.min(...widths) > rules.maxWidthDelta) {
+      fail(`Nailong ${groupName} frames have inconsistent subject widths: ${widths.join(', ')}`)
     }
   }
 }
 
 async function validateKurisuScaledFrames() {
   const groups = [
-    ['idle', 260, 120000],
-    ['drag', 270, 130000],
-    ['sleep', 210, 120000],
-    ['think', 300, 130000],
-    ['land', 300, 130000],
+    ['idle', 300, 160000],
+    ['walk', 300, 160000],
+    ['drag', 250, 180000],
+    ['sleep', 170, 160000],
+    ['think', 230, 160000],
+    ['land', 250, 220000],
+    ['climb', 320, 180000],
+    ['cheer', 290, 170000],
+    ['surprise', 280, 170000],
   ]
 
   for (const [prefix, minHeight, maxSize] of groups) {
@@ -372,6 +420,12 @@ async function validateKurisuScaledFrames() {
         }
         if (info.edgeOpaquePixels > 0) {
           fail(`Kurisu ${filePath} has opaque edge pixels`)
+        }
+        if (
+          info.bbox &&
+          (info.bbox.x < 12 || info.bbox.y < 12 || info.bbox.x + info.bbox.width > 372 || info.bbox.y + info.bbox.height > 372)
+        ) {
+          fail(`Kurisu ${filePath} subject is too close to canvas edge: ${JSON.stringify(info.bbox)}`)
         }
         if (!info.bbox || info.bbox.height < minHeight) {
           fail(`Kurisu ${filePath} subject is too small: ${info.bbox?.height || 0}px tall`)
@@ -401,7 +455,7 @@ const poseCount = validatePoses(actionsSource, assets, anchors)
 validateCatalog(categories, actionNames)
 validateMascotMotionAssets(assetsSource)
 await validateKurisuSpinFrames()
-await validateNailongWalkFrames()
+await validateNailongMotionFrames()
 await validateKurisuScaledFrames()
 
 if (failures.length) {
