@@ -418,7 +418,7 @@
             "Decision: no version or history bump for task 5.2 because the phase-3/phase-4 work is internal modularization, formal future entry scaffolding, build output synchronization, and developer asset checks without a user-visible behavior/config change",
             "python .github\\scripts\\check_plugin_versions.py package.json package.v2.json -> Plugin release version gate passed"
           ],
-          "commit": "pending"
+          "commit": "cced973"
         },
         {
           "id": "5.3",
