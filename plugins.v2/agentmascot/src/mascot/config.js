@@ -76,7 +76,7 @@ export function normalizeConfig(config) {
     ...DEFAULT_CONFIG,
     ...rawConfig,
     enabled: Boolean(rawConfig.enabled ?? DEFAULT_CONFIG.enabled),
-    mascot: ['chibiterasu', 'nailong'].includes(rawConfig.mascot) ? rawConfig.mascot : DEFAULT_CONFIG.mascot,
+    mascot: ['chibiterasu', 'nailong', 'kurisu'].includes(rawConfig.mascot) ? rawConfig.mascot : DEFAULT_CONFIG.mascot,
     replace_agent_entry: Boolean(rawConfig.replace_agent_entry ?? DEFAULT_CONFIG.replace_agent_entry),
     show_sidebar_nav: Boolean(rawConfig.show_sidebar_nav ?? DEFAULT_CONFIG.show_sidebar_nav),
     follow_mouse: Boolean(rawConfig.follow_mouse ?? DEFAULT_CONFIG.follow_mouse),

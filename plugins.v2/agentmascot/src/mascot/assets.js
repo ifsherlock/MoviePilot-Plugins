@@ -1,4 +1,15 @@
 import icon from '../assets/shimeji/icon.png'
+import kurisuCheer from '../assets/kurisu/frames/cheer.png'
+import kurisuClimb from '../assets/kurisu/frames/climb.png'
+import kurisuDrag from '../assets/kurisu/frames/drag.png'
+import kurisuIdle from '../assets/kurisu/frames/idle.png'
+import kurisuLand from '../assets/kurisu/frames/land.png'
+import kurisuSleep from '../assets/kurisu/frames/sleep.png'
+import kurisuSpin from '../assets/kurisu/frames/spin.png'
+import kurisuSurprise from '../assets/kurisu/frames/surprise.png'
+import kurisuThink from '../assets/kurisu/frames/think.png'
+import kurisuWalk1 from '../assets/kurisu/frames/walk1.png'
+import kurisuWalk2 from '../assets/kurisu/frames/walk2.png'
 import nailongIcon from '../assets/nailong/frames/idle.png'
 import nailongDrag from '../assets/nailong/frames/drag.png'
 import nailongIdle from '../assets/nailong/frames/idle.png'
@@ -214,6 +225,69 @@ export const MASCOT_PROFILES = {
     },
     label: '奶龙',
     subtitle: 'AI 生成动作帧',
+  },
+  kurisu: {
+    icon: kurisuIdle,
+    images: {
+      shime1: kurisuIdle,
+      shime2: kurisuWalk1,
+      shime3: kurisuWalk2,
+      shime4: kurisuSurprise,
+      shime5: kurisuDrag,
+      shime6: kurisuDrag,
+      shime7: kurisuDrag,
+      shime8: kurisuDrag,
+      shime9: kurisuDrag,
+      shime10: kurisuDrag,
+      shime11: kurisuThink,
+      shime12: kurisuClimb,
+      shime13: kurisuClimb,
+      shime14: kurisuClimb,
+      shime18: kurisuLand,
+      shime19: kurisuIdle,
+      shime20: kurisuSleep,
+      shime21: kurisuSleep,
+      shime22: kurisuSurprise,
+      shime23: kurisuClimb,
+      shime24: kurisuClimb,
+      shime25: kurisuClimb,
+      shime26: kurisuThink,
+      shime30: kurisuThink,
+      shime31: kurisuThink,
+      shime32: kurisuIdle,
+      shime33: kurisuThink,
+      shime38: kurisuSurprise,
+      shime39: kurisuLand,
+      shime40: kurisuSurprise,
+      shime41: kurisuIdle,
+      shime42: kurisuCheer,
+      shime43: kurisuSpin,
+      shime44: kurisuCheer,
+      shime45: kurisuSpin,
+      shime46: kurisuCheer,
+      shime47: kurisuWalk1,
+      shime48: kurisuWalk2,
+      shime49: kurisuSpin,
+      shime50: kurisuSleep,
+      shime51: kurisuIdle,
+      shime52: kurisuCheer,
+      shime53: kurisuSpin,
+      shime54: kurisuCheer,
+      shime55: kurisuSpin,
+      shime56: kurisuIdle,
+      shime57: kurisuThink,
+      shime58: kurisuCheer,
+      shime59: kurisuDrag,
+      shime60: kurisuThink,
+      shime61: kurisuThink,
+      shime62: kurisuThink,
+      shime63: kurisuClimb,
+      shime64: kurisuClimb,
+      shime65: kurisuClimb,
+      shime66: kurisuClimb,
+    },
+    label: '克里斯蒂娜助手',
+    subtitle: 'Q 版研究员动作帧',
   },
 }
 

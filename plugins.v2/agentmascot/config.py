@@ -30,7 +30,7 @@ NUMERIC_BOUNDS = {
     "speed": (0.4, 2.0, 1.0),
 }
 
-MASCOT_CHOICES = {"chibiterasu", "nailong"}
+MASCOT_CHOICES = {"chibiterasu", "nailong", "kurisu"}
 
 
 def clamp_number(value: Any, minimum: float, maximum: float, default: float) -> float:
