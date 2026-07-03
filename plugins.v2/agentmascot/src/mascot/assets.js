@@ -54,6 +54,10 @@ import nailongSleep3 from '../assets/nailong/frames/sleep3.png'
 import nailongSleep4 from '../assets/nailong/frames/sleep4.png'
 import nailongRun from '../assets/nailong/frames/run.png'
 import nailongWalk from '../assets/nailong/frames/walk.png'
+import nailongWalk1 from '../assets/nailong/frames/walk1.png'
+import nailongWalk2 from '../assets/nailong/frames/walk2.png'
+import nailongWalk3 from '../assets/nailong/frames/walk3.png'
+import nailongWalk4 from '../assets/nailong/frames/walk4.png'
 import shime1 from '../assets/shimeji/shime1.png'
 import shime2 from '../assets/shimeji/shime2.png'
 import shime3 from '../assets/shimeji/shime3.png'
@@ -203,7 +207,7 @@ export const MASCOT_PROFILES = {
     icon: nailongIdle1,
     images: {
       shime1: nailongIdle1,
-      shime2: nailongWalk,
+      shime2: nailongWalk1,
       shime3: nailongRun,
       shime4: nailongJump4,
       shime5: nailongDrag2,
@@ -238,9 +242,9 @@ export const MASCOT_PROFILES = {
       shime44: nailongJump3,
       shime45: nailongLeap2,
       shime46: nailongIdle4,
-      shime47: nailongWalk,
-      shime48: nailongRun,
-      shime49: nailongWalk,
+      shime47: nailongWalk2,
+      shime48: nailongWalk3,
+      shime49: nailongWalk4,
       shime50: nailongSleep1,
       shime51: nailongIdle1,
       shime52: nailongJump2,

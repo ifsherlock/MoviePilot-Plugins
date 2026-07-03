@@ -266,6 +266,15 @@ const CUSTOM_SLEEP = {
 export const MASCOT_ACTION_OVERRIDES = {
   nailong: {
     stand: CUSTOM_STAND,
+    walk: {
+      ...SHIMEJI_ACTIONS.walk,
+      poses: [
+        pose('shime2', GROUND_FOOT_ANCHOR, [-2, 0], 6),
+        pose('shime47', GROUND_FOOT_ANCHOR, [-2, 0], 6),
+        pose('shime48', GROUND_FOOT_ANCHOR, [-2, 0], 6),
+        pose('shime49', GROUND_FOOT_ANCHOR, [-2, 0], 6),
+      ],
+    },
     lie: CUSTOM_SLEEP,
     jump: {
       ...SHIMEJI_ACTIONS.jump,
