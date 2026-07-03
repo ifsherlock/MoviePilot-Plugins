@@ -70,6 +70,7 @@ import {
   resolveAction,
   resolvePose,
 } from './motion'
+import { legacyActionName } from './semanticActions'
 import {
   resolveMouseYFollow,
   updateMouseIntent as updateMouseIntentState,
@@ -261,7 +262,7 @@ export function createMascotRuntime(options = {}) {
   }
 
   function setAction(nextAction, timestamp = now(), actionOptions = {}) {
-    if (actionState.name === nextAction) return
+    if (actionState.name === nextAction && !actionOptions.force) return
     if (!actionOptions.force && timestamp < actionLockedUntil && !INTERRUPT_ACTIONS.includes(nextAction)) return
     actionState.name = nextAction
     actionState.poseIndex = 0
@@ -284,6 +285,13 @@ export function createMascotRuntime(options = {}) {
         [behavior.id]: cooldownUntil,
       }
     }
+  }
+
+  function pausePreviewInterruptions(timestamp, duration = 2200) {
+    mouse.active = false
+    mouseActiveUntil = 0
+    mouse.activeUntil = 0
+    roamPausedUntil = Math.max(roamPausedUntil || 0, timestamp + duration)
   }
 
   function clearMoveStagnation() {
@@ -457,6 +465,61 @@ export function createMascotRuntime(options = {}) {
     else if (behavior?.id === 'roam') startGroundMove(timestamp)
     else if (behavior?.id === 'goWall') startMoveToWall(timestamp)
     else startLeap(timestamp)
+  }
+
+  function runBehavior(behaviorId, timestamp = now()) {
+    if (behaviorId === 'rest') {
+      setBehavior({ id: 'rest', cooldownMs: 0 }, timestamp)
+      startRest(timestamp)
+      return true
+    }
+    if (behaviorId === 'roam') {
+      setBehavior({ id: 'roam', cooldownMs: 0 }, timestamp)
+      startGroundMove(timestamp)
+      return true
+    }
+    if (behaviorId === 'goWall') {
+      setBehavior({ id: 'goWall', cooldownMs: 0 }, timestamp)
+      startMoveToWall(timestamp)
+      return true
+    }
+    if (behaviorId === 'leap') {
+      setBehavior({ id: 'leap', cooldownMs: 0 }, timestamp)
+      startLeap(timestamp)
+      return true
+    }
+    if (behaviorId === 'holdWall') {
+      setBehavior({ id: 'holdWall', cooldownMs: 0 }, timestamp)
+      startWall(pet.wallSide || 'left', timestamp)
+      return true
+    }
+    if (behaviorId === 'climbWall') {
+      setBehavior({ id: 'climbWall', cooldownMs: 0 }, timestamp)
+      if (pet.surface !== 'wall') startWall(pet.wallSide || 'left', timestamp)
+      startWallClimb(timestamp)
+      return true
+    }
+    if (behaviorId === 'goCeiling') {
+      setBehavior({ id: 'goCeiling', cooldownMs: 0 }, timestamp)
+      startCeiling(timestamp)
+      return true
+    }
+    if (behaviorId === 'holdCeiling') {
+      setBehavior({ id: 'holdCeiling', cooldownMs: 0 }, timestamp)
+      startCeiling(timestamp)
+      return true
+    }
+    if (behaviorId === 'crawlCeiling') {
+      setBehavior({ id: 'crawlCeiling', cooldownMs: 0 }, timestamp)
+      startCeilingCrawl(timestamp)
+      return true
+    }
+    if (behaviorId === 'fallFromWall' || behaviorId === 'dropFromCeiling') {
+      setBehavior({ id: behaviorId, cooldownMs: 0 }, timestamp)
+      startFall(timestamp, behaviorId === 'fallFromWall' && pet.wallSide === 'left' ? 2.2 : -2.2, 0.8)
+      return true
+    }
+    return false
   }
 
   function chooseWallBehavior(timestamp) {
@@ -814,6 +877,94 @@ export function createMascotRuntime(options = {}) {
     onUpdate()
   }
 
+  function resetPose(timestamp = now()) {
+    clearAirFallState()
+    clearMoveStagnation()
+    pet.dragging = false
+    pet.surface = 'ground'
+    pet.state = 'rest'
+    pet.vx = 0
+    pet.vy = 0
+    setLaneY(groundAnchorY())
+    pet.anchorX = clampAnchorX(bounds().width * 0.5)
+    pet.targetX = pet.anchorX
+    pet.targetY = pet.anchorY
+    pet.stateUntil = timestamp + ROAM_REST_MIN
+    pausePreviewInterruptions(timestamp, ROAM_REST_MIN)
+    setAction('stand', timestamp, { force: true, duration: 700 })
+    onUpdate()
+  }
+
+  function setSurface(surface, timestamp = now()) {
+    if (surface === 'wall') {
+      startWall(pet.wallSide || 'left', timestamp)
+      return true
+    }
+    if (surface === 'ceiling') {
+      startCeiling(timestamp)
+      return true
+    }
+    if (surface === 'air') {
+      startFall(timestamp, 0, 0)
+      return true
+    }
+    pet.surface = 'ground'
+    pet.state = 'rest'
+    setLaneY(nearestLaneToY(pet.anchorY))
+    setAction('stand', timestamp, { force: true })
+    onUpdate()
+    return true
+  }
+
+  function playAction(name, options = {}) {
+    const timestamp = options.timestamp ?? now()
+    const actionName = legacyActionName(name)
+    const duration = options.duration ?? ACTION_MIN_DURATION[actionName] ?? 2200
+    pausePreviewInterruptions(timestamp, duration + 500)
+
+    if (options.surface) setSurface(options.surface, timestamp)
+    else if (['jump', 'fall'].includes(actionName)) startFall(timestamp, 0, actionName === 'jump' ? -8 : 0)
+    else {
+      pet.dragging = false
+      pet.surface = 'ground'
+      pet.state = 'rest'
+      setLaneY(nearestLaneToY(pet.anchorY))
+      pet.targetX = pet.anchorX
+      pet.targetY = pet.anchorY
+      pet.vx = 0
+      pet.vy = 0
+      pet.stateUntil = timestamp + duration
+    }
+
+    setAction(actionName, timestamp, { force: true, duration })
+    onUpdate()
+    return debugState()
+  }
+
+  function playBehavior(behaviorId, options = {}) {
+    const timestamp = options.timestamp ?? now()
+    pausePreviewInterruptions(timestamp, options.duration ?? 2600)
+    const applied = runBehavior(behaviorId, timestamp)
+    onUpdate()
+    return { applied, ...debugState() }
+  }
+
+  function debugState() {
+    return {
+      action: actionState.name,
+      actionLockedUntil,
+      behavior: pet.behavior,
+      poseIndex: actionState.poseIndex,
+      state: pet.state,
+      stateUntil: pet.stateUntil,
+      surface: pet.surface,
+      targetX: pet.targetX,
+      targetY: pet.targetY,
+      vx: pet.vx,
+      vy: pet.vy,
+    }
+  }
+
   function clampToBounds() {
     pet.anchorX = clampAnchorX(pet.anchorX)
     pet.anchorY = clampAnchorY(pet.anchorY)
@@ -848,8 +999,13 @@ export function createMascotRuntime(options = {}) {
     moveDrag,
     pet,
     petSize,
+    debugState,
+    playAction,
+    playBehavior,
     renderState,
+    resetPose,
     shouldSuppressClick: (timestamp = now()) => pet.dragging || timestamp < suppressClickUntil,
+    setSurface,
     start,
     startDrag,
     stop,

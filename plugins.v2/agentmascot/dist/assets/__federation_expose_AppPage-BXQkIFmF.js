@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { M as MASCOT_OPTIONS, c as cloneConfig, a as createActionState, b as createMouseState, d as createPetState, e as createMascotRuntime, f as buildSurfaceLanes, r as resolveMascotProfile } from './runtime-BuugAvx3.js';
+import { M as MASCOT_OPTIONS, c as cloneConfig, a as createActionState, b as createMouseState, d as createPetState, e as createMascotRuntime, f as buildSurfaceLanes, r as resolveMascotProfile } from './runtime-DUcdETvQ.js';
 import { u as unwrapResponse } from './provider-mBbtEwEX.js';
 
 const _export_sfc = (sfc, props) => {
@@ -319,6 +319,7 @@ function useMascotPreview(props) {
 
   computed$1(() => runtime.currentPose());
   const currentFrame = computed$1(() => runtime.currentFrame());
+  const debugState = computed$1(() => runtime.debugState());
   const petSize = computed$1(() => runtime.petSize());
   const stageStyle = computed$1(() => ({
     '--pet-size': `${petSize.value}px`,
@@ -410,6 +411,18 @@ function useMascotPreview(props) {
     runtime.celebrate();
   }
 
+  function playAction(name, options) {
+    return runtime.playAction(name, options)
+  }
+
+  function playBehavior(id, options) {
+    return runtime.playBehavior(id, options)
+  }
+
+  function resetPose() {
+    runtime.resetPose();
+  }
+
   watch(
     () => props.config,
     nextValue => {
@@ -434,6 +447,7 @@ function useMascotPreview(props) {
     celebrate,
     config,
     currentFrame,
+    debugState,
     endDrag,
     error,
     leaveMouse,
@@ -441,6 +455,9 @@ function useMascotPreview(props) {
     loading,
     onDrag,
     petStyle,
+    playAction,
+    playBehavior,
+    resetPose,
     saveConfig,
     saving,
     stageRef,

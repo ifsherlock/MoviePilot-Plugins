@@ -380,6 +380,53 @@ function runSemanticActionCheck(modules) {
   }
 }
 
+function runPreviewControlCheck(modules) {
+  const { bounds, driver, pet, runtime } = createRoamRuntime(modules)
+  runtime.start()
+
+  const actionChecks = [
+    ['idle', 'stand'],
+    ['walk', 'walk'],
+    ['run', 'run'],
+    ['jump', 'jump'],
+    ['fall', 'fall'],
+    ['drag', 'drag'],
+    ['sleep', 'lie'],
+    ['think', 'think'],
+  ]
+
+  for (let index = 0; index < actionChecks.length; index += 1) {
+    const [semanticName, expectedAction] = actionChecks[index]
+    runtime.playAction(semanticName, { timestamp: 5000 + index * 250, duration: 800 })
+    const state = runtime.debugState()
+    if (state.action !== expectedAction) {
+      fail(`Preview playAction(${semanticName}) expected action=${expectedAction}, got ${state.action}`)
+    }
+    if (!Number.isFinite(state.actionLockedUntil) || state.actionLockedUntil <= 0) {
+      fail(`Preview playAction(${semanticName}) did not set a finite action lock`)
+    }
+  }
+
+  const behaviorResult = runtime.playBehavior('goWall', { timestamp: 9000 })
+  if (!behaviorResult.applied || pet.state !== 'toWall') {
+    fail(`Preview playBehavior(goWall) should enter toWall, got applied=${behaviorResult.applied} state=${pet.state}`)
+  }
+
+  runtime.resetPose(10000)
+  const resetState = runtime.debugState()
+  if (resetState.surface !== 'ground' || resetState.state !== 'rest' || resetState.action !== 'stand') {
+    fail(`Preview resetPose should restore ground rest stand, got ${JSON.stringify(resetState)}`)
+  }
+
+  for (let tick = 1; tick <= 120; tick += 1) {
+    driver.tick(10000 + tick * 33)
+    assertFinitePet(pet, `preview control tick ${tick}`)
+    assertWithinBounds(pet, bounds, `preview control tick ${tick}`)
+  }
+
+  runtime.stop()
+}
+
 const modules = await loadRuntimeModules()
 try {
   runFallVisibilityCheck(modules)
@@ -388,6 +435,7 @@ try {
   runLongRoamCheck(modules)
   runBehaviorSelectionCheck(modules)
   runSemanticActionCheck(modules)
+  runPreviewControlCheck(modules)
 } finally {
   await modules.close()
 }
@@ -398,4 +446,4 @@ if (failures.length) {
   process.exit(1)
 }
 
-console.log('[AgentMascot] runtime validation passed: fall visibility gate, wall approach, long roam guards, behavior selection, semantic actions')
+console.log('[AgentMascot] runtime validation passed: fall visibility gate, wall approach, long roam guards, behavior selection, semantic actions, preview controls')

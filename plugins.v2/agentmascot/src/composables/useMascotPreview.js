@@ -48,6 +48,7 @@ export function useMascotPreview(props) {
 
   const currentPose = computed(() => runtime.currentPose())
   const currentFrame = computed(() => runtime.currentFrame())
+  const debugState = computed(() => runtime.debugState())
   const petSize = computed(() => runtime.petSize())
   const stageStyle = computed(() => ({
     '--pet-size': `${petSize.value}px`,
@@ -139,6 +140,18 @@ export function useMascotPreview(props) {
     runtime.celebrate()
   }
 
+  function playAction(name, options) {
+    return runtime.playAction(name, options)
+  }
+
+  function playBehavior(id, options) {
+    return runtime.playBehavior(id, options)
+  }
+
+  function resetPose() {
+    runtime.resetPose()
+  }
+
   watch(
     () => props.config,
     nextValue => {
@@ -163,6 +176,7 @@ export function useMascotPreview(props) {
     celebrate,
     config,
     currentFrame,
+    debugState,
     endDrag,
     error,
     leaveMouse,
@@ -170,6 +184,9 @@ export function useMascotPreview(props) {
     loading,
     onDrag,
     petStyle,
+    playAction,
+    playBehavior,
+    resetPose,
     saveConfig,
     saving,
     stageRef,
