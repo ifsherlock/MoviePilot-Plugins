@@ -1,5 +1,6 @@
 <script setup>
 import { computed } from 'vue'
+import ActionLab from './ActionLab.vue'
 import MascotControls from './MascotControls.vue'
 import MascotStage from './MascotStage.vue'
 import { useMascotPreview } from '../composables/useMascotPreview'
@@ -28,6 +29,7 @@ const {
   celebrate,
   config,
   currentFrame,
+  debugState,
   endDrag,
   error,
   leaveMouse,
@@ -35,6 +37,9 @@ const {
   loading,
   onDrag,
   petStyle,
+  playAction,
+  playBehavior,
+  resetPose,
   saveConfig,
   saving,
   stageRef,
@@ -87,6 +92,14 @@ defineExpose({
       @drag-start="startDrag"
       @pointer-leave="leaveMouse"
       @pointer-move="updateMouse"
+    />
+
+    <ActionLab
+      :debug-state="debugState"
+      :mascot="config.mascot"
+      @play-action="playAction"
+      @play-behavior="playBehavior"
+      @reset="resetPose"
     />
 
     <MascotControls :config="config" @update:config="updatePreviewConfig" />

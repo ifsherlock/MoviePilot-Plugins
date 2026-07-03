@@ -55,7 +55,9 @@ async function loadRuntimeModules() {
     const motionModule = await server.ssrLoadModule('/src/mascot/motion.js')
     const behaviorModule = await server.ssrLoadModule('/src/mascot/behaviors.js')
     const semanticModule = await server.ssrLoadModule('/src/mascot/semanticActions.js')
+    const actionLabModule = await server.ssrLoadModule('/src/mascot/actionLab.js')
     return {
+      actionLab: actionLabModule,
       close: () => server.close(),
       behaviors: behaviorModule,
       createActionState: motionModule.createActionState,
@@ -427,6 +429,31 @@ function runPreviewControlCheck(modules) {
   runtime.stop()
 }
 
+function runActionLabCheck(modules) {
+  const forbiddenLabels = ['split', 'pullOut', 'shime']
+  for (const mascot of ['chibiterasu', 'nailong', 'kurisu']) {
+    const groups = modules.actionLab.actionLabGroupsForMascot(mascot)
+    const items = groups.flatMap(group => group.items)
+    for (const item of items) {
+      if (!item.label || forbiddenLabels.some(name => item.label.includes(name))) {
+        fail(`ActionLab exposes an implementation label for ${mascot}: ${item.label || '<empty>'}`)
+      }
+    }
+    for (const required of ['idle', 'walk', 'run', 'jump', 'fall', 'drag', 'sleep']) {
+      if (!items.some(item => item.kind === 'action' && item.id === required)) {
+        fail(`ActionLab missing ${required} action for ${mascot}`)
+      }
+    }
+  }
+
+  const kurisuItems = modules.actionLab.actionLabGroupsForMascot('kurisu').flatMap(group => group.items)
+  for (const feature of ['think', 'surprise', 'cheer', 'spinCelebrate']) {
+    if (!kurisuItems.some(item => item.kind === 'action' && item.id === feature)) {
+      fail(`ActionLab missing Kurisu feature action: ${feature}`)
+    }
+  }
+}
+
 const modules = await loadRuntimeModules()
 try {
   runFallVisibilityCheck(modules)
@@ -436,6 +463,7 @@ try {
   runBehaviorSelectionCheck(modules)
   runSemanticActionCheck(modules)
   runPreviewControlCheck(modules)
+  runActionLabCheck(modules)
 } finally {
   await modules.close()
 }
@@ -446,4 +474,4 @@ if (failures.length) {
   process.exit(1)
 }
 
-console.log('[AgentMascot] runtime validation passed: fall visibility gate, wall approach, long roam guards, behavior selection, semantic actions, preview controls')
+console.log('[AgentMascot] runtime validation passed: fall visibility gate, wall approach, long roam guards, behavior selection, semantic actions, preview controls, action lab')

@@ -1,6 +1,77 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { M as MASCOT_OPTIONS, c as cloneConfig, a as createActionState, b as createMouseState, d as createPetState, e as createMascotRuntime, f as buildSurfaceLanes, r as resolveMascotProfile } from './runtime-DUcdETvQ.js';
+import { G as GROUND_BEHAVIORS, W as WALL_BEHAVIORS, C as CEILING_BEHAVIORS, r as resolveMascotBehaviors, R as REQUIRED_SEMANTIC_ACTIONS, F as FEATURE_SEMANTIC_ACTIONS, M as MASCOT_OPTIONS, c as cloneConfig, a as createActionState, b as createMouseState, d as createPetState, e as createMascotRuntime, f as buildSurfaceLanes, g as resolveMascotProfile } from './runtime-BCybTabx.js';
 import { u as unwrapResponse } from './provider-mBbtEwEX.js';
+
+const ACTION_LABELS = {
+  idle: '待机',
+  walk: '走路',
+  run: '跑步',
+  jump: '跳跃',
+  fall: '下坠',
+  sleep: '睡觉',
+  drag: '拖拽',
+  resist: '挣扎',
+  think: '思考',
+  surprise: '惊讶',
+  cheer: '欢呼',
+  spinCelebrate: '转圈庆祝',
+};
+
+const BEHAVIOR_LABELS = {
+  rest: '原地休息',
+  roam: '随机游走',
+  goWall: '去墙边',
+  leap: '飞跃',
+  holdWall: '贴墙停留',
+  climbWall: '爬墙',
+  fallFromWall: '墙面下落',
+  goCeiling: '上天花板',
+  holdCeiling: '吸顶停留',
+  crawlCeiling: '天花板移动',
+  dropFromCeiling: '天花板下落',
+};
+
+const ACTION_GROUPS = [
+  { id: 'daily', title: '日常', actions: ['idle', 'sleep', 'think'] },
+  { id: 'move', title: '移动', actions: ['walk', 'run'] },
+  { id: 'air', title: '空中', actions: ['jump', 'fall'] },
+  { id: 'interact', title: '交互', actions: ['drag', 'resist', 'surprise'] },
+  { id: 'feature', title: '角色特色', actions: ['cheer', 'spinCelebrate'] },
+];
+
+const BEHAVIOR_GROUPS = [
+  { id: 'ground', title: '地面行为', behaviors: GROUND_BEHAVIORS },
+  { id: 'wall', title: '墙面行为', behaviors: WALL_BEHAVIORS },
+  { id: 'ceiling', title: '天花板行为', behaviors: CEILING_BEHAVIORS },
+];
+
+function actionAvailable(mascot, name) {
+  return REQUIRED_SEMANTIC_ACTIONS.includes(name) || (FEATURE_SEMANTIC_ACTIONS[mascot] || []).includes(name)
+}
+
+function actionLabGroupsForMascot(mascot = 'chibiterasu') {
+  const actionGroups = ACTION_GROUPS.map(group => ({
+    ...group,
+    items: group.actions
+      .filter(name => actionAvailable(mascot, name))
+      .map(name => ({
+        id: name,
+        kind: 'action',
+        label: ACTION_LABELS[name] || name,
+      })),
+  })).filter(group => group.items.length);
+
+  const behaviorGroups = BEHAVIOR_GROUPS.map(group => ({
+    ...group,
+    items: resolveMascotBehaviors(group.id, group.behaviors, mascot).map(behavior => ({
+      id: behavior.id,
+      kind: 'behavior',
+      label: BEHAVIOR_LABELS[behavior.id] || behavior.id,
+    })),
+  })).filter(group => group.items.length);
+
+  return [...actionGroups, ...behaviorGroups]
+}
 
 const _export_sfc = (sfc, props) => {
   const target = sfc.__vccOpts || sfc;
@@ -9,6 +80,108 @@ const _export_sfc = (sfc, props) => {
   }
   return target;
 };
+
+const {createElementVNode:_createElementVNode$3,toDisplayString:_toDisplayString$1,renderList:_renderList,Fragment:_Fragment,openBlock:_openBlock$3,createElementBlock:_createElementBlock$3} = await importShared('vue');
+
+
+const _hoisted_1$3 = { class: "action-lab" };
+const _hoisted_2$2 = { class: "action-lab__hud" };
+const _hoisted_3$2 = { class: "action-lab__details" };
+const _hoisted_4$1 = { class: "action-lab__metrics" };
+const _hoisted_5$1 = { class: "action-lab__groups" };
+const _hoisted_6 = { class: "action-lab__title" };
+const _hoisted_7 = { class: "action-lab__buttons" };
+const _hoisted_8 = ["onClick"];
+
+const {computed: computed$2} = await importShared('vue');
+
+
+const _sfc_main$3 = {
+  __name: 'ActionLab',
+  props: {
+  debugState: {
+    type: Object,
+    required: true,
+  },
+  mascot: {
+    type: String,
+    required: true,
+  },
+},
+  emits: ['play-action', 'play-behavior', 'reset'],
+  setup(__props, { emit: __emit }) {
+
+const props = __props;
+
+const emit = __emit;
+
+const groups = computed$2(() => actionLabGroupsForMascot(props.mascot));
+
+function trigger(item) {
+  if (item.kind === 'behavior') emit('play-behavior', item.id);
+  else emit('play-action', item.id);
+}
+
+return (_ctx, _cache) => {
+  return (_openBlock$3(), _createElementBlock$3("section", _hoisted_1$3, [
+    _createElementVNode$3("div", _hoisted_2$2, [
+      _createElementVNode$3("div", null, [
+        _cache[1] || (_cache[1] = _createElementVNode$3("span", null, "surface", -1)),
+        _createElementVNode$3("strong", null, _toDisplayString$1(__props.debugState.surface), 1)
+      ]),
+      _createElementVNode$3("div", null, [
+        _cache[2] || (_cache[2] = _createElementVNode$3("span", null, "state", -1)),
+        _createElementVNode$3("strong", null, _toDisplayString$1(__props.debugState.state), 1)
+      ]),
+      _createElementVNode$3("div", null, [
+        _cache[3] || (_cache[3] = _createElementVNode$3("span", null, "action", -1)),
+        _createElementVNode$3("strong", null, _toDisplayString$1(__props.debugState.action), 1)
+      ]),
+      _createElementVNode$3("div", null, [
+        _cache[4] || (_cache[4] = _createElementVNode$3("span", null, "pose", -1)),
+        _createElementVNode$3("strong", null, _toDisplayString$1(__props.debugState.poseIndex), 1)
+      ]),
+      _createElementVNode$3("button", {
+        class: "action-lab__reset",
+        type: "button",
+        onClick: _cache[0] || (_cache[0] = $event => (_ctx.$emit('reset')))
+      }, "复位")
+    ]),
+    _createElementVNode$3("details", _hoisted_3$2, [
+      _cache[5] || (_cache[5] = _createElementVNode$3("summary", null, "目标与速度", -1)),
+      _createElementVNode$3("div", _hoisted_4$1, [
+        _createElementVNode$3("span", null, "x " + _toDisplayString$1(Math.round(__props.debugState.targetX)), 1),
+        _createElementVNode$3("span", null, "y " + _toDisplayString$1(Math.round(__props.debugState.targetY)), 1),
+        _createElementVNode$3("span", null, "vx " + _toDisplayString$1(__props.debugState.vx.toFixed(2)), 1),
+        _createElementVNode$3("span", null, "vy " + _toDisplayString$1(__props.debugState.vy.toFixed(2)), 1)
+      ])
+    ]),
+    _createElementVNode$3("div", _hoisted_5$1, [
+      (_openBlock$3(true), _createElementBlock$3(_Fragment, null, _renderList(groups.value, (group) => {
+        return (_openBlock$3(), _createElementBlock$3("div", {
+          key: group.id,
+          class: "action-lab__group"
+        }, [
+          _createElementVNode$3("div", _hoisted_6, _toDisplayString$1(group.title), 1),
+          _createElementVNode$3("div", _hoisted_7, [
+            (_openBlock$3(true), _createElementBlock$3(_Fragment, null, _renderList(group.items, (item) => {
+              return (_openBlock$3(), _createElementBlock$3("button", {
+                key: `${item.kind}-${item.id}`,
+                class: "action-lab__button",
+                type: "button",
+                onClick: $event => (trigger(item))
+              }, _toDisplayString$1(item.label), 9, _hoisted_8))
+            }), 128))
+          ])
+        ]))
+      }), 128))
+    ])
+  ]))
+}
+}
+
+};
+const ActionLab = /*#__PURE__*/_export_sfc(_sfc_main$3, [['__scopeId',"data-v-581c49b2"]]);
 
 const {unref:_unref$1,resolveComponent:_resolveComponent$1,createVNode:_createVNode$1,createElementVNode:_createElementVNode$2,openBlock:_openBlock$2,createElementBlock:_createElementBlock$2} = await importShared('vue');
 
@@ -511,6 +684,7 @@ const {
   celebrate,
   config,
   currentFrame,
+  debugState,
   endDrag,
   error,
   leaveMouse,
@@ -518,6 +692,9 @@ const {
   loading,
   onDrag,
   petStyle,
+  playAction,
+  playBehavior,
+  resetPose,
   saveConfig,
   saving,
   stageRef,
@@ -599,6 +776,13 @@ return (_ctx, _cache) => {
       onPointerLeave: _unref(leaveMouse),
       onPointerMove: _unref(updateMouse)
     }, null, 8, ["current-frame", "pet-style", "shadow", "stage-style", "onCelebrate", "onDragEnd", "onDragMove", "onDragStart", "onPointerLeave", "onPointerMove"]),
+    _createVNode(ActionLab, {
+      "debug-state": _unref(debugState),
+      mascot: _unref(config).mascot,
+      onPlayAction: _unref(playAction),
+      onPlayBehavior: _unref(playBehavior),
+      onReset: _unref(resetPose)
+    }, null, 8, ["debug-state", "mascot", "onPlayAction", "onPlayBehavior", "onReset"]),
     _createVNode(MascotControls, {
       config: _unref(config),
       "onUpdate:config": _unref(updatePreviewConfig)
@@ -608,6 +792,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-63f502b9"]]);
+const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-503ca435"]]);
 
 export { _export_sfc as _, AppPage as default };
