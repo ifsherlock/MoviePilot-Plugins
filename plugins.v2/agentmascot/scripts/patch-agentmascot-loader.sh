@@ -93,7 +93,7 @@ snippet = """<!-- AgentMascot global loader start -->
           console.debug("[AgentMascot] loader api failed, trying static file", apiError);
         }
       }
-      await import("/api/v1/plugin/file/agentmascot/dist/assets/agentmascot-loader.js?agentmascot=0.1.13");
+      await import("/api/v1/plugin/file/agentmascot/dist/assets/agentmascot-loader.js?agentmascot=0.1.14");
     } catch (error) {
       agentMascotLoaderStarted = false;
       console.debug("[AgentMascot] loader skipped", error);

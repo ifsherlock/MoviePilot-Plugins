@@ -66,7 +66,7 @@ import {
 } from './mouse'
 import { resolveMascotImage } from './assets'
 
-const BLOCKED_GROUND_ROAM_STATES = ['rest', 'bounce', 'toWall']
+const BLOCKED_GROUND_ROAM_STATES = ['groundMove', 'rest', 'bounce', 'toWall']
 
 function defaultScheduler() {
   return {
@@ -227,6 +227,11 @@ export function createMascotRuntime(options = {}) {
     actionLockedUntil = timestamp + (actionOptions.duration ?? ACTION_MIN_DURATION[nextAction] ?? 600)
   }
 
+  function isRoamPaused(timestamp) {
+    if (roamPausedUntil && timestamp >= roamPausedUntil) roamPausedUntil = 0
+    return Boolean(roamPausedUntil)
+  }
+
   function advancePose(elapsedTicks) {
     actionState.poseTicks += elapsedTicks
     const poses = currentAction().poses
@@ -282,6 +287,7 @@ export function createMascotRuntime(options = {}) {
     pet.surface = 'ground'
     pet.state = state
     pet.stateUntil = 0
+    roamPausedUntil = 0
     const shouldShiftLane = state === 'groundMove' && random() < 0.38
     setLaneY(chooseLaneY(!shouldShiftLane))
     pet.targetX = targetX ?? randomGroundX()
@@ -291,6 +297,7 @@ export function createMascotRuntime(options = {}) {
   function startMoveToWall(timestamp, side = random() < 0.5 ? 'left' : 'right') {
     pet.surface = 'ground'
     pet.state = 'toWall'
+    roamPausedUntil = 0
     pet.wallSide = side
     setLaneY(nearestLaneToY(pet.anchorY))
     pet.targetX = wallAnchorX(side)
@@ -346,6 +353,7 @@ export function createMascotRuntime(options = {}) {
     const direction = side === 'left' ? -1 : 1
     pet.surface = 'air'
     pet.state = 'leap'
+    roamPausedUntil = 0
     pet.wallSide = side
     pet.vx = direction * (7 + random() * 5.5) * Number(config().speed || 1)
     pet.vy = -(14 + random() * 9) * Number(config().speed || 1)
@@ -354,9 +362,9 @@ export function createMascotRuntime(options = {}) {
 
   function chooseGroundBehavior(timestamp) {
     const roll = random()
-    if (roll < 0.24) startRest(timestamp)
-    else if (roll < 0.44) startGroundMove(timestamp)
-    else if (roll < 0.74) startMoveToWall(timestamp)
+    if (roll < 0.42) startRest(timestamp)
+    else if (roll < 0.9) startGroundMove(timestamp)
+    else if (roll < 0.96) startMoveToWall(timestamp)
     else startLeap(timestamp)
   }
 
@@ -553,18 +561,23 @@ export function createMascotRuntime(options = {}) {
         if (pet.state === 'rest' && timestamp < pet.stateUntil) advancePose(elapsedTicks)
         else if (pet.state === 'bounce' && timestamp < pet.stateUntil) advancePose(elapsedTicks)
         else {
-          if (pet.state === 'rest' || pet.state === 'bounce') startGroundMove(timestamp)
-          moveByCurrentPose(elapsedTicks, targetX)
-          updateGroundAction(distance, timestamp, isMouseFresh)
-          advancePose(elapsedTicks)
-          if (Math.abs(targetX - pet.anchorX) < 3 && !isMouseFresh) {
-            pet.anchorX = targetX
-            if (pet.state === 'toWall') startWall(pet.wallSide, timestamp)
-            else {
-              pet.state = 'rest'
-              pet.stateUntil = timestamp + ROAM_REST_MIN + random() * ROAM_REST_RANGE
-              roamPausedUntil = pet.stateUntil
-              setAction(random() < 0.5 ? 'stand' : 'sit', timestamp, { force: true })
+          if (pet.state === 'rest') {
+            chooseGroundBehavior(timestamp)
+            advancePose(elapsedTicks)
+          } else {
+            if (pet.state === 'bounce') startGroundMove(timestamp)
+            moveByCurrentPose(elapsedTicks, targetX)
+            updateGroundAction(distance, timestamp, isMouseFresh)
+            advancePose(elapsedTicks)
+            if (Math.abs(targetX - pet.anchorX) < 3 && !isMouseFresh) {
+              pet.anchorX = targetX
+              if (pet.state === 'toWall') startWall(pet.wallSide, timestamp)
+              else {
+                pet.state = 'rest'
+                pet.stateUntil = timestamp + ROAM_REST_MIN + random() * ROAM_REST_RANGE
+                roamPausedUntil = pet.stateUntil
+                setAction(random() < 0.5 ? 'stand' : 'sit', timestamp, { force: true })
+              }
             }
           }
         }
@@ -586,7 +599,7 @@ export function createMascotRuntime(options = {}) {
     pet.targetX = randomGroundX()
     roamTimer = scheduler.setInterval?.(() => {
       const canScheduleGroundBehavior = pet.surface === 'ground' && !BLOCKED_GROUND_ROAM_STATES.includes(pet.state)
-      if (config().auto_roam && !pet.dragging && !roamPausedUntil && canScheduleGroundBehavior) {
+      if (config().auto_roam && !pet.dragging && !isRoamPaused(now()) && canScheduleGroundBehavior) {
         chooseGroundBehavior(now())
       }
     }, ROAM_INTERVAL) || 0

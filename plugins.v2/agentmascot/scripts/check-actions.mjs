@@ -163,6 +163,42 @@ function validateCatalog(categories, actionNames) {
   }
 }
 
+function collectMascotImages(source, mascotName) {
+  const mascotStart = source.indexOf(`  ${mascotName}: {`)
+  if (mascotStart < 0) {
+    fail(`Missing mascot profile: ${mascotName}`)
+    return new Map()
+  }
+  const imagesStart = source.indexOf('    images: {', mascotStart)
+  const imagesEnd = source.indexOf('    },', imagesStart)
+  if (imagesStart < 0 || imagesEnd < 0) {
+    fail(`Missing images map for mascot: ${mascotName}`)
+    return new Map()
+  }
+
+  const imagesSource = source.slice(imagesStart, imagesEnd)
+  const images = new Map()
+  const pattern = /^\s+(shime\d+):\s+(\w+),$/gm
+  for (const match of imagesSource.matchAll(pattern)) {
+    images.set(match[1], match[2])
+  }
+  return images
+}
+
+function validateMascotMotionAssets(source) {
+  const nailong = collectMascotImages(source, 'nailong')
+  if (nailong.get('shime2') && nailong.get('shime2') === nailong.get('shime3')) {
+    fail('Nailong walk poses shime2 and shime3 must use different frame variables')
+  }
+
+  const kurisu = collectMascotImages(source, 'kurisu')
+  for (const frameName of ['shime47', 'shime48', 'shime49']) {
+    if (kurisu.get(frameName) === 'kurisuSpin') {
+      fail(`Kurisu movement pose ${frameName} must not use kurisuSpin`)
+    }
+  }
+}
+
 const [assetsSource, actionsSource, anchorsSource, catalogSource] = await Promise.all([
   readSource('mascot/assets.js'),
   readSource('mascot/actions.js'),
@@ -176,6 +212,7 @@ const actionNames = collectActionNames(actionsSource)
 const categories = collectCatalog(catalogSource)
 const poseCount = validatePoses(actionsSource, assets, anchors)
 validateCatalog(categories, actionNames)
+validateMascotMotionAssets(assetsSource)
 
 if (failures.length) {
   console.error('[AgentMascot] asset/action validation failed')

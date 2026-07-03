@@ -67,7 +67,7 @@ export function wallAnchorX(side, bounds, viewportPadding = 0) {
 }
 
 export function randomGroundX(bounds, size, viewportPadding = 0, random = Math.random) {
-  const margin = size * 0.5 + viewportPadding
+  const margin = size * 1.15 + viewportPadding
   const minX = margin
   const maxX = Math.max(viewportDimension(bounds, 'width') - margin, minX)
   return minX + random() * (maxX - minX)

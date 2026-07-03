@@ -32,7 +32,7 @@ class AgentMascot(_PluginBase):
     plugin_name = PLUGIN_NAME
     plugin_desc = PLUGIN_DESC
     plugin_icon = PLUGIN_ICON
-    plugin_version = "0.1.13"
+    plugin_version = "0.1.14"
     plugin_author = PLUGIN_AUTHOR
     author_url = AUTHOR_URL
     plugin_config_prefix = PLUGIN_CONFIG_PREFIX

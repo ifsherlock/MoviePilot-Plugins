@@ -249,7 +249,7 @@ const MASCOT_PROFILES = {
     images: {
       shime1: nailongIdle,
       shime2: nailongWalk,
-      shime3: nailongWalk,
+      shime3: nailongRun,
       shime4: nailongJump,
       shime5: nailongDrag,
       shime6: nailongDrag,
@@ -283,9 +283,9 @@ const MASCOT_PROFILES = {
       shime44: nailongJump,
       shime45: nailongLeap,
       shime46: nailongIdle,
-      shime47: nailongRun,
+      shime47: nailongWalk,
       shime48: nailongRun,
-      shime49: nailongRun,
+      shime49: nailongWalk,
       shime50: nailongSleep,
       shime51: nailongIdle,
       shime52: nailongJump,
@@ -348,7 +348,7 @@ const MASCOT_PROFILES = {
       shime46: kurisuCheer,
       shime47: kurisuWalk1,
       shime48: kurisuWalk2,
-      shime49: kurisuSpin,
+      shime49: kurisuWalk1,
       shime50: kurisuSleep,
       shime51: kurisuIdle,
       shime52: kurisuCheer,
@@ -724,9 +724,9 @@ const CONFIG_LIMITS = {
 
 const SHIMEJI_CANVAS_SIZE = 128;
 const SHIMEJI_TICK_MS = 33;
-const ROAM_INTERVAL = 3200;
-const ROAM_REST_MIN = 9000;
-const ROAM_REST_RANGE = 26000;
+const ROAM_INTERVAL = 5200;
+const ROAM_REST_MIN = 12000;
+const ROAM_REST_RANGE = 30000;
 const WALL_REST_MIN = 9000;
 const WALL_REST_RANGE = 24000;
 const FOLLOW_DEAD_ZONE = 92;
@@ -876,7 +876,7 @@ function wallAnchorX(side, bounds, viewportPadding = 0) {
 }
 
 function randomGroundX(bounds, size, viewportPadding = 0, random = Math.random) {
-  const margin = size * 0.5 + viewportPadding;
+  const margin = size * 1.15 + viewportPadding;
   const minX = margin;
   const maxX = Math.max(viewportDimension$1(bounds, 'width') - margin, minX);
   return minX + random() * (maxX - minX)
@@ -1157,7 +1157,7 @@ function resolveMouseYFollow(mouse, pet, options = {}) {
   }
 }
 
-const BLOCKED_GROUND_ROAM_STATES = ['rest', 'bounce', 'toWall'];
+const BLOCKED_GROUND_ROAM_STATES = ['groundMove', 'rest', 'bounce', 'toWall'];
 
 function defaultScheduler() {
   return {
@@ -1318,6 +1318,11 @@ function createMascotRuntime(options = {}) {
     actionLockedUntil = timestamp + (actionOptions.duration ?? ACTION_MIN_DURATION[nextAction] ?? 600);
   }
 
+  function isRoamPaused(timestamp) {
+    if (roamPausedUntil && timestamp >= roamPausedUntil) roamPausedUntil = 0;
+    return Boolean(roamPausedUntil)
+  }
+
   function advancePose(elapsedTicks) {
     actionState.poseTicks += elapsedTicks;
     const poses = currentAction().poses;
@@ -1373,6 +1378,7 @@ function createMascotRuntime(options = {}) {
     pet.surface = 'ground';
     pet.state = state;
     pet.stateUntil = 0;
+    roamPausedUntil = 0;
     const shouldShiftLane = state === 'groundMove' && random() < 0.38;
     setLaneY(chooseLaneY(!shouldShiftLane));
     pet.targetX = targetX ?? randomGroundX$1();
@@ -1382,6 +1388,7 @@ function createMascotRuntime(options = {}) {
   function startMoveToWall(timestamp, side = random() < 0.5 ? 'left' : 'right') {
     pet.surface = 'ground';
     pet.state = 'toWall';
+    roamPausedUntil = 0;
     pet.wallSide = side;
     setLaneY(nearestLaneToY(pet.anchorY));
     pet.targetX = wallAnchorX$1(side);
@@ -1437,6 +1444,7 @@ function createMascotRuntime(options = {}) {
     const direction = side === 'left' ? -1 : 1;
     pet.surface = 'air';
     pet.state = 'leap';
+    roamPausedUntil = 0;
     pet.wallSide = side;
     pet.vx = direction * (7 + random() * 5.5) * Number(config().speed || 1);
     pet.vy = -(14 + random() * 9) * Number(config().speed || 1);
@@ -1445,9 +1453,9 @@ function createMascotRuntime(options = {}) {
 
   function chooseGroundBehavior(timestamp) {
     const roll = random();
-    if (roll < 0.24) startRest(timestamp);
-    else if (roll < 0.44) startGroundMove(timestamp);
-    else if (roll < 0.74) startMoveToWall(timestamp);
+    if (roll < 0.42) startRest(timestamp);
+    else if (roll < 0.9) startGroundMove(timestamp);
+    else if (roll < 0.96) startMoveToWall(timestamp);
     else startLeap(timestamp);
   }
 
@@ -1644,18 +1652,23 @@ function createMascotRuntime(options = {}) {
         if (pet.state === 'rest' && timestamp < pet.stateUntil) advancePose(elapsedTicks);
         else if (pet.state === 'bounce' && timestamp < pet.stateUntil) advancePose(elapsedTicks);
         else {
-          if (pet.state === 'rest' || pet.state === 'bounce') startGroundMove(timestamp);
-          moveByCurrentPose(elapsedTicks, targetX);
-          updateGroundAction(distance, timestamp, isMouseFresh);
-          advancePose(elapsedTicks);
-          if (Math.abs(targetX - pet.anchorX) < 3 && !isMouseFresh) {
-            pet.anchorX = targetX;
-            if (pet.state === 'toWall') startWall(pet.wallSide, timestamp);
-            else {
-              pet.state = 'rest';
-              pet.stateUntil = timestamp + ROAM_REST_MIN + random() * ROAM_REST_RANGE;
-              roamPausedUntil = pet.stateUntil;
-              setAction(random() < 0.5 ? 'stand' : 'sit', timestamp, { force: true });
+          if (pet.state === 'rest') {
+            chooseGroundBehavior(timestamp);
+            advancePose(elapsedTicks);
+          } else {
+            if (pet.state === 'bounce') startGroundMove(timestamp);
+            moveByCurrentPose(elapsedTicks, targetX);
+            updateGroundAction(distance, timestamp, isMouseFresh);
+            advancePose(elapsedTicks);
+            if (Math.abs(targetX - pet.anchorX) < 3 && !isMouseFresh) {
+              pet.anchorX = targetX;
+              if (pet.state === 'toWall') startWall(pet.wallSide, timestamp);
+              else {
+                pet.state = 'rest';
+                pet.stateUntil = timestamp + ROAM_REST_MIN + random() * ROAM_REST_RANGE;
+                roamPausedUntil = pet.stateUntil;
+                setAction(random() < 0.5 ? 'stand' : 'sit', timestamp, { force: true });
+              }
             }
           }
         }
@@ -1677,7 +1690,7 @@ function createMascotRuntime(options = {}) {
     pet.targetX = randomGroundX$1();
     roamTimer = scheduler.setInterval?.(() => {
       const canScheduleGroundBehavior = pet.surface === 'ground' && !BLOCKED_GROUND_ROAM_STATES.includes(pet.state);
-      if (config().auto_roam && !pet.dragging && !roamPausedUntil && canScheduleGroundBehavior) {
+      if (config().auto_roam && !pet.dragging && !isRoamPaused(now()) && canScheduleGroundBehavior) {
         chooseGroundBehavior(now());
       }
     }, ROAM_INTERVAL) || 0;

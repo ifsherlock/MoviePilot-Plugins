@@ -17,9 +17,9 @@ export const CONFIG_LIMITS = {
 
 export const SHIMEJI_CANVAS_SIZE = 128
 export const SHIMEJI_TICK_MS = 33
-export const ROAM_INTERVAL = 3200
-export const ROAM_REST_MIN = 9000
-export const ROAM_REST_RANGE = 26000
+export const ROAM_INTERVAL = 5200
+export const ROAM_REST_MIN = 12000
+export const ROAM_REST_RANGE = 30000
 export const WALL_REST_MIN = 9000
 export const WALL_REST_RANGE = 24000
 export const FOLLOW_DEAD_ZONE = 92
