@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-07-03-agentmascot-modularization-phased-plan.md",
   "status": {
     "phase": "phase-5",
-    "task": "5.4",
-    "next_allowed_action": "Implement task 5.4 by completing MoviePilot browser smoke for settings page, page view, global replacement, and native assistant click-open flow"
+    "task": "5.5",
+    "next_allowed_action": "Implement task 5.5 by recording minimum manual action behavior acceptance results for ground, multi-height lanes, leap, wall, ceiling, fall, and rest duration"
   },
   "execution_rules": {
     "branch": "codex/agentmascot-modularization",
@@ -437,9 +437,23 @@
         {
           "id": "5.4",
           "title": "完成 MoviePilot 浏览器冒烟验收",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            "Root cause found during browser smoke: online /api/v1/plugin/AgentMascot/loader returned JS that failed with SyntaxError: Identifier unwrapResponse has already been declared, then static fallback /api/v1/plugin/file/agentmascot/dist/assets/agentmascot-loader.js returned 403, so #agentmascot-global-root was never mounted",
+            "Fixed plugins.v2/agentmascot/loader.py to inline all top-level relative Vite chunks and strip export blocks, replacing brittle hand-written alias injection",
+            "Local loader probe: build_loader_code generated 1676816 chars, has_import=False, function unwrapResponse count=1, const unwrapResponse count=0, contains agentmascot-global-root and public_status, and new Function(code) parsed successfully",
+            "python .github\\scripts\\check_plugin_versions.py package.json package.v2.json -> Plugin release version gate passed",
+            "python -m py_compile plugins.v2\\agentmascot\\__init__.py plugins.v2\\agentmascot\\config.py plugins.v2\\agentmascot\\api.py plugins.v2\\agentmascot\\loader.py plugins.v2\\agentmascot\\manifest.py -> exits 0",
+            "Regenerated plugins.v2\\agentmascot_v0.1.11_install_20260703_modularized.zip after the loader.py fix; zip validation confirmed 122 entries, required backend modules, dist/assets/agentmascot-loader.js, and shime1.png through shime66.png with node_modules/package-lock/__pycache__/.pyc excluded",
+            "Deployed the regenerated AgentMascot 0.1.11 package to the live moviepilot-v2 plugin directory for smoke validation; MoviePilot logs show AgentMascot loaded as version 0.1.11 and routes /status, /public_status, /config, and /loader re-registered",
+            "Online loader probe with browser login state: /api/v1/plugin/AgentMascot/loader status=200, length=1676816, has_import=False, unwrapResponse function count=1, const count=0, JS parse ok",
+            "Browser smoke via temporary Chrome/CDP at https://mp.jaysherlock.top:5443/#/apps with cache disabled: #agentmascot-global-root exists, mascot img natural size 128x128, native .agent-assistant-fab has agentmascot-native-hidden and zero size, console AgentMascot errors empty",
+            "Click smoke: clicking #agentmascot-global-root opened .agent-assistant-panel with visible panel rect about 480x807",
+            "Cache smoke: Page.reload(ignoreCache=true) kept mascot image complete with natural size 128x128",
+            "Vue settings/page smoke in browser context: /api/v1/plugin/form/AgentMascot status=200 render_mode=vue and config model keys present; /api/v1/plugin/page/AgentMascot status=200 render_mode=vue; /api/v1/plugin/remotes includes AgentMascot remote; remoteEntry.js status=200 and exposes ./Page, ./Config, ./AppPage, and ./PluginEntry",
+            "git diff --check -> exits 0 with LF-to-CRLF warning only"
+          ],
+          "commit": "pending"
         },
         {
           "id": "5.5",
@@ -600,6 +614,12 @@
       "task": "5.3",
       "action": "Generated a fresh AgentMascot install zip and validated required loader, remoteEntry, scripts, and shimeji image entries while excluding temporary files.",
       "verification": "zip generated at plugins.v2\\agentmascot_v0.1.11_install_20260703_modularized.zip, entry assertions, shimeji 66/66 check, temp artifact exclusion check",
+      "result": "passed"
+    },
+    {
+      "task": "5.4",
+      "action": "Fixed the AgentMascot loader response chunk inlining bug that prevented the online global mascot from mounting, regenerated and deployed the current 0.1.11 package for smoke validation, then verified plugin settings/page APIs, global replacement, native assistant click-open, and cache-disabled asset loading in Chrome/CDP.",
+      "verification": "local loader JS parse, version gate, backend py_compile, regenerated install zip validation, live MoviePilot reload to AgentMascot 0.1.11, online loader JS parse, Chrome/CDP DOM smoke, click-open smoke, cache reload smoke, Vue remote/form/page checks",
       "result": "passed"
     }
   ]
