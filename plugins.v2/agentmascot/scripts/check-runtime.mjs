@@ -29,6 +29,13 @@ function createFrameDriver() {
       callback = null
       next(timestamp)
     },
+    tickIfReady(timestamp) {
+      if (!callback) return false
+      const next = callback
+      callback = null
+      next(timestamp)
+      return true
+    },
     triggerInterval() {
       if (!intervalCallback) throw new Error('No interval callback registered')
       intervalCallback()
@@ -140,7 +147,7 @@ function createWallRuntime(modules, side) {
   return { driver, pet, runtime }
 }
 
-function createRoamRuntime(modules) {
+function createRoamRuntime(modules, mascot = 'kurisu') {
   const bounds = { width: 900, height: 620 }
   const driver = createFrameDriver()
   const pet = modules.createPetState({
@@ -155,7 +162,7 @@ function createRoamRuntime(modules) {
     bounds: () => bounds,
     getConfig: () => ({
       enabled: true,
-      mascot: 'kurisu',
+      mascot,
       scale: 1,
       speed: 1,
       follow_mouse: false,
@@ -454,6 +461,45 @@ function runActionLabCheck(modules) {
   }
 }
 
+function runActionLabScenarioCheck(modules) {
+  const expectedActionNames = {
+    idle: 'stand',
+    sleep: 'lie',
+  }
+
+  for (const mascot of ['nailong', 'kurisu']) {
+    const { bounds, driver, pet, runtime } = createRoamRuntime(modules, mascot)
+    runtime.start()
+    const scenarios = modules.actionLab.actionLabCoreScenariosForMascot(mascot)
+
+    for (let index = 0; index < scenarios.length; index += 1) {
+      const scenario = scenarios[index]
+      const timestamp = 12000 + index * 400
+      if (scenario.kind === 'action') {
+        runtime.playAction(scenario.id, { timestamp, duration: 900 })
+        const state = runtime.debugState()
+        const expectedAction = expectedActionNames[scenario.id] || scenario.id
+        if (state.action !== expectedAction) {
+          fail(`ActionLab scenario ${mascot}/${scenario.id} expected action=${expectedAction}, got ${state.action}`)
+        }
+      } else {
+        const result = runtime.playBehavior(scenario.id, { timestamp, duration: 1200 })
+        if (!result.applied) {
+          fail(`ActionLab behavior scenario ${mascot}/${scenario.id} was not applied`)
+        }
+      }
+
+      for (let tick = 1; tick <= 18; tick += 1) {
+        if (!driver.tickIfReady(timestamp + tick * 33)) break
+        assertFinitePet(pet, `action lab scenario ${mascot}/${scenario.id} tick ${tick}`)
+        assertWithinBounds(pet, bounds, `action lab scenario ${mascot}/${scenario.id} tick ${tick}`)
+      }
+    }
+
+    runtime.stop()
+  }
+}
+
 const modules = await loadRuntimeModules()
 try {
   runFallVisibilityCheck(modules)
@@ -464,6 +510,7 @@ try {
   runSemanticActionCheck(modules)
   runPreviewControlCheck(modules)
   runActionLabCheck(modules)
+  runActionLabScenarioCheck(modules)
 } finally {
   await modules.close()
 }
@@ -474,4 +521,4 @@ if (failures.length) {
   process.exit(1)
 }
 
-console.log('[AgentMascot] runtime validation passed: fall visibility gate, wall approach, long roam guards, behavior selection, semantic actions, preview controls, action lab')
+console.log('[AgentMascot] runtime validation passed: fall visibility gate, wall approach, long roam guards, behavior selection, semantic actions, preview controls, action lab, action lab scenarios')

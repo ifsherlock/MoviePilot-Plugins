@@ -49,6 +49,18 @@ const BEHAVIOR_GROUPS = [
   { id: 'ceiling', title: '天花板行为', behaviors: CEILING_BEHAVIORS },
 ]
 
+export const ACTION_LAB_CORE_ACTIONS = {
+  chibiterasu: ['idle', 'walk', 'run', 'jump', 'fall', 'drag', 'sleep'],
+  nailong: ['idle', 'walk', 'run', 'jump', 'fall', 'drag', 'sleep', 'resist'],
+  kurisu: ['idle', 'walk', 'run', 'jump', 'fall', 'drag', 'sleep', 'think', 'surprise', 'cheer', 'spinCelebrate'],
+}
+
+export const ACTION_LAB_CORE_BEHAVIORS = {
+  chibiterasu: ['roam', 'goWall', 'leap', 'holdWall', 'climbWall', 'holdCeiling', 'crawlCeiling'],
+  nailong: ['roam', 'goWall', 'leap', 'holdWall', 'climbWall', 'holdCeiling', 'crawlCeiling'],
+  kurisu: ['roam', 'goWall', 'leap', 'holdWall', 'climbWall', 'holdCeiling', 'crawlCeiling'],
+}
+
 function actionAvailable(mascot, name) {
   return REQUIRED_SEMANTIC_ACTIONS.includes(name) || (FEATURE_SEMANTIC_ACTIONS[mascot] || []).includes(name)
 }
@@ -75,4 +87,11 @@ export function actionLabGroupsForMascot(mascot = 'chibiterasu') {
   })).filter(group => group.items.length)
 
   return [...actionGroups, ...behaviorGroups]
+}
+
+export function actionLabCoreScenariosForMascot(mascot = 'chibiterasu') {
+  return [
+    ...(ACTION_LAB_CORE_ACTIONS[mascot] || ACTION_LAB_CORE_ACTIONS.chibiterasu).map(id => ({ id, kind: 'action' })),
+    ...(ACTION_LAB_CORE_BEHAVIORS[mascot] || ACTION_LAB_CORE_BEHAVIORS.chibiterasu).map(id => ({ id, kind: 'behavior' })),
+  ]
 }
