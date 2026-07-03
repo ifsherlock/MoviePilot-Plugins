@@ -34,6 +34,7 @@ import {
   WALL_BEHAVIORS,
   chooseWeightedBehavior,
   nextBehaviorCooldown,
+  resolveMascotBehaviors,
 } from './behaviors'
 import {
   ceilingAnchorY as calculateCeilingAnchorY,
@@ -446,7 +447,7 @@ export function createMascotRuntime(options = {}) {
   }
 
   function chooseGroundBehavior(timestamp) {
-    const behavior = chooseWeightedBehavior(GROUND_BEHAVIORS, {
+    const behavior = chooseWeightedBehavior(resolveMascotBehaviors('ground', GROUND_BEHAVIORS, config().mascot), {
       cooldowns: pet.behaviorCooldowns,
       random,
       timestamp,
@@ -460,7 +461,7 @@ export function createMascotRuntime(options = {}) {
 
   function chooseWallBehavior(timestamp) {
     const nearTop = pet.anchorY <= ceilingAnchorY() + 56 * poseScale()
-    const behavior = chooseWeightedBehavior(WALL_BEHAVIORS, {
+    const behavior = chooseWeightedBehavior(resolveMascotBehaviors('wall', WALL_BEHAVIORS, config().mascot), {
       cooldowns: pet.behaviorCooldowns,
       nearTop,
       random,
@@ -474,7 +475,7 @@ export function createMascotRuntime(options = {}) {
   }
 
   function chooseCeilingBehavior(timestamp) {
-    const behavior = chooseWeightedBehavior(CEILING_BEHAVIORS, {
+    const behavior = chooseWeightedBehavior(resolveMascotBehaviors('ceiling', CEILING_BEHAVIORS, config().mascot), {
       cooldowns: pet.behaviorCooldowns,
       random,
       timestamp,

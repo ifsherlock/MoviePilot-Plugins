@@ -18,6 +18,66 @@ export const CEILING_BEHAVIORS = [
   { id: 'dropFromCeiling', surface: 'ceiling', weight: 12, cooldownMs: 16000, minDurationMs: 500 },
 ]
 
+export const MASCOT_BEHAVIOR_PROFILES = {
+  chibiterasu: {
+    capabilities: ['ground', 'wall', 'ceiling', 'leap'],
+    weights: {},
+  },
+  nailong: {
+    capabilities: ['ground', 'wall', 'ceiling', 'leap'],
+    weights: {
+      ground: {
+        rest: 38,
+        roam: 44,
+        goWall: 8,
+        leap: 10,
+      },
+      ceiling: {
+        holdCeiling: 48,
+        crawlCeiling: 34,
+        dropFromCeiling: 18,
+      },
+    },
+  },
+  kurisu: {
+    capabilities: ['ground', 'wall', 'ceiling', 'leap'],
+    weights: {
+      ground: {
+        rest: 52,
+        roam: 38,
+        goWall: 4,
+        leap: 6,
+      },
+      wall: {
+        goCeiling: 46,
+        holdWall: 38,
+        climbWall: 44,
+        fallFromWall: 10,
+      },
+      ceiling: {
+        holdCeiling: 62,
+        crawlCeiling: 28,
+        dropFromCeiling: 10,
+      },
+    },
+  },
+}
+
+export function behaviorProfile(mascot = 'chibiterasu') {
+  return MASCOT_BEHAVIOR_PROFILES[mascot] || MASCOT_BEHAVIOR_PROFILES.chibiterasu
+}
+
+export function resolveMascotBehaviors(surface, behaviors, mascot = 'chibiterasu') {
+  const profile = behaviorProfile(mascot)
+  const weights = profile.weights?.[surface] || {}
+  return behaviors
+    .filter(behavior => profile.capabilities.includes(surface) || behavior.requiredCapability && profile.capabilities.includes(behavior.requiredCapability))
+    .map(behavior => ({
+      ...behavior,
+      weight: weights[behavior.id] ?? behavior.weight,
+    }))
+}
+
 export function chooseWeightedBehavior(behaviors, context = {}) {
   const timestamp = context.timestamp ?? 0
   const cooldowns = context.cooldowns || {}

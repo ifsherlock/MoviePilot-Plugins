@@ -104,7 +104,7 @@ function createFallRuntime(modules) {
 function createWallRuntime(modules, side) {
   const bounds = { width: 720, height: 520 }
   const driver = createFrameDriver()
-  const randomValues = [0.93, side === 'left' ? 0.25 : 0.75]
+  const randomValues = [0.85, side === 'left' ? 0.25 : 0.75]
   const pet = modules.createPetState({
     anchorX: side === 'left' ? 360 : 180,
     anchorY: bounds.height - 18,
@@ -296,7 +296,12 @@ function runLongRoamCheck(modules) {
 }
 
 function runBehaviorSelectionCheck(modules) {
-  const { GROUND_BEHAVIORS, chooseWeightedBehavior, nextBehaviorCooldown } = modules.behaviors
+  const {
+    GROUND_BEHAVIORS,
+    chooseWeightedBehavior,
+    nextBehaviorCooldown,
+    resolveMascotBehaviors,
+  } = modules.behaviors
   const samples = [
     chooseWeightedBehavior(GROUND_BEHAVIORS, { random: () => 0.1 })?.id,
     chooseWeightedBehavior(GROUND_BEHAVIORS, { random: () => 0.5 })?.id,
@@ -317,6 +322,13 @@ function runBehaviorSelectionCheck(modules) {
     timestamp: 1001,
   })?.id
   if (cooledSample === 'goWall') fail('Behavior cooldown did not suppress goWall')
+
+  const nailongGround = resolveMascotBehaviors('ground', GROUND_BEHAVIORS, 'nailong')
+  const kurisuGround = resolveMascotBehaviors('ground', GROUND_BEHAVIORS, 'kurisu')
+  const nailongLeap = nailongGround.find(behavior => behavior.id === 'leap')?.weight
+  const kurisuRest = kurisuGround.find(behavior => behavior.id === 'rest')?.weight
+  if (nailongLeap !== 10) fail(`Expected nailong leap weight 10, got ${nailongLeap}`)
+  if (kurisuRest !== 52) fail(`Expected kurisu rest weight 52, got ${kurisuRest}`)
 }
 
 const modules = await loadRuntimeModules()
