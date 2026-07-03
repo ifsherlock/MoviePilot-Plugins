@@ -348,6 +348,15 @@ export const MASCOT_ACTION_OVERRIDES = {
       ],
     },
     lie: CUSTOM_SLEEP,
+    jump: {
+      ...SHIMEJI_ACTIONS.jump,
+      poses: [
+        pose('shime15', GROUND_FOOT_ANCHOR, [0, 0], 6),
+        pose('shime16', GROUND_FOOT_ANCHOR, [0, 0], 6),
+        pose('shime17', GROUND_FOOT_ANCHOR, [0, 0], 6),
+        pose('shime27', GROUND_FOOT_ANCHOR, [0, 0], 6),
+      ],
+    },
     lookUp: {
       ...SHIMEJI_ACTIONS.lookUp,
       poses: [
@@ -362,6 +371,7 @@ export const MASCOT_ACTION_OVERRIDES = {
       poses: [
         pose('shime4', GROUND_FOOT_ANCHOR, [0, 0], 8),
         pose('shime18', GROUND_FOOT_ANCHOR, [0, 0], 8),
+        pose('shime19', GROUND_FOOT_ANCHOR, [0, 0], 8),
       ],
     },
     bounce: {

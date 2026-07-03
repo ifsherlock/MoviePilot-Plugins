@@ -351,6 +351,14 @@ function runSemanticActionCheck(modules) {
       if (!frames.length) fail(`Missing feature semantic action ${name} for ${mascot}`)
     }
   }
+  const kurisuJump = semanticActionFrames('kurisu', 'jump')
+  const kurisuLand = semanticActionFrames('kurisu', 'land')
+  if (kurisuJump.includes('shime22') || kurisuJump.includes('shime4')) {
+    fail(`Kurisu jump should not use fall/land slots: ${kurisuJump.join(',')}`)
+  }
+  if (!kurisuLand.includes('shime18') || !kurisuLand.includes('shime41')) {
+    fail(`Kurisu land should include landing recovery frames: ${kurisuLand.join(',')}`)
+  }
 }
 
 const modules = await loadRuntimeModules()
