@@ -1,56 +1,11 @@
-import { SHIMEJI_ACTIONS } from './assets/shimeji/frames'
 import {
-  ACTION_MIN_DURATION,
-  AIR_DRAG_X,
-  AIR_DRAG_Y,
-  AIR_GRAVITY,
   DEFAULT_CONFIG,
-  FOLLOW_DEAD_ZONE,
-  GROUND_PADDING,
-  REST_ACTIONS,
-  ROAM_INTERVAL,
-  ROAM_REST_MIN,
-  ROAM_REST_RANGE,
-  RUN_DISTANCE,
-  SHIMEJI_TICK_MS,
   SURFACE_SCAN_MS,
   VIEWPORT_PADDING,
-  WALL_MARGIN,
-  WALL_REST_MIN,
-  WALL_REST_RANGE,
   normalizeConfig,
 } from './mascot/config'
-import {
-  dragAnchor as calculateDragAnchor,
-  dragDistance,
-  dragLookRight,
-  pointerOffset as calculatePointerOffset,
-  resolveDragRelease,
-} from './mascot/drag'
-import {
-  ceilingAnchorY as calculateCeilingAnchorY,
-  clampAnchorX as calculateClampAnchorX,
-  clampAnchorY as calculateClampAnchorY,
-  groundAnchorY as calculateGroundAnchorY,
-  laneGap as calculateLaneGap,
-  normalizeLaneY as calculateNormalizeLaneY,
-  petSize as calculatePetSize,
-  poseScale as calculatePoseScale,
-  randomGroundX as calculateRandomGroundX,
-  visualAnchor as calculateVisualAnchor,
-  wallAnchorX as calculateWallAnchorX,
-  wallTargetY as calculateWallTargetY,
-} from './mascot/geometry'
-import {
-  buildDomSurfaceLanes,
-  chooseSurfaceLane,
-  crossedSurfaceLane,
-  nearestSurfaceLane,
-} from './mascot/surfaces'
-import {
-  resolveMouseYFollow,
-  updateMouseIntent as updateMouseIntentState,
-} from './mascot/mouse'
+import { createMascotRuntime } from './mascot/runtime'
+import { buildDomSurfaceLanes } from './mascot/surfaces'
 import { unwrapResponse } from './provider'
 
 const PLUGIN_ID = 'AgentMascot'
@@ -71,57 +26,41 @@ const DOM_SURFACE_SELECTORS = [
   '[class*="dashboard"]',
   '[class*="layout"]',
 ].join(',')
+
 let config = { ...DEFAULT_CONFIG }
 let root = null
 let img = null
 let shadow = null
 let nativeEntry = null
 let nativeTrigger = null
-let rafId = 0
-let roamTimer = 0
 let configTimer = 0
-let lastTick = 0
-let action = 'stand'
-let poseIndex = 0
-let poseTicks = 0
-let actionLockedUntil = 0
-let roamPausedUntil = 0
-let pointerOffset = { x: 0, y: 0 }
-let dragStart = null
-let suppressClickUntil = 0
 let restoreNativeTimer = 0
 let nativeObserver = null
 let surfaceLanes = []
 let lastSurfaceScan = 0
 
-const mouse = {
-  x: 0,
-  y: 0,
-  lastX: 0,
-  lastY: 0,
-  lastMoveAt: 0,
-  speed: 0,
-  activeUntil: 0,
-  candidateLaneY: null,
-  candidateSince: 0,
-  yCooldownUntil: 0,
-}
-
-const pet = {
-  anchorX: 180,
-  anchorY: 180,
-  targetX: 360,
-  targetY: 180,
-  lookRight: false,
-  dragging: false,
-  surface: 'ground',
-  state: 'groundMove',
-  stateUntil: 0,
-  wallSide: 'left',
-  laneY: 180,
-  vx: 0,
-  vy: 0,
-}
+const runtime = createMascotRuntime({
+  bounds: viewportBounds,
+  getConfig: () => config,
+  getSurfaceLanes: collectSurfaceLanes,
+  initialPet: {
+    anchorX: 180,
+    anchorY: 180,
+    targetX: 360,
+    targetY: 180,
+    laneY: 180,
+  },
+  onUpdate: render,
+  scheduler: {
+    setInterval: (...args) => window.setInterval(...args),
+    clearInterval: id => window.clearInterval(id),
+    setTimeout: (...args) => window.setTimeout(...args),
+    requestAnimationFrame: callback => window.requestAnimationFrame(callback),
+    cancelAnimationFrame: id => window.cancelAnimationFrame(id),
+  },
+  viewportPadding: VIEWPORT_PADDING,
+})
+const pet = runtime.pet
 
 function looksLikeJwt(value) {
   return typeof value === 'string' && /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(value.trim())
@@ -218,11 +157,13 @@ async function loadConfig() {
     if (!publicResponse.ok) throw new Error(`AgentMascot public status ${publicResponse.status}`)
     const data = unwrapResponse(await publicResponse.json())
     config = normalizeConfig(data?.config)
+    runtime.updateConfig(config)
     return config
   }
   if (!response.ok) throw new Error(`AgentMascot status ${response.status}`)
   const data = unwrapResponse(await response.json())
   config = normalizeConfig(data?.config)
+  runtime.updateConfig(config)
   return config
 }
 
@@ -231,92 +172,18 @@ function isEnabled() {
 }
 
 function viewportBounds() {
-  const width = window.visualViewport?.width || window.innerWidth || document.documentElement.clientWidth || 0
-  const height = window.visualViewport?.height || window.innerHeight || document.documentElement.clientHeight || 0
-  return { width, height }
-}
-
-function petSize() {
-  return calculatePetSize(config.scale)
-}
-
-function poseScale() {
-  return calculatePoseScale(petSize())
-}
-
-function currentAction() {
-  return SHIMEJI_ACTIONS[action] || SHIMEJI_ACTIONS.stand
-}
-
-function currentPose() {
-  const poses = currentAction().poses
-  return poses[poseIndex % poses.length] || SHIMEJI_ACTIONS.stand.poses[0]
-}
-
-function visualAnchor(pose) {
-  return calculateVisualAnchor(pose, petSize(), poseScale(), pet.lookRight)
-}
-
-function groundAnchorY() {
-  return calculateGroundAnchorY(viewportBounds(), GROUND_PADDING, VIEWPORT_PADDING)
-}
-
-function ceilingAnchorY() {
-  return calculateCeilingAnchorY(currentPose(), petSize(), poseScale(), pet.lookRight, VIEWPORT_PADDING)
-}
-
-function clampAnchorX(anchorX) {
-  return calculateClampAnchorX(anchorX, viewportBounds(), currentPose(), petSize(), poseScale(), pet.lookRight, VIEWPORT_PADDING)
-}
-
-function clampAnchorY(anchorY) {
-  return calculateClampAnchorY(
-    anchorY,
-    viewportBounds(),
-    currentPose(),
-    petSize(),
-    poseScale(),
-    pet.lookRight,
-    GROUND_PADDING,
-    VIEWPORT_PADDING,
-  )
-}
-
-function laneGap() {
-  return calculateLaneGap(petSize(), poseScale())
-}
-
-function normalizeLaneY(anchorY) {
-  return calculateNormalizeLaneY(
-    anchorY,
-    viewportBounds(),
-    currentPose(),
-    petSize(),
-    poseScale(),
-    pet.lookRight,
-    GROUND_PADDING,
-    VIEWPORT_PADDING,
-  )
-}
-
-function surfaceContext() {
   return {
-    bounds: viewportBounds(),
-    pose: currentPose(),
-    size: petSize(),
-    scale: poseScale(),
-    lookRight: pet.lookRight,
-    groundPadding: GROUND_PADDING,
-    viewportPadding: VIEWPORT_PADDING,
+    height: window.innerHeight,
+    width: window.innerWidth,
   }
 }
 
-function collectSurfaceLanes(force = false) {
+function collectSurfaceLanes(context, force = false) {
   const now = performance.now()
   if (!force && surfaceLanes.length && now - lastSurfaceScan < SURFACE_SCAN_MS) return surfaceLanes
 
   try {
-    surfaceLanes = buildDomSurfaceLanes(surfaceContext(), document.querySelectorAll(DOM_SURFACE_SELECTORS), {
+    surfaceLanes = buildDomSurfaceLanes(context, document.querySelectorAll(DOM_SURFACE_SELECTORS), {
       getStyle: element => window.getComputedStyle(element),
       onError: error => console.debug('[AgentMascot] surface element skipped', error),
       shouldIgnoreElement: element => element === root || root?.contains(element) || nativeEntry?.contains(element),
@@ -324,456 +191,20 @@ function collectSurfaceLanes(force = false) {
     })
   } catch (error) {
     console.debug('[AgentMascot] surface scan skipped', error)
-    surfaceLanes = buildDomSurfaceLanes(surfaceContext(), [])
+    surfaceLanes = buildDomSurfaceLanes(context, [])
   }
 
   lastSurfaceScan = now
   return surfaceLanes
 }
 
-function nearestLaneToY(anchorY) {
-  const lanes = collectSurfaceLanes()
-  return nearestSurfaceLane(anchorY, lanes, groundAnchorY())
-}
-
-function chooseLaneY(preferCurrent = true) {
-  const lanes = collectSurfaceLanes()
-  const current = pet.laneY || nearestLaneToY(pet.anchorY)
-  return chooseSurfaceLane(lanes, {
-    current,
-    fallbackLane: groundAnchorY(),
-    gap: laneGap(),
-    preferCurrent,
-  })
-}
-
-function setLaneY(anchorY) {
-  pet.laneY = normalizeLaneY(anchorY)
-  pet.anchorY = pet.laneY
-  pet.targetY = pet.laneY
-}
-
-function crossedLandingY(previousY, currentY) {
-  const lanes = collectSurfaceLanes()
-  const tolerance = Math.max(8 * poseScale(), 4)
-  return crossedSurfaceLane(previousY, currentY, lanes, tolerance)
-}
-
-function updateMouseIntent(event, timestamp = performance.now()) {
-  mouse.activeUntil = updateMouseIntentState(mouse, { x: event.clientX, y: event.clientY }, {
-    anchorY: pet.anchorY,
-    currentLaneY: pet.laneY || nearestLaneToY(pet.anchorY),
-    nearestLaneToY,
-    scale: poseScale(),
-    timestamp,
-  })
-}
-
-function applyMouseYFollow(timestamp) {
-  const result = resolveMouseYFollow(mouse, pet, {
-    activeUntil: mouse.activeUntil,
-    followMouse: config.follow_mouse,
-    laneGap: laneGap(),
-    scale: poseScale(),
-    timestamp,
-  })
-  if (!result.applied) return false
-  if (result.type === 'lane') {
-    setLaneY(result.targetLaneY)
-    return true
-  }
-  if (result.type === 'fall') {
-    startFall(timestamp, result.vx, result.vy)
-    return true
-  }
-  startLeap(timestamp, result.side)
-  return true
-}
-
-function wallAnchorX(side) {
-  return calculateWallAnchorX(side, viewportBounds(), VIEWPORT_PADDING)
-}
-
-function randomGroundX() {
-  return calculateRandomGroundX(viewportBounds(), petSize(), VIEWPORT_PADDING)
-}
-
-function wallTargetY() {
-  return calculateWallTargetY(
-    viewportBounds(),
-    currentPose(),
-    petSize(),
-    poseScale(),
-    pet.lookRight,
-    GROUND_PADDING,
-    VIEWPORT_PADDING,
-    WALL_MARGIN,
-  )
-}
-
-function setAction(nextAction, timestamp = performance.now(), options = {}) {
-  if (action === nextAction) return
-  if (!options.force && timestamp < actionLockedUntil && !['drag', 'resist', 'split'].includes(nextAction)) return
-  action = nextAction
-  poseIndex = 0
-  poseTicks = 0
-  actionLockedUntil = timestamp + (options.duration ?? ACTION_MIN_DURATION[nextAction] ?? 600)
-}
-
-function advancePose(elapsedTicks) {
-  poseTicks += elapsedTicks
-  const poses = currentAction().poses
-  while (poseTicks >= currentPose().duration) {
-    poseTicks -= currentPose().duration
-    const nextIndex = poseIndex + 1
-    if (nextIndex >= poses.length && !currentAction().loop) {
-      setAction('stand')
-      return
-    }
-    poseIndex = nextIndex % poses.length
-  }
-}
-
-function updateGroundAction(distance, timestamp, isFollowingMouse) {
-  if (pet.dragging) {
-    setAction(distance > 56 ? 'resist' : 'drag', timestamp)
-    return
-  }
-  if (distance > FOLLOW_DEAD_ZONE) {
-    setAction(isFollowingMouse && distance > RUN_DISTANCE ? 'dash' : 'run', timestamp)
-    return
-  }
-  if (distance > 8) {
-    setAction('walk', timestamp)
-    return
-  }
-  if (['walk', 'run', 'dash'].includes(action)) actionLockedUntil = 0
-  setAction('stand', timestamp)
-}
-
-function startRest(timestamp, choices = REST_ACTIONS, min = ROAM_REST_MIN, range = ROAM_REST_RANGE) {
-  const nextAction = choices[Math.floor(Math.random() * choices.length)] || 'stand'
-  const duration = min + Math.random() * range
-  pet.targetX = pet.anchorX
-  pet.targetY = pet.anchorY
-  pet.stateUntil = timestamp + duration
-  if (nextAction === 'holdWall') {
-    pet.surface = 'wall'
-    pet.state = 'wallHold'
-  } else if (nextAction === 'holdCeiling') {
-    pet.surface = 'ceiling'
-    pet.state = 'ceilingHold'
-  } else {
-    pet.surface = 'ground'
-    pet.state = 'rest'
-    roamPausedUntil = pet.stateUntil
-  }
-  setAction(nextAction, timestamp, { force: true, duration })
-}
-
-function startGroundMove(timestamp, targetX = null, state = 'groundMove') {
-  pet.surface = 'ground'
-  pet.state = state
-  pet.stateUntil = 0
-  const shouldShiftLane = state === 'groundMove' && Math.random() < 0.38
-  setLaneY(chooseLaneY(!shouldShiftLane))
-  pet.targetX = targetX ?? randomGroundX()
-  updateGroundAction(Math.abs(pet.targetX - pet.anchorX), timestamp, false)
-}
-
-function startMoveToWall(timestamp, side = Math.random() < 0.5 ? 'left' : 'right') {
-  pet.surface = 'ground'
-  pet.state = 'toWall'
-  pet.wallSide = side
-  setLaneY(nearestLaneToY(pet.anchorY))
-  pet.targetX = wallAnchorX(side)
-  setAction(Math.abs(pet.targetX - pet.anchorX) > RUN_DISTANCE ? 'run' : 'walk', timestamp, { force: true })
-}
-
-function startWall(side, timestamp, targetY = null) {
-  pet.surface = 'wall'
-  pet.state = 'wallHold'
-  pet.wallSide = side
-  pet.targetY = targetY ?? pet.anchorY
-  pet.anchorX = wallAnchorX(side)
-  pet.anchorY = clampAnchorY(pet.anchorY)
-  pet.lookRight = side === 'right'
-  setAction('holdWall', timestamp, { force: true, duration: WALL_REST_MIN })
-  pet.stateUntil = timestamp + 1800 + Math.random() * 3200
-}
-
-function startWallClimb(timestamp, targetY = null) {
-  pet.surface = 'wall'
-  pet.state = 'wallClimb'
-  pet.targetY = targetY ?? (Math.random() < 0.62 ? ceilingAnchorY() + 12 * poseScale() : wallTargetY())
-  pet.anchorX = wallAnchorX(pet.wallSide)
-  setAction(pet.targetY < pet.anchorY ? 'climbWallUp' : 'climbWallDown', timestamp, { force: true })
-}
-
-function startCeiling(timestamp, targetX = null) {
-  pet.surface = 'ceiling'
-  pet.state = 'ceilingHold'
-  pet.anchorY = ceilingAnchorY()
-  pet.targetX = targetX ?? randomGroundX()
-  setAction('holdCeiling', timestamp, { force: true, duration: WALL_REST_MIN })
-  pet.stateUntil = timestamp + WALL_REST_MIN + Math.random() * WALL_REST_RANGE
-}
-
-function startCeilingCrawl(timestamp, targetX = null) {
-  pet.surface = 'ceiling'
-  pet.state = 'ceilingCrawl'
-  pet.anchorY = ceilingAnchorY()
-  pet.targetX = targetX ?? randomGroundX()
-  setAction('crawlCeiling', timestamp, { force: true })
-}
-
-function startFall(timestamp, vx = 0, vy = 0) {
-  pet.surface = 'air'
-  pet.state = 'fall'
-  pet.vx = vx
-  pet.vy = vy
-  setAction(vy < 0 ? 'jump' : 'fall', timestamp, { force: true })
-}
-
-function startLeap(timestamp, side = Math.random() < 0.5 ? 'left' : 'right') {
-  const direction = side === 'left' ? -1 : 1
-  pet.surface = 'air'
-  pet.state = 'leap'
-  pet.wallSide = side
-  pet.vx = direction * (7 + Math.random() * 5.5) * Number(config.speed || 1)
-  pet.vy = -(14 + Math.random() * 9) * Number(config.speed || 1)
-  setAction('jump', timestamp, { force: true })
-}
-
-function chooseGroundBehavior(timestamp) {
-  const roll = Math.random()
-  if (roll < 0.24) startRest(timestamp)
-  else if (roll < 0.44) startGroundMove(timestamp)
-  else if (roll < 0.74) startMoveToWall(timestamp)
-  else startLeap(timestamp)
-}
-
-function chooseWallBehavior(timestamp) {
-  const nearTop = pet.anchorY <= ceilingAnchorY() + 56 * poseScale()
-  const roll = Math.random()
-  if (nearTop && roll < 0.66) startCeiling(timestamp)
-  else if (roll < 0.3) startRest(timestamp, ['holdWall'], WALL_REST_MIN, WALL_REST_RANGE)
-  else if (roll < 0.86) startWallClimb(timestamp)
-  else startFall(timestamp, pet.wallSide === 'left' ? 2.2 : -2.2, -2)
-}
-
-function chooseCeilingBehavior(timestamp) {
-  const roll = Math.random()
-  if (roll < 0.52) startRest(timestamp, ['holdCeiling'], WALL_REST_MIN, WALL_REST_RANGE)
-  else if (roll < 0.88) startCeilingCrawl(timestamp)
-  else startFall(timestamp, (Math.random() < 0.5 ? -1 : 1) * (2 + Math.random() * 2), 0.8)
-}
-
-function moveByCurrentPose(elapsedTicks, targetX) {
-  const distance = targetX - pet.anchorX
-  if (Math.abs(distance) <= 2) {
-    pet.anchorX = targetX
-    return
-  }
-  pet.lookRight = distance > 0
-  const directionMultiplier = pet.lookRight ? -1 : 1
-  const vx = currentPose().velocity[0] * directionMultiplier * poseScale() * Number(config.speed || 1)
-  if (vx === 0) return
-  const step = vx * elapsedTicks
-  if (Math.sign(step) !== Math.sign(distance) || Math.abs(step) >= Math.abs(distance)) {
-    pet.anchorX = targetX
-    return
-  }
-  pet.anchorX += step
-}
-
-function moveWallByCurrentPose(elapsedTicks) {
-  const distance = pet.targetY - pet.anchorY
-  if (Math.abs(distance) <= 3) {
-    pet.anchorY = pet.targetY
-    return true
-  }
-  setAction(distance < 0 ? 'climbWallUp' : 'climbWallDown', performance.now(), { force: true })
-  const vy = currentPose().velocity[1] * poseScale() * Number(config.speed || 1)
-  const step = vy * elapsedTicks
-  if (!step || Math.sign(step) !== Math.sign(distance) || Math.abs(step) >= Math.abs(distance)) {
-    pet.anchorY = pet.targetY
-    return true
-  }
-  pet.anchorY += step
-  return false
-}
-
-function moveCeilingByCurrentPose(elapsedTicks) {
-  const distance = pet.targetX - pet.anchorX
-  if (Math.abs(distance) <= 3) {
-    pet.anchorX = pet.targetX
-    return true
-  }
-  pet.lookRight = distance > 0
-  const directionMultiplier = pet.lookRight ? -1 : 1
-  const vx = currentPose().velocity[0] * directionMultiplier * poseScale() * Number(config.speed || 1)
-  const step = vx * elapsedTicks
-  if (!step || Math.sign(step) !== Math.sign(distance) || Math.abs(step) >= Math.abs(distance)) {
-    pet.anchorX = pet.targetX
-    return true
-  }
-  pet.anchorX += step
-  return false
-}
-
-function updateAir(elapsedTicks, timestamp) {
-  const previousY = pet.anchorY
-  pet.anchorX += pet.vx * elapsedTicks * poseScale()
-  pet.anchorY += pet.vy * elapsedTicks * poseScale()
-  pet.vx *= Math.pow(AIR_DRAG_X, elapsedTicks)
-  pet.vy = pet.vy * Math.pow(AIR_DRAG_Y, elapsedTicks) + AIR_GRAVITY * elapsedTicks * Number(config.speed || 1)
-  pet.lookRight = pet.vx > 0
-  setAction(pet.vy < -0.4 ? 'jump' : 'fall', timestamp)
-
-  const leftX = wallAnchorX('left')
-  const rightX = wallAnchorX('right')
-  const highEnoughForWall = pet.anchorY < groundAnchorY() - 60 * poseScale()
-  if (pet.anchorX <= leftX) {
-    pet.anchorX = leftX
-    if (highEnoughForWall && pet.vx < 0) {
-      startWall('left', timestamp, clampAnchorY(pet.anchorY))
-      return
-    }
-    pet.vx = Math.abs(pet.vx) * 0.55
-  }
-  if (pet.anchorX >= rightX) {
-    pet.anchorX = rightX
-    if (highEnoughForWall && pet.vx > 0) {
-      startWall('right', timestamp, clampAnchorY(pet.anchorY))
-      return
-    }
-    pet.vx = -Math.abs(pet.vx) * 0.55
-  }
-  if (pet.anchorY <= ceilingAnchorY()) {
-    pet.anchorY = ceilingAnchorY()
-    if (pet.vy < 0 && Math.random() < 0.55) {
-      startCeiling(timestamp)
-      return
-    }
-    pet.vy = Math.abs(pet.vy) * 0.45
-  }
-  const landingY = pet.vy >= -0.2 ? crossedLandingY(previousY, pet.anchorY) : null
-  if (landingY !== null) {
-    setLaneY(landingY)
-    pet.anchorX = Math.min(Math.max(pet.anchorX, leftX), rightX)
-    pet.surface = 'ground'
-    pet.state = 'bounce'
-    pet.vx = 0
-    pet.vy = 0
-    setAction('bounce', timestamp, { force: true, duration: 520 })
-    pet.stateUntil = timestamp + 520
-  }
-}
-
-function animate(timestamp) {
-  const elapsedMs = lastTick ? Math.min(timestamp - lastTick, 100) : SHIMEJI_TICK_MS
-  const elapsedTicks = elapsedMs / SHIMEJI_TICK_MS
-  lastTick = timestamp
-
-  if (!pet.dragging) {
-    const isMouseFresh = config.follow_mouse && timestamp < mouse.activeUntil
-    if (isMouseFresh && pet.surface !== 'air') {
-      pet.surface = 'ground'
-      pet.state = 'groundMove'
-      applyMouseYFollow(timestamp)
-      pet.targetX = mouse.x
-      roamPausedUntil = 0
-    }
-
-    if (pet.surface === 'air') {
-      updateAir(elapsedTicks, timestamp)
-      advancePose(elapsedTicks)
-    } else if (pet.surface === 'wall') {
-      pet.anchorX = wallAnchorX(pet.wallSide)
-      if (pet.state === 'wallClimb') {
-        const arrived = moveWallByCurrentPose(elapsedTicks)
-        advancePose(elapsedTicks)
-        pet.anchorY = clampAnchorY(pet.anchorY)
-        if (arrived) {
-          if (pet.anchorY <= ceilingAnchorY() + 8 * poseScale()) startCeiling(timestamp)
-          else {
-            pet.state = 'wallHold'
-            pet.stateUntil = timestamp + 1200 + Math.random() * 1800
-            setAction('holdWall', timestamp, { force: true })
-          }
-        }
-      } else {
-        advancePose(elapsedTicks)
-        if (timestamp >= pet.stateUntil) chooseWallBehavior(timestamp)
-      }
-    } else if (pet.surface === 'ceiling') {
-      pet.anchorY = ceilingAnchorY()
-      if (pet.state === 'ceilingCrawl') {
-        const arrived = moveCeilingByCurrentPose(elapsedTicks)
-        advancePose(elapsedTicks)
-        pet.anchorX = clampAnchorX(pet.anchorX)
-        if (arrived) {
-          pet.state = 'ceilingHold'
-          pet.stateUntil = timestamp + 1600 + Math.random() * 2200
-          setAction('holdCeiling', timestamp, { force: true })
-        }
-      } else {
-        advancePose(elapsedTicks)
-        if (timestamp >= pet.stateUntil) chooseCeilingBehavior(timestamp)
-      }
-    } else {
-      pet.surface = 'ground'
-      setLaneY(pet.laneY || nearestLaneToY(pet.anchorY))
-      const targetX = isMouseFresh ? mouse.x : pet.targetX
-      const distance = Math.abs(targetX - pet.anchorX)
-      if (pet.state === 'rest' && timestamp < pet.stateUntil) {
-        advancePose(elapsedTicks)
-      } else if (pet.state === 'bounce' && timestamp < pet.stateUntil) {
-        advancePose(elapsedTicks)
-      } else {
-        if (pet.state === 'rest') {
-          roamPausedUntil = 0
-          chooseGroundBehavior(timestamp)
-        } else if (distance <= 4) {
-          if (pet.state === 'toWall') startWall(pet.wallSide, timestamp, pet.anchorY)
-          else if (config.auto_roam && !isMouseFresh) {
-            if (!roamPausedUntil) roamPausedUntil = timestamp + ROAM_REST_MIN + Math.random() * ROAM_REST_RANGE
-            if (timestamp >= roamPausedUntil) {
-              roamPausedUntil = 0
-              chooseGroundBehavior(timestamp)
-            } else {
-              startRest(timestamp, REST_ACTIONS, Math.max(roamPausedUntil - timestamp, 900), 1)
-            }
-          } else updateGroundAction(distance, timestamp, false)
-        } else {
-          updateGroundAction(distance, timestamp, isMouseFresh && distance > FOLLOW_DEAD_ZONE)
-          moveByCurrentPose(elapsedTicks, targetX)
-        }
-        advancePose(elapsedTicks)
-      }
-      pet.anchorX = clampAnchorX(pet.anchorX)
-      setLaneY(pet.laneY || nearestLaneToY(pet.anchorY))
-    }
-  } else {
-    advancePose(elapsedTicks)
-  }
-
-  render()
-  rafId = requestAnimationFrame(animate)
-}
-
 function render() {
   if (!root || !img) return
-  const pose = currentPose()
-  const anchor = visualAnchor(pose)
-  const left = pet.anchorX - anchor.x
-  const top = pet.anchorY - anchor.y
-  const size = petSize()
-  root.style.width = `${size}px`
-  root.style.height = `${size}px`
-  root.style.transform = `translate3d(${left}px, ${top}px, 0) scaleX(${pet.lookRight ? -1 : 1})`
-  img.src = pose.image
+  const state = runtime.renderState()
+  root.style.width = `${state.size}px`
+  root.style.height = `${state.size}px`
+  root.style.transform = `translate3d(${state.left}px, ${state.top}px, 0) scaleX(${pet.lookRight ? -1 : 1})`
+  img.src = state.frame
   shadow.style.display = config.shadow ? 'block' : 'none'
 }
 
@@ -809,62 +240,27 @@ function isNativeAssistantOpen() {
 }
 
 function onPointerMove(event) {
-  updateMouseIntent(event)
-  roamPausedUntil = 0
+  runtime.handlePointerMove({ x: event.clientX, y: event.clientY })
 }
 
 function startDrag(event) {
   if (event.button !== 0) return
   event.preventDefault()
-  dragStart = { x: event.clientX, y: event.clientY }
-  pointerOffset = calculatePointerOffset(
-    { x: event.clientX, y: event.clientY },
-    { x: pet.anchorX, y: pet.anchorY },
-  )
-  pet.dragging = true
-  setAction('drag', performance.now(), { force: true })
+  runtime.startDrag({ x: event.clientX, y: event.clientY })
   root?.setPointerCapture?.(event.pointerId)
 }
 
 function onDrag(event) {
-  if (!pet.dragging) return
-  const anchor = calculateDragAnchor({ x: event.clientX, y: event.clientY }, pointerOffset)
-  pet.anchorX = anchor.x
-  pet.anchorY = anchor.y
-  pet.lookRight = dragLookRight(pet.lookRight, event.movementX)
-  pet.anchorX = clampAnchorX(pet.anchorX)
-  pet.anchorY = clampAnchorY(pet.anchorY)
-  pet.surface = 'air'
-  render()
+  runtime.moveDrag({ x: event.clientX, y: event.clientY }, event.movementX)
 }
 
 function endDrag(event) {
-  if (!pet.dragging) return
-  const moved = dragDistance(dragStart, { x: event.clientX, y: event.clientY })
-  dragStart = null
-  pet.dragging = false
+  runtime.endDrag({ x: event.clientX, y: event.clientY }, event.movementX, event.movementY)
   root?.releasePointerCapture?.(event.pointerId)
-  if (moved > 4) suppressClickUntil = performance.now() + 450
-  roamPausedUntil = 0
-  const release = resolveDragRelease(pet.anchorY, {
-    groundY: groundAnchorY(),
-    movementX: event.movementX,
-    movementY: event.movementY,
-    nearestLaneToY,
-    scale: poseScale(),
-  })
-  if (release.type === 'lane') {
-    setLaneY(release.laneY)
-    startGroundMove(performance.now())
-  } else if (release.type === 'fall') {
-    startFall(performance.now(), release.vx, release.vy)
-  } else {
-    startGroundMove(performance.now())
-  }
 }
 
 function onClick(event) {
-  if (pet.dragging || performance.now() < suppressClickUntil) {
+  if (runtime.shouldSuppressClick()) {
     event.preventDefault()
     return
   }
@@ -883,19 +279,11 @@ function ensureStyle() {
       overflow: hidden !important;
     }
     .${HIDDEN_CLASS} > .agent-assistant-fab__trigger,
-    .${HIDDEN_CLASS} > .agent-assistant-fab__trigger * {
+    .${HIDDEN_CLASS} > button,
+    .${HIDDEN_CLASS} [role="button"] {
       opacity: 0 !important;
-      visibility: hidden !important;
       pointer-events: none !important;
-    }
-    .${HIDDEN_CLASS} > .agent-assistant-fab__trigger {
-      width: 0 !important;
-      height: 0 !important;
-      min-width: 0 !important;
-      min-height: 0 !important;
-      padding: 0 !important;
-      border: 0 !important;
-      overflow: hidden !important;
+      transform: scale(0.01) !important;
     }
     #${ROOT_ID} {
       position: fixed;
@@ -954,14 +342,12 @@ function mount() {
   root.addEventListener('pointerup', endDrag)
   root.addEventListener('pointercancel', endDrag)
   root.addEventListener('click', onClick)
-  setLaneY(chooseLaneY(false))
-  pet.targetX = randomGroundX()
   hideNativeEntry()
-  startLoops()
+  runtime.start()
 }
 
 function unmount() {
-  stopLoops()
+  runtime.stop()
   stopNativeObserver()
   document.removeEventListener('pointermove', onPointerMove)
   window.clearTimeout(restoreNativeTimer)
@@ -986,25 +372,6 @@ function stopNativeObserver() {
   nativeObserver = null
 }
 
-function startLoops() {
-  stopLoops()
-  roamTimer = window.setInterval(() => {
-    const canScheduleGroundBehavior = pet.surface === 'ground' && !['rest', 'bounce', 'toWall'].includes(pet.state)
-    if (config.auto_roam && !pet.dragging && !roamPausedUntil && canScheduleGroundBehavior) {
-      chooseGroundBehavior(performance.now())
-    }
-  }, ROAM_INTERVAL)
-  rafId = requestAnimationFrame(animate)
-}
-
-function stopLoops() {
-  if (roamTimer) window.clearInterval(roamTimer)
-  if (rafId) cancelAnimationFrame(rafId)
-  roamTimer = 0
-  rafId = 0
-  lastTick = 0
-}
-
 async function syncFromConfig() {
   try {
     await loadConfig()
@@ -1020,16 +387,16 @@ async function syncFromConfig() {
   }
 }
 
+function onResize() {
+  runtime.clampToBounds()
+}
+
 function start() {
   if (window.__AgentMascotGlobalLoaderStarted) return
   window.__AgentMascotGlobalLoaderStarted = true
   syncFromConfig()
   configTimer = window.setInterval(syncFromConfig, CONFIG_POLL_MS)
-  window.addEventListener('resize', () => {
-    pet.anchorX = clampAnchorX(pet.anchorX)
-    pet.anchorY = clampAnchorY(pet.anchorY)
-    render()
-  })
+  window.addEventListener('resize', onResize)
 }
 
 start()

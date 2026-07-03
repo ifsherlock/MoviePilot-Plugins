@@ -1,9 +1,9 @@
 {
   "plan": "docs/plans/2026-07-03-agentmascot-modularization-phased-plan.md",
   "status": {
-    "phase": "phase-2",
-    "task": "2.5",
-    "next_allowed_action": "Implement task 2.5 by extracting motion state machine and runtime factory; after verified completion, evaluate phase-2 acceptance"
+    "phase": "phase-3",
+    "task": "3.1",
+    "next_allowed_action": "Implement task 3.1 by establishing moviepilotAuth.js and migrating auth/config request logic from global-loader"
   },
   "execution_rules": {
     "branch": "codex/agentmascot-modularization",
@@ -170,9 +170,22 @@
         {
           "id": "2.5",
           "title": "提取动作状态机和 runtime factory",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            "Created src/mascot/motion.js for shared action, mouse, and pet state factories plus action/pose resolution",
+            "Created src/mascot/runtime.js for DOM-free mascot runtime exposing start(), stop(), updateConfig(), handlePointerMove(), handlePointerLeave(), startDrag(), moveDrag(), endDrag(), celebrate(), clampToBounds(), renderState(), currentPose(), and petSize()",
+            "AppPage.vue now delegates motion state, roam scheduling, mouse follow, drag release, action switching, air/wall/ceiling/ground updates, and celebrate behavior to createMascotRuntime",
+            "global-loader.js now delegates the same runtime behavior while retaining only auth/config fetch, DOM root/style, native assistant hiding/click bridge, surface DOM scanning, and event adaptation",
+            "AppPage.vue line count is 443 and global-loader.js line count is 402, both under the phase-2 450-line limit",
+            "npm install was run to restore missing local vite; npm run build in plugins.v2\\agentmascot -> exits 0; node_modules and package-lock.json were removed after verification",
+            "python .github\\scripts\\check_plugin_versions.py package.json package.v2.json -> Plugin release version gate passed",
+            "python -m py_compile plugins.v2\\agentmascot\\__init__.py plugins.v2\\agentmascot\\config.py plugins.v2\\agentmascot\\api.py plugins.v2\\agentmascot\\loader.py plugins.v2\\agentmascot\\manifest.py -> exits 0",
+            "rg confirmed src/mascot/runtime.js, motion.js, mouse.js, and drag.js have no querySelector, document/window access, agent-assistant selector, api/v1 path, or fetch call",
+            "dist/assets/agentmascot-loader.js contains AgentMascot, agentmascot-global-root, and public_status",
+            "git diff --check -> exits 0",
+            "phase-2 acceptance passed: AppPage/global-loader under 450 lines, npm build passed, and runtime core modules do not query .agent-assistant-fab or call MoviePilot API directly"
+          ],
+          "commit": "pending"
         }
       ]
     },
@@ -366,6 +379,18 @@
       "task": "2.4",
       "action": "Created src/mascot/mouse.js and src/mascot/drag.js; AppPage and global-loader now share mouse dwell/Y-follow decisions and drag offset/release calculations while keeping DOM/event adapter behavior at the entry layer.",
       "verification": "npm run build, version gate, backend py_compile, dist loader string probe, mouse/drag DOM/API grep, git diff --check, temporary dependency cleanup",
+      "result": "passed"
+    },
+    {
+      "task": "2.5",
+      "action": "Created src/mascot/motion.js and src/mascot/runtime.js; AppPage and global-loader now delegate the action state machine, roam scheduling, pointer handling, drag release, and physics updates to the shared DOM-free runtime.",
+      "verification": "npm run build, version gate, backend py_compile, line counts, dist loader string probe, runtime core DOM/API grep, git diff --check, temporary dependency cleanup",
+      "result": "passed"
+    },
+    {
+      "phase": "phase-2",
+      "action": "Completed shared runtime core extraction.",
+      "verification": "phase-2 acceptance passed: AppPage.vue 443 lines, global-loader.js 402 lines, npm run build passed, and runtime core modules avoid DOM/MoviePilot API/native assistant selectors",
       "result": "passed"
     }
   ]
