@@ -38,6 +38,8 @@ export const Y_FOLLOW_MIN_DELTA = 90
 export const AIR_GRAVITY = 1.05
 export const AIR_DRAG_X = 0.982
 export const AIR_DRAG_Y = 0.99
+export const AIR_MIN_FALL_DISTANCE = 180
+export const AIR_MIN_FALL_DISTANCE_RATIO = 0.35
 
 export const ACTION_MIN_DURATION = {
   stand: 520,

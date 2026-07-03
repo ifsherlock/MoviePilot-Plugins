@@ -4,6 +4,8 @@ import {
   AIR_DRAG_X,
   AIR_DRAG_Y,
   AIR_GRAVITY,
+  AIR_MIN_FALL_DISTANCE,
+  AIR_MIN_FALL_DISTANCE_RATIO,
   DEFAULT_CONFIG,
   FOLLOW_DEAD_ZONE,
   GROUND_PADDING,
@@ -218,6 +220,30 @@ export function createMascotRuntime(options = {}) {
     )
   }
 
+  function clearAirFallState() {
+    pet.airStartedAt = 0
+    pet.airStartedY = null
+    pet.minLandingY = null
+  }
+
+  function minimumFallDistance(anchorY) {
+    const availableFall = Math.max(groundAnchorY() - anchorY, 0)
+    const visibleFall = Math.max(AIR_MIN_FALL_DISTANCE, bounds().height * AIR_MIN_FALL_DISTANCE_RATIO)
+    return Math.min(visibleFall, availableFall)
+  }
+
+  function startAirFallState(timestamp) {
+    pet.airStartedAt = timestamp
+    pet.airStartedY = pet.anchorY
+    pet.minLandingY = pet.anchorY + minimumFallDistance(pet.anchorY)
+  }
+
+  function landingScanStartY(previousY) {
+    if (pet.minLandingY === null || pet.minLandingY === undefined) return previousY
+    if (pet.anchorY < pet.minLandingY) return null
+    return Math.max(previousY, pet.minLandingY)
+  }
+
   function setAction(nextAction, timestamp = now(), actionOptions = {}) {
     if (actionState.name === nextAction) return
     if (!actionOptions.force && timestamp < actionLockedUntil && !INTERRUPT_ACTIONS.includes(nextAction)) return
@@ -346,6 +372,7 @@ export function createMascotRuntime(options = {}) {
     pet.state = 'fall'
     pet.vx = vx
     pet.vy = vy
+    startAirFallState(timestamp)
     setAction(vy < 0 ? 'jump' : 'fall', timestamp, { force: true })
   }
 
@@ -357,6 +384,7 @@ export function createMascotRuntime(options = {}) {
     pet.wallSide = side
     pet.vx = direction * (7 + random() * 5.5) * Number(config().speed || 1)
     pet.vy = -(14 + random() * 9) * Number(config().speed || 1)
+    clearAirFallState()
     setAction('jump', timestamp, { force: true })
   }
 
@@ -473,7 +501,8 @@ export function createMascotRuntime(options = {}) {
       }
       pet.vy = Math.abs(pet.vy) * 0.45
     }
-    const landingY = pet.vy >= -0.2 ? crossedLandingY(previousY, pet.anchorY) : null
+    const scanStartY = pet.vy >= -0.2 ? landingScanStartY(previousY) : null
+    const landingY = scanStartY === null ? null : crossedLandingY(scanStartY, pet.anchorY)
     if (landingY !== null) {
       setLaneY(landingY)
       pet.anchorX = Math.min(Math.max(pet.anchorX, leftX), rightX)
@@ -481,6 +510,7 @@ export function createMascotRuntime(options = {}) {
       pet.state = 'bounce'
       pet.vx = 0
       pet.vy = 0
+      clearAirFallState()
       setAction('bounce', timestamp, { force: true, duration: 520 })
       pet.stateUntil = timestamp + 520
     }

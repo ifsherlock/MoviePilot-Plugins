@@ -12,7 +12,8 @@
   "type": "module",
   "scripts": {
     "build": "vite build",
-    "check:assets": "node scripts/check-actions.mjs"
+    "check:assets": "node scripts/check-actions.mjs",
+    "check:runtime": "node scripts/check-runtime.mjs"
   },
   "dependencies": {
     "vue": "^3.5.13",
