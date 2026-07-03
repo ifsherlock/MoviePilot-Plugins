@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-07-03-agentmascot-modularization-phased-plan.md",
   "status": {
     "phase": "phase-4",
-    "task": "4.1",
-    "next_allowed_action": "Implement task 4.1 by splitting shimeji image import map, pose helpers, action definitions, and ACTION_FRAMES while preserving public exports"
+    "task": "4.2",
+    "next_allowed_action": "Implement task 4.2 by establishing actionCatalog.js for ground, air, wall, ceiling, drag, rest, and special action categories"
   },
   "execution_rules": {
     "branch": "codex/agentmascot-modularization",
@@ -306,9 +306,22 @@
         {
           "id": "4.1",
           "title": "拆分图片 import map、pose helper、action 定义和 ACTION_FRAMES",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            "Moved original action definitions into src/mascot/actions.js and kept SHIMEJI_ACTIONS export",
+            "Created src/mascot/assets.js for mascotIcon and SHIMEJI_IMAGES image import map",
+            "Created src/mascot/pose.js for the shared pose(name, anchor, velocity, duration) helper",
+            "Created src/mascot/actionFrames.js for preview ACTION_FRAMES",
+            "Recreated src/assets/shimeji/frames.js as a 3-line compatibility re-export for mascotIcon, SHIMEJI_IMAGES, SHIMEJI_ACTIONS, and ACTION_FRAMES",
+            "npm install was run to restore missing local vite; npm run build in plugins.v2\\agentmascot -> exits 0; node_modules and package-lock.json were removed after verification",
+            "python .github\\scripts\\check_plugin_versions.py package.json package.v2.json -> Plugin release version gate passed",
+            "python -m py_compile plugins.v2\\agentmascot\\__init__.py plugins.v2\\agentmascot\\config.py plugins.v2\\agentmascot\\api.py plugins.v2\\agentmascot\\loader.py plugins.v2\\agentmascot\\manifest.py -> exits 0",
+            "frames.js line count is 3, below the phase-4 limit of 180",
+            "dist/assets/remoteEntry.js still exposes ./Page, ./Config, ./AppPage, and ./PluginEntry",
+            "dist/assets/agentmascot-loader.js contains AgentMascot, agentmascot-global-root, public_status, and agent-assistant-fab__trigger",
+            "git diff --check -> exits 0 with LF conversion warnings only"
+          ],
+          "commit": "pending"
         },
         {
           "id": "4.2",
@@ -483,6 +496,12 @@
       "phase": "phase-3",
       "action": "Completed adapter and Vue UI separation while preserving the current patch mode and adding the future formal plugin entry.",
       "verification": "phase-3 acceptance passed: build passed, ./Page ./Config ./AppPage remain exposed, ./PluginEntry added, fixed loader output remains, native assistant selectors and JWT storage scanning are isolated",
+      "result": "passed"
+    },
+    {
+      "task": "4.1",
+      "action": "Split the shimeji frame manifest into image assets, pose helper, action definitions, and preview frame mapping while preserving the original frames.js exports.",
+      "verification": "npm run build, version gate, backend py_compile, frames.js line count/export probe, remoteEntry exposes probe, fixed loader string probe, git diff --check, temporary dependency cleanup",
       "result": "passed"
     }
   ]

@@ -1,4 +1,4 @@
-import { n as normalizeConfig, a as createMascotRuntime, V as VIEWPORT_PADDING, b as buildSurfaceLanes, D as DEFAULT_CONFIG } from './runtime-QAP3gGRk.js';
+import { n as normalizeConfig, a as createMascotRuntime, V as VIEWPORT_PADDING, b as buildSurfaceLanes, D as DEFAULT_CONFIG } from './runtime-DXd84nRC.js';
 
 const ROOT_CLASS = 'agentmascot-plugin-root';
 const SHADOW_CLASS = 'agentmascot-plugin-shadow';
