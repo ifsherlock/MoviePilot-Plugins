@@ -53,8 +53,10 @@ async function loadRuntimeModules() {
   try {
     const runtimeModule = await server.ssrLoadModule('/src/mascot/runtime.js')
     const motionModule = await server.ssrLoadModule('/src/mascot/motion.js')
+    const behaviorModule = await server.ssrLoadModule('/src/mascot/behaviors.js')
     return {
       close: () => server.close(),
+      behaviors: behaviorModule,
       createActionState: motionModule.createActionState,
       createMascotRuntime: runtimeModule.createMascotRuntime,
       createMouseState: motionModule.createMouseState,
@@ -293,12 +295,29 @@ function runLongRoamCheck(modules) {
   runtime.stop()
 }
 
+function runBehaviorSelectionCheck(modules) {
+  const { GROUND_BEHAVIORS, chooseWeightedBehavior } = modules.behaviors
+  const samples = [
+    chooseWeightedBehavior(GROUND_BEHAVIORS, { random: () => 0.1 })?.id,
+    chooseWeightedBehavior(GROUND_BEHAVIORS, { random: () => 0.5 })?.id,
+    chooseWeightedBehavior(GROUND_BEHAVIORS, { random: () => 0.92 })?.id,
+    chooseWeightedBehavior(GROUND_BEHAVIORS, { random: () => 0.98 })?.id,
+  ]
+  const expected = ['rest', 'roam', 'goWall', 'leap']
+  for (let index = 0; index < expected.length; index += 1) {
+    if (samples[index] !== expected[index]) {
+      fail(`Behavior selection mismatch at ${index}: expected ${expected[index]}, got ${samples[index]}`)
+    }
+  }
+}
+
 const modules = await loadRuntimeModules()
 try {
   runFallVisibilityCheck(modules)
   runWallApproachCheck(modules, 'left')
   runWallApproachCheck(modules, 'right')
   runLongRoamCheck(modules)
+  runBehaviorSelectionCheck(modules)
 } finally {
   await modules.close()
 }
@@ -309,4 +328,4 @@ if (failures.length) {
   process.exit(1)
 }
 
-console.log('[AgentMascot] runtime validation passed: fall visibility gate, wall approach, long roam guards')
+console.log('[AgentMascot] runtime validation passed: fall visibility gate, wall approach, long roam guards, behavior selection')

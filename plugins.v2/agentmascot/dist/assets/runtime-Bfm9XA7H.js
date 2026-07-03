@@ -1105,6 +1105,38 @@ const INTERRUPT_ACTIONS = [
   'split',
 ];
 
+const GROUND_BEHAVIORS = [
+  { id: 'rest', surface: 'ground', weight: 42, minDurationMs: 12000 },
+  { id: 'roam', surface: 'ground', weight: 48, minDurationMs: 620 },
+  { id: 'goWall', surface: 'ground', weight: 6, minDurationMs: 700 },
+  { id: 'leap', surface: 'ground', weight: 4, minDurationMs: 500 },
+];
+
+const WALL_BEHAVIORS = [
+  { id: 'goCeiling', surface: 'wall', weight: 66, minDurationMs: 700, when: 'nearTop' },
+  { id: 'holdWall', surface: 'wall', weight: 30, minDurationMs: 9000 },
+  { id: 'climbWall', surface: 'wall', weight: 56, minDurationMs: 700 },
+  { id: 'fallFromWall', surface: 'wall', weight: 14, minDurationMs: 500 },
+];
+
+const CEILING_BEHAVIORS = [
+  { id: 'holdCeiling', surface: 'ceiling', weight: 52, minDurationMs: 9000 },
+  { id: 'crawlCeiling', surface: 'ceiling', weight: 36, minDurationMs: 700 },
+  { id: 'dropFromCeiling', surface: 'ceiling', weight: 12, minDurationMs: 500 },
+];
+
+function chooseWeightedBehavior(behaviors, context = {}) {
+  const candidates = behaviors.filter(behavior => !behavior.when || context[behavior.when]);
+  const totalWeight = candidates.reduce((sum, behavior) => sum + Math.max(behavior.weight, 0), 0);
+  if (!totalWeight) return candidates[0] || null
+  let cursor = (context.random?.() ?? Math.random()) * totalWeight;
+  for (const behavior of candidates) {
+    cursor -= Math.max(behavior.weight, 0);
+    if (cursor < 0) return behavior
+  }
+  return candidates[candidates.length - 1] || null
+}
+
 const BASE_PET_SIZE = 92;
 
 function viewportDimension$1(bounds, key) {
@@ -1779,26 +1811,26 @@ function createMascotRuntime(options = {}) {
   }
 
   function chooseGroundBehavior(timestamp) {
-    const roll = random();
-    if (roll < 0.42) startRest(timestamp);
-    else if (roll < 0.9) startGroundMove(timestamp);
-    else if (roll < 0.96) startMoveToWall(timestamp);
+    const behavior = chooseWeightedBehavior(GROUND_BEHAVIORS, { random });
+    if (behavior?.id === 'rest') startRest(timestamp);
+    else if (behavior?.id === 'roam') startGroundMove(timestamp);
+    else if (behavior?.id === 'goWall') startMoveToWall(timestamp);
     else startLeap(timestamp);
   }
 
   function chooseWallBehavior(timestamp) {
     const nearTop = pet.anchorY <= ceilingAnchorY$1() + 56 * poseScale$1();
-    const roll = random();
-    if (nearTop && roll < 0.66) startCeiling(timestamp);
-    else if (roll < 0.3) startRest(timestamp, WALL_REST_ACTIONS, WALL_REST_MIN, WALL_REST_RANGE);
-    else if (roll < 0.86) startWallClimb(timestamp);
+    const behavior = chooseWeightedBehavior(WALL_BEHAVIORS, { nearTop, random });
+    if (behavior?.id === 'goCeiling') startCeiling(timestamp);
+    else if (behavior?.id === 'holdWall') startRest(timestamp, WALL_REST_ACTIONS, WALL_REST_MIN, WALL_REST_RANGE);
+    else if (behavior?.id === 'climbWall') startWallClimb(timestamp);
     else startFall(timestamp, pet.wallSide === 'left' ? 2.2 : -2.2, -2);
   }
 
   function chooseCeilingBehavior(timestamp) {
-    const roll = random();
-    if (roll < 0.52) startRest(timestamp, CEILING_REST_ACTIONS, WALL_REST_MIN, WALL_REST_RANGE);
-    else if (roll < 0.88) startCeilingCrawl(timestamp);
+    const behavior = chooseWeightedBehavior(CEILING_BEHAVIORS, { random });
+    if (behavior?.id === 'holdCeiling') startRest(timestamp, CEILING_REST_ACTIONS, WALL_REST_MIN, WALL_REST_RANGE);
+    else if (behavior?.id === 'crawlCeiling') startCeilingCrawl(timestamp);
     else startFall(timestamp, (random() < 0.5 ? -1 : 1) * (2 + random() * 2), 0.8);
   }
 

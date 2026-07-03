@@ -29,6 +29,12 @@ import {
   WALL_REST_ACTIONS,
 } from './actionCatalog'
 import {
+  CEILING_BEHAVIORS,
+  GROUND_BEHAVIORS,
+  WALL_BEHAVIORS,
+  chooseWeightedBehavior,
+} from './behaviors'
+import {
   ceilingAnchorY as calculateCeilingAnchorY,
   clampAnchorX as calculateClampAnchorX,
   clampAnchorY as calculateClampAnchorY,
@@ -397,26 +403,26 @@ export function createMascotRuntime(options = {}) {
   }
 
   function chooseGroundBehavior(timestamp) {
-    const roll = random()
-    if (roll < 0.42) startRest(timestamp)
-    else if (roll < 0.9) startGroundMove(timestamp)
-    else if (roll < 0.96) startMoveToWall(timestamp)
+    const behavior = chooseWeightedBehavior(GROUND_BEHAVIORS, { random })
+    if (behavior?.id === 'rest') startRest(timestamp)
+    else if (behavior?.id === 'roam') startGroundMove(timestamp)
+    else if (behavior?.id === 'goWall') startMoveToWall(timestamp)
     else startLeap(timestamp)
   }
 
   function chooseWallBehavior(timestamp) {
     const nearTop = pet.anchorY <= ceilingAnchorY() + 56 * poseScale()
-    const roll = random()
-    if (nearTop && roll < 0.66) startCeiling(timestamp)
-    else if (roll < 0.3) startRest(timestamp, WALL_REST_ACTIONS, WALL_REST_MIN, WALL_REST_RANGE)
-    else if (roll < 0.86) startWallClimb(timestamp)
+    const behavior = chooseWeightedBehavior(WALL_BEHAVIORS, { nearTop, random })
+    if (behavior?.id === 'goCeiling') startCeiling(timestamp)
+    else if (behavior?.id === 'holdWall') startRest(timestamp, WALL_REST_ACTIONS, WALL_REST_MIN, WALL_REST_RANGE)
+    else if (behavior?.id === 'climbWall') startWallClimb(timestamp)
     else startFall(timestamp, pet.wallSide === 'left' ? 2.2 : -2.2, -2)
   }
 
   function chooseCeilingBehavior(timestamp) {
-    const roll = random()
-    if (roll < 0.52) startRest(timestamp, CEILING_REST_ACTIONS, WALL_REST_MIN, WALL_REST_RANGE)
-    else if (roll < 0.88) startCeilingCrawl(timestamp)
+    const behavior = chooseWeightedBehavior(CEILING_BEHAVIORS, { random })
+    if (behavior?.id === 'holdCeiling') startRest(timestamp, CEILING_REST_ACTIONS, WALL_REST_MIN, WALL_REST_RANGE)
+    else if (behavior?.id === 'crawlCeiling') startCeilingCrawl(timestamp)
     else startFall(timestamp, (random() < 0.5 ? -1 : 1) * (2 + random() * 2), 0.8)
   }
 
