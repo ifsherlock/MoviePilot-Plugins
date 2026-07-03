@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-07-03-agentmascot-modularization-phased-plan.md",
   "status": {
     "phase": "phase-3",
-    "task": "3.3",
-    "next_allowed_action": "Implement task 3.3 by establishing globalDomAdapter.js and patchEntry.js so global-loader becomes a thin patch entry loader"
+    "task": "3.4",
+    "next_allowed_action": "Implement task 3.4 by splitting MascotStage, MascotControls, and useMascotPreview from AppPage"
   },
   "execution_rules": {
     "branch": "codex/agentmascot-modularization",
@@ -235,9 +235,22 @@
         {
           "id": "3.3",
           "title": "建立 globalDomAdapter.js 和 patchEntry.js",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            "Created src/adapters/globalDomAdapter.js for global root/style creation, pointer event wiring, render(), viewport bounds, DOM surface scan, resize clamp adapter, and mount/unmount DOM cleanup",
+            "Created src/entry/patchEntry.js for patch-mode orchestration: config polling, loadMoviePilotPluginConfig, createMascotRuntime, createMoviePilotAgentEntry, createGlobalDomAdapter, enabled/disabled mount lifecycle, and resize listener lifecycle",
+            "src/global-loader.js now only imports startAgentMascotPatchEntry from src/entry/patchEntry.js and calls it",
+            "global-loader.js line count is 3",
+            "npm install was run to restore missing local vite; npm run build in plugins.v2\\agentmascot -> exits 0; node_modules and package-lock.json were removed after verification",
+            "python .github\\scripts\\check_plugin_versions.py package.json package.v2.json -> Plugin release version gate passed",
+            "python -m py_compile plugins.v2\\agentmascot\\__init__.py plugins.v2\\agentmascot\\config.py plugins.v2\\agentmascot\\api.py plugins.v2\\agentmascot\\loader.py plugins.v2\\agentmascot\\manifest.py -> exits 0",
+            "vite.config.js federation exposes still include ./Page, ./Config, and ./AppPage",
+            "dist/assets/remoteEntry.js still exposes ./Page, ./Config, and ./AppPage",
+            "dist/assets/agentmascot-loader.js remains the fixed global patch loader output and contains AgentMascot, agentmascot-global-root, public_status, and agent-assistant-fab__trigger",
+            "rg confirmed native assistant selectors remain only in src/adapters/moviepilotAgentEntry.js under src/",
+            "git diff --check -> exits 0"
+          ],
+          "commit": "pending"
         },
         {
           "id": "3.4",
@@ -421,6 +434,12 @@
       "task": "3.2",
       "action": "Created src/adapters/moviepilotAgentEntry.js and moved native agent entry hiding, click bridge, panel detection, observer lifecycle, and hidden-entry style out of global-loader.",
       "verification": "npm run build, version gate, backend py_compile, dist loader string probe, native selector uniqueness grep, git diff --check, temporary dependency cleanup",
+      "result": "passed"
+    },
+    {
+      "task": "3.3",
+      "action": "Created src/adapters/globalDomAdapter.js and src/entry/patchEntry.js; global-loader.js is now a 3-line thin entry that starts the patch entry.",
+      "verification": "npm run build, version gate, backend py_compile, vite exposes probe, remoteEntry exposes probe, fixed loader string probe, native selector uniqueness grep, git diff --check, temporary dependency cleanup",
       "result": "passed"
     }
   ]

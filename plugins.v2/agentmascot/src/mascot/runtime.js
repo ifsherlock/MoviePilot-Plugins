@@ -698,6 +698,7 @@ export function createMascotRuntime(options = {}) {
     actionState,
     celebrate,
     clampToBounds,
+    config,
     currentAction,
     currentPose,
     endDrag,

@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { c as cloneConfig, a as createActionState, b as createMouseState, d as createPetState, e as createMascotRuntime, m as mascotIcon, f as buildSurfaceLanes, u as unwrapResponse } from './provider-BDWNYDUs.js';
+import { c as cloneConfig, a as createActionState, b as createMouseState, d as createPetState, e as createMascotRuntime, m as mascotIcon, f as buildSurfaceLanes, u as unwrapResponse } from './provider-D2ANVpb4.js';
 
 const _export_sfc = (sfc, props) => {
   const target = sfc.__vccOpts || sfc;
