@@ -991,15 +991,55 @@ function resolvePose(actionState, mascot = 'chibiterasu') {
   return action.poses[actionState.poseIndex % action.poses.length] || SHIMEJI_ACTIONS.stand.poses[0]
 }
 
-({
-  idle: SHIMEJI_ACTIONS.stand.poses.map(item => item.imageName),
-  walk: SHIMEJI_ACTIONS.walk.poses.map(item => item.imageName),
-  run: SHIMEJI_ACTIONS.run.poses.map(item => item.imageName),
-  follow: SHIMEJI_ACTIONS.dash.poses.map(item => item.imageName),
-  drag: SHIMEJI_ACTIONS.drag.poses.map(item => item.imageName),
-  sleep: SHIMEJI_ACTIONS.lie.poses.map(item => item.imageName),
-  celebrate: SHIMEJI_ACTIONS.split.poses.map(item => item.imageName),
-});
+const SEMANTIC_ACTION_ALIASES = {
+  idle: 'stand',
+  walk: 'walk',
+  run: 'run',
+  dash: 'dash',
+  follow: 'dash',
+  jump: 'jump',
+  fall: 'fall',
+  land: 'bounce',
+  sleep: 'lie',
+  drag: 'drag',
+  resist: 'resist',
+  think: 'lookUp',
+  surprise: 'pullOut',
+  cheer: 'split',
+  spinCelebrate: 'split',
+  grabWall: 'holdWall',
+  climbWall: 'climbWallUp',
+  climbWallDown: 'climbWallDown',
+  holdCeiling: 'holdCeiling',
+  crawlCeiling: 'crawlCeiling',
+};
+
+function legacyActionName(semanticName) {
+  return SEMANTIC_ACTION_ALIASES[semanticName] || semanticName
+}
+
+function resolveSemanticAction(mascot, semanticName) {
+  const actionName = legacyActionName(semanticName);
+  return resolveMascotAction(mascot, actionName)
+}
+
+function semanticActionFrames(mascot, semanticName) {
+  return resolveSemanticAction(mascot, semanticName).poses.map(item => item.imageName)
+}
+
+function mascotActionFrames(mascot = 'chibiterasu', semanticNames = Object.keys(SEMANTIC_ACTION_ALIASES)) {
+  return Object.fromEntries(semanticNames.map(name => [name, semanticActionFrames(mascot, name)]))
+}
+
+mascotActionFrames('chibiterasu', [
+  'idle',
+  'walk',
+  'run',
+  'follow',
+  'drag',
+  'sleep',
+  'cheer',
+]);
 
 const DEFAULT_CONFIG = {
   enabled: false,

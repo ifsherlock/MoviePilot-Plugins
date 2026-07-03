@@ -1,11 +1,22 @@
-import { SHIMEJI_ACTIONS } from './actions'
+import {
+  mascotActionFrames,
+  semanticActionFrames,
+} from './semanticActions'
 
-export const ACTION_FRAMES = {
-  idle: SHIMEJI_ACTIONS.stand.poses.map(item => item.imageName),
-  walk: SHIMEJI_ACTIONS.walk.poses.map(item => item.imageName),
-  run: SHIMEJI_ACTIONS.run.poses.map(item => item.imageName),
-  follow: SHIMEJI_ACTIONS.dash.poses.map(item => item.imageName),
-  drag: SHIMEJI_ACTIONS.drag.poses.map(item => item.imageName),
-  sleep: SHIMEJI_ACTIONS.lie.poses.map(item => item.imageName),
-  celebrate: SHIMEJI_ACTIONS.split.poses.map(item => item.imageName),
+export const ACTION_FRAMES = mascotActionFrames('chibiterasu', [
+  'idle',
+  'walk',
+  'run',
+  'follow',
+  'drag',
+  'sleep',
+  'cheer',
+])
+
+export function actionFramesForMascot(mascot, semanticName) {
+  return semanticActionFrames(mascot, semanticName)
+}
+
+export function actionFrameGroupsForMascot(mascot) {
+  return mascotActionFrames(mascot)
 }

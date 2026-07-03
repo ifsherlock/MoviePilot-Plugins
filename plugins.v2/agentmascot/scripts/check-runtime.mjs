@@ -54,6 +54,7 @@ async function loadRuntimeModules() {
     const runtimeModule = await server.ssrLoadModule('/src/mascot/runtime.js')
     const motionModule = await server.ssrLoadModule('/src/mascot/motion.js')
     const behaviorModule = await server.ssrLoadModule('/src/mascot/behaviors.js')
+    const semanticModule = await server.ssrLoadModule('/src/mascot/semanticActions.js')
     return {
       close: () => server.close(),
       behaviors: behaviorModule,
@@ -61,6 +62,7 @@ async function loadRuntimeModules() {
       createMascotRuntime: runtimeModule.createMascotRuntime,
       createMouseState: motionModule.createMouseState,
       createPetState: motionModule.createPetState,
+      semanticActions: semanticModule,
     }
   } catch (error) {
     await server.close()
@@ -331,6 +333,26 @@ function runBehaviorSelectionCheck(modules) {
   if (kurisuRest !== 52) fail(`Expected kurisu rest weight 52, got ${kurisuRest}`)
 }
 
+function runSemanticActionCheck(modules) {
+  const {
+    FEATURE_SEMANTIC_ACTIONS,
+    REQUIRED_SEMANTIC_ACTIONS,
+    semanticActionFrames,
+  } = modules.semanticActions
+  for (const mascot of ['chibiterasu', 'nailong', 'kurisu']) {
+    for (const name of REQUIRED_SEMANTIC_ACTIONS) {
+      const frames = semanticActionFrames(mascot, name)
+      if (!frames.length) fail(`Missing required semantic action ${name} for ${mascot}`)
+    }
+  }
+  for (const [mascot, names] of Object.entries(FEATURE_SEMANTIC_ACTIONS)) {
+    for (const name of names) {
+      const frames = semanticActionFrames(mascot, name)
+      if (!frames.length) fail(`Missing feature semantic action ${name} for ${mascot}`)
+    }
+  }
+}
+
 const modules = await loadRuntimeModules()
 try {
   runFallVisibilityCheck(modules)
@@ -338,6 +360,7 @@ try {
   runWallApproachCheck(modules, 'right')
   runLongRoamCheck(modules)
   runBehaviorSelectionCheck(modules)
+  runSemanticActionCheck(modules)
 } finally {
   await modules.close()
 }
@@ -348,4 +371,4 @@ if (failures.length) {
   process.exit(1)
 }
 
-console.log('[AgentMascot] runtime validation passed: fall visibility gate, wall approach, long roam guards, behavior selection')
+console.log('[AgentMascot] runtime validation passed: fall visibility gate, wall approach, long roam guards, behavior selection, semantic actions')
