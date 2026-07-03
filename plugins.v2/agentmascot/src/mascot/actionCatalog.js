@@ -9,6 +9,7 @@ export const ACTION_CATALOG = {
     'sitFeetDown',
     'dangleFeet',
     'lookUp',
+    'think',
     'lie',
     'crawl',
     'bounce',
@@ -17,8 +18,8 @@ export const ACTION_CATALOG = {
   wall: ['holdWall', 'climbWallUp', 'climbWallDown'],
   ceiling: ['holdCeiling', 'crawlCeiling'],
   drag: ['drag', 'resist'],
-  rest: ['stand', 'sit', 'lie', 'relaxedSit', 'dangleFeet', 'lookUp'],
-  special: ['pullOut', 'split'],
+  rest: ['stand', 'sit', 'lie', 'relaxedSit', 'dangleFeet', 'lookUp', 'think'],
+  special: ['pullOut', 'split', 'surprise', 'cheer', 'spinCelebrate'],
 }
 
 export const GROUND_MOVE_ACTIONS = ['walk', 'run', 'dash']
@@ -28,4 +29,7 @@ export const CEILING_REST_ACTIONS = ['holdCeiling']
 export const INTERRUPT_ACTIONS = [
   ...ACTION_CATALOG.drag,
   'split',
+  'surprise',
+  'cheer',
+  'spinCelebrate',
 ]

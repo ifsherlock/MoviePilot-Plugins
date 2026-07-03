@@ -54,6 +54,7 @@ export const ACTION_MIN_DURATION = {
   sitFeetDown: 5000,
   dangleFeet: 12000,
   lookUp: 8000,
+  think: 8000,
   crawl: 1600,
   jump: 500,
   fall: 500,
@@ -63,6 +64,9 @@ export const ACTION_MIN_DURATION = {
   climbWallDown: 700,
   holdCeiling: 7000,
   crawlCeiling: 700,
+  surprise: 1800,
+  cheer: 1800,
+  spinCelebrate: 2600,
   split: 4200,
 }
 

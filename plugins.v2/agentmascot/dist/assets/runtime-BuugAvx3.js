@@ -606,6 +606,12 @@ const SHIMEJI_ACTIONS = {
     loop: true,
     poses: [pose('shime26')],
   },
+  think: {
+    label: '考える',
+    frame: 'ground',
+    loop: true,
+    poses: [pose('shime26')],
+  },
   lie: {
     label: '寝そべる',
     frame: 'ground',
@@ -741,6 +747,18 @@ const SHIMEJI_ACTIONS = {
       pose('shime41', PULL_OUT_BODY_ANCHOR, [0, 0], 40),
     ],
   },
+  surprise: {
+    label: 'びっくり',
+    frame: 'ground',
+    loop: false,
+    poses: [
+      pose('shime1', GROUND_FOOT_ANCHOR, [0, 0], 16),
+      pose('shime38', PULL_OUT_BODY_ANCHOR, [0, 0], 30),
+      pose('shime39', PULL_OUT_BODY_ANCHOR, [0, 0], 20),
+      pose('shime40', PULL_OUT_BODY_ANCHOR, [0, 0], 20),
+      pose('shime41', PULL_OUT_BODY_ANCHOR, [0, 0], 40),
+    ],
+  },
   split: {
     label: '分裂1',
     frame: 'ground',
@@ -757,6 +775,33 @@ const SHIMEJI_ACTIONS = {
       pose('shime55', GROUND_FOOT_ANCHOR, [0, 0], 18),
       pose('shime56', GROUND_FOOT_ANCHOR, [0, 0], 15),
       pose('shime57', GROUND_FOOT_ANCHOR, [0, 0], 10),
+      pose('shime58', GROUND_FOOT_ANCHOR, [0, 0], 30),
+    ],
+  },
+  cheer: {
+    label: '歓呼',
+    frame: 'ground',
+    loop: false,
+    poses: [
+      pose('shime42', GROUND_FOOT_ANCHOR, [0, 0], 18),
+      pose('shime43', GROUND_FOOT_ANCHOR, [0, 0], 12),
+      pose('shime44', GROUND_FOOT_ANCHOR, [0, 0], 12),
+      pose('shime45', GROUND_FOOT_ANCHOR, [0, 0], 12),
+      pose('shime46', GROUND_FOOT_ANCHOR, [0, 0], 18),
+    ],
+  },
+  spinCelebrate: {
+    label: '回って祝う',
+    frame: 'ground',
+    loop: false,
+    poses: [
+      pose('shime43', GROUND_FOOT_ANCHOR, [0, 0], 12),
+      pose('shime44', GROUND_FOOT_ANCHOR, [0, 0], 12),
+      pose('shime45', GROUND_FOOT_ANCHOR, [0, 0], 12),
+      pose('shime46', GROUND_FOOT_ANCHOR, [0, 0], 12),
+      pose('shime53', GROUND_FOOT_ANCHOR, [0, 0], 12),
+      pose('shime54', GROUND_FOOT_ANCHOR, [0, 0], 12),
+      pose('shime55', GROUND_FOOT_ANCHOR, [0, 0], 18),
       pose('shime58', GROUND_FOOT_ANCHOR, [0, 0], 30),
     ],
   },
@@ -885,6 +930,15 @@ const MASCOT_ACTION_OVERRIDES = {
         pose('shime56', GROUND_FOOT_ANCHOR, [0, 0], 34),
       ],
     },
+    think: {
+      ...SHIMEJI_ACTIONS.think,
+      poses: [
+        pose('shime11', GROUND_FOOT_ANCHOR, [0, 0], 28),
+        pose('shime26', GROUND_FOOT_ANCHOR, [0, 0], 28),
+        pose('shime57', GROUND_FOOT_ANCHOR, [0, 0], 28),
+        pose('shime56', GROUND_FOOT_ANCHOR, [0, 0], 34),
+      ],
+    },
     fall: {
       ...SHIMEJI_ACTIONS.fall,
       poses: [
@@ -912,6 +966,16 @@ const MASCOT_ACTION_OVERRIDES = {
         pose('shime41', GROUND_FOOT_ANCHOR, [0, 0], 28),
       ],
     },
+    surprise: {
+      ...SHIMEJI_ACTIONS.surprise,
+      poses: [
+        pose('shime15', GROUND_FOOT_ANCHOR, [0, 0], 14),
+        pose('shime16', GROUND_FOOT_ANCHOR, [0, 0], 14),
+        pose('shime17', GROUND_FOOT_ANCHOR, [0, 0], 14),
+        pose('shime27', GROUND_FOOT_ANCHOR, [0, 0], 14),
+        pose('shime41', GROUND_FOOT_ANCHOR, [0, 0], 28),
+      ],
+    },
     split: {
       ...SHIMEJI_ACTIONS.split,
       poses: [
@@ -927,6 +991,28 @@ const MASCOT_ACTION_OVERRIDES = {
         pose('shime54', GROUND_FOOT_ANCHOR, [0, 0], 12),
         pose('shime55', GROUND_FOOT_ANCHOR, [0, 0], 12),
         pose('shime35', GROUND_FOOT_ANCHOR, [0, 0], 18),
+        pose('shime58', GROUND_FOOT_ANCHOR, [0, 0], 18),
+      ],
+    },
+    cheer: {
+      ...SHIMEJI_ACTIONS.cheer,
+      poses: [
+        pose('shime28', GROUND_FOOT_ANCHOR, [0, 0], 12),
+        pose('shime29', GROUND_FOOT_ANCHOR, [0, 0], 12),
+        pose('shime34', GROUND_FOOT_ANCHOR, [0, 0], 12),
+        pose('shime35', GROUND_FOOT_ANCHOR, [0, 0], 18),
+      ],
+    },
+    spinCelebrate: {
+      ...SHIMEJI_ACTIONS.spinCelebrate,
+      poses: [
+        pose('shime43', GROUND_FOOT_ANCHOR, [0, 0], 12),
+        pose('shime44', GROUND_FOOT_ANCHOR, [0, 0], 12),
+        pose('shime45', GROUND_FOOT_ANCHOR, [0, 0], 12),
+        pose('shime46', GROUND_FOOT_ANCHOR, [0, 0], 12),
+        pose('shime53', GROUND_FOOT_ANCHOR, [0, 0], 12),
+        pose('shime54', GROUND_FOOT_ANCHOR, [0, 0], 12),
+        pose('shime55', GROUND_FOOT_ANCHOR, [0, 0], 18),
         pose('shime58', GROUND_FOOT_ANCHOR, [0, 0], 18),
       ],
     },
@@ -1013,10 +1099,10 @@ const SEMANTIC_ACTION_ALIASES = {
   sleep: 'lie',
   drag: 'drag',
   resist: 'resist',
-  think: 'lookUp',
-  surprise: 'pullOut',
-  cheer: 'split',
-  spinCelebrate: 'split',
+  think: 'think',
+  surprise: 'surprise',
+  cheer: 'cheer',
+  spinCelebrate: 'spinCelebrate',
   grabWall: 'holdWall',
   climbWall: 'climbWallUp',
   climbWallDown: 'climbWallDown',
@@ -1106,6 +1192,7 @@ const ACTION_MIN_DURATION = {
   sitFeetDown: 5000,
   dangleFeet: 12000,
   lookUp: 8000,
+  think: 8000,
   crawl: 1600,
   jump: 500,
   fall: 500,
@@ -1115,6 +1202,9 @@ const ACTION_MIN_DURATION = {
   climbWallDown: 700,
   holdCeiling: 7000,
   crawlCeiling: 700,
+  surprise: 1800,
+  cheer: 1800,
+  spinCelebrate: 2600,
   split: 4200,
 };
 
@@ -1149,7 +1239,7 @@ function cloneConfig(config) {
 
 const ACTION_CATALOG = {
   drag: ['drag', 'resist'],
-  rest: ['stand', 'sit', 'lie', 'relaxedSit', 'dangleFeet', 'lookUp']};
+  rest: ['stand', 'sit', 'lie', 'relaxedSit', 'dangleFeet', 'lookUp', 'think']};
 
 const GROUND_MOVE_ACTIONS = ['walk', 'run', 'dash'];
 const REST_ACTIONS = ACTION_CATALOG.rest;
@@ -1158,6 +1248,9 @@ const CEILING_REST_ACTIONS = ['holdCeiling'];
 const INTERRUPT_ACTIONS = [
   ...ACTION_CATALOG.drag,
   'split',
+  'surprise',
+  'cheer',
+  'spinCelebrate',
 ];
 
 const GROUND_BEHAVIORS = [
@@ -2332,16 +2425,16 @@ function createMascotRuntime(options = {}) {
     return { moved, release }
   }
 
-  function celebrate(timestamp = now()) {
+  function celebrate(timestamp = now(), actionName = 'spinCelebrate') {
     pet.surface = 'ground';
     pet.state = 'rest';
     setLaneY(pet.laneY || nearestLaneToY(pet.anchorY));
-    setAction('split', timestamp, { force: true });
+    setAction(actionName, timestamp, { force: true });
     scheduler.setTimeout?.(() => {
       pet.stateUntil = 0;
       setAction('stand', now(), { force: true });
       onUpdate();
-    }, ACTION_MIN_DURATION.split);
+    }, ACTION_MIN_DURATION[actionName] ?? ACTION_MIN_DURATION.split);
     onUpdate();
   }
 

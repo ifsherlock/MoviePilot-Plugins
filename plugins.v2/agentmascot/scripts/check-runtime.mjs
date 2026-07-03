@@ -353,11 +353,30 @@ function runSemanticActionCheck(modules) {
   }
   const kurisuJump = semanticActionFrames('kurisu', 'jump')
   const kurisuLand = semanticActionFrames('kurisu', 'land')
+  const kurisuThink = semanticActionFrames('kurisu', 'think')
+  const kurisuSurprise = semanticActionFrames('kurisu', 'surprise')
+  const kurisuCheer = semanticActionFrames('kurisu', 'cheer')
+  const kurisuSpinCelebrate = semanticActionFrames('kurisu', 'spinCelebrate')
   if (kurisuJump.includes('shime22') || kurisuJump.includes('shime4')) {
     fail(`Kurisu jump should not use fall/land slots: ${kurisuJump.join(',')}`)
   }
   if (!kurisuLand.includes('shime18') || !kurisuLand.includes('shime41')) {
     fail(`Kurisu land should include landing recovery frames: ${kurisuLand.join(',')}`)
+  }
+  if (!['shime11', 'shime26', 'shime57', 'shime56'].every(frame => kurisuThink.includes(frame))) {
+    fail(`Kurisu think should use the explicit think frame group: ${kurisuThink.join(',')}`)
+  }
+  if (!['shime15', 'shime16', 'shime17', 'shime27'].every(frame => kurisuSurprise.includes(frame))) {
+    fail(`Kurisu surprise should use the explicit surprise frame group: ${kurisuSurprise.join(',')}`)
+  }
+  if (!['shime28', 'shime29', 'shime34', 'shime35'].every(frame => kurisuCheer.includes(frame))) {
+    fail(`Kurisu cheer should use only cheer frames: ${kurisuCheer.join(',')}`)
+  }
+  if (kurisuCheer.some(frame => kurisuSpinCelebrate.includes(frame))) {
+    fail(`Kurisu cheer and spinCelebrate should not share frame slots: cheer=${kurisuCheer.join(',')} spin=${kurisuSpinCelebrate.join(',')}`)
+  }
+  if (!['shime43', 'shime44', 'shime45', 'shime46', 'shime53', 'shime54', 'shime55', 'shime58'].every(frame => kurisuSpinCelebrate.includes(frame))) {
+    fail(`Kurisu spinCelebrate should use the explicit spin frame group: ${kurisuSpinCelebrate.join(',')}`)
   }
 }
 

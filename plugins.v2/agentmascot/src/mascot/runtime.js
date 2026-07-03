@@ -801,16 +801,16 @@ export function createMascotRuntime(options = {}) {
     return { moved, release }
   }
 
-  function celebrate(timestamp = now()) {
+  function celebrate(timestamp = now(), actionName = 'spinCelebrate') {
     pet.surface = 'ground'
     pet.state = 'rest'
     setLaneY(pet.laneY || nearestLaneToY(pet.anchorY))
-    setAction('split', timestamp, { force: true })
+    setAction(actionName, timestamp, { force: true })
     scheduler.setTimeout?.(() => {
       pet.stateUntil = 0
       setAction('stand', now(), { force: true })
       onUpdate()
-    }, ACTION_MIN_DURATION.split)
+    }, ACTION_MIN_DURATION[actionName] ?? ACTION_MIN_DURATION.split)
     onUpdate()
   }
 
