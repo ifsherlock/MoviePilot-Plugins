@@ -971,6 +971,11 @@ function createPetState(overrides = {}) {
     airStartedAt: 0,
     airStartedY: null,
     minLandingY: null,
+    behavior: null,
+    behaviorStartedAt: 0,
+    behaviorCooldowns: {},
+    lastMoveDistance: null,
+    stagnantMoveTicks: 0,
     lastAnchorX: 180,
     lastAnchorY: 180,
     ...overrides,
@@ -1106,27 +1111,32 @@ const INTERRUPT_ACTIONS = [
 ];
 
 const GROUND_BEHAVIORS = [
-  { id: 'rest', surface: 'ground', weight: 42, minDurationMs: 12000 },
-  { id: 'roam', surface: 'ground', weight: 48, minDurationMs: 620 },
-  { id: 'goWall', surface: 'ground', weight: 6, minDurationMs: 700 },
-  { id: 'leap', surface: 'ground', weight: 4, minDurationMs: 500 },
+  { id: 'rest', surface: 'ground', weight: 42, cooldownMs: 0, minDurationMs: 12000 },
+  { id: 'roam', surface: 'ground', weight: 48, cooldownMs: 0, minDurationMs: 620 },
+  { id: 'goWall', surface: 'ground', weight: 6, cooldownMs: 18000, minDurationMs: 700 },
+  { id: 'leap', surface: 'ground', weight: 4, cooldownMs: 14000, minDurationMs: 500 },
 ];
 
 const WALL_BEHAVIORS = [
-  { id: 'goCeiling', surface: 'wall', weight: 66, minDurationMs: 700, when: 'nearTop' },
-  { id: 'holdWall', surface: 'wall', weight: 30, minDurationMs: 9000 },
-  { id: 'climbWall', surface: 'wall', weight: 56, minDurationMs: 700 },
-  { id: 'fallFromWall', surface: 'wall', weight: 14, minDurationMs: 500 },
+  { id: 'goCeiling', surface: 'wall', weight: 66, cooldownMs: 16000, minDurationMs: 700, when: 'nearTop' },
+  { id: 'holdWall', surface: 'wall', weight: 30, cooldownMs: 0, minDurationMs: 9000 },
+  { id: 'climbWall', surface: 'wall', weight: 56, cooldownMs: 4000, minDurationMs: 700 },
+  { id: 'fallFromWall', surface: 'wall', weight: 14, cooldownMs: 16000, minDurationMs: 500 },
 ];
 
 const CEILING_BEHAVIORS = [
-  { id: 'holdCeiling', surface: 'ceiling', weight: 52, minDurationMs: 9000 },
-  { id: 'crawlCeiling', surface: 'ceiling', weight: 36, minDurationMs: 700 },
-  { id: 'dropFromCeiling', surface: 'ceiling', weight: 12, minDurationMs: 500 },
+  { id: 'holdCeiling', surface: 'ceiling', weight: 52, cooldownMs: 0, minDurationMs: 9000 },
+  { id: 'crawlCeiling', surface: 'ceiling', weight: 36, cooldownMs: 4000, minDurationMs: 700 },
+  { id: 'dropFromCeiling', surface: 'ceiling', weight: 12, cooldownMs: 16000, minDurationMs: 500 },
 ];
 
 function chooseWeightedBehavior(behaviors, context = {}) {
-  const candidates = behaviors.filter(behavior => !behavior.when || context[behavior.when]);
+  const timestamp = context.timestamp ?? 0;
+  const cooldowns = context.cooldowns || {};
+  const candidates = behaviors.filter(behavior => {
+    if (behavior.when && !context[behavior.when]) return false
+    return timestamp >= (cooldowns[behavior.id] || 0)
+  });
   const totalWeight = candidates.reduce((sum, behavior) => sum + Math.max(behavior.weight, 0), 0);
   if (!totalWeight) return candidates[0] || null
   let cursor = (context.random?.() ?? Math.random()) * totalWeight;
@@ -1135,6 +1145,11 @@ function chooseWeightedBehavior(behaviors, context = {}) {
     if (cursor < 0) return behavior
   }
   return candidates[candidates.length - 1] || null
+}
+
+function nextBehaviorCooldown(behavior, timestamp) {
+  if (!behavior?.cooldownMs) return 0
+  return timestamp + behavior.cooldownMs
 }
 
 const BASE_PET_SIZE = 92;
@@ -1680,6 +1695,45 @@ function createMascotRuntime(options = {}) {
     return Boolean(roamPausedUntil)
   }
 
+  function setBehavior(behavior, timestamp) {
+    pet.behavior = behavior?.id || null;
+    pet.behaviorStartedAt = behavior ? timestamp : 0;
+    const cooldownUntil = nextBehaviorCooldown(behavior, timestamp);
+    if (cooldownUntil) {
+      pet.behaviorCooldowns = {
+        ...(pet.behaviorCooldowns || {}),
+        [behavior.id]: cooldownUntil,
+      };
+    }
+  }
+
+  function clearMoveStagnation() {
+    pet.lastMoveDistance = null;
+    pet.stagnantMoveTicks = 0;
+  }
+
+  function noteMoveProgress(distance) {
+    if (distance <= 16) {
+      clearMoveStagnation();
+      return false
+    }
+    if (pet.lastMoveDistance !== null && distance >= pet.lastMoveDistance - 0.05) pet.stagnantMoveTicks += 1;
+    else pet.stagnantMoveTicks = 0;
+    pet.lastMoveDistance = distance;
+    return pet.stagnantMoveTicks > 180
+  }
+
+  function recoverGroundMove(timestamp) {
+    clearMoveStagnation();
+    pet.surface = 'ground';
+    pet.state = 'rest';
+    pet.targetX = pet.anchorX;
+    pet.targetY = pet.anchorY;
+    pet.stateUntil = timestamp + 1200;
+    roamPausedUntil = pet.stateUntil;
+    setAction('stand', timestamp, { force: true, duration: 700 });
+  }
+
   function advancePose(elapsedTicks) {
     actionState.poseTicks += elapsedTicks;
     const poses = currentAction().poses;
@@ -1736,6 +1790,7 @@ function createMascotRuntime(options = {}) {
     pet.state = state;
     pet.stateUntil = 0;
     roamPausedUntil = 0;
+    clearMoveStagnation();
     const shouldShiftLane = state === 'groundMove' && random() < 0.38;
     setLaneY(chooseLaneY(!shouldShiftLane));
     pet.targetX = targetX ?? randomGroundX$1();
@@ -1747,6 +1802,7 @@ function createMascotRuntime(options = {}) {
     pet.state = 'toWall';
     roamPausedUntil = 0;
     pet.wallSide = side;
+    clearMoveStagnation();
     setLaneY(nearestLaneToY(pet.anchorY));
     pet.targetX = wallApproachX(side);
     setAction(Math.abs(pet.targetX - pet.anchorX) > RUN_DISTANCE ? 'run' : 'walk', timestamp, { force: true });
@@ -1755,6 +1811,7 @@ function createMascotRuntime(options = {}) {
   function startWall(side, timestamp, targetY = null) {
     pet.surface = 'wall';
     pet.state = 'wallHold';
+    clearMoveStagnation();
     pet.wallSide = side;
     pet.targetY = targetY ?? pet.anchorY;
     pet.anchorX = wallAnchorX$1(side);
@@ -1811,7 +1868,12 @@ function createMascotRuntime(options = {}) {
   }
 
   function chooseGroundBehavior(timestamp) {
-    const behavior = chooseWeightedBehavior(GROUND_BEHAVIORS, { random });
+    const behavior = chooseWeightedBehavior(GROUND_BEHAVIORS, {
+      cooldowns: pet.behaviorCooldowns,
+      random,
+      timestamp,
+    });
+    setBehavior(behavior, timestamp);
     if (behavior?.id === 'rest') startRest(timestamp);
     else if (behavior?.id === 'roam') startGroundMove(timestamp);
     else if (behavior?.id === 'goWall') startMoveToWall(timestamp);
@@ -1820,7 +1882,13 @@ function createMascotRuntime(options = {}) {
 
   function chooseWallBehavior(timestamp) {
     const nearTop = pet.anchorY <= ceilingAnchorY$1() + 56 * poseScale$1();
-    const behavior = chooseWeightedBehavior(WALL_BEHAVIORS, { nearTop, random });
+    const behavior = chooseWeightedBehavior(WALL_BEHAVIORS, {
+      cooldowns: pet.behaviorCooldowns,
+      nearTop,
+      random,
+      timestamp,
+    });
+    setBehavior(behavior, timestamp);
     if (behavior?.id === 'goCeiling') startCeiling(timestamp);
     else if (behavior?.id === 'holdWall') startRest(timestamp, WALL_REST_ACTIONS, WALL_REST_MIN, WALL_REST_RANGE);
     else if (behavior?.id === 'climbWall') startWallClimb(timestamp);
@@ -1828,7 +1896,12 @@ function createMascotRuntime(options = {}) {
   }
 
   function chooseCeilingBehavior(timestamp) {
-    const behavior = chooseWeightedBehavior(CEILING_BEHAVIORS, { random });
+    const behavior = chooseWeightedBehavior(CEILING_BEHAVIORS, {
+      cooldowns: pet.behaviorCooldowns,
+      random,
+      timestamp,
+    });
+    setBehavior(behavior, timestamp);
     if (behavior?.id === 'holdCeiling') startRest(timestamp, CEILING_REST_ACTIONS, WALL_REST_MIN, WALL_REST_RANGE);
     else if (behavior?.id === 'crawlCeiling') startCeilingCrawl(timestamp);
     else startFall(timestamp, (random() < 0.5 ? -1 : 1) * (2 + random() * 2), 0.8);
@@ -2019,6 +2092,11 @@ function createMascotRuntime(options = {}) {
           } else {
             if (pet.state === 'bounce') startGroundMove(timestamp);
             moveByCurrentPose(elapsedTicks, targetX);
+            const nextDistance = Math.abs(targetX - pet.anchorX);
+            if (GROUND_MOVE_ACTIONS.includes(actionState.name) && noteMoveProgress(nextDistance)) {
+              recoverGroundMove(timestamp);
+              return
+            }
             if (pet.state === 'toWall' && isAtWallApproach(pet.wallSide)) {
               startWall(pet.wallSide, timestamp);
               return

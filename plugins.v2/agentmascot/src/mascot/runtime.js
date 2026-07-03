@@ -33,6 +33,7 @@ import {
   GROUND_BEHAVIORS,
   WALL_BEHAVIORS,
   chooseWeightedBehavior,
+  nextBehaviorCooldown,
 } from './behaviors'
 import {
   ceilingAnchorY as calculateCeilingAnchorY,
@@ -272,6 +273,45 @@ export function createMascotRuntime(options = {}) {
     return Boolean(roamPausedUntil)
   }
 
+  function setBehavior(behavior, timestamp) {
+    pet.behavior = behavior?.id || null
+    pet.behaviorStartedAt = behavior ? timestamp : 0
+    const cooldownUntil = nextBehaviorCooldown(behavior, timestamp)
+    if (cooldownUntil) {
+      pet.behaviorCooldowns = {
+        ...(pet.behaviorCooldowns || {}),
+        [behavior.id]: cooldownUntil,
+      }
+    }
+  }
+
+  function clearMoveStagnation() {
+    pet.lastMoveDistance = null
+    pet.stagnantMoveTicks = 0
+  }
+
+  function noteMoveProgress(distance) {
+    if (distance <= 16) {
+      clearMoveStagnation()
+      return false
+    }
+    if (pet.lastMoveDistance !== null && distance >= pet.lastMoveDistance - 0.05) pet.stagnantMoveTicks += 1
+    else pet.stagnantMoveTicks = 0
+    pet.lastMoveDistance = distance
+    return pet.stagnantMoveTicks > 180
+  }
+
+  function recoverGroundMove(timestamp) {
+    clearMoveStagnation()
+    pet.surface = 'ground'
+    pet.state = 'rest'
+    pet.targetX = pet.anchorX
+    pet.targetY = pet.anchorY
+    pet.stateUntil = timestamp + 1200
+    roamPausedUntil = pet.stateUntil
+    setAction('stand', timestamp, { force: true, duration: 700 })
+  }
+
   function advancePose(elapsedTicks) {
     actionState.poseTicks += elapsedTicks
     const poses = currentAction().poses
@@ -328,6 +368,7 @@ export function createMascotRuntime(options = {}) {
     pet.state = state
     pet.stateUntil = 0
     roamPausedUntil = 0
+    clearMoveStagnation()
     const shouldShiftLane = state === 'groundMove' && random() < 0.38
     setLaneY(chooseLaneY(!shouldShiftLane))
     pet.targetX = targetX ?? randomGroundX()
@@ -339,6 +380,7 @@ export function createMascotRuntime(options = {}) {
     pet.state = 'toWall'
     roamPausedUntil = 0
     pet.wallSide = side
+    clearMoveStagnation()
     setLaneY(nearestLaneToY(pet.anchorY))
     pet.targetX = wallApproachX(side)
     setAction(Math.abs(pet.targetX - pet.anchorX) > RUN_DISTANCE ? 'run' : 'walk', timestamp, { force: true })
@@ -347,6 +389,7 @@ export function createMascotRuntime(options = {}) {
   function startWall(side, timestamp, targetY = null) {
     pet.surface = 'wall'
     pet.state = 'wallHold'
+    clearMoveStagnation()
     pet.wallSide = side
     pet.targetY = targetY ?? pet.anchorY
     pet.anchorX = wallAnchorX(side)
@@ -403,7 +446,12 @@ export function createMascotRuntime(options = {}) {
   }
 
   function chooseGroundBehavior(timestamp) {
-    const behavior = chooseWeightedBehavior(GROUND_BEHAVIORS, { random })
+    const behavior = chooseWeightedBehavior(GROUND_BEHAVIORS, {
+      cooldowns: pet.behaviorCooldowns,
+      random,
+      timestamp,
+    })
+    setBehavior(behavior, timestamp)
     if (behavior?.id === 'rest') startRest(timestamp)
     else if (behavior?.id === 'roam') startGroundMove(timestamp)
     else if (behavior?.id === 'goWall') startMoveToWall(timestamp)
@@ -412,7 +460,13 @@ export function createMascotRuntime(options = {}) {
 
   function chooseWallBehavior(timestamp) {
     const nearTop = pet.anchorY <= ceilingAnchorY() + 56 * poseScale()
-    const behavior = chooseWeightedBehavior(WALL_BEHAVIORS, { nearTop, random })
+    const behavior = chooseWeightedBehavior(WALL_BEHAVIORS, {
+      cooldowns: pet.behaviorCooldowns,
+      nearTop,
+      random,
+      timestamp,
+    })
+    setBehavior(behavior, timestamp)
     if (behavior?.id === 'goCeiling') startCeiling(timestamp)
     else if (behavior?.id === 'holdWall') startRest(timestamp, WALL_REST_ACTIONS, WALL_REST_MIN, WALL_REST_RANGE)
     else if (behavior?.id === 'climbWall') startWallClimb(timestamp)
@@ -420,7 +474,12 @@ export function createMascotRuntime(options = {}) {
   }
 
   function chooseCeilingBehavior(timestamp) {
-    const behavior = chooseWeightedBehavior(CEILING_BEHAVIORS, { random })
+    const behavior = chooseWeightedBehavior(CEILING_BEHAVIORS, {
+      cooldowns: pet.behaviorCooldowns,
+      random,
+      timestamp,
+    })
+    setBehavior(behavior, timestamp)
     if (behavior?.id === 'holdCeiling') startRest(timestamp, CEILING_REST_ACTIONS, WALL_REST_MIN, WALL_REST_RANGE)
     else if (behavior?.id === 'crawlCeiling') startCeilingCrawl(timestamp)
     else startFall(timestamp, (random() < 0.5 ? -1 : 1) * (2 + random() * 2), 0.8)
@@ -611,6 +670,11 @@ export function createMascotRuntime(options = {}) {
           } else {
             if (pet.state === 'bounce') startGroundMove(timestamp)
             moveByCurrentPose(elapsedTicks, targetX)
+            const nextDistance = Math.abs(targetX - pet.anchorX)
+            if (GROUND_MOVE_ACTIONS.includes(actionState.name) && noteMoveProgress(nextDistance)) {
+              recoverGroundMove(timestamp)
+              return
+            }
             if (pet.state === 'toWall' && isAtWallApproach(pet.wallSide)) {
               startWall(pet.wallSide, timestamp)
               return

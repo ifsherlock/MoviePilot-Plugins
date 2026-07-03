@@ -296,7 +296,7 @@ function runLongRoamCheck(modules) {
 }
 
 function runBehaviorSelectionCheck(modules) {
-  const { GROUND_BEHAVIORS, chooseWeightedBehavior } = modules.behaviors
+  const { GROUND_BEHAVIORS, chooseWeightedBehavior, nextBehaviorCooldown } = modules.behaviors
   const samples = [
     chooseWeightedBehavior(GROUND_BEHAVIORS, { random: () => 0.1 })?.id,
     chooseWeightedBehavior(GROUND_BEHAVIORS, { random: () => 0.5 })?.id,
@@ -309,6 +309,14 @@ function runBehaviorSelectionCheck(modules) {
       fail(`Behavior selection mismatch at ${index}: expected ${expected[index]}, got ${samples[index]}`)
     }
   }
+  const goWall = GROUND_BEHAVIORS.find(behavior => behavior.id === 'goWall')
+  const cooldownUntil = nextBehaviorCooldown(goWall, 1000)
+  const cooledSample = chooseWeightedBehavior(GROUND_BEHAVIORS, {
+    cooldowns: { goWall: cooldownUntil },
+    random: () => 0.92,
+    timestamp: 1001,
+  })?.id
+  if (cooledSample === 'goWall') fail('Behavior cooldown did not suppress goWall')
 }
 
 const modules = await loadRuntimeModules()
