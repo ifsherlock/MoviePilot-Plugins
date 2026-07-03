@@ -1,57 +1,4 @@
-import { D as DEFAULT_CONFIG, e as createMascotRuntime, V as VIEWPORT_PADDING, S as SURFACE_SCAN_MS, g as buildDomSurfaceLanes, u as unwrapResponse, n as normalizeConfig } from './provider-BDWNYDUs.js';
-
-const PLUGIN_ID = 'AgentMascot';
-const ROOT_ID = 'agentmascot-global-root';
-const STYLE_ID = 'agentmascot-global-style';
-const HIDDEN_CLASS = 'agentmascot-native-hidden';
-const STATUS_PATH = `/api/v1/plugin/${PLUGIN_ID}/status`;
-const PUBLIC_STATUS_PATH = `/api/v1/plugin/${PLUGIN_ID}/public_status`;
-const CONFIG_POLL_MS = 15000;
-const DOM_SURFACE_SELECTORS = [
-  'main',
-  '.v-main',
-  '.v-container',
-  '.v-card',
-  '.v-sheet',
-  '.v-window',
-  '.v-table',
-  '[class*="dashboard"]',
-  '[class*="layout"]',
-].join(',');
-
-let config = { ...DEFAULT_CONFIG };
-let root = null;
-let img = null;
-let shadow = null;
-let nativeEntry = null;
-let nativeTrigger = null;
-let restoreNativeTimer = 0;
-let nativeObserver = null;
-let surfaceLanes = [];
-let lastSurfaceScan = 0;
-
-const runtime = createMascotRuntime({
-  bounds: viewportBounds,
-  getConfig: () => config,
-  getSurfaceLanes: collectSurfaceLanes,
-  initialPet: {
-    anchorX: 180,
-    anchorY: 180,
-    targetX: 360,
-    targetY: 180,
-    laneY: 180,
-  },
-  onUpdate: render,
-  scheduler: {
-    setInterval: (...args) => window.setInterval(...args),
-    clearInterval: id => window.clearInterval(id),
-    setTimeout: (...args) => window.setTimeout(...args),
-    requestAnimationFrame: callback => window.requestAnimationFrame(callback),
-    cancelAnimationFrame: id => window.cancelAnimationFrame(id),
-  },
-  viewportPadding: VIEWPORT_PADDING,
-});
-const pet = runtime.pet;
+import { u as unwrapResponse, n as normalizeConfig, D as DEFAULT_CONFIG, e as createMascotRuntime, V as VIEWPORT_PADDING, S as SURFACE_SCAN_MS, g as buildDomSurfaceLanes } from './provider-BDWNYDUs.js';
 
 function looksLikeJwt(value) {
   return typeof value === 'string' && /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(value.trim())
@@ -108,52 +55,113 @@ function readStorageToken(area) {
   return ''
 }
 
-function getToken() {
+function getMoviePilotToken(env = globalThis) {
   return (
-    pickToken(window.__AgentMascotAccessToken)
-    || readStorageToken(window.localStorage)
-    || readStorageToken(window.sessionStorage)
+    pickToken(env.__AgentMascotAccessToken)
+    || readStorageToken(env.localStorage)
+    || readStorageToken(env.sessionStorage)
   )
 }
 
-function apiBasePath() {
-  const pathname = window.location.pathname.replace(/\/$/, '');
+function moviePilotApiBasePath(location = globalThis.location) {
+  const pathname = location?.pathname?.replace(/\/$/, '') || '';
   if (!pathname || pathname === '/') return ''
   return pathname
 }
 
-function apiUrl(path) {
-  return `${window.location.origin}${apiBasePath()}${path}`
+function moviePilotApiUrl(path, location = globalThis.location) {
+  return `${location.origin}${moviePilotApiBasePath(location)}${path}`
 }
 
-async function loadConfig() {
-  const token = getToken();
+async function loadMoviePilotPluginConfig(pluginId, options = {}) {
+  const env = options.env || globalThis;
+  const fetchImpl = options.fetchImpl || env.fetch?.bind(env);
+  if (!fetchImpl) throw new Error('MoviePilot fetch is unavailable')
+
+  const statusPath = `/api/v1/plugin/${pluginId}/status`;
+  const publicStatusPath = `/api/v1/plugin/${pluginId}/public_status`;
+  const token = getMoviePilotToken(env);
   const response = token
-    ? await fetch(apiUrl(STATUS_PATH), {
+    ? await fetchImpl(moviePilotApiUrl(statusPath, env.location), {
       headers: {
         Authorization: `Bearer ${token}`,
       },
       credentials: 'same-origin',
       cache: 'no-store',
     })
-    : await fetch(apiUrl(PUBLIC_STATUS_PATH), {
+    : await fetchImpl(moviePilotApiUrl(publicStatusPath, env.location), {
       credentials: 'same-origin',
       cache: 'no-store',
     });
+
   if (!response.ok && token) {
-    const publicResponse = await fetch(apiUrl(PUBLIC_STATUS_PATH), {
+    const publicResponse = await fetchImpl(moviePilotApiUrl(publicStatusPath, env.location), {
       credentials: 'same-origin',
       cache: 'no-store',
     });
-    if (!publicResponse.ok) throw new Error(`AgentMascot public status ${publicResponse.status}`)
+    if (!publicResponse.ok) throw new Error(`${pluginId} public status ${publicResponse.status}`)
     const data = unwrapResponse(await publicResponse.json());
-    config = normalizeConfig(data?.config);
-    runtime.updateConfig(config);
-    return config
+    return normalizeConfig(data?.config)
   }
-  if (!response.ok) throw new Error(`AgentMascot status ${response.status}`)
+
+  if (!response.ok) throw new Error(`${pluginId} status ${response.status}`)
   const data = unwrapResponse(await response.json());
-  config = normalizeConfig(data?.config);
+  return normalizeConfig(data?.config)
+}
+
+const PLUGIN_ID = 'AgentMascot';
+const ROOT_ID = 'agentmascot-global-root';
+const STYLE_ID = 'agentmascot-global-style';
+const HIDDEN_CLASS = 'agentmascot-native-hidden';
+const CONFIG_POLL_MS = 15000;
+const DOM_SURFACE_SELECTORS = [
+  'main',
+  '.v-main',
+  '.v-container',
+  '.v-card',
+  '.v-sheet',
+  '.v-window',
+  '.v-table',
+  '[class*="dashboard"]',
+  '[class*="layout"]',
+].join(',');
+
+let config = { ...DEFAULT_CONFIG };
+let root = null;
+let img = null;
+let shadow = null;
+let nativeEntry = null;
+let nativeTrigger = null;
+let restoreNativeTimer = 0;
+let nativeObserver = null;
+let surfaceLanes = [];
+let lastSurfaceScan = 0;
+
+const runtime = createMascotRuntime({
+  bounds: viewportBounds,
+  getConfig: () => config,
+  getSurfaceLanes: collectSurfaceLanes,
+  initialPet: {
+    anchorX: 180,
+    anchorY: 180,
+    targetX: 360,
+    targetY: 180,
+    laneY: 180,
+  },
+  onUpdate: render,
+  scheduler: {
+    setInterval: (...args) => window.setInterval(...args),
+    clearInterval: id => window.clearInterval(id),
+    setTimeout: (...args) => window.setTimeout(...args),
+    requestAnimationFrame: callback => window.requestAnimationFrame(callback),
+    cancelAnimationFrame: id => window.cancelAnimationFrame(id),
+  },
+  viewportPadding: VIEWPORT_PADDING,
+});
+const pet = runtime.pet;
+
+async function loadConfig() {
+  config = await loadMoviePilotPluginConfig(PLUGIN_ID);
   runtime.updateConfig(config);
   return config
 }

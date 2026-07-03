@@ -2,18 +2,15 @@ import {
   DEFAULT_CONFIG,
   SURFACE_SCAN_MS,
   VIEWPORT_PADDING,
-  normalizeConfig,
 } from './mascot/config'
+import { loadMoviePilotPluginConfig } from './adapters/moviepilotAuth'
 import { createMascotRuntime } from './mascot/runtime'
 import { buildDomSurfaceLanes } from './mascot/surfaces'
-import { unwrapResponse } from './provider'
 
 const PLUGIN_ID = 'AgentMascot'
 const ROOT_ID = 'agentmascot-global-root'
 const STYLE_ID = 'agentmascot-global-style'
 const HIDDEN_CLASS = 'agentmascot-native-hidden'
-const STATUS_PATH = `/api/v1/plugin/${PLUGIN_ID}/status`
-const PUBLIC_STATUS_PATH = `/api/v1/plugin/${PLUGIN_ID}/public_status`
 const CONFIG_POLL_MS = 15000
 const DOM_SURFACE_SELECTORS = [
   'main',
@@ -62,107 +59,8 @@ const runtime = createMascotRuntime({
 })
 const pet = runtime.pet
 
-function looksLikeJwt(value) {
-  return typeof value === 'string' && /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(value.trim())
-}
-
-function pickToken(value, depth = 0) {
-  if (!value || depth > 5) return ''
-  if (looksLikeJwt(value)) return value.trim()
-  if (typeof value === 'string') {
-    try {
-      return pickToken(JSON.parse(value), depth + 1)
-    } catch {
-      return ''
-    }
-  }
-  if (Array.isArray(value)) {
-    for (const item of value) {
-      const token = pickToken(item, depth + 1)
-      if (token) return token
-    }
-    return ''
-  }
-  if (typeof value !== 'object') return ''
-
-  for (const key of ['access_token', 'accessToken', 'token', 'jwt', 'id_token']) {
-    const token = pickToken(value[key], depth + 1)
-    if (token) return token
-  }
-  for (const nested of ['state', 'user', 'auth', 'data']) {
-    const token = pickToken(value[nested], depth + 1)
-    if (token) return token
-  }
-  for (const item of Object.values(value)) {
-    const token = pickToken(item, depth + 1)
-    if (token) return token
-  }
-  return ''
-}
-
-function readStorageToken(area) {
-  try {
-    if (!area) return ''
-    for (const key of ['auth', 'user', 'userStore', 'authStore', 'moviepilot-auth']) {
-      const token = pickToken(area.getItem(key))
-      if (token) return token
-    }
-    for (let index = 0; index < area.length; index += 1) {
-      const token = pickToken(area.getItem(area.key(index)))
-      if (token) return token
-    }
-  } catch {
-    return ''
-  }
-  return ''
-}
-
-function getToken() {
-  return (
-    pickToken(window.__AgentMascotAccessToken)
-    || readStorageToken(window.localStorage)
-    || readStorageToken(window.sessionStorage)
-  )
-}
-
-function apiBasePath() {
-  const pathname = window.location.pathname.replace(/\/$/, '')
-  if (!pathname || pathname === '/') return ''
-  return pathname
-}
-
-function apiUrl(path) {
-  return `${window.location.origin}${apiBasePath()}${path}`
-}
-
 async function loadConfig() {
-  const token = getToken()
-  const response = token
-    ? await fetch(apiUrl(STATUS_PATH), {
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-      credentials: 'same-origin',
-      cache: 'no-store',
-    })
-    : await fetch(apiUrl(PUBLIC_STATUS_PATH), {
-      credentials: 'same-origin',
-      cache: 'no-store',
-    })
-  if (!response.ok && token) {
-    const publicResponse = await fetch(apiUrl(PUBLIC_STATUS_PATH), {
-      credentials: 'same-origin',
-      cache: 'no-store',
-    })
-    if (!publicResponse.ok) throw new Error(`AgentMascot public status ${publicResponse.status}`)
-    const data = unwrapResponse(await publicResponse.json())
-    config = normalizeConfig(data?.config)
-    runtime.updateConfig(config)
-    return config
-  }
-  if (!response.ok) throw new Error(`AgentMascot status ${response.status}`)
-  const data = unwrapResponse(await response.json())
-  config = normalizeConfig(data?.config)
+  config = await loadMoviePilotPluginConfig(PLUGIN_ID)
   runtime.updateConfig(config)
   return config
 }
