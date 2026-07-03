@@ -36,6 +36,14 @@ function createFrameDriver() {
   }
 }
 
+function createSeededRandom(seed = 123456789) {
+  let state = seed >>> 0
+  return () => {
+    state = (state * 1664525 + 1013904223) >>> 0
+    return state / 0x100000000
+  }
+}
+
 async function loadRuntimeModules() {
   const server = await createServer({
     configFile: false,
@@ -126,6 +134,57 @@ function createWallRuntime(modules, side) {
   return { driver, pet, runtime }
 }
 
+function createRoamRuntime(modules) {
+  const bounds = { width: 900, height: 620 }
+  const driver = createFrameDriver()
+  const pet = modules.createPetState({
+    anchorX: 420,
+    anchorY: bounds.height - 18,
+    laneY: bounds.height - 18,
+    targetX: 620,
+    targetY: bounds.height - 18,
+  })
+  const runtime = modules.createMascotRuntime({
+    actionState: modules.createActionState(),
+    bounds: () => bounds,
+    getConfig: () => ({
+      enabled: true,
+      mascot: 'kurisu',
+      scale: 1,
+      speed: 1,
+      follow_mouse: false,
+      auto_roam: true,
+      shadow: true,
+      replace_agent_entry: true,
+      show_sidebar_nav: true,
+    }),
+    getSurfaceLanes: () => [190, 310, 430, bounds.height - 18],
+    mouse: modules.createMouseState({ active: false }),
+    pet,
+    random: createSeededRandom(20260704),
+    scheduler: driver.scheduler,
+    snapGroundOnDragRelease: false,
+  })
+  return { bounds, driver, pet, runtime }
+}
+
+function assertFinitePet(pet, label) {
+  for (const key of ['anchorX', 'anchorY', 'targetX', 'targetY', 'vx', 'vy']) {
+    if (!Number.isFinite(pet[key])) fail(`${label}: pet.${key} is not finite: ${pet[key]}`)
+  }
+}
+
+function assertWithinBounds(pet, bounds, label) {
+  const horizontalSlack = 4
+  const verticalSlack = 4
+  if (pet.anchorX < -horizontalSlack || pet.anchorX > bounds.width + horizontalSlack) {
+    fail(`${label}: anchorX out of bounds: ${pet.anchorX}`)
+  }
+  if (pet.anchorY < -verticalSlack || pet.anchorY > bounds.height + verticalSlack) {
+    fail(`${label}: anchorY out of bounds: ${pet.anchorY}`)
+  }
+}
+
 function runFallVisibilityCheck(modules) {
   const { driver, pet, runtime } = createFallRuntime(modules)
   runtime.start()
@@ -203,11 +262,43 @@ function runWallApproachCheck(modules, side) {
   runtime.stop()
 }
 
+function runLongRoamCheck(modules) {
+  const { bounds, driver, pet, runtime } = createRoamRuntime(modules)
+  runtime.start()
+
+  let stagnantMoveTicks = 0
+  let previousDistance = Math.abs(pet.targetX - pet.anchorX)
+
+  for (let tick = 1; tick <= 3600; tick += 1) {
+    if (tick % 157 === 1) driver.triggerInterval()
+    driver.tick(tick * 33)
+    assertFinitePet(pet, `long roam tick ${tick}`)
+    assertWithinBounds(pet, bounds, `long roam tick ${tick}`)
+
+    if (['groundMove', 'toWall'].includes(pet.state)) {
+      const distance = Math.abs(pet.targetX - pet.anchorX)
+      if (distance > 16 && distance >= previousDistance - 0.05) stagnantMoveTicks += 1
+      else stagnantMoveTicks = 0
+      previousDistance = distance
+      if (stagnantMoveTicks > 180) {
+        fail(`Long roam appears stuck in ${pet.state}: anchorX=${pet.anchorX} targetX=${pet.targetX} distance=${distance}`)
+        break
+      }
+    } else {
+      stagnantMoveTicks = 0
+      previousDistance = Math.abs(pet.targetX - pet.anchorX)
+    }
+  }
+
+  runtime.stop()
+}
+
 const modules = await loadRuntimeModules()
 try {
   runFallVisibilityCheck(modules)
   runWallApproachCheck(modules, 'left')
   runWallApproachCheck(modules, 'right')
+  runLongRoamCheck(modules)
 } finally {
   await modules.close()
 }
@@ -218,4 +309,4 @@ if (failures.length) {
   process.exit(1)
 }
 
-console.log('[AgentMascot] runtime validation passed: fall visibility gate, wall approach')
+console.log('[AgentMascot] runtime validation passed: fall visibility gate, wall approach, long roam guards')
