@@ -165,7 +165,7 @@
             "dist/assets/agentmascot-loader.js contains AgentMascot, agentmascot-global-root, and public_status",
             "git diff --check -> exits 0"
           ],
-          "commit": "pending"
+          "commit": "0fb35be"
         },
         {
           "id": "2.5",
