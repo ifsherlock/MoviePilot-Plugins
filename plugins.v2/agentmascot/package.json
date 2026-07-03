@@ -1,7 +1,7 @@
 {
   "name": "moviepilot-agentmascot-plugin",
   "private": true,
-  "version": "0.1.11",
+  "version": "0.1.12",
   "author": "ifsherlock",
   "homepage": "https://github.com/ifsherlock/MoviePilot-Plugins",
   "repository": {

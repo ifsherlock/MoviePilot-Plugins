@@ -47,7 +47,7 @@ export default defineConfig({
     target: 'esnext',
     minify: false,
     cssCodeSplit: true,
-    assetsInlineLimit: 64 * 1024,
+    assetsInlineLimit: 256 * 1024,
     rollupOptions: {
       input: {
         main: 'index.html',
