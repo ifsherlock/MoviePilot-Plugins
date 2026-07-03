@@ -203,6 +203,14 @@ export function createMascotRuntime(options = {}) {
     return calculateWallAnchorX(side, bounds(), viewportPadding)
   }
 
+  function wallApproachX(side) {
+    return clampAnchorX(wallAnchorX(side))
+  }
+
+  function isAtWallApproach(side) {
+    return Math.abs(pet.anchorX - wallApproachX(side)) < Math.max(12 * poseScale(), 8)
+  }
+
   function randomGroundX() {
     return calculateRandomGroundX(bounds(), petSize(), viewportPadding)
   }
@@ -326,7 +334,7 @@ export function createMascotRuntime(options = {}) {
     roamPausedUntil = 0
     pet.wallSide = side
     setLaneY(nearestLaneToY(pet.anchorY))
-    pet.targetX = wallAnchorX(side)
+    pet.targetX = wallApproachX(side)
     setAction(Math.abs(pet.targetX - pet.anchorX) > RUN_DISTANCE ? 'run' : 'walk', timestamp, { force: true })
   }
 
@@ -597,6 +605,10 @@ export function createMascotRuntime(options = {}) {
           } else {
             if (pet.state === 'bounce') startGroundMove(timestamp)
             moveByCurrentPose(elapsedTicks, targetX)
+            if (pet.state === 'toWall' && isAtWallApproach(pet.wallSide)) {
+              startWall(pet.wallSide, timestamp)
+              return
+            }
             updateGroundAction(distance, timestamp, isMouseFresh)
             advancePose(elapsedTicks)
             if (Math.abs(targetX - pet.anchorX) < 3 && !isMouseFresh) {

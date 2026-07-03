@@ -1585,6 +1585,14 @@ function createMascotRuntime(options = {}) {
     return wallAnchorX(side, bounds(), viewportPadding)
   }
 
+  function wallApproachX(side) {
+    return clampAnchorX$1(wallAnchorX$1(side))
+  }
+
+  function isAtWallApproach(side) {
+    return Math.abs(pet.anchorX - wallApproachX(side)) < Math.max(12 * poseScale$1(), 8)
+  }
+
   function randomGroundX$1() {
     return randomGroundX(bounds(), petSize$1(), viewportPadding)
   }
@@ -1708,7 +1716,7 @@ function createMascotRuntime(options = {}) {
     roamPausedUntil = 0;
     pet.wallSide = side;
     setLaneY(nearestLaneToY(pet.anchorY));
-    pet.targetX = wallAnchorX$1(side);
+    pet.targetX = wallApproachX(side);
     setAction(Math.abs(pet.targetX - pet.anchorX) > RUN_DISTANCE ? 'run' : 'walk', timestamp, { force: true });
   }
 
@@ -1979,6 +1987,10 @@ function createMascotRuntime(options = {}) {
           } else {
             if (pet.state === 'bounce') startGroundMove(timestamp);
             moveByCurrentPose(elapsedTicks, targetX);
+            if (pet.state === 'toWall' && isAtWallApproach(pet.wallSide)) {
+              startWall(pet.wallSide, timestamp);
+              return
+            }
             updateGroundAction(distance, timestamp, isMouseFresh);
             advancePose(elapsedTicks);
             if (Math.abs(targetX - pet.anchorX) < 3 && !isMouseFresh) {

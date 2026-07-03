@@ -8,9 +8,13 @@ function fail(message) {
 
 function createFrameDriver() {
   let callback = null
+  let intervalCallback = null
   return {
     scheduler: {
-      setInterval: () => 0,
+      setInterval: next => {
+        intervalCallback = next
+        return 1
+      },
       clearInterval: () => {},
       setTimeout: callback => callback(),
       requestAnimationFrame: next => {
@@ -24,6 +28,10 @@ function createFrameDriver() {
       const next = callback
       callback = null
       next(timestamp)
+    },
+    triggerInterval() {
+      if (!intervalCallback) throw new Error('No interval callback registered')
+      intervalCallback()
     },
   }
 }
@@ -83,6 +91,41 @@ function createFallRuntime(modules) {
   return { driver, pet, runtime }
 }
 
+function createWallRuntime(modules, side) {
+  const bounds = { width: 720, height: 520 }
+  const driver = createFrameDriver()
+  const randomValues = [0.93, side === 'left' ? 0.25 : 0.75]
+  const pet = modules.createPetState({
+    anchorX: side === 'left' ? 360 : 180,
+    anchorY: bounds.height - 18,
+    laneY: bounds.height - 18,
+    targetX: side === 'left' ? 120 : 600,
+    targetY: bounds.height - 18,
+  })
+  const runtime = modules.createMascotRuntime({
+    actionState: modules.createActionState(),
+    bounds: () => bounds,
+    getConfig: () => ({
+      enabled: true,
+      mascot: 'nailong',
+      scale: 1,
+      speed: 1,
+      follow_mouse: false,
+      auto_roam: true,
+      shadow: true,
+      replace_agent_entry: true,
+      show_sidebar_nav: true,
+    }),
+    getSurfaceLanes: () => [bounds.height - 18],
+    mouse: modules.createMouseState({ active: false }),
+    pet,
+    random: () => randomValues.shift() ?? 0.5,
+    scheduler: driver.scheduler,
+    snapGroundOnDragRelease: false,
+  })
+  return { driver, pet, runtime }
+}
+
 function runFallVisibilityCheck(modules) {
   const { driver, pet, runtime } = createFallRuntime(modules)
   runtime.start()
@@ -134,9 +177,37 @@ function runFallVisibilityCheck(modules) {
   runtime.stop()
 }
 
+function runWallApproachCheck(modules, side) {
+  const { driver, pet, runtime } = createWallRuntime(modules, side)
+  runtime.start()
+  pet.anchorX = side === 'left' ? 360 : 180
+  pet.anchorY = 520 - 18
+  pet.laneY = 520 - 18
+  pet.surface = 'ground'
+  pet.state = 'stand'
+  runtime.handlePointerLeave()
+  driver.triggerInterval()
+
+  for (let tick = 1; tick <= 260; tick += 1) {
+    driver.tick(tick * 33)
+    if (pet.surface === 'wall' && pet.state === 'wallHold') break
+  }
+
+  if (pet.surface !== 'wall' || pet.state !== 'wallHold') {
+    fail(`Expected ${side} wall approach to reach wallHold, got surface=${pet.surface} state=${pet.state} anchorX=${pet.anchorX} targetX=${pet.targetX}`)
+  }
+  if (pet.wallSide !== side) {
+    fail(`Expected wallSide=${side}, got ${pet.wallSide}`)
+  }
+
+  runtime.stop()
+}
+
 const modules = await loadRuntimeModules()
 try {
   runFallVisibilityCheck(modules)
+  runWallApproachCheck(modules, 'left')
+  runWallApproachCheck(modules, 'right')
 } finally {
   await modules.close()
 }
@@ -147,4 +218,4 @@ if (failures.length) {
   process.exit(1)
 }
 
-console.log('[AgentMascot] runtime validation passed: fall visibility gate')
+console.log('[AgentMascot] runtime validation passed: fall visibility gate, wall approach')
