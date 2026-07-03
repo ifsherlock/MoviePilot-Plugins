@@ -3,6 +3,10 @@ import {
   SURFACE_SCAN_MS,
   VIEWPORT_PADDING,
 } from './mascot/config'
+import {
+  createMoviePilotAgentEntry,
+  nativeAgentEntryStyle,
+} from './adapters/moviepilotAgentEntry'
 import { loadMoviePilotPluginConfig } from './adapters/moviepilotAuth'
 import { createMascotRuntime } from './mascot/runtime'
 import { buildDomSurfaceLanes } from './mascot/surfaces'
@@ -28,13 +32,13 @@ let config = { ...DEFAULT_CONFIG }
 let root = null
 let img = null
 let shadow = null
-let nativeEntry = null
-let nativeTrigger = null
 let configTimer = 0
-let restoreNativeTimer = 0
-let nativeObserver = null
 let surfaceLanes = []
 let lastSurfaceScan = 0
+const agentEntry = createMoviePilotAgentEntry({
+  hiddenClass: HIDDEN_CLASS,
+  isEnabled,
+})
 
 const runtime = createMascotRuntime({
   bounds: viewportBounds,
@@ -84,7 +88,7 @@ function collectSurfaceLanes(context, force = false) {
     surfaceLanes = buildDomSurfaceLanes(context, document.querySelectorAll(DOM_SURFACE_SELECTORS), {
       getStyle: element => window.getComputedStyle(element),
       onError: error => console.debug('[AgentMascot] surface element skipped', error),
-      shouldIgnoreElement: element => element === root || root?.contains(element) || nativeEntry?.contains(element),
+      shouldIgnoreElement: element => element === root || root?.contains(element) || agentEntry.contains(element),
       viewportPadding: VIEWPORT_PADDING,
     })
   } catch (error) {
@@ -104,37 +108,6 @@ function render() {
   root.style.transform = `translate3d(${state.left}px, ${state.top}px, 0) scaleX(${pet.lookRight ? -1 : 1})`
   img.src = state.frame
   shadow.style.display = config.shadow ? 'block' : 'none'
-}
-
-function hideNativeEntry() {
-  nativeEntry = document.querySelector('.agent-assistant-fab')
-  nativeTrigger = document.querySelector('.agent-assistant-fab__trigger')
-  if (nativeEntry) nativeEntry.classList.add(HIDDEN_CLASS)
-}
-
-function openNativeAssistant() {
-  hideNativeEntry()
-  if (!nativeTrigger) return
-  triggerNativeAssistant()
-  window.setTimeout(() => {
-    if (!isNativeAssistantOpen()) triggerNativeAssistant()
-  }, 80)
-  window.clearTimeout(restoreNativeTimer)
-  restoreNativeTimer = window.setTimeout(hideNativeEntry, 300)
-}
-
-function triggerNativeAssistant() {
-  if (!nativeTrigger) return
-  if (typeof nativeTrigger.click === 'function') nativeTrigger.click()
-  else nativeTrigger.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }))
-}
-
-function isNativeAssistantOpen() {
-  const panel = document.querySelector('.agent-assistant-panel')
-  if (!panel) return false
-  const style = window.getComputedStyle(panel)
-  const rect = panel.getBoundingClientRect()
-  return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0
 }
 
 function onPointerMove(event) {
@@ -163,7 +136,7 @@ function onClick(event) {
     return
   }
   event.preventDefault()
-  openNativeAssistant()
+  agentEntry.open()
 }
 
 function ensureStyle() {
@@ -171,18 +144,7 @@ function ensureStyle() {
   const style = document.createElement('style')
   style.id = STYLE_ID
   style.textContent = `
-    .${HIDDEN_CLASS} {
-      width: 0 !important;
-      height: 0 !important;
-      overflow: hidden !important;
-    }
-    .${HIDDEN_CLASS} > .agent-assistant-fab__trigger,
-    .${HIDDEN_CLASS} > button,
-    .${HIDDEN_CLASS} [role="button"] {
-      opacity: 0 !important;
-      pointer-events: none !important;
-      transform: scale(0.01) !important;
-    }
+    ${nativeAgentEntryStyle(HIDDEN_CLASS)}
     #${ROOT_ID} {
       position: fixed;
       top: 0;
@@ -223,7 +185,7 @@ function ensureStyle() {
 function mount() {
   if (root) return
   ensureStyle()
-  startNativeObserver()
+  agentEntry.startObserver()
   root = document.createElement('button')
   root.id = ROOT_ID
   root.type = 'button'
@@ -240,34 +202,18 @@ function mount() {
   root.addEventListener('pointerup', endDrag)
   root.addEventListener('pointercancel', endDrag)
   root.addEventListener('click', onClick)
-  hideNativeEntry()
+  agentEntry.hide()
   runtime.start()
 }
 
 function unmount() {
   runtime.stop()
-  stopNativeObserver()
+  agentEntry.destroy()
   document.removeEventListener('pointermove', onPointerMove)
-  window.clearTimeout(restoreNativeTimer)
-  nativeEntry?.classList.remove(HIDDEN_CLASS)
   root?.remove()
   root = null
   img = null
   shadow = null
-}
-
-function startNativeObserver() {
-  hideNativeEntry()
-  if (nativeObserver) return
-  nativeObserver = new MutationObserver(() => {
-    if (isEnabled()) hideNativeEntry()
-  })
-  nativeObserver.observe(document.body, { childList: true, subtree: true })
-}
-
-function stopNativeObserver() {
-  nativeObserver?.disconnect()
-  nativeObserver = null
 }
 
 async function syncFromConfig() {
@@ -275,7 +221,7 @@ async function syncFromConfig() {
     await loadConfig()
     if (isEnabled()) {
       mount()
-      hideNativeEntry()
+      agentEntry.hide()
       render()
     } else {
       unmount()

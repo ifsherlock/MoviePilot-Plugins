@@ -1,5 +1,102 @@
 import { u as unwrapResponse, n as normalizeConfig, D as DEFAULT_CONFIG, e as createMascotRuntime, V as VIEWPORT_PADDING, S as SURFACE_SCAN_MS, g as buildDomSurfaceLanes } from './provider-BDWNYDUs.js';
 
+const ENTRY_SELECTOR = '.agent-assistant-fab';
+const TRIGGER_SELECTOR = '.agent-assistant-fab__trigger';
+const PANEL_SELECTOR = '.agent-assistant-panel';
+
+function nativeAgentEntryStyle(hiddenClass) {
+  return `
+    .${hiddenClass} {
+      width: 0 !important;
+      height: 0 !important;
+      overflow: hidden !important;
+    }
+    .${hiddenClass} > ${TRIGGER_SELECTOR},
+    .${hiddenClass} > button,
+    .${hiddenClass} [role="button"] {
+      opacity: 0 !important;
+      pointer-events: none !important;
+      transform: scale(0.01) !important;
+    }
+  `
+}
+
+function createMoviePilotAgentEntry(options = {}) {
+  const env = options.env || globalThis;
+  const hiddenClass = options.hiddenClass || 'agentmascot-native-hidden';
+  const isEnabled = options.isEnabled || (() => true);
+  let nativeEntry = null;
+  let nativeTrigger = null;
+  let nativeObserver = null;
+  let restoreNativeTimer = 0;
+
+  function refresh() {
+    nativeEntry = env.document?.querySelector(ENTRY_SELECTOR) || null;
+    nativeTrigger = env.document?.querySelector(TRIGGER_SELECTOR) || null;
+    if (nativeEntry) nativeEntry.classList.add(hiddenClass);
+  }
+
+  function trigger() {
+    if (!nativeTrigger) return
+    if (typeof nativeTrigger.click === 'function') nativeTrigger.click();
+    else nativeTrigger.dispatchEvent(new env.MouseEvent('click', { bubbles: true, cancelable: true, view: env }));
+  }
+
+  function isPanelOpen() {
+    const panel = env.document?.querySelector(PANEL_SELECTOR);
+    if (!panel) return false
+    const style = env.getComputedStyle(panel);
+    const rect = panel.getBoundingClientRect();
+    return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0
+  }
+
+  function open() {
+    refresh();
+    if (!nativeTrigger) return
+    trigger();
+    env.setTimeout(() => {
+      if (!isPanelOpen()) trigger();
+    }, 80);
+    env.clearTimeout(restoreNativeTimer);
+    restoreNativeTimer = env.setTimeout(refresh, 300);
+  }
+
+  function contains(element) {
+    return Boolean(element && nativeEntry?.contains(element))
+  }
+
+  function startObserver() {
+    refresh();
+    if (nativeObserver) return
+    nativeObserver = new env.MutationObserver(() => {
+      if (isEnabled()) refresh();
+    });
+    nativeObserver.observe(env.document.body, { childList: true, subtree: true });
+  }
+
+  function stopObserver() {
+    nativeObserver?.disconnect();
+    nativeObserver = null;
+  }
+
+  function destroy() {
+    stopObserver();
+    env.clearTimeout(restoreNativeTimer);
+    nativeEntry?.classList.remove(hiddenClass);
+    nativeEntry = null;
+    nativeTrigger = null;
+  }
+
+  return {
+    contains,
+    destroy,
+    hide: refresh,
+    open,
+    startObserver,
+    stopObserver,
+  }
+}
+
 function looksLikeJwt(value) {
   return typeof value === 'string' && /^eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+$/.test(value.trim())
 }
@@ -130,12 +227,12 @@ let config = { ...DEFAULT_CONFIG };
 let root = null;
 let img = null;
 let shadow = null;
-let nativeEntry = null;
-let nativeTrigger = null;
-let restoreNativeTimer = 0;
-let nativeObserver = null;
 let surfaceLanes = [];
 let lastSurfaceScan = 0;
+const agentEntry = createMoviePilotAgentEntry({
+  hiddenClass: HIDDEN_CLASS,
+  isEnabled,
+});
 
 const runtime = createMascotRuntime({
   bounds: viewportBounds,
@@ -185,7 +282,7 @@ function collectSurfaceLanes(context, force = false) {
     surfaceLanes = buildDomSurfaceLanes(context, document.querySelectorAll(DOM_SURFACE_SELECTORS), {
       getStyle: element => window.getComputedStyle(element),
       onError: error => console.debug('[AgentMascot] surface element skipped', error),
-      shouldIgnoreElement: element => element === root || root?.contains(element) || nativeEntry?.contains(element),
+      shouldIgnoreElement: element => element === root || root?.contains(element) || agentEntry.contains(element),
       viewportPadding: VIEWPORT_PADDING,
     });
   } catch (error) {
@@ -205,37 +302,6 @@ function render() {
   root.style.transform = `translate3d(${state.left}px, ${state.top}px, 0) scaleX(${pet.lookRight ? -1 : 1})`;
   img.src = state.frame;
   shadow.style.display = config.shadow ? 'block' : 'none';
-}
-
-function hideNativeEntry() {
-  nativeEntry = document.querySelector('.agent-assistant-fab');
-  nativeTrigger = document.querySelector('.agent-assistant-fab__trigger');
-  if (nativeEntry) nativeEntry.classList.add(HIDDEN_CLASS);
-}
-
-function openNativeAssistant() {
-  hideNativeEntry();
-  if (!nativeTrigger) return
-  triggerNativeAssistant();
-  window.setTimeout(() => {
-    if (!isNativeAssistantOpen()) triggerNativeAssistant();
-  }, 80);
-  window.clearTimeout(restoreNativeTimer);
-  restoreNativeTimer = window.setTimeout(hideNativeEntry, 300);
-}
-
-function triggerNativeAssistant() {
-  if (!nativeTrigger) return
-  if (typeof nativeTrigger.click === 'function') nativeTrigger.click();
-  else nativeTrigger.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
-}
-
-function isNativeAssistantOpen() {
-  const panel = document.querySelector('.agent-assistant-panel');
-  if (!panel) return false
-  const style = window.getComputedStyle(panel);
-  const rect = panel.getBoundingClientRect();
-  return style.display !== 'none' && style.visibility !== 'hidden' && rect.width > 0 && rect.height > 0
 }
 
 function onPointerMove(event) {
@@ -264,7 +330,7 @@ function onClick(event) {
     return
   }
   event.preventDefault();
-  openNativeAssistant();
+  agentEntry.open();
 }
 
 function ensureStyle() {
@@ -272,18 +338,7 @@ function ensureStyle() {
   const style = document.createElement('style');
   style.id = STYLE_ID;
   style.textContent = `
-    .${HIDDEN_CLASS} {
-      width: 0 !important;
-      height: 0 !important;
-      overflow: hidden !important;
-    }
-    .${HIDDEN_CLASS} > .agent-assistant-fab__trigger,
-    .${HIDDEN_CLASS} > button,
-    .${HIDDEN_CLASS} [role="button"] {
-      opacity: 0 !important;
-      pointer-events: none !important;
-      transform: scale(0.01) !important;
-    }
+    ${nativeAgentEntryStyle(HIDDEN_CLASS)}
     #${ROOT_ID} {
       position: fixed;
       top: 0;
@@ -324,7 +379,7 @@ function ensureStyle() {
 function mount() {
   if (root) return
   ensureStyle();
-  startNativeObserver();
+  agentEntry.startObserver();
   root = document.createElement('button');
   root.id = ROOT_ID;
   root.type = 'button';
@@ -341,34 +396,18 @@ function mount() {
   root.addEventListener('pointerup', endDrag);
   root.addEventListener('pointercancel', endDrag);
   root.addEventListener('click', onClick);
-  hideNativeEntry();
+  agentEntry.hide();
   runtime.start();
 }
 
 function unmount() {
   runtime.stop();
-  stopNativeObserver();
+  agentEntry.destroy();
   document.removeEventListener('pointermove', onPointerMove);
-  window.clearTimeout(restoreNativeTimer);
-  nativeEntry?.classList.remove(HIDDEN_CLASS);
   root?.remove();
   root = null;
   img = null;
   shadow = null;
-}
-
-function startNativeObserver() {
-  hideNativeEntry();
-  if (nativeObserver) return
-  nativeObserver = new MutationObserver(() => {
-    if (isEnabled()) hideNativeEntry();
-  });
-  nativeObserver.observe(document.body, { childList: true, subtree: true });
-}
-
-function stopNativeObserver() {
-  nativeObserver?.disconnect();
-  nativeObserver = null;
 }
 
 async function syncFromConfig() {
@@ -376,7 +415,7 @@ async function syncFromConfig() {
     await loadConfig();
     if (isEnabled()) {
       mount();
-      hideNativeEntry();
+      agentEntry.hide();
       render();
     } else {
       unmount();
