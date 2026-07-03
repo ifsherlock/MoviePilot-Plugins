@@ -2,8 +2,8 @@
   "plan": "docs/plans/2026-07-03-agentmascot-modularization-phased-plan.md",
   "status": {
     "phase": "phase-5",
-    "task": "5.1",
-    "next_allowed_action": "Implement task 5.1 by building the frontend and confirming dist loader, remoteEntry, and Page/Config/AppPage federation chunks are generated"
+    "task": "5.2",
+    "next_allowed_action": "Implement task 5.2 by deciding whether user-visible changes require version and history updates"
   },
   "execution_rules": {
     "branch": "codex/agentmascot-modularization",
@@ -394,9 +394,19 @@
         {
           "id": "5.1",
           "title": "构建前端并确认 dist 入口完整",
-          "status": "pending",
-          "verification": [],
-          "commit": null
+          "status": "completed",
+          "verification": [
+            "npm install was run to restore missing local vite; npm run check:assets and npm run build in plugins.v2\\agentmascot -> exits 0; node_modules and package-lock.json were removed after verification",
+            "python .github\\scripts\\check_plugin_versions.py package.json package.v2.json -> Plugin release version gate passed",
+            "python -m py_compile plugins.v2\\agentmascot\\__init__.py plugins.v2\\agentmascot\\config.py plugins.v2\\agentmascot\\api.py plugins.v2\\agentmascot\\loader.py plugins.v2\\agentmascot\\manifest.py -> exits 0",
+            "dist/assets/agentmascot-loader.js exists",
+            "dist/assets/remoteEntry.js exists and exposes ./Page, ./Config, ./AppPage, and ./PluginEntry",
+            "dist/assets contains __federation_expose_Page-*.js, __federation_expose_Config-*.js, __federation_expose_AppPage-*.js, and __federation_expose_PluginEntry-*.js",
+            "dist/assets/agentmascot-loader.js contains AgentMascot, agentmascot-global-root, public_status, and agent-assistant-fab__trigger",
+            "git diff --check -> exits 0 with LF conversion warnings only",
+            "git status showed no node_modules or package-lock.json"
+          ],
+          "commit": "pending"
         },
         {
           "id": "5.2",
@@ -560,6 +570,12 @@
       "phase": "phase-4",
       "action": "Completed shimeji asset manifest and action catalog cleanup.",
       "verification": "phase-4 acceptance passed: npm build passed, npm run check:assets passed, frames.js is 3 lines and preserves public exports, and wall/ground anchors are named constants",
+      "result": "passed"
+    },
+    {
+      "task": "5.1",
+      "action": "Rebuilt the AgentMascot frontend and confirmed dist loader, remoteEntry, Page/Config/AppPage federation chunks, and PluginEntry chunk are present.",
+      "verification": "npm run check:assets, npm run build, version gate, backend py_compile, dist asset existence probe, remoteEntry exposes probe, fixed loader string probe, git diff --check, temporary dependency cleanup",
       "result": "passed"
     }
   ]
