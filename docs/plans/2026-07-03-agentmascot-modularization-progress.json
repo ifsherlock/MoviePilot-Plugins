@@ -289,7 +289,7 @@
             "git diff --check -> exits 0 with LF conversion warnings only",
             "phase-3 acceptance passed: build passed, federation keeps existing exposes, fixed global loader output exists, native assistant selectors remain isolated, and JWT storage scanning remains isolated"
           ],
-          "commit": "pending"
+          "commit": "94ad44e"
         }
       ]
     },
