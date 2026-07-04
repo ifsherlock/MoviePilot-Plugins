@@ -1,4 +1,5 @@
 import { computed, nextTick, ref } from 'vue'
+import { buildAiSummaryText } from '../utils/aiStatus'
 
 const EMPTY_AI_TASK_DATA = {
   status: null,
@@ -71,19 +72,12 @@ export function useAiTasks({
     if (selectedTargets.value.length) return `AI 生成选中 ${selectedTargets.value.length} 集`
     return selectedSeason.value === 'all' ? 'AI 生成全部季' : 'AI 生成本季'
   })
-  const aiSummaryText = computed(() => {
-    if (!aiEnabled.value) return 'AI 联动已关闭'
-    if (!aiStatus.value.installed && !aiStatus.value.available) return aiStatus.value.message || '请先安装并启用 AI字幕生成(联动版)'
-    const parts = []
-    if (aiSummary.value.in_progress) parts.push(`${aiSummary.value.in_progress} 个生成中`)
-    if (aiSummary.value.pending) parts.push(`${aiSummary.value.pending} 个排队`)
-    if (aiSummary.value.failed) parts.push(`${aiSummary.value.failed} 个失败`)
-    if (aiSummary.value.completed) parts.push(`${aiSummary.value.completed} 个完成`)
-    if (aiSummary.value.ignored) parts.push(`${aiSummary.value.ignored} 个忽略`)
-    if (aiSummary.value.no_audio) parts.push(`${aiSummary.value.no_audio} 个无音轨`)
-    if (aiSummary.value.cancelled) parts.push(`${aiSummary.value.cancelled} 个取消`)
-    return parts.length ? `AI：${parts.join(' / ')}` : (aiStatus.value.message || 'AI：暂无当前资源任务')
-  })
+  const aiSummaryText = computed(() => buildAiSummaryText({
+    aiEnabled: aiEnabled.value,
+    aiAvailable: aiAvailable.value,
+    aiStatus: aiStatus.value,
+    aiSummary: aiSummary.value,
+  }))
   const aiDialogTasks = computed(() => {
     const targetId = aiTaskDialogTarget.value?.id
     if (targetId) {

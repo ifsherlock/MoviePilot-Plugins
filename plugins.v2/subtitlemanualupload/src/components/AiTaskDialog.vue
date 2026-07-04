@@ -1,5 +1,8 @@
 <script setup>
-defineProps({
+import { computed } from 'vue'
+import { buildAiStatusDetail } from '../utils/aiStatus'
+
+const props = defineProps({
   modelValue: { type: Boolean, default: false },
   aiTaskDialogTarget: { type: Object, default: null },
   compactTargetName: { type: Function, required: true },
@@ -35,6 +38,8 @@ defineEmits([
   'load-ai-tasks',
   'regenerate-single-ai-task',
 ])
+
+const aiStatusDetail = computed(() => buildAiStatusDetail(props.aiStatus))
 </script>
 
 <template>
@@ -90,7 +95,7 @@ defineEmits([
           class="mb-4"
           type="warning"
           variant="tonal"
-          :text="aiStatus.message || '请先安装并启用 AI字幕生成(联动版)'"
+          :text="aiStatusDetail"
         />
         <div v-if="aiAvailable && (aiTaskDialogTarget || aiDialogTasks.length)" class="ai-restart-options">
           <VSelect

@@ -1,7 +1,8 @@
 <script setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import { buildAiStatusDetail } from '../utils/aiStatus'
 
-defineProps({
+const props = defineProps({
   aiEnabled: { type: Boolean, default: false },
   aiAvailable: { type: Boolean, default: false },
   aiHasActiveTasks: { type: Boolean, default: false },
@@ -13,6 +14,7 @@ defineProps({
 defineEmits(['open'])
 
 const stripRef = ref(null)
+const aiStatusDetail = computed(() => buildAiStatusDetail(props.aiStatus))
 
 defineExpose({
   scrollIntoView(options) {
@@ -43,7 +45,7 @@ defineExpose({
       <VIcon v-else icon="mdi-robot-outline" size="18" />
     </span>
     <strong>{{ aiSummaryText }}</strong>
-    <em>{{ aiAvailable ? '点击查看当前资源任务' : aiStatus.message }}</em>
+    <em>{{ aiAvailable ? '点击查看当前资源任务' : aiStatusDetail }}</em>
   </button>
 </template>
 

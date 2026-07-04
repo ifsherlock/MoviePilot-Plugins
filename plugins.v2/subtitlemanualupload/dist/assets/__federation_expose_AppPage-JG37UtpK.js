@@ -248,8 +248,33 @@ function createSubtitleManualUploadApi(api, pluginBase) {
   }
 }
 
-const {computed: computed$9,nextTick: nextTick$1,ref: ref$c} = await importShared('vue');
+const INSTALL_HINT = '请先安装并启用';
 
+function buildAiStatusDetail(aiStatus = {}) {
+  const message = String(aiStatus?.message || '').trim();
+  const needsInstallHint = message === '插件未启用' || message === '请先安装并启用 AI字幕生成(联动版)';
+  if (!needsInstallHint) return message || '请先安装并启用 AI字幕生成(联动版)'
+  return message === '插件未启用' ? `${message}，${INSTALL_HINT}` : INSTALL_HINT
+}
+
+function buildAiSummaryText({ aiEnabled, aiAvailable, aiStatus, aiSummary }) {
+  const pluginName = aiStatus?.plugin_name || 'AI字幕生成(联动版)';
+  if (!aiEnabled) return 'AI 字幕联动'
+  if (!aiAvailable) return pluginName
+
+  const summary = aiSummary || {};
+  const parts = [];
+  if (summary.in_progress) parts.push(`${summary.in_progress} 个生成中`);
+  if (summary.pending) parts.push(`${summary.pending} 个排队`);
+  if (summary.failed) parts.push(`${summary.failed} 个失败`);
+  if (summary.completed) parts.push(`${summary.completed} 个完成`);
+  if (summary.ignored) parts.push(`${summary.ignored} 个忽略`);
+  if (summary.no_audio) parts.push(`${summary.no_audio} 个无音轨`);
+  if (summary.cancelled) parts.push(`${summary.cancelled} 个取消`);
+  return parts.length ? `AI：${parts.join(' / ')}` : `${pluginName}：暂无当前资源任务`
+}
+
+const {computed: computed$b,nextTick: nextTick$1,ref: ref$c} = await importShared('vue');
 
 const EMPTY_AI_TASK_DATA = {
   summary: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, ignored: 0, no_audio: 0, failed: 0, cancelled: 0 }};
@@ -305,50 +330,43 @@ function useAiTasks({
   const aiTaskData = ref$c(createEmptyAiTaskData());
   let aiTaskTimer = null;
 
-  const aiStatus = computed$9(() => aiTaskData.value.status || status.value?.ai_subtitle || {});
-  const aiEnabled = computed$9(() => aiStatus.value.enabled !== false);
-  const aiAvailable = computed$9(() => aiEnabled.value && aiStatus.value.available === true);
-  const aiSummary = computed$9(() => aiTaskData.value.summary || {});
-  const aiHasActiveTasks = computed$9(() => Number(aiSummary.value.active || 0) > 0);
-  const aiBatchCancelTargets = computed$9(() => batchUploadTargets.value.filter(target => isAiTaskActive(aiTaskForTarget(target))));
-  const aiCapableBatchTargets = computed$9(() => batchUploadTargets.value.filter(target => !isStreamTarget(target)));
-  const aiBatchLabel = computed$9(() => {
+  const aiStatus = computed$b(() => aiTaskData.value.status || status.value?.ai_subtitle || {});
+  const aiEnabled = computed$b(() => aiStatus.value.enabled !== false);
+  const aiAvailable = computed$b(() => aiEnabled.value && aiStatus.value.available === true);
+  const aiSummary = computed$b(() => aiTaskData.value.summary || {});
+  const aiHasActiveTasks = computed$b(() => Number(aiSummary.value.active || 0) > 0);
+  const aiBatchCancelTargets = computed$b(() => batchUploadTargets.value.filter(target => isAiTaskActive(aiTaskForTarget(target))));
+  const aiCapableBatchTargets = computed$b(() => batchUploadTargets.value.filter(target => !isStreamTarget(target)));
+  const aiBatchLabel = computed$b(() => {
     if (selectedMedia.value?.media_type !== 'tv') return 'AI 生成字幕'
     if (selectedTargets.value.length) return `AI 生成选中 ${selectedTargets.value.length} 集`
     return selectedSeason.value === 'all' ? 'AI 生成全部季' : 'AI 生成本季'
   });
-  const aiSummaryText = computed$9(() => {
-    if (!aiEnabled.value) return 'AI 联动已关闭'
-    if (!aiStatus.value.installed && !aiStatus.value.available) return aiStatus.value.message || '请先安装并启用 AI字幕生成(联动版)'
-    const parts = [];
-    if (aiSummary.value.in_progress) parts.push(`${aiSummary.value.in_progress} 个生成中`);
-    if (aiSummary.value.pending) parts.push(`${aiSummary.value.pending} 个排队`);
-    if (aiSummary.value.failed) parts.push(`${aiSummary.value.failed} 个失败`);
-    if (aiSummary.value.completed) parts.push(`${aiSummary.value.completed} 个完成`);
-    if (aiSummary.value.ignored) parts.push(`${aiSummary.value.ignored} 个忽略`);
-    if (aiSummary.value.no_audio) parts.push(`${aiSummary.value.no_audio} 个无音轨`);
-    if (aiSummary.value.cancelled) parts.push(`${aiSummary.value.cancelled} 个取消`);
-    return parts.length ? `AI：${parts.join(' / ')}` : (aiStatus.value.message || 'AI：暂无当前资源任务')
-  });
-  const aiDialogTasks = computed$9(() => {
+  const aiSummaryText = computed$b(() => buildAiSummaryText({
+    aiEnabled: aiEnabled.value,
+    aiAvailable: aiAvailable.value,
+    aiStatus: aiStatus.value,
+    aiSummary: aiSummary.value,
+  }));
+  const aiDialogTasks = computed$b(() => {
     const targetId = aiTaskDialogTarget.value?.id;
     if (targetId) {
       return (aiTaskData.value.tasks_by_target || {})[targetId] || []
     }
     return aiTaskData.value.tasks || []
   });
-  const aiDialogHasExistingTasks = computed$9(() => Boolean(aiDialogTasks.value.length));
-  const aiDialogActiveTasks = computed$9(() => aiDialogTasks.value.filter(task => isAiTaskActive(task)));
-  const aiDialogHasActiveTasks = computed$9(() => aiDialogActiveTasks.value.length > 0);
-  const aiDialogRestartableTasks = computed$9(() => aiDialogTasks.value.filter(task => isAiTaskRestartable(task)));
-  const aiDialogSelectedRestartableTasks = computed$9(() => {
+  const aiDialogHasExistingTasks = computed$b(() => Boolean(aiDialogTasks.value.length));
+  const aiDialogActiveTasks = computed$b(() => aiDialogTasks.value.filter(task => isAiTaskActive(task)));
+  const aiDialogHasActiveTasks = computed$b(() => aiDialogActiveTasks.value.length > 0);
+  const aiDialogRestartableTasks = computed$b(() => aiDialogTasks.value.filter(task => isAiTaskRestartable(task)));
+  const aiDialogSelectedRestartableTasks = computed$b(() => {
     const selected = new Set(aiSelectedTaskIds.value);
     return aiDialogRestartableTasks.value.filter(task => selected.has(task.task_id))
   });
-  const aiDialogSelectedAllowedTasks = computed$9(() => aiDialogSelectedRestartableTasks.value.filter(isAiTaskAllowed));
-  const aiDialogActionText = computed$9(() => (aiDialogHasExistingTasks.value ? '重新生成选中' : '生成'));
-  const aiDialogSourceLabel = computed$9(() => (aiDialogHasExistingTasks.value ? '重新生成来源' : '生成来源'));
-  const aiRestartSubtitleOptions = computed$9(() => {
+  const aiDialogSelectedAllowedTasks = computed$b(() => aiDialogSelectedRestartableTasks.value.filter(isAiTaskAllowed));
+  const aiDialogActionText = computed$b(() => (aiDialogHasExistingTasks.value ? '重新生成选中' : '生成'));
+  const aiDialogSourceLabel = computed$b(() => (aiDialogHasExistingTasks.value ? '重新生成来源' : '生成来源'));
+  const aiRestartSubtitleOptions = computed$b(() => {
     const target = aiTaskDialogTarget.value;
     const subtitles = target?.subtitles || [];
     return subtitles
@@ -757,7 +775,7 @@ function useAiTasks({
   }
 }
 
-const {computed: computed$8,ref: ref$b} = await importShared('vue');
+const {computed: computed$a,ref: ref$b} = await importShared('vue');
 
 
 const EMPTY_AUTO_TRANSFER_QUEUE = {
@@ -782,10 +800,10 @@ function useAutoTransferQueue({
   const autoQueueDialog = ref$b(false);
   let autoQueueTimer = null;
 
-  const autoQueueSummary = computed$8(() => autoTransferQueue.value?.summary || {});
-  const autoQueueTasks = computed$8(() => autoTransferQueue.value?.tasks || []);
-  const autoQueueActive = computed$8(() => Number(autoQueueSummary.value.active || 0) > 0);
-  const autoQueueSummaryText = computed$8(() => {
+  const autoQueueSummary = computed$a(() => autoTransferQueue.value?.summary || {});
+  const autoQueueTasks = computed$a(() => autoTransferQueue.value?.tasks || []);
+  const autoQueueActive = computed$a(() => Number(autoQueueSummary.value.active || 0) > 0);
+  const autoQueueSummaryText = computed$a(() => {
     const parts = [];
     if (autoQueueSummary.value.in_progress) parts.push(`${autoQueueSummary.value.in_progress} 个处理中`);
     if (autoQueueSummary.value.pending) parts.push(`${autoQueueSummary.value.pending} 个排队`);
@@ -838,7 +856,7 @@ function useAutoTransferQueue({
   }
 }
 
-const {computed: computed$7,ref: ref$a} = await importShared('vue');
+const {computed: computed$9,ref: ref$a} = await importShared('vue');
 
 
 const MATCH_HISTORY_PAGE_SIZE = 20;
@@ -873,7 +891,7 @@ function useMatchHistory({
   const selectedHistoryTargetIds = ref$a({});
   let historyTimelineTimer = null;
 
-  const matchHistorySummary = computed$7(() => {
+  const matchHistorySummary = computed$9(() => {
     if (!matchHistoryTotal.value) return '暂无已匹配字幕记录'
     return `${matchHistoryTotal.value} 部资源有外挂字幕记录`
   });
@@ -1492,7 +1510,7 @@ function providerProgressColor(state) {
   return 'default'
 }
 
-const {computed: computed$6,nextTick,ref: ref$8} = await importShared('vue');
+const {computed: computed$8,nextTick,ref: ref$8} = await importShared('vue');
 
 const ONLINE_PROVIDER_TIMEOUT_MS = 25000;
 const ONLINE_DOWNLOAD_TIMEOUT_MS = 35000;
@@ -1547,15 +1565,15 @@ function useOnlineSubtitles({
   let onlineSearchSeq = 0;
   let onlineDownloadSeq = 0;
 
-  const hasOnlineResults = computed$6(() => onlineResults.value.length > 0);
-  const filteredOnlineResults = computed$6(() => {
+  const hasOnlineResults = computed$8(() => onlineResults.value.length > 0);
+  const filteredOnlineResults = computed$8(() => {
     return onlineResults.value.filter(item => {
       const languageMatched = onlineLanguageFilter.value === 'all' || onlineResultLanguageFilterCategory(item) === onlineLanguageFilter.value;
       const providerMatched = onlineProviderFilter.value === 'all' || item.provider === onlineProviderFilter.value;
       return languageMatched && providerMatched
     })
   });
-  const onlineLanguageFilterItems = computed$6(() => {
+  const onlineLanguageFilterItems = computed$8(() => {
     const languageItems = [
       { title: '中文', value: 'chinese' },
       { title: '英文', value: 'english' },
@@ -1572,7 +1590,7 @@ function useOnlineSubtitles({
       ...languageItems.map(item => ({ title: `${item.title} ${counts[item.value] || 0}`, value: item.value })),
     ]
   });
-  const onlineProviderFilterItems = computed$6(() => {
+  const onlineProviderFilterItems = computed$8(() => {
     const counts = onlineResults.value.reduce((acc, item) => {
       const provider = item.provider || 'unknown';
       acc[provider] = (acc[provider] || 0) + 1;
@@ -1583,14 +1601,14 @@ function useOnlineSubtitles({
       ...onlineProviderItems.map(item => ({ title: `${item.title} ${counts[item.value] || 0}`, value: item.value })),
     ]
   });
-  const selectedOnlineResults = computed$6(() => {
+  const selectedOnlineResults = computed$8(() => {
     const picked = new Set(selectedOnlineResultIds.value);
     return onlineResults.value.filter(item => picked.has(onlineResultKey(item)) && isOnlineResultDownloadable(item))
   });
-  const canSubmitOnlineAiTranslate = computed$6(() => {
+  const canSubmitOnlineAiTranslate = computed$8(() => {
     return aiAvailable.value && selectedOnlineResults.value.length > 0 && selectedOnlineResults.value.every(isForeignOnlineResult)
   });
-  const onlineMessageSummary = computed$6(() => {
+  const onlineMessageSummary = computed$8(() => {
     const messages = onlineMessages.value || [];
     if (!messages.length) return ''
     const warnings = messages.filter(item => item.level !== 'info');
@@ -1603,19 +1621,19 @@ function useOnlineSubtitles({
     const extra = source.length > 3 ? `；另有 ${source.length - 3} 条提示` : '';
     return `${text}${extra}`
   });
-  const onlineMessageType = computed$6(() => {
+  const onlineMessageType = computed$8(() => {
     return (onlineMessages.value || []).some(item => item.level !== 'info') ? 'warning' : 'info'
   });
-  const onlineProviderProgressItems = computed$6(() => onlineSelectedProviders.value.map(provider => ({
+  const onlineProviderProgressItems = computed$8(() => onlineSelectedProviders.value.map(provider => ({
     provider,
     state: onlineProviderProgress.value[provider] || 'idle',
   })));
-  const onlineAiConfirmText = computed$6(() => {
+  const onlineAiConfirmText = computed$8(() => {
     const count = selectedOnlineResults.value.length;
     const targetCount = onlineTargets.value.length;
     return `将把当前范围的 ${targetCount} 个目标提交给 AI字幕生成(联动版)；已选择 ${count} 个外语结果，提交后会关闭在线搜索并打开 AI 状态。`
   });
-  const onlineBatchLabel = computed$6(() => {
+  const onlineBatchLabel = computed$8(() => {
     if (selectedMedia.value?.media_type !== 'tv') return '搜索在线字幕'
     if (selectedTargets.value.length) return `搜索选中 ${selectedTargets.value.length} 集`
     return selectedSeason.value === 'all' ? '搜索全部季字幕包' : '搜索本季字幕包'
@@ -2018,7 +2036,7 @@ function useOnlineSubtitles({
   }
 }
 
-const {computed: computed$5,ref: ref$7} = await importShared('vue');
+const {computed: computed$7,ref: ref$7} = await importShared('vue');
 
 
 const DEFAULT_STATUS = {
@@ -2077,8 +2095,8 @@ function usePluginStatus({
   const refreshing = ref$7(false);
   let indexRefreshTimer = null;
 
-  const indexStatus = computed$5(() => status.value?.index || {});
-  const indexSummary = computed$5(() => {
+  const indexStatus = computed$7(() => status.value?.index || {});
+  const indexSummary = computed$7(() => {
     if (!indexStatus.value.ready) return '媒体库清单尚未缓存'
     const parts = [
       `${indexStatus.value.media_count || 0} 个媒体`,
@@ -2087,18 +2105,18 @@ function usePluginStatus({
     if (indexStatus.value.updated_at) parts.push(`更新于 ${indexStatus.value.updated_at}`);
     return parts.join(' · ')
   });
-  const archiveStatus = computed$5(() => status.value?.archive_support || { zip: true, rar: false, rar_tool: '', rar_python: false });
-  const rarAvailable = computed$5(() => archiveStatus.value.rar === true);
-  const rarPythonAvailable = computed$5(() => archiveStatus.value.rar_python === true);
-  const rarDependencyStatus = computed$5(() => archiveStatus.value.dependency_status || {});
-  const timelineStatus = computed$5(() => status.value?.timeline_fixer || { available: false, modules: {} });
-  const timelineAvailable = computed$5(() => timelineStatus.value.available === true);
-  const timelineConfiguredMaxOffset = computed$5(() => {
+  const archiveStatus = computed$7(() => status.value?.archive_support || { zip: true, rar: false, rar_tool: '', rar_python: false });
+  const rarAvailable = computed$7(() => archiveStatus.value.rar === true);
+  const rarPythonAvailable = computed$7(() => archiveStatus.value.rar_python === true);
+  const rarDependencyStatus = computed$7(() => archiveStatus.value.dependency_status || {});
+  const timelineStatus = computed$7(() => status.value?.timeline_fixer || { available: false, modules: {} });
+  const timelineAvailable = computed$7(() => timelineStatus.value.available === true);
+  const timelineConfiguredMaxOffset = computed$7(() => {
     const value = Number(timelineStatus.value.configured_max_offset_seconds || timelineStatus.value.max_offset_seconds || 120);
     return Number.isFinite(value) && value > 0 ? value : 120
   });
-  const timelineNeedsRiskyConfirm = computed$5(() => timelineConfiguredMaxOffset.value > 120);
-  const timelineMissing = computed$5(() => {
+  const timelineNeedsRiskyConfirm = computed$7(() => timelineConfiguredMaxOffset.value > 120);
+  const timelineMissing = computed$7(() => {
     const missing = [];
     if (timelineStatus.value.ffmpeg === false) missing.push('ffmpeg');
     if (timelineStatus.value.ffprobe === false) missing.push('ffprobe');
@@ -2236,7 +2254,7 @@ function usePluginStatus({
   }
 }
 
-const {computed: computed$4,ref: ref$6} = await importShared('vue');
+const {computed: computed$6,ref: ref$6} = await importShared('vue');
 
 
 function useTargets({
@@ -2261,14 +2279,14 @@ function useTargets({
   const lockedTargetIds = ref$6([]);
   const expandedDetailTargetIds = ref$6([]);
 
-  const visibleTargets = computed$4(() => targets.value || []);
-  const selectedTargets = computed$4(() => {
+  const visibleTargets = computed$6(() => targets.value || []);
+  const selectedTargets = computed$6(() => {
     const picked = new Set(selectedTargetIds.value || []);
     return visibleTargets.value.filter(item => picked.has(item.id))
   });
-  const targetById = computed$4(() => new Map(visibleTargets.value.map(target => [target.id, target])));
-  const unlockedVisibleTargets = computed$4(() => visibleTargets.value.filter(item => !isLocked(item.id) && item.writable !== false));
-  const allVisibleSelected = computed$4(() => {
+  const targetById = computed$6(() => new Map(visibleTargets.value.map(target => [target.id, target])));
+  const unlockedVisibleTargets = computed$6(() => visibleTargets.value.filter(item => !isLocked(item.id) && item.writable !== false));
+  const allVisibleSelected = computed$6(() => {
     if (!visibleTargets.value.length) return false
     const picked = new Set(selectedTargetIds.value || []);
     return visibleTargets.value.every(item => picked.has(item.id))
@@ -2426,7 +2444,7 @@ function useTargets({
   }
 }
 
-const {computed: computed$3,ref: ref$5} = await importShared('vue');
+const {computed: computed$5,ref: ref$5} = await importShared('vue');
 
 
 const EMPTY_TIMELINE_TASK_DATA = {
@@ -2462,7 +2480,7 @@ function useTimelineTasks({
   const timelineTaskData = ref$5(createEmptyTimelineTaskData());
   let timelineTaskTimer = null;
 
-  const selectedTimelineTargets = computed$3(() => selectedSubtitleTargets.value.filter(target => !isStreamTarget(target)));
+  const selectedTimelineTargets = computed$5(() => selectedSubtitleTargets.value.filter(target => !isStreamTarget(target)));
 
   function applyTimelineTaskData(data) {
     timelineTaskData.value = data || timelineTaskData.value;
@@ -2580,7 +2598,7 @@ function useTimelineTasks({
   }
 }
 
-const {computed: computed$2,ref: ref$4} = await importShared('vue');
+const {computed: computed$4,ref: ref$4} = await importShared('vue');
 
 
 function useUploadPreview({
@@ -2617,34 +2635,34 @@ function useUploadPreview({
   const batchLanguageSuffix = ref$4('');
   const lastWritten = ref$4([]);
 
-  const uploadTargets = computed$2(() => uploadScopeTargets.value.filter(item => !isLocked(item.id) && item.writable !== false));
-  const batchUploadTargets = computed$2(() => {
+  const uploadTargets = computed$4(() => uploadScopeTargets.value.filter(item => !isLocked(item.id) && item.writable !== false));
+  const batchUploadTargets = computed$4(() => {
     const base = selectedTargets.value.length ? selectedTargets.value : visibleTargets.value;
     return base.filter(item => !isLocked(item.id) && item.writable !== false)
   });
-  const targetSelectItems = computed$2(() => uploadTargets.value.map(target => ({
+  const targetSelectItems = computed$4(() => uploadTargets.value.map(target => ({
     title: compactTargetName(target),
     value: target.id,
   })));
-  const canPrepare = computed$2(() => uploadTargets.value.length > 0 && files.value.length > 0);
-  const canApply = computed$2(() => {
+  const canPrepare = computed$4(() => uploadTargets.value.length > 0 && files.value.length > 0);
+  const canApply = computed$4(() => {
     const items = selectedPreviewItems.value;
     return items.length > 0 && items.every(item => item.target_id)
   });
-  const hasPreviewItems = computed$2(() => (preview.value?.items || []).length > 0);
-  const selectedPreviewItems = computed$2(() => (preview.value?.items || []).filter(item => item.selected !== false));
-  const selectedPreviewTargets = computed$2(() => {
+  const hasPreviewItems = computed$4(() => (preview.value?.items || []).length > 0);
+  const selectedPreviewItems = computed$4(() => (preview.value?.items || []).filter(item => item.selected !== false));
+  const selectedPreviewTargets = computed$4(() => {
     const targetMap = new Map(uploadTargets.value.map(target => [target.id, target]));
     return selectedPreviewItems.value
       .map(item => targetMap.get(item.target_id))
       .filter(Boolean)
   });
-  const allSelectedPreviewTargetsAreStream = computed$2(() => {
+  const allSelectedPreviewTargetsAreStream = computed$4(() => {
     const items = selectedPreviewTargets.value;
     return items.length > 0 && items.every(isStreamTarget)
   });
-  const hasSelectedPreviewStreamTargets = computed$2(() => selectedPreviewTargets.value.some(isStreamTarget));
-  const timelineEnabledForApply = computed$2(() => fixTimeline.value && timelineAvailable.value && !allSelectedPreviewTargetsAreStream.value);
+  const hasSelectedPreviewStreamTargets = computed$4(() => selectedPreviewTargets.value.some(isStreamTarget));
+  const timelineEnabledForApply = computed$4(() => fixTimeline.value && timelineAvailable.value && !allSelectedPreviewTargetsAreStream.value);
 
   function clearUploadPreviewState() {
     preview.value = null;
@@ -2938,6 +2956,8 @@ const _hoisted_8$4 = {
   class: "empty-state"
 };
 
+const {computed: computed$3} = await importShared('vue');
+
 
 const _sfc_main$9 = {
   __name: 'AiTaskDialog',
@@ -2978,9 +2998,11 @@ const _sfc_main$9 = {
 ],
   setup(__props) {
 
+const props = __props;
 
 
 
+const aiStatusDetail = computed$3(() => buildAiStatusDetail(props.aiStatus));
 
 return (_ctx, _cache) => {
   const _component_VBtn = _resolveComponent$9("VBtn");
@@ -3075,7 +3097,7 @@ return (_ctx, _cache) => {
                     class: "mb-4",
                     type: "warning",
                     variant: "tonal",
-                    text: __props.aiStatus.message || '请先安装并启用 AI字幕生成(联动版)'
+                    text: aiStatusDetail.value
                   }, null, 8, ["text"]))
                 : _createCommentVNode$8("", true),
               (__props.aiAvailable && (__props.aiTaskDialogTarget || __props.aiDialogTasks.length))
@@ -3175,7 +3197,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const AiTaskDialog = /*#__PURE__*/_export_sfc(_sfc_main$9, [['__scopeId',"data-v-72bb0a47"]]);
+const AiTaskDialog = /*#__PURE__*/_export_sfc(_sfc_main$9, [['__scopeId',"data-v-6ca4c763"]]);
 
 const {createElementVNode:_createElementVNode$8,toDisplayString:_toDisplayString$7,createTextVNode:_createTextVNode$6,resolveComponent:_resolveComponent$8,withCtx:_withCtx$6,createVNode:_createVNode$7,renderList:_renderList$5,Fragment:_Fragment$5,openBlock:_openBlock$8,createElementBlock:_createElementBlock$7,createCommentVNode:_createCommentVNode$7,normalizeClass:_normalizeClass$6,createBlock:_createBlock$8} = await importShared('vue');
 
@@ -3821,7 +3843,7 @@ const _hoisted_1$5 = { class: "search-head" };
 const _hoisted_2$4 = { class: "section-kicker" };
 const _hoisted_3$4 = { class: "search-bar" };
 
-const {computed: computed$1} = await importShared('vue');
+const {computed: computed$2} = await importShared('vue');
 
 
 
@@ -3849,11 +3871,11 @@ const props = __props;
 
 const emit = __emit;
 
-const searchKeywordModel = computed$1({
+const searchKeywordModel = computed$2({
   get: () => props.searchKeyword,
   set: value => emit('update:searchKeyword', value || ''),
 });
-const mediaTypeModel = computed$1({
+const mediaTypeModel = computed$2({
   get: () => props.mediaType,
   set: value => emit('update:mediaType', value || 'all'),
 });
@@ -4453,8 +4475,7 @@ const {resolveComponent:_resolveComponent$3,openBlock:_openBlock$3,createBlock:_
 
 const _hoisted_1$3 = { class: "ai-status-orb" };
 
-const {ref: ref$3} = await importShared('vue');
-
+const {computed: computed$1,ref: ref$3} = await importShared('vue');
 
 
 const _sfc_main$3 = {
@@ -4470,11 +4491,12 @@ const _sfc_main$3 = {
   emits: ['open'],
   setup(__props, { expose: __expose }) {
 
-
+const props = __props;
 
 
 
 const stripRef = ref$3(null);
+const aiStatusDetail = computed$1(() => buildAiStatusDetail(props.aiStatus));
 
 __expose({
   scrollIntoView(options) {
@@ -4513,14 +4535,14 @@ return (_ctx, _cache) => {
               }))
         ]),
         _createElementVNode$3("strong", null, _toDisplayString$2(__props.aiSummaryText), 1),
-        _createElementVNode$3("em", null, _toDisplayString$2(__props.aiAvailable ? '点击查看当前资源任务' : __props.aiStatus.message), 1)
+        _createElementVNode$3("em", null, _toDisplayString$2(__props.aiAvailable ? '点击查看当前资源任务' : aiStatusDetail.value), 1)
       ], 2))
     : _createCommentVNode$3("", true)
 }
 }
 
 };
-const AiStatusStrip = /*#__PURE__*/_export_sfc(_sfc_main$3, [['__scopeId',"data-v-ca9194c5"]]);
+const AiStatusStrip = /*#__PURE__*/_export_sfc(_sfc_main$3, [['__scopeId',"data-v-f2a6d5c4"]]);
 
 const {resolveComponent:_resolveComponent$2,createVNode:_createVNode$2,createElementVNode:_createElementVNode$2,openBlock:_openBlock$2,createElementBlock:_createElementBlock$2,createCommentVNode:_createCommentVNode$2,toDisplayString:_toDisplayString$1,createTextVNode:_createTextVNode$1,withCtx:_withCtx$1,renderList:_renderList$1,Fragment:_Fragment$1,normalizeClass:_normalizeClass$2,createBlock:_createBlock$2,mergeProps:_mergeProps$1,withModifiers:_withModifiers} = await importShared('vue');
 
