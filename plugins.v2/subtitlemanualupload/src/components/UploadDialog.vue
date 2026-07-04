@@ -245,9 +245,9 @@ function onPickFiles(event) {
 
 <style scoped>
 .upload-dialog {
-  background:
-    radial-gradient(circle at 10% 0%, rgba(215, 167, 98, 0.2), transparent 28%),
-    #fffaf2;
+  background: var(--smu-dialog-bg);
+  color: var(--smu-text);
+  backdrop-filter: blur(16px);
 }
 
 .dialog-title {
@@ -259,7 +259,7 @@ function onPickFiles(event) {
 
 .dialog-title p {
   margin: 4px 0 0;
-  color: #687873;
+  color: var(--smu-text-muted);
   font-size: 12px;
   font-weight: 400;
 }
@@ -271,7 +271,7 @@ function onPickFiles(event) {
 .dialog-actions-top {
   flex-wrap: wrap;
   gap: 8px;
-  background: rgba(255, 250, 242, 0.96);
+  background: var(--smu-dialog-bar-bg);
 }
 
 .timeline-action {
@@ -285,24 +285,24 @@ function onPickFiles(event) {
   gap: 10px;
   justify-items: center;
   padding: 30px 18px;
-  border: 1px dashed rgba(151, 101, 42, 0.48);
+  border: 1px dashed var(--smu-border-active);
   border-radius: 24px;
-  background: linear-gradient(180deg, rgba(255, 250, 239, 0.95), rgba(241, 236, 225, 0.9));
+  background: var(--smu-card-bg-soft);
   text-align: center;
   transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
 }
 
 .dropzone.dragging {
   transform: translateY(-1px);
-  border-color: rgba(169, 105, 26, 0.9);
-  background: #fff1d3;
+  border-color: var(--smu-accent);
+  background: var(--smu-card-bg-active);
 }
 
 .dropzone-icon {
   padding: 6px 10px;
   border-radius: 999px;
-  background: #314840;
-  color: #fff9ed;
+  background: var(--smu-accent);
+  color: var(--smu-accent-text);
   font-size: 12px;
   font-weight: 900;
 }
@@ -317,7 +317,7 @@ function onPickFiles(event) {
 .file-row span,
 .subtitle-source span,
 .output-name span {
-  color: #687873;
+  color: var(--smu-text-muted);
   font-size: 12px;
 }
 
@@ -335,12 +335,12 @@ function onPickFiles(event) {
 .support-row span {
   padding: 5px 9px;
   border-radius: 999px;
-  background: #ece8df;
+  background: var(--smu-card-bg-soft);
 }
 
 .support-row span.ok {
-  background: #e2f1e9;
-  color: #2f7d62;
+  background: var(--smu-success-soft);
+  color: var(--smu-success-text);
 }
 
 .file-list,
@@ -352,9 +352,9 @@ function onPickFiles(event) {
 
 .file-row,
 .preview-row {
-  border: 1px solid rgba(91, 109, 100, 0.14);
+  border: 1px solid var(--smu-border);
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.72);
+  background: var(--smu-card-bg);
 }
 
 .file-row {
@@ -381,7 +381,7 @@ function onPickFiles(event) {
 }
 
 .section-kicker {
-  color: #8a6b3f;
+  color: var(--smu-accent);
   font-size: 12px;
   font-weight: 900;
   letter-spacing: 0.12em;

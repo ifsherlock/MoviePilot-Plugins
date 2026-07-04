@@ -292,10 +292,10 @@ defineEmits([
 }
 
 .global-history-card {
-  border: 1px solid rgba(91, 109, 100, 0.14);
+  border: 1px solid var(--smu-border);
   border-radius: 22px;
   overflow: hidden;
-  background: rgba(255, 255, 255, 0.76);
+  background: var(--smu-card-bg);
 }
 
 .global-history-head {
@@ -315,8 +315,8 @@ defineEmits([
   position: relative;
   overflow: hidden;
   border-radius: 20px;
-  background: linear-gradient(135deg, #2f463f, #6d887b);
-  color: #fff8e8;
+  background: var(--smu-poster-bg);
+  color: var(--smu-accent);
   font-weight: 900;
 }
 
@@ -346,7 +346,7 @@ defineEmits([
 }
 
 .media-type {
-  color: #d79333;
+  color: var(--smu-accent);
   font-size: 12px;
   font-weight: 900;
   letter-spacing: 0;
@@ -363,7 +363,7 @@ defineEmits([
 
 .media-copy p {
   margin: 0;
-  color: #687873;
+  color: var(--smu-text-muted);
   font-size: 13px;
 }
 
@@ -380,9 +380,9 @@ defineEmits([
   align-items: center;
   justify-content: space-between;
   padding: 10px 12px;
-  border: 1px solid rgba(91, 109, 100, 0.12);
+  border: 1px solid var(--smu-border);
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.58);
+  background: var(--smu-card-bg-soft);
 }
 
 .history-bulk-copy {
@@ -390,12 +390,12 @@ defineEmits([
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
-  color: #53655f;
+  color: var(--smu-text-muted);
   font-size: 12px;
 }
 
 .history-bulk-copy strong {
-  color: #263a33;
+  color: var(--smu-text);
   font-size: 13px;
 }
 
@@ -413,9 +413,9 @@ defineEmits([
 
 .history-season-node {
   overflow: hidden;
-  border: 1px solid rgba(91, 109, 100, 0.13);
+  border: 1px solid var(--smu-border);
   border-radius: 14px;
-  background: rgba(255, 255, 255, 0.62);
+  background: var(--smu-card-bg);
 }
 
 .history-season-row,
@@ -436,7 +436,7 @@ defineEmits([
   align-items: center;
   border: 0;
   background: transparent;
-  color: #30443f;
+  color: var(--smu-text);
   text-align: left;
 }
 
@@ -452,7 +452,7 @@ defineEmits([
 .history-season-toggle span,
 .history-episode-toggle small {
   flex: 0 0 auto;
-  color: #6f7f79;
+  color: var(--smu-text-muted);
   font-size: 12px;
 }
 
@@ -460,8 +460,8 @@ defineEmits([
   flex: 0 0 auto;
   padding: 2px 7px;
   border-radius: 999px;
-  background: rgba(255, 244, 218, 0.9);
-  color: #8a5f23;
+  background: var(--smu-accent-soft);
+  color: var(--smu-accent);
   font-size: 12px;
   font-style: normal;
   font-weight: 800;
@@ -479,7 +479,7 @@ defineEmits([
 
 .history-episode-node {
   border-radius: 12px;
-  background: rgba(245, 241, 232, 0.52);
+  background: var(--smu-card-bg-soft);
 }
 
 .history-subtitle-children {
@@ -490,7 +490,7 @@ defineEmits([
 
 .episode-path {
   overflow-wrap: anywhere;
-  color: #53655f;
+  color: var(--smu-text-muted);
   font-size: 12px;
 }
 
@@ -504,8 +504,8 @@ defineEmits([
 .history-status span {
   padding: 3px 8px;
   border-radius: 999px;
-  background: rgba(232, 237, 240, 0.72);
-  color: #53655f;
+  background: var(--smu-card-bg-soft);
+  color: var(--smu-text-muted);
   font-size: 12px;
 }
 
@@ -526,7 +526,7 @@ defineEmits([
   align-items: center;
   padding: 10px 12px;
   border-radius: 14px;
-  background: rgba(245, 241, 232, 0.68);
+  background: var(--smu-card-bg-soft);
 }
 
 .subtitle-history-copy {
@@ -541,7 +541,7 @@ defineEmits([
 }
 
 .subtitle-history-item span {
-  color: #687873;
+  color: var(--smu-text-muted);
   font-size: 12px;
 }
 
@@ -552,9 +552,9 @@ defineEmits([
   justify-content: flex-end;
   gap: 4px;
   padding: 4px;
-  border: 1px solid rgba(91, 109, 100, 0.14);
+  border: 1px solid var(--smu-border);
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.78);
+  background: var(--smu-card-bg);
 }
 
 .subtitle-history-actions .v-btn {
@@ -564,15 +564,15 @@ defineEmits([
 .empty-state {
   padding: 28px 18px;
   border-radius: 22px;
-  background: rgba(255, 255, 255, 0.58);
-  color: #687873;
+  background: var(--smu-card-bg-soft);
+  color: var(--smu-text-muted);
   text-align: center;
 }
 
 .compact-empty {
   padding: 16px;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.58);
+  background: var(--smu-card-bg-soft);
 }
 
 .pager-row {
@@ -581,7 +581,7 @@ defineEmits([
   gap: 12px;
   align-items: center;
   padding: 4px 0 8px;
-  color: #687873;
+  color: var(--smu-text-muted);
   font-size: 13px;
 }
 

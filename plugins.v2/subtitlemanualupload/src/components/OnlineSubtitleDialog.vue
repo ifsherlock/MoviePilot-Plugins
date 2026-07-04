@@ -338,10 +338,9 @@ defineEmits([
 
 <style scoped>
 .online-dialog {
-  background:
-    radial-gradient(circle at 12% 0%, rgba(80, 126, 107, 0.14), transparent 30%),
-    radial-gradient(circle at 88% 18%, rgba(214, 160, 82, 0.16), transparent 30%),
-    #fffaf2;
+  background: var(--smu-dialog-bg);
+  color: var(--smu-text);
+  backdrop-filter: blur(16px);
 }
 
 .dialog-title {
@@ -353,7 +352,7 @@ defineEmits([
 
 .dialog-title p {
   margin: 4px 0 0;
-  color: #687873;
+  color: var(--smu-text-muted);
   font-size: 12px;
   font-weight: 400;
 }
@@ -370,7 +369,7 @@ defineEmits([
   grid-template-columns: minmax(220px, 1fr) minmax(220px, 0.7fr) auto;
   gap: 12px;
   padding: 14px 18px;
-  background: rgba(255, 250, 242, 0.96);
+  background: var(--smu-dialog-bar-bg);
 }
 
 .online-message-summary {
@@ -401,9 +400,9 @@ defineEmits([
 .manual-links-panel {
   min-width: 0;
   padding: 14px;
-  border: 1px solid rgba(91, 109, 100, 0.14);
+  border: 1px solid var(--smu-border);
   border-radius: 22px;
-  background: rgba(255, 255, 255, 0.7);
+  background: var(--smu-card-bg);
 }
 
 .online-panel-head {
@@ -424,12 +423,12 @@ defineEmits([
 .manual-provider-head span,
 .online-result-meta,
 .online-result-main p {
-  color: #687873;
+  color: var(--smu-text-muted);
   font-size: 12px;
 }
 
 .section-kicker {
-  color: #8a6b3f;
+  color: var(--smu-accent);
   font-size: 12px;
   font-weight: 900;
   letter-spacing: 0.12em;
@@ -448,15 +447,15 @@ defineEmits([
 }
 
 .online-provider-filter-active {
-  background: #2f604f !important;
-  color: #fff !important;
+  background: var(--smu-accent) !important;
+  color: var(--smu-accent-text) !important;
 }
 
 .online-loading {
   padding: 24px;
   border-radius: 18px;
-  background: #f3eadb;
-  color: #53655f;
+  background: var(--smu-card-bg-soft);
+  color: var(--smu-text-muted);
   text-align: center;
 }
 
@@ -474,19 +473,19 @@ defineEmits([
   gap: 10px;
   align-items: center;
   padding: 12px;
-  border: 1px solid rgba(91, 109, 100, 0.12);
+  border: 1px solid var(--smu-border);
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.76);
+  background: var(--smu-card-bg);
 }
 
 .online-result-card.active {
-  border-color: rgba(150, 99, 40, 0.5);
-  background: #fff4da;
+  border-color: var(--smu-border-active);
+  background: var(--smu-card-bg-active);
 }
 
 .online-result-card.disabled {
   opacity: 0.72;
-  background: rgba(245, 241, 232, 0.72);
+  background: var(--smu-card-bg-disabled);
 }
 
 .online-result-main {
@@ -507,10 +506,10 @@ defineEmits([
 
 .online-manual-badge {
   padding: 1px 8px;
-  border: 1px solid rgba(150, 99, 40, 0.24);
+  border: 1px solid var(--smu-border-active);
   border-radius: 999px;
-  background: rgba(150, 99, 40, 0.1);
-  color: #7c4d18;
+  background: var(--smu-accent-soft);
+  color: var(--smu-accent);
   font-weight: 800;
 }
 
@@ -519,7 +518,7 @@ defineEmits([
 }
 
 .online-match-detail {
-  color: #8a6b3f !important;
+  color: var(--smu-accent) !important;
 }
 
 .online-open-link,
@@ -530,8 +529,8 @@ defineEmits([
   min-height: 28px;
   padding: 4px 10px;
   border-radius: 999px;
-  background: #e7eee8;
-  color: #2f604f;
+  background: var(--smu-accent-soft);
+  color: var(--smu-accent);
   font-size: 12px;
   font-weight: 900;
   text-decoration: none;
@@ -550,7 +549,7 @@ defineEmits([
   display: grid;
   gap: 8px;
   padding: 10px 0;
-  border-top: 1px solid rgba(91, 109, 100, 0.12);
+  border-top: 1px solid var(--smu-border);
 }
 
 .manual-provider-head {
@@ -567,8 +566,8 @@ defineEmits([
 .empty-state {
   padding: 28px 18px;
   border-radius: 22px;
-  background: rgba(255, 255, 255, 0.58);
-  color: #687873;
+  background: var(--smu-card-bg-soft);
+  color: var(--smu-text-muted);
   text-align: center;
 }
 

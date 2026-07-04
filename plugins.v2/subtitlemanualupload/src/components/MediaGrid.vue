@@ -80,9 +80,9 @@ defineEmits([
   width: 100%;
   min-height: 112px;
   padding: 12px;
-  border: 1px solid rgba(83, 103, 94, 0.16);
+  border: 1px solid var(--smu-border);
   border-radius: 24px;
-  background: rgba(255, 255, 255, 0.76);
+  background: var(--smu-card-bg);
   color: inherit;
   text-align: left;
   content-visibility: auto;
@@ -92,8 +92,8 @@ defineEmits([
 
 .media-card:hover {
   transform: translateY(-2px);
-  border-color: rgba(159, 107, 45, 0.45);
-  background: #fff8ea;
+  border-color: var(--smu-border-active);
+  background: var(--smu-card-bg-hover);
 }
 
 .poster-frame {
@@ -103,15 +103,15 @@ defineEmits([
   place-items: center;
   overflow: hidden;
   border-radius: 16px;
-  background: #30463f;
-  color: #fffaf0;
+  background: var(--smu-poster-bg);
+  color: var(--smu-accent);
 }
 
 .poster-frame img {
   display: block;
   width: 100%;
   height: 100%;
-  background: #30463f;
+  background: var(--smu-poster-bg);
   object-fit: cover;
 }
 
@@ -127,12 +127,12 @@ defineEmits([
 
 .media-copy p {
   margin: 0;
-  color: #687873;
+  color: var(--smu-text-muted);
   font-size: 13px;
 }
 
 .media-type {
-  color: #8a6b3f;
+  color: var(--smu-accent);
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.13em;
@@ -145,15 +145,15 @@ defineEmits([
   gap: 12px;
   align-items: center;
   padding: 4px 0 8px;
-  color: #687873;
+  color: var(--smu-text-muted);
   font-size: 13px;
 }
 
 .empty-state {
   padding: 28px 18px;
   border-radius: 22px;
-  background: rgba(255, 255, 255, 0.58);
-  color: #687873;
+  background: var(--smu-card-bg-soft);
+  color: var(--smu-text-muted);
   text-align: center;
 }
 </style>

@@ -2,6 +2,12 @@
 
 MoviePilot V2 插件，提供手动上传字幕并匹配改名的页面。
 
+## v0.1.79 更新
+
+- 前端改为跟随 MoviePilot 主站 Vuetify 主题变量，适配浅色、深色、幻紫和透明主题。
+- 修复字幕匹配弹窗、上传列表、资源卡片和历史记录在深色/透明模式下仍显示浅色块的问题。
+- 当前本地测试包名为 `subtitlemanualupload_v0.1.79.zip`；合入并执行 Release 后对应 tag 为 `SubtitleManualUpload_v0.1.79`。
+
 ## v0.1.77 更新
 
 - 修复 MoviePilot 工作流「调用插件」动作接口因 `func` 方法对象无法序列化而返回 500，导致动作下拉显示 `No data available` 的问题。

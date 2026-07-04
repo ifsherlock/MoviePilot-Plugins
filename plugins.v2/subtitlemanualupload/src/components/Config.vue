@@ -1,5 +1,6 @@
 <script setup>
 import { onMounted, ref } from 'vue'
+import '../styles/theme.css'
 
 const props = defineProps({
   initialConfig: {
@@ -555,10 +556,10 @@ onMounted(() => {
 }
 
 .config-card {
-  border: 1px solid rgba(127, 151, 185, 0.18);
-  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid var(--smu-border);
+  background: var(--smu-card-bg-strong);
   backdrop-filter: blur(12px);
-  box-shadow: 0 18px 50px rgba(30, 63, 108, 0.08);
+  box-shadow: var(--smu-shadow);
 }
 
 .config-grid {
@@ -579,7 +580,7 @@ onMounted(() => {
 }
 
 .config-section-title {
-  color: #24362f;
+  color: var(--smu-text);
   font-size: 15px;
   font-weight: 800;
   letter-spacing: 0.04em;
@@ -587,7 +588,7 @@ onMounted(() => {
 
 .config-section p {
   margin: 4px 0 0;
-  color: #687873;
+  color: var(--smu-text-muted);
   font-size: 12px;
 }
 

@@ -67,8 +67,9 @@ defineEmits([
 <style scoped>
 .auto-queue-card {
   margin-bottom: 14px;
-  border: 1px solid rgba(192, 126, 42, 0.18);
-  background: linear-gradient(135deg, rgba(255, 246, 226, 0.92), rgba(255, 255, 255, 0.78));
+  border: 1px solid var(--smu-border);
+  background: var(--smu-card-bg-strong);
+  color: var(--smu-text);
 }
 
 .dialog-title {
@@ -80,7 +81,7 @@ defineEmits([
 
 .dialog-title p {
   margin: 4px 0 0;
-  color: #687873;
+  color: var(--smu-text-muted);
   font-size: 12px;
   font-weight: 400;
 }
@@ -102,7 +103,7 @@ defineEmits([
   justify-content: flex-start;
   flex-wrap: wrap;
   margin-top: 10px;
-  color: rgba(35, 42, 39, 0.62);
+  color: var(--smu-text-muted);
   font-size: 0.82rem;
 }
 
@@ -115,35 +116,35 @@ defineEmits([
 .auto-queue-row {
   border-radius: 14px;
   padding: 8px 10px;
-  background: rgba(255, 255, 255, 0.74);
+  background: var(--smu-card-bg);
 }
 
 .auto-queue-row span {
-  color: rgba(35, 42, 39, 0.62);
+  color: var(--smu-text-muted);
   font-size: 0.82rem;
 }
 
 .auto-queue-failed {
-  border: 1px solid rgba(198, 58, 58, 0.24);
+  border: 1px solid rgba(var(--v-theme-error), 0.30);
 }
 
 .auto-queue-in_progress,
 .auto-queue-pending {
-  border: 1px solid rgba(192, 126, 42, 0.24);
+  border: 1px solid rgba(var(--v-theme-warning), 0.30);
 }
 
 .empty-state {
   padding: 28px 18px;
   border-radius: 22px;
-  background: rgba(255, 255, 255, 0.58);
-  color: #687873;
+  background: var(--smu-card-bg-soft);
+  color: var(--smu-text-muted);
   text-align: center;
 }
 
 .compact-empty {
   padding: 16px;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.58);
+  background: var(--smu-card-bg-soft);
 }
 
 @media (max-width: 720px) {

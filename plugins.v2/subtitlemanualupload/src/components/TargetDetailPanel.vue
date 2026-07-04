@@ -408,9 +408,9 @@ defineExpose({
 
 <style scoped>
 .glass-card {
-  border: 1px solid rgba(83, 103, 94, 0.16);
-  background: rgba(255, 252, 245, 0.88);
-  box-shadow: 0 24px 70px rgba(43, 62, 58, 0.1);
+  border: 1px solid var(--smu-border);
+  background: var(--smu-card-bg-strong);
+  box-shadow: var(--smu-shadow);
   backdrop-filter: blur(14px);
 }
 
@@ -432,7 +432,7 @@ defineExpose({
 
 .detail-head p {
   margin: 8px 0 0;
-  color: #64746f;
+  color: var(--smu-text-muted);
   line-height: 1.7;
 }
 
@@ -451,8 +451,8 @@ defineExpose({
   place-items: center;
   border: 0;
   border-radius: 999px;
-  background: #e8ded0;
-  color: #30443f;
+  background: var(--smu-card-bg-soft);
+  color: var(--smu-text);
 }
 
 .mini-poster {
@@ -462,8 +462,8 @@ defineExpose({
   place-items: center;
   overflow: hidden;
   border-radius: 14px;
-  background: #30463f;
-  color: #fffaf0;
+  background: var(--smu-poster-bg);
+  color: var(--smu-accent);
   font-size: 12px;
 }
 
@@ -471,12 +471,12 @@ defineExpose({
   display: block;
   width: 100%;
   height: 100%;
-  background: #30463f;
+  background: var(--smu-poster-bg);
   object-fit: cover;
 }
 
 .section-kicker {
-  color: #8a6b3f;
+  color: var(--smu-accent);
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.13em;
@@ -502,18 +502,18 @@ defineExpose({
   align-items: center;
   min-width: max-content;
   padding: 10px 16px;
-  border: 1px solid rgba(91, 109, 100, 0.16);
+  border: 1px solid var(--smu-border);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.74);
+  background: var(--smu-card-bg);
   color: inherit;
   text-align: left;
   white-space: nowrap;
 }
 
 .season-card.active {
-  border-color: rgba(150, 99, 40, 0.58);
-  background: #fff4da;
-  box-shadow: inset 0 -3px 0 #b47a35;
+  border-color: var(--smu-border-active);
+  background: var(--smu-card-bg-active);
+  box-shadow: inset 0 -3px 0 var(--smu-accent);
 }
 
 .season-card span {
@@ -521,7 +521,7 @@ defineExpose({
 }
 
 .season-card strong {
-  color: #6d7b76;
+  color: var(--smu-text-muted);
   font-size: 13px;
 }
 
@@ -536,11 +536,11 @@ defineExpose({
   align-items: center;
   padding: 12px;
   border-radius: 20px;
-  background: rgba(238, 232, 219, 0.58);
+  background: var(--smu-card-bg-soft);
 }
 
 .online-batch-btn {
-  box-shadow: 0 12px 28px rgba(47, 111, 82, 0.22);
+  box-shadow: 0 12px 28px rgba(var(--v-theme-primary), 0.22);
   font-weight: 900;
 }
 
@@ -556,22 +556,22 @@ defineExpose({
   gap: 10px;
   align-items: center;
   padding: 10px 12px;
-  border: 1px solid rgba(91, 109, 100, 0.14);
+  border: 1px solid var(--smu-border);
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.76);
+  background: var(--smu-card-bg);
 }
 
 .episode-row.locked {
-  background: rgba(238, 228, 207, 0.68);
+  background: var(--smu-card-bg-disabled);
 }
 
 .episode-expand-btn {
   min-width: 34px;
   width: 34px;
   height: 34px;
-  border: 1px solid rgba(91, 109, 100, 0.16);
-  background: rgba(232, 237, 240, 0.82);
-  color: #53655f;
+  border: 1px solid var(--smu-border);
+  background: var(--smu-card-bg-soft);
+  color: var(--smu-text-muted);
 }
 
 .episode-expanded {
@@ -580,7 +580,7 @@ defineExpose({
   gap: 10px;
   padding: 10px 12px;
   border-radius: 16px;
-  background: rgba(248, 250, 247, 0.72);
+  background: var(--smu-card-bg-soft);
 }
 
 .episode-index {
@@ -589,8 +589,8 @@ defineExpose({
   min-height: 34px;
   place-items: center;
   border-radius: 999px;
-  background: #e8edf0;
-  color: #53655f;
+  background: var(--smu-card-bg-soft);
+  color: var(--smu-text-muted);
   font-size: 12px;
   font-weight: 900;
 }
@@ -602,17 +602,17 @@ defineExpose({
 
 .episode-path {
   margin-top: 4px;
-  color: #6f7f79;
+  color: var(--smu-text-muted);
   font-size: 12px;
   word-break: break-all;
 }
 
 .cc-btn {
-  color: #97a09c;
+  color: var(--smu-text-soft);
 }
 
 .cc-btn.has-sub {
-  color: #2f7d62;
+  color: var(--smu-success-text);
 }
 
 .ai-row-btn {
@@ -621,19 +621,19 @@ defineExpose({
 
 .ai-row-btn.ai-pending,
 .ai-row-btn.ai-in_progress {
-  background: rgba(255, 230, 177, 0.72);
+  background: var(--smu-warning-soft);
 }
 
 .ai-row-btn.ai-completed {
-  background: rgba(219, 243, 226, 0.82);
+  background: var(--smu-success-soft);
 }
 
 .ai-row-btn.ai-failed {
-  background: rgba(255, 226, 224, 0.82);
+  background: var(--smu-error-soft);
 }
 
 .ai-row-btn.ai-cancelled {
-  background: rgba(229, 232, 231, 0.82);
+  background: var(--smu-card-bg-disabled);
 }
 
 .history-status {
@@ -646,8 +646,8 @@ defineExpose({
 .history-status span {
   padding: 3px 8px;
   border-radius: 999px;
-  background: rgba(232, 237, 240, 0.72);
-  color: #53655f;
+  background: var(--smu-card-bg-soft);
+  color: var(--smu-text-muted);
   font-size: 12px;
 }
 
@@ -673,7 +673,7 @@ defineExpose({
   align-items: center;
   padding: 10px 12px;
   border-radius: 14px;
-  background: rgba(245, 241, 232, 0.68);
+  background: var(--smu-card-bg-soft);
 }
 
 .subtitle-history-copy {
@@ -688,7 +688,7 @@ defineExpose({
 }
 
 .subtitle-history-item span {
-  color: #687873;
+  color: var(--smu-text-muted);
   font-size: 12px;
 }
 
@@ -699,9 +699,9 @@ defineExpose({
   justify-content: flex-end;
   gap: 4px;
   padding: 4px;
-  border: 1px solid rgba(91, 109, 100, 0.14);
+  border: 1px solid var(--smu-border);
   border-radius: 12px;
-  background: rgba(255, 255, 255, 0.78);
+  background: var(--smu-card-bg);
 }
 
 .subtitle-history-actions .v-btn {
@@ -732,8 +732,8 @@ defineExpose({
 .empty-state {
   padding: 28px 18px;
   border-radius: 22px;
-  background: rgba(255, 255, 255, 0.58);
-  color: #687873;
+  background: var(--smu-card-bg-soft);
+  color: var(--smu-text-muted);
   text-align: center;
 }
 
@@ -747,7 +747,7 @@ defineExpose({
   gap: 10px;
   padding-top: 18px;
   margin-top: 18px;
-  border-top: 1px solid rgba(91, 109, 100, 0.14);
+  border-top: 1px solid var(--smu-border);
 }
 
 .result-row {
@@ -756,7 +756,7 @@ defineExpose({
   gap: 12px;
   padding: 10px 12px;
   border-radius: 16px;
-  background: rgba(255, 255, 255, 0.7);
+  background: var(--smu-card-bg);
 }
 
 .result-row div {
@@ -771,7 +771,7 @@ defineExpose({
 
 .result-row span,
 .result-row em {
-  color: #687873;
+  color: var(--smu-text-muted);
   font-size: 12px;
   font-style: normal;
 }

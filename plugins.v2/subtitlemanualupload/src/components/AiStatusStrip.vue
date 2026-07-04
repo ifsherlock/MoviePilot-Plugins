@@ -55,21 +55,21 @@ defineExpose({
   align-items: center;
   padding: 10px 12px;
   margin-bottom: 12px;
-  border: 1px solid rgba(165, 118, 46, 0.2);
+  border: 1px solid var(--smu-border-active);
   border-radius: 18px;
-  background: linear-gradient(90deg, rgba(255, 244, 218, 0.9), rgba(235, 242, 236, 0.72));
-  color: #31463f;
+  background: var(--smu-accent-soft);
+  color: var(--smu-text);
   text-align: left;
 }
 
 .ai-status-strip.active {
-  border-color: rgba(190, 135, 48, 0.46);
-  box-shadow: inset 0 0 0 1px rgba(190, 135, 48, 0.12);
+  border-color: var(--smu-border-active);
+  box-shadow: inset 0 0 0 1px var(--smu-accent-soft);
 }
 
 .ai-status-strip.unavailable {
-  background: rgba(245, 241, 232, 0.78);
-  color: #7a6d61;
+  background: var(--smu-card-bg-soft);
+  color: var(--smu-text-muted);
 }
 
 .ai-status-orb {
@@ -79,8 +79,8 @@ defineExpose({
   height: 30px;
   place-items: center;
   border-radius: 999px;
-  background: #31463f;
-  color: #fff8e8;
+  background: var(--smu-accent);
+  color: var(--smu-accent-text);
 }
 
 .ai-status-strip strong {
@@ -91,7 +91,7 @@ defineExpose({
 .ai-status-strip em {
   min-width: 0;
   overflow: hidden;
-  color: #687873;
+  color: var(--smu-text-muted);
   font-size: 12px;
   font-style: normal;
   text-overflow: ellipsis;

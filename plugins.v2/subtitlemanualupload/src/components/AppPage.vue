@@ -1,5 +1,6 @@
 <script setup>
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import '../styles/theme.css'
 import { createSubtitleManualUploadApi } from '../api/subtitleManualUploadApi'
 import { aiRestartSourceOptions, useAiTasks } from '../composables/useAiTasks'
 import { useAutoTransferQueue } from '../composables/useAutoTransferQueue'
@@ -1013,21 +1014,18 @@ defineExpose({
 .subtitle-upload-page {
   min-height: 100%;
   padding: 24px;
-  background:
-    radial-gradient(circle at 12% 12%, rgba(210, 154, 79, 0.18), transparent 28%),
-    radial-gradient(circle at 88% 0%, rgba(48, 90, 82, 0.16), transparent 32%),
-    linear-gradient(180deg, #f5f0e7 0%, #edf1ec 100%);
-  color: #263238;
+  background: var(--smu-page-bg);
+  color: var(--smu-text);
   font-family: "LXGW WenKai Screen", "Noto Serif SC", "PingFang SC", sans-serif;
 }
 
 .hero-card {
   padding: 26px;
   margin-bottom: 18px;
-  border: 1px solid rgba(83, 103, 94, 0.16);
+  border: 1px solid var(--smu-border);
   border-radius: 28px;
-  background: rgba(255, 252, 245, 0.88);
-  box-shadow: 0 24px 70px rgba(43, 62, 58, 0.1);
+  background: var(--smu-card-bg-strong);
+  box-shadow: var(--smu-shadow);
   backdrop-filter: blur(14px);
 }
 
@@ -1037,7 +1035,7 @@ defineExpose({
 
 .hero-card p {
   margin: 8px 0 0;
-  color: #64746f;
+  color: var(--smu-text-muted);
   line-height: 1.7;
 }
 
@@ -1049,18 +1047,18 @@ defineExpose({
 
 .root-tabs button {
   padding: 9px 16px;
-  border: 1px solid rgba(91, 109, 100, 0.16);
+  border: 1px solid var(--smu-border);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.74);
-  color: #53655f;
+  background: var(--smu-card-bg);
+  color: var(--smu-text-muted);
   font-weight: 900;
 }
 
 .root-tabs button.active {
-  border-color: rgba(150, 99, 40, 0.58);
-  background: #fff4da;
-  color: #30443f;
-  box-shadow: inset 0 -3px 0 #b47a35;
+  border-color: var(--smu-border-active);
+  background: var(--smu-card-bg-active);
+  color: var(--smu-accent);
+  box-shadow: inset 0 -3px 0 var(--smu-accent);
 }
 
 .media-stage,

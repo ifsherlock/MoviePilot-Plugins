@@ -165,10 +165,9 @@ defineEmits([
 
 <style scoped>
 .ai-task-dialog {
-  background:
-    radial-gradient(circle at 8% 0%, rgba(219, 164, 71, 0.18), transparent 28%),
-    radial-gradient(circle at 90% 20%, rgba(65, 116, 95, 0.14), transparent 32%),
-    #fffaf2;
+  background: var(--smu-dialog-bg);
+  color: var(--smu-text);
+  backdrop-filter: blur(16px);
 }
 
 .dialog-title {
@@ -191,7 +190,7 @@ defineEmits([
 
 .dialog-title p {
   margin: 4px 0 0;
-  color: #687873;
+  color: var(--smu-text-muted);
   font-size: 12px;
   font-weight: 400;
 }
@@ -224,30 +223,30 @@ defineEmits([
   gap: 12px;
   align-items: center;
   padding: 12px;
-  border: 1px solid rgba(91, 109, 100, 0.14);
+  border: 1px solid var(--smu-border);
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.74);
+  background: var(--smu-card-bg);
 }
 
 .ai-task-row.ai-in_progress,
 .ai-task-row.ai-pending {
-  border-color: rgba(180, 122, 53, 0.3);
-  background: #fff4da;
+  border-color: rgba(var(--v-theme-warning), 0.32);
+  background: var(--smu-warning-soft);
 }
 
 .ai-task-row.ai-completed {
-  border-color: rgba(77, 143, 100, 0.26);
-  background: rgba(230, 247, 235, 0.78);
+  border-color: rgba(var(--v-theme-success), 0.30);
+  background: var(--smu-success-soft);
 }
 
 .ai-task-row.ai-failed {
-  border-color: rgba(185, 78, 70, 0.3);
-  background: rgba(255, 234, 232, 0.8);
+  border-color: rgba(var(--v-theme-error), 0.32);
+  background: var(--smu-error-soft);
 }
 
 .ai-task-row.ai-cancelled {
-  border-color: rgba(109, 123, 117, 0.24);
-  background: rgba(239, 242, 240, 0.84);
+  border-color: var(--smu-border-strong);
+  background: var(--smu-card-bg-disabled);
 }
 
 .ai-task-badge {
@@ -256,8 +255,8 @@ defineEmits([
   height: 42px;
   place-items: center;
   border-radius: 999px;
-  background: #31463f;
-  color: #fff8e8;
+  background: var(--smu-accent);
+  color: var(--smu-accent-text);
 }
 
 .ai-task-main {
@@ -278,7 +277,7 @@ defineEmits([
 .ai-task-main span,
 .ai-task-main p,
 .ai-task-time span {
-  color: #687873;
+  color: var(--smu-text-muted);
   font-size: 12px;
 }
 
@@ -295,8 +294,8 @@ defineEmits([
 .empty-state {
   padding: 28px 18px;
   border-radius: 22px;
-  background: rgba(255, 255, 255, 0.58);
-  color: #687873;
+  background: var(--smu-card-bg-soft);
+  color: var(--smu-text-muted);
   text-align: center;
 }
 

@@ -86,9 +86,9 @@ const mediaTypeItems = [
 
 <style scoped>
 .glass-card {
-  border: 1px solid rgba(83, 103, 94, 0.16);
-  background: rgba(255, 252, 245, 0.88);
-  box-shadow: 0 24px 70px rgba(43, 62, 58, 0.1);
+  border: 1px solid var(--smu-border);
+  background: var(--smu-card-bg-strong);
+  box-shadow: var(--smu-shadow);
   backdrop-filter: blur(14px);
 }
 
@@ -110,12 +110,12 @@ const mediaTypeItems = [
 
 .search-head p {
   margin: 8px 0 0;
-  color: #64746f;
+  color: var(--smu-text-muted);
   line-height: 1.7;
 }
 
 .section-kicker {
-  color: #8a6b3f;
+  color: var(--smu-accent);
   font-size: 12px;
   font-weight: 800;
   letter-spacing: 0.13em;

@@ -1,5 +1,6 @@
 <script setup>
 import { ref } from 'vue'
+import '../styles/theme.css'
 import AppPage from './AppPage.vue'
 
 const props = defineProps({
