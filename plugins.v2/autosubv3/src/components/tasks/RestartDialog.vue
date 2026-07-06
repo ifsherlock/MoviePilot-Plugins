@@ -43,7 +43,7 @@ const sourcePolicy = computed({
 
 <template>
   <VDialog v-model="dialog" max-width="520">
-    <VCard rounded="lg">
+    <VCard class="restart-dialog-card" rounded="lg">
       <VCardTitle>重新生成 AI 字幕</VCardTitle>
       <VCardText>
         <VAlert
@@ -77,3 +77,34 @@ const sourcePolicy = computed({
     </VCard>
   </VDialog>
 </template>
+
+<style scoped>
+.restart-dialog-card {
+  max-height: calc(100dvh - 24px);
+}
+
+@media (max-width: 520px) {
+  .restart-dialog-card :deep(.v-card-title) {
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+
+  .restart-dialog-card :deep(.v-card-text) {
+    overflow-y: auto;
+  }
+
+  .restart-dialog-card :deep(.v-card-actions) {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .restart-dialog-card :deep(.v-card-actions .v-spacer) {
+    display: none;
+  }
+
+  .restart-dialog-card :deep(.v-card-actions .v-btn) {
+    width: 100%;
+  }
+}
+</style>

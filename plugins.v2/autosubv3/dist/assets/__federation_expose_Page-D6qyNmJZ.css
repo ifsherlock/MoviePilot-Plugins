@@ -1,4 +1,10 @@
 
+.restart-dialog-card[data-v-0330dbfa] {
+  max-height: calc(100dvh - 24px);
+}
+@media (max-width: 520px) {
+}
+
 .summary-strip[data-v-4ddb4746] {
   display: flex;
   flex-wrap: wrap;
@@ -23,11 +29,11 @@
 }
 }
 
-.task-list[data-v-50e02b39] {
+.task-list[data-v-ee85a604] {
   display: grid;
   gap: 10px;
 }
-.task-row[data-v-50e02b39] {
+.task-row[data-v-ee85a604] {
   display: grid;
   grid-template-columns: 42px minmax(0, 1fr) auto;
   gap: 12px;
@@ -37,24 +43,28 @@
   background: rgb(var(--v-theme-surface));
   padding: 12px;
 }
-.task-row.selected[data-v-50e02b39] {
+.task-row.selected[data-v-ee85a604] {
   border-color: rgba(var(--v-theme-primary), 0.45);
 }
-.task-title[data-v-50e02b39] {
+.task-title[data-v-ee85a604] {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
   align-items: center;
   margin-bottom: 6px;
 }
-.task-path[data-v-50e02b39] {
+.task-title strong[data-v-ee85a604] {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.task-path[data-v-ee85a604] {
   color: rgba(var(--v-theme-on-surface), 0.74);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
   line-height: 1.55;
   overflow-wrap: anywhere;
 }
-.task-meta[data-v-50e02b39] {
+.task-meta[data-v-ee85a604] {
   display: flex;
   flex-wrap: wrap;
   gap: 10px;
@@ -62,11 +72,12 @@
   color: rgba(var(--v-theme-on-surface), 0.58);
   font-size: 12px;
 }
-.task-actions[data-v-50e02b39] {
+.task-actions[data-v-ee85a604] {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
-.empty-state[data-v-50e02b39] {
+.empty-state[data-v-ee85a604] {
   border: 1px dashed rgba(var(--v-border-color), 0.28);
   border-radius: 8px;
   color: rgba(var(--v-theme-on-surface), 0.62);
@@ -74,11 +85,34 @@
   text-align: center;
 }
 @media (max-width: 760px) {
-.task-row[data-v-50e02b39] {
+.task-row[data-v-ee85a604] {
     grid-template-columns: 36px minmax(0, 1fr);
+    align-items: start;
 }
-.task-actions[data-v-50e02b39] {
+.task-actions[data-v-ee85a604] {
     grid-column: 2;
+}
+}
+@media (max-width: 520px) {
+.task-row[data-v-ee85a604] {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px;
+}
+.task-main[data-v-ee85a604] {
+    min-width: 0;
+}
+.task-actions[data-v-ee85a604] {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.task-meta[data-v-ee85a604] {
+    gap: 6px;
+}
+.task-meta span[data-v-ee85a604] {
+    flex: 1 1 100%;
+    overflow-wrap: anywhere;
 }
 }
 

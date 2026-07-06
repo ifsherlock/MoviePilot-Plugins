@@ -228,3 +228,32 @@ test('AutoSubv3 toolbar keeps desktop row layout @autosub-toolbar @autosub', asy
   expect(toolbarWraps).toBe(false)
   await expectNoHorizontalOverflow(page)
 })
+
+test('AutoSubv3 task cards and restart dialog stay usable on mobile @autosub-tasks @autosub', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openPluginPage(page, 'AutoSubv3')
+
+  await page.getByText('失败 1').click()
+  await expect(page.getByText('移动端布局回归测试剧集 S01E02')).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+  await screenshot(page, testInfo, 'autosub-tasks-mobile-390.png')
+
+  await page.getByRole('checkbox').first().check()
+  await page.getByRole('button', { name: '批量重新生成' }).click()
+  await expect(page.getByText('重新生成 AI 字幕').last()).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+  await screenshot(page, testInfo, 'autosub-restart-dialog-mobile-390.png')
+  await page.getByRole('dialog').getByRole('button', { name: '取消' }).click()
+})
+
+test('AutoSubv3 task cards remain readable on tablet and desktop @autosub-tasks @autosub', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 768, height: 1024 })
+  await openPluginPage(page, 'AutoSubv3')
+  await expect(page.getByText('移动端布局回归测试剧集 S01E01')).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+  await screenshot(page, testInfo, 'autosub-tasks-tablet-768.png')
+
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await expectNoHorizontalOverflow(page)
+  await screenshot(page, testInfo, 'autosub-tasks-desktop-1440.png')
+})

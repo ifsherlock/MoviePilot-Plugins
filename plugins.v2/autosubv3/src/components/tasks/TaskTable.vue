@@ -164,6 +164,11 @@ function sourceText(task) {
   margin-bottom: 6px;
 }
 
+.task-title strong {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .task-path {
   color: rgba(var(--v-theme-on-surface), 0.74);
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
@@ -183,6 +188,7 @@ function sourceText(task) {
 
 .task-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -197,10 +203,42 @@ function sourceText(task) {
 @media (max-width: 760px) {
   .task-row {
     grid-template-columns: 36px minmax(0, 1fr);
+    align-items: start;
   }
 
   .task-actions {
     grid-column: 2;
+  }
+}
+
+@media (max-width: 520px) {
+  .task-row {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 10px;
+    padding: 12px;
+  }
+
+  .task-main {
+    min-width: 0;
+  }
+
+  .task-actions {
+    grid-column: 1 / -1;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .task-actions .v-btn {
+    min-width: 0;
+  }
+
+  .task-meta {
+    gap: 6px;
+  }
+
+  .task-meta span {
+    flex: 1 1 100%;
+    overflow-wrap: anywhere;
   }
 }
 </style>

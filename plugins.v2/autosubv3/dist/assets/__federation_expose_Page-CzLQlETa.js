@@ -320,7 +320,10 @@ return (_ctx, _cache) => {
     "max-width": "520"
   }, {
     default: _withCtx$3(() => [
-      _createVNode$3(_component_VCard, { rounded: "lg" }, {
+      _createVNode$3(_component_VCard, {
+        class: "restart-dialog-card",
+        rounded: "lg"
+      }, {
         default: _withCtx$3(() => [
           _createVNode$3(_component_VCardTitle, null, {
             default: _withCtx$3(() => [...(_cache[4] || (_cache[4] = [
@@ -385,6 +388,7 @@ return (_ctx, _cache) => {
 }
 
 };
+const RestartDialog = /*#__PURE__*/_export_sfc(_sfc_main$4, [['__scopeId',"data-v-0330dbfa"]]);
 
 const {renderList:_renderList$1,Fragment:_Fragment$1,openBlock:_openBlock$3,createElementBlock:_createElementBlock$3,toDisplayString:_toDisplayString$2,createTextVNode:_createTextVNode$2,resolveComponent:_resolveComponent$3,withCtx:_withCtx$2,createBlock:_createBlock$1} = await importShared('vue');
 
@@ -645,7 +649,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const TaskTable = /*#__PURE__*/_export_sfc(_sfc_main$2, [['__scopeId',"data-v-50e02b39"]]);
+const TaskTable = /*#__PURE__*/_export_sfc(_sfc_main$2, [['__scopeId',"data-v-ee85a604"]]);
 
 const {createElementVNode:_createElementVNode$1,toDisplayString:_toDisplayString,createTextVNode:_createTextVNode,resolveComponent:_resolveComponent$1,withCtx:_withCtx,createVNode:_createVNode$1,openBlock:_openBlock$1,createElementBlock:_createElementBlock$1} = await importShared('vue');
 
@@ -941,7 +945,7 @@ return (_ctx, _cache) => {
         onDelete: _cache[7] || (_cache[7] = task => _unref(deleteTasks)([task]))
       }, null, 8, ["loading", "tasks", "visible-tasks", "selected-task-ids", "operating", "can-cancel-task", "can-restart-task", "can-delete-task", "onToggleTask"])
     ]),
-    _createVNode(_sfc_main$4, {
+    _createVNode(RestartDialog, {
       modelValue: _unref(restartDialog),
       "onUpdate:modelValue": _cache[8] || (_cache[8] = $event => (_isRef(restartDialog) ? (restartDialog).value = $event : null)),
       "restart-source-policy": _unref(restartSourcePolicy),
