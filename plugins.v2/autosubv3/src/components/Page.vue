@@ -1,6 +1,7 @@
 <script setup>
 import { computed, onMounted } from 'vue'
 import { useAutoSubTasks } from '../composables/useAutoSubTasks'
+import MobileBatchActionBar from './tasks/MobileBatchActionBar.vue'
 import RestartDialog from './tasks/RestartDialog.vue'
 import TaskStatusFilter from './tasks/TaskStatusFilter.vue'
 import TaskTable from './tasks/TaskTable.vue'
@@ -106,6 +107,18 @@ onMounted(loadTasks)
         @restart="task => restartTasks([task])"
         @delete="task => deleteTasks([task])"
       />
+
+      <MobileBatchActionBar
+        :selected-count="selectedTaskIds.length"
+        :cancellable-selected="cancellableSelected"
+        :restartable-selected="restartableSelected"
+        :deletable-selected="deletableSelected"
+        :operating="operating"
+        :operation="operation"
+        @cancel-selected="cancelTasks(cancellableSelected)"
+        @restart-selected="restartTasks(restartableSelected)"
+        @delete-selected="deleteTasks(deletableSelected)"
+      />
     </main>
 
     <RestartDialog
@@ -133,7 +146,7 @@ onMounted(loadTasks)
 
 @media (max-width: 760px) {
   .autosub-content {
-    padding: 12px;
+    padding: 12px 12px calc(96px + env(safe-area-inset-bottom));
   }
 }
 </style>

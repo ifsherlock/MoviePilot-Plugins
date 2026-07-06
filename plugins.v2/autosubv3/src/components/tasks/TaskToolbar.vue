@@ -64,8 +64,9 @@ function toggleSortOrder() {
       <div class="toolbar-subtitle">{{ status.message || '查看任务数据' }}</div>
     </div>
     <div class="toolbar-actions">
+      <VBtn class="mobile-refresh-action mobile-touch-target" aria-label="刷新任务" icon="mdi-refresh" variant="text" :loading="loading" @click="emit('refresh')" />
       <VBtn
-        class="mobile-touch-target"
+        class="sort-action mobile-touch-target"
         variant="tonal"
         :prepend-icon="sortOrder === 'desc' ? 'mdi-sort-clock-descending' : 'mdi-sort-clock-ascending'"
         @click="toggleSortOrder"
@@ -73,7 +74,7 @@ function toggleSortOrder() {
         {{ sortOrder === 'desc' ? '最新在前' : '最早在前' }}
       </VBtn>
       <VBtn
-        class="mobile-touch-target"
+        class="select-action mobile-touch-target"
         variant="tonal"
         prepend-icon="mdi-checkbox-multiple-marked-outline"
         :disabled="!visibleTasks.length"
@@ -82,7 +83,7 @@ function toggleSortOrder() {
         {{ allVisibleSelected ? '取消全选' : '全选' }}
       </VBtn>
       <VBtn
-        class="mobile-touch-target"
+        class="desktop-batch-action mobile-touch-target"
         color="warning"
         variant="tonal"
         prepend-icon="mdi-cancel"
@@ -93,7 +94,7 @@ function toggleSortOrder() {
         批量取消
       </VBtn>
       <VBtn
-        class="mobile-touch-target"
+        class="desktop-batch-action mobile-touch-target"
         color="primary"
         variant="tonal"
         prepend-icon="mdi-restart"
@@ -104,7 +105,7 @@ function toggleSortOrder() {
         批量重新生成
       </VBtn>
       <VBtn
-        class="mobile-touch-target"
+        class="desktop-batch-action mobile-touch-target"
         color="error"
         variant="tonal"
         prepend-icon="mdi-delete-outline"
@@ -114,8 +115,8 @@ function toggleSortOrder() {
       >
         批量删除
       </VBtn>
-      <VBtn class="mobile-touch-target" aria-label="刷新任务" icon="mdi-refresh" variant="text" :loading="loading" @click="emit('refresh')" />
-      <VBtn class="mobile-touch-target" aria-label="关闭 AI字幕生成" icon="mdi-close" variant="text" @click="emit('close')" />
+      <VBtn class="desktop-refresh-action mobile-touch-target" aria-label="刷新任务" icon="mdi-refresh" variant="text" :loading="loading" @click="emit('refresh')" />
+      <VBtn class="close-action mobile-touch-target" aria-label="关闭 AI字幕生成" icon="mdi-close" variant="text" @click="emit('close')" />
     </div>
   </header>
 </template>
@@ -165,29 +166,43 @@ function toggleSortOrder() {
   align-items: center;
 }
 
+.mobile-refresh-action {
+  display: none;
+}
+
 @media (max-width: 760px) {
   .autosub-toolbar {
     display: grid;
     grid-template-columns: minmax(0, 1fr);
+    gap: 8px;
     align-items: start;
     padding: 8px;
   }
 
+  .toolbar-title {
+    font-size: 1.05rem;
+    line-height: 1.35;
+  }
+
   .toolbar-actions {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: 46px minmax(0, 1fr) minmax(0, 1fr) 46px;
     gap: 8px;
     width: 100%;
   }
 
-  .toolbar-actions .v-btn:nth-child(3),
-  .toolbar-actions .v-btn:nth-child(4),
-  .toolbar-actions .v-btn:nth-child(5) {
-    flex-basis: 100%;
+  .desktop-batch-action,
+  .desktop-refresh-action {
+    display: none;
   }
 
-  .toolbar-actions .v-btn--icon {
-    flex: 0 0 auto;
+  .mobile-refresh-action {
+    display: inline-grid;
+  }
+
+  .sort-action,
+  .select-action {
+    min-width: 0;
   }
 }
 </style>
@@ -201,7 +216,6 @@ function toggleSortOrder() {
   }
 
   .autosub-page .toolbar-actions .mobile-touch-target:not(.v-btn--icon) {
-    flex: 1 1 calc(50% - 8px);
     min-width: 0;
   }
 

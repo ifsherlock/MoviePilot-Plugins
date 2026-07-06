@@ -346,6 +346,43 @@ test('AutoSubv3 toolbar keeps desktop row layout @autosub-toolbar @autosub', asy
   await expectNoHorizontalOverflow(page)
 })
 
+test('AutoSubv3 mobile toolbar and batch bar stay usable @autosub-batch-bar-polish @autosub', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openPluginPage(page, 'AutoSubv3')
+
+  await expect(page.getByText('AI字幕生成(联动版)').first()).toBeVisible()
+  await expectTouchTargets(page.locator('.autosub-toolbar').getByRole('button', { name: /刷新任务|最新在前|最早在前|全选|关闭 AI字幕生成/ }), {
+    label: 'AutoSub polished mobile toolbar',
+  })
+  await page.locator('.autosub-toolbar').getByRole('button', { name: /最新在前|最早在前/ }).click()
+  await page.getByText('失败 1').click()
+  await expect(page.locator('.task-mobile-card').filter({ hasText: '移动端布局回归测试剧集 S01E02' })).toBeVisible()
+
+  await page.locator('.autosub-toolbar').getByRole('button', { name: '全选' }).click()
+  const batchBar = page.locator('.autosub-mobile-batch-bar')
+  await expect(batchBar).toBeVisible()
+  await expect(batchBar).toContainText('2')
+  await expect(batchBar).toContainText('个已选')
+  await expectTouchTargets(batchBar.getByRole('button', { name: /重跑|取消|删除/ }), {
+    label: 'AutoSub mobile batch bar',
+  })
+  await batchBar.getByRole('button', { name: '重跑' }).click()
+  await expect(page.getByText('重新生成 AI 字幕').last()).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+  await expectBottomContentNotObscured(page, '.task-mobile-card')
+  await screenshot(page, testInfo, 'autosub-batch-bar-polish-mobile-390.png')
+  await page.keyboard.press('Escape')
+  await expect(page.getByRole('dialog')).toBeHidden()
+
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await expect(page.locator('.autosub-mobile-batch-bar')).toBeHidden()
+  await expect(page.locator('.autosub-toolbar').getByRole('button', { name: '批量重新生成' })).toBeVisible()
+  const toolbarWraps = await page.locator('.autosub-toolbar').evaluate(element => element.scrollHeight > element.clientHeight + 8)
+  expect(toolbarWraps).toBe(false)
+  await expectNoHorizontalOverflow(page)
+  await screenshot(page, testInfo, 'autosub-batch-bar-polish-desktop-1440.png')
+})
+
 test('AutoSubv3 task cards and restart dialog stay usable on mobile @autosub-tasks @autosub', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await openPluginPage(page, 'AutoSubv3')

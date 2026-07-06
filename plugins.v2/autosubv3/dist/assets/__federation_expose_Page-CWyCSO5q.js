@@ -251,6 +251,111 @@ function useAutoSubTasks({ api, pluginBase, confirmDelete = window.confirm } = {
   }
 }
 
+const {toDisplayString:_toDisplayString$4,createElementVNode:_createElementVNode$4,createTextVNode:_createTextVNode$5,resolveComponent:_resolveComponent$6,withCtx:_withCtx$5,createVNode:_createVNode$5,openBlock:_openBlock$6,createElementBlock:_createElementBlock$5,createCommentVNode:_createCommentVNode$3} = await importShared('vue');
+
+
+const _hoisted_1$5 = {
+  key: 0,
+  class: "autosub-mobile-batch-bar",
+  "aria-label": "移动端批量操作"
+};
+const _hoisted_2$4 = { class: "batch-count" };
+const _hoisted_3$3 = { class: "batch-actions" };
+
+
+const _sfc_main$6 = {
+  __name: 'MobileBatchActionBar',
+  props: {
+  selectedCount: {
+    type: Number,
+    default: 0,
+  },
+  cancellableSelected: {
+    type: Array,
+    default: () => [],
+  },
+  restartableSelected: {
+    type: Array,
+    default: () => [],
+  },
+  deletableSelected: {
+    type: Array,
+    default: () => [],
+  },
+  operating: {
+    type: Boolean,
+    default: false,
+  },
+  operation: {
+    type: String,
+    default: '',
+  },
+},
+  emits: ['cancel-selected', 'restart-selected', 'delete-selected'],
+  setup(__props, { emit: __emit }) {
+
+
+
+const emit = __emit;
+
+return (_ctx, _cache) => {
+  const _component_VBtn = _resolveComponent$6("VBtn");
+
+  return (__props.selectedCount)
+    ? (_openBlock$6(), _createElementBlock$5("aside", _hoisted_1$5, [
+        _createElementVNode$4("div", _hoisted_2$4, [
+          _createElementVNode$4("strong", null, _toDisplayString$4(__props.selectedCount), 1),
+          _cache[3] || (_cache[3] = _createElementVNode$4("span", null, "个已选", -1))
+        ]),
+        _createElementVNode$4("div", _hoisted_3$3, [
+          _createVNode$5(_component_VBtn, {
+            class: "batch-primary-action mobile-touch-target",
+            color: "primary",
+            variant: "flat",
+            disabled: !__props.restartableSelected.length || __props.operating,
+            loading: __props.operation === 'restart',
+            onClick: _cache[0] || (_cache[0] = $event => (emit('restart-selected')))
+          }, {
+            default: _withCtx$5(() => [...(_cache[4] || (_cache[4] = [
+              _createTextVNode$5(" 重跑 ", -1)
+            ]))]),
+            _: 1
+          }, 8, ["disabled", "loading"]),
+          _createVNode$5(_component_VBtn, {
+            class: "batch-secondary-action mobile-touch-target",
+            color: "warning",
+            variant: "tonal",
+            disabled: !__props.cancellableSelected.length || __props.operating,
+            loading: __props.operation === 'cancel',
+            onClick: _cache[1] || (_cache[1] = $event => (emit('cancel-selected')))
+          }, {
+            default: _withCtx$5(() => [...(_cache[5] || (_cache[5] = [
+              _createTextVNode$5(" 取消 ", -1)
+            ]))]),
+            _: 1
+          }, 8, ["disabled", "loading"]),
+          _createVNode$5(_component_VBtn, {
+            class: "batch-danger-action mobile-touch-target",
+            color: "error",
+            variant: "text",
+            disabled: !__props.deletableSelected.length || __props.operating,
+            loading: __props.operation === 'delete',
+            onClick: _cache[2] || (_cache[2] = $event => (emit('delete-selected')))
+          }, {
+            default: _withCtx$5(() => [...(_cache[6] || (_cache[6] = [
+              _createTextVNode$5(" 删除 ", -1)
+            ]))]),
+            _: 1
+          }, 8, ["disabled", "loading"])
+        ])
+      ]))
+    : _createCommentVNode$3("", true)
+}
+}
+
+};
+const MobileBatchActionBar = /*#__PURE__*/_export_sfc(_sfc_main$6, [['__scopeId',"data-v-2b046da9"]]);
+
 const {createTextVNode:_createTextVNode$4,resolveComponent:_resolveComponent$5,withCtx:_withCtx$4,createVNode:_createVNode$4,openBlock:_openBlock$5,createBlock:_createBlock$3} = await importShared('vue');
 
 
@@ -914,7 +1019,7 @@ return (_ctx, _cache) => {
 };
 const TaskTable = /*#__PURE__*/_export_sfc(_sfc_main$2, [['__scopeId',"data-v-a1752aba"]]);
 
-const {createElementVNode:_createElementVNode$1,toDisplayString:_toDisplayString,createTextVNode:_createTextVNode,resolveComponent:_resolveComponent$1,withCtx:_withCtx,createVNode:_createVNode$1,openBlock:_openBlock$1,createElementBlock:_createElementBlock$1} = await importShared('vue');
+const {createElementVNode:_createElementVNode$1,toDisplayString:_toDisplayString,resolveComponent:_resolveComponent$1,createVNode:_createVNode$1,createTextVNode:_createTextVNode,withCtx:_withCtx,openBlock:_openBlock$1,createElementBlock:_createElementBlock$1} = await importShared('vue');
 
 
 const _hoisted_1$1 = { class: "autosub-toolbar" };
@@ -991,12 +1096,20 @@ return (_ctx, _cache) => {
 
   return (_openBlock$1(), _createElementBlock$1("header", _hoisted_1$1, [
     _createElementVNode$1("div", _hoisted_2$1, [
-      _cache[6] || (_cache[6] = _createElementVNode$1("div", { class: "toolbar-title" }, "AI字幕生成(联动版)", -1)),
+      _cache[7] || (_cache[7] = _createElementVNode$1("div", { class: "toolbar-title" }, "AI字幕生成(联动版)", -1)),
       _createElementVNode$1("div", _hoisted_3, _toDisplayString(__props.status.message || '查看任务数据'), 1)
     ]),
     _createElementVNode$1("div", _hoisted_4, [
       _createVNode$1(_component_VBtn, {
-        class: "mobile-touch-target",
+        class: "mobile-refresh-action mobile-touch-target",
+        "aria-label": "刷新任务",
+        icon: "mdi-refresh",
+        variant: "text",
+        loading: __props.loading,
+        onClick: _cache[0] || (_cache[0] = $event => (emit('refresh')))
+      }, null, 8, ["loading"]),
+      _createVNode$1(_component_VBtn, {
+        class: "sort-action mobile-touch-target",
         variant: "tonal",
         "prepend-icon": __props.sortOrder === 'desc' ? 'mdi-sort-clock-descending' : 'mdi-sort-clock-ascending',
         onClick: toggleSortOrder
@@ -1007,11 +1120,11 @@ return (_ctx, _cache) => {
         _: 1
       }, 8, ["prepend-icon"]),
       _createVNode$1(_component_VBtn, {
-        class: "mobile-touch-target",
+        class: "select-action mobile-touch-target",
         variant: "tonal",
         "prepend-icon": "mdi-checkbox-multiple-marked-outline",
         disabled: !__props.visibleTasks.length,
-        onClick: _cache[0] || (_cache[0] = $event => (emit('toggle-all')))
+        onClick: _cache[1] || (_cache[1] = $event => (emit('toggle-all')))
       }, {
         default: _withCtx(() => [
           _createTextVNode(_toDisplayString(__props.allVisibleSelected ? '取消全选' : '全选'), 1)
@@ -1019,61 +1132,61 @@ return (_ctx, _cache) => {
         _: 1
       }, 8, ["disabled"]),
       _createVNode$1(_component_VBtn, {
-        class: "mobile-touch-target",
+        class: "desktop-batch-action mobile-touch-target",
         color: "warning",
         variant: "tonal",
         "prepend-icon": "mdi-cancel",
         disabled: !__props.cancellableSelected.length || __props.operating,
         loading: __props.operation === 'cancel',
-        onClick: _cache[1] || (_cache[1] = $event => (emit('cancel-selected')))
+        onClick: _cache[2] || (_cache[2] = $event => (emit('cancel-selected')))
       }, {
-        default: _withCtx(() => [...(_cache[7] || (_cache[7] = [
+        default: _withCtx(() => [...(_cache[8] || (_cache[8] = [
           _createTextVNode(" 批量取消 ", -1)
         ]))]),
         _: 1
       }, 8, ["disabled", "loading"]),
       _createVNode$1(_component_VBtn, {
-        class: "mobile-touch-target",
+        class: "desktop-batch-action mobile-touch-target",
         color: "primary",
         variant: "tonal",
         "prepend-icon": "mdi-restart",
         disabled: !__props.restartableSelected.length || __props.operating,
         loading: __props.operation === 'restart',
-        onClick: _cache[2] || (_cache[2] = $event => (emit('restart-selected')))
+        onClick: _cache[3] || (_cache[3] = $event => (emit('restart-selected')))
       }, {
-        default: _withCtx(() => [...(_cache[8] || (_cache[8] = [
+        default: _withCtx(() => [...(_cache[9] || (_cache[9] = [
           _createTextVNode(" 批量重新生成 ", -1)
         ]))]),
         _: 1
       }, 8, ["disabled", "loading"]),
       _createVNode$1(_component_VBtn, {
-        class: "mobile-touch-target",
+        class: "desktop-batch-action mobile-touch-target",
         color: "error",
         variant: "tonal",
         "prepend-icon": "mdi-delete-outline",
         disabled: !__props.deletableSelected.length || __props.operating,
         loading: __props.operation === 'delete',
-        onClick: _cache[3] || (_cache[3] = $event => (emit('delete-selected')))
+        onClick: _cache[4] || (_cache[4] = $event => (emit('delete-selected')))
       }, {
-        default: _withCtx(() => [...(_cache[9] || (_cache[9] = [
+        default: _withCtx(() => [...(_cache[10] || (_cache[10] = [
           _createTextVNode(" 批量删除 ", -1)
         ]))]),
         _: 1
       }, 8, ["disabled", "loading"]),
       _createVNode$1(_component_VBtn, {
-        class: "mobile-touch-target",
+        class: "desktop-refresh-action mobile-touch-target",
         "aria-label": "刷新任务",
         icon: "mdi-refresh",
         variant: "text",
         loading: __props.loading,
-        onClick: _cache[4] || (_cache[4] = $event => (emit('refresh')))
+        onClick: _cache[5] || (_cache[5] = $event => (emit('refresh')))
       }, null, 8, ["loading"]),
       _createVNode$1(_component_VBtn, {
-        class: "mobile-touch-target",
+        class: "close-action mobile-touch-target",
         "aria-label": "关闭 AI字幕生成",
         icon: "mdi-close",
         variant: "text",
-        onClick: _cache[5] || (_cache[5] = $event => (emit('close')))
+        onClick: _cache[6] || (_cache[6] = $event => (emit('close')))
       })
     ])
   ]))
@@ -1081,7 +1194,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const TaskToolbar = /*#__PURE__*/_export_sfc(_sfc_main$1, [['__scopeId',"data-v-bdeeddea"]]);
+const TaskToolbar = /*#__PURE__*/_export_sfc(_sfc_main$1, [['__scopeId',"data-v-c5fef992"]]);
 
 const {unref:_unref,isRef:_isRef,createVNode:_createVNode,resolveComponent:_resolveComponent,openBlock:_openBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,createElementVNode:_createElementVNode,createElementBlock:_createElementBlock} = await importShared('vue');
 
@@ -1213,13 +1326,24 @@ return (_ctx, _cache) => {
         onCancel: _cache[5] || (_cache[5] = task => _unref(cancelTasks)([task])),
         onRestart: _cache[6] || (_cache[6] = task => _unref(restartTasks)([task])),
         onDelete: _cache[7] || (_cache[7] = task => _unref(deleteTasks)([task]))
-      }, null, 8, ["loading", "tasks", "visible-tasks", "selected-task-ids", "operating", "can-cancel-task", "can-restart-task", "can-delete-task", "onToggleTask"])
+      }, null, 8, ["loading", "tasks", "visible-tasks", "selected-task-ids", "operating", "can-cancel-task", "can-restart-task", "can-delete-task", "onToggleTask"]),
+      _createVNode(MobileBatchActionBar, {
+        "selected-count": _unref(selectedTaskIds).length,
+        "cancellable-selected": _unref(cancellableSelected),
+        "restartable-selected": _unref(restartableSelected),
+        "deletable-selected": _unref(deletableSelected),
+        operating: _unref(operating),
+        operation: _unref(operation),
+        onCancelSelected: _cache[8] || (_cache[8] = $event => (_unref(cancelTasks)(_unref(cancellableSelected)))),
+        onRestartSelected: _cache[9] || (_cache[9] = $event => (_unref(restartTasks)(_unref(restartableSelected)))),
+        onDeleteSelected: _cache[10] || (_cache[10] = $event => (_unref(deleteTasks)(_unref(deletableSelected))))
+      }, null, 8, ["selected-count", "cancellable-selected", "restartable-selected", "deletable-selected", "operating", "operation"])
     ]),
     _createVNode(RestartDialog, {
       modelValue: _unref(restartDialog),
-      "onUpdate:modelValue": _cache[8] || (_cache[8] = $event => (_isRef(restartDialog) ? (restartDialog).value = $event : null)),
+      "onUpdate:modelValue": _cache[11] || (_cache[11] = $event => (_isRef(restartDialog) ? (restartDialog).value = $event : null)),
       "restart-source-policy": _unref(restartSourcePolicy),
-      "onUpdate:restartSourcePolicy": _cache[9] || (_cache[9] = $event => (_isRef(restartSourcePolicy) ? (restartSourcePolicy).value = $event : null)),
+      "onUpdate:restartSourcePolicy": _cache[12] || (_cache[12] = $event => (_isRef(restartSourcePolicy) ? (restartSourcePolicy).value = $event : null)),
       "restart-targets": _unref(restartTargets),
       "restart-source-options": _unref(restartSourceOptions),
       operation: _unref(operation),
@@ -1231,6 +1355,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-cf928d12"]]);
+const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-f1e0c84f"]]);
 
 export { Page as default };
