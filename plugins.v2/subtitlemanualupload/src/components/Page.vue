@@ -28,12 +28,13 @@ const pageRef = ref(null)
       <div class="text-h6 ms-3">字幕匹配</div>
       <VSpacer />
       <VBtn
+        aria-label="刷新字幕匹配状态"
         icon="mdi-refresh"
         variant="text"
         :loading="pageRef?.loading || pageRef?.refreshing"
         @click="pageRef?.loadStatus()"
       />
-      <VBtn icon="mdi-close" variant="text" @click="emit('close')" />
+      <VBtn aria-label="关闭字幕匹配" icon="mdi-close" variant="text" @click="emit('close')" />
     </VToolbar>
     <VDivider />
 
@@ -48,10 +49,21 @@ const pageRef = ref(null)
 </template>
 
 <style scoped>
+.subtitlemanualupload-page-wrapper {
+  min-width: 0;
+}
+
 .sticky-toolbar {
   position: sticky;
   top: 0;
   z-index: 10;
   background: rgb(var(--v-theme-surface));
+}
+
+.sticky-toolbar .text-h6 {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 </style>

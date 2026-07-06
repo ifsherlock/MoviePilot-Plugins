@@ -586,6 +586,55 @@ defineEmits([
 }
 
 @media (max-width: 720px) {
+  .auto-queue-entry {
+    justify-content: stretch;
+  }
+
+  .auto-queue-entry .v-btn {
+    width: 100%;
+  }
+
+  .global-history-card {
+    border-radius: 18px;
+  }
+
+  .global-history-head {
+    grid-template-columns: 48px minmax(0, 1fr) 28px;
+    gap: 10px;
+    padding: 10px;
+  }
+
+  .poster-frame.compact {
+    width: 48px;
+    height: 64px;
+    border-radius: 12px;
+  }
+
+  .media-copy h3 {
+    overflow: visible;
+    text-overflow: clip;
+    white-space: normal;
+    word-break: break-word;
+  }
+
+  .global-history-targets {
+    padding: 0 10px 10px;
+  }
+
+  .history-bulk-toolbar {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: stretch;
+  }
+
+  .history-bulk-actions {
+    justify-content: stretch;
+  }
+
+  .history-bulk-actions .v-btn {
+    flex: 1 1 auto;
+  }
+
   .history-season-row,
   .history-episode-row {
     grid-template-columns: auto minmax(0, 1fr);
@@ -604,6 +653,12 @@ defineEmits([
   .history-season-toggle,
   .history-episode-toggle {
     flex-wrap: wrap;
+  }
+
+  .history-season-toggle span,
+  .history-episode-toggle small,
+  .history-season-toggle em {
+    flex: 1 1 100%;
   }
 
   .subtitle-history-item {

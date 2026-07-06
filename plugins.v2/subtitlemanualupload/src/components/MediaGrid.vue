@@ -70,6 +70,7 @@ defineEmits([
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
   gap: 14px;
+  min-width: 0;
 }
 
 .media-card {
@@ -155,5 +156,36 @@ defineEmits([
   background: var(--smu-card-bg-soft);
   color: var(--smu-text-muted);
   text-align: center;
+}
+
+@media (max-width: 600px) {
+  .media-list {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .media-card {
+    grid-template-columns: 54px minmax(0, 1fr) 24px;
+    gap: 10px;
+    min-height: 88px;
+    padding: 10px;
+    border-radius: 18px;
+    contain-intrinsic-size: 88px;
+  }
+
+  .poster-frame {
+    width: 54px;
+    height: 72px;
+    border-radius: 12px;
+  }
+
+  .media-copy h3 {
+    font-size: 15px;
+    line-height: 1.35;
+  }
+
+  .pager-row {
+    flex-wrap: wrap;
+  }
 }
 </style>

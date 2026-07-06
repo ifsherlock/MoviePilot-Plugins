@@ -1044,6 +1044,7 @@ defineExpose({
   display: flex;
   gap: 8px;
   margin-bottom: 14px;
+  min-width: 0;
 }
 
 .root-tabs button {
@@ -1071,6 +1072,28 @@ defineExpose({
 @media (max-width: 900px) {
   .subtitle-upload-page {
     padding: 14px;
+  }
+}
+
+@media (max-width: 600px) {
+  .subtitle-upload-page {
+    padding: 10px;
+  }
+
+  .hero-card {
+    padding: 18px;
+    border-radius: 20px;
+  }
+
+  .root-tabs {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .root-tabs button {
+    min-width: 0;
+    padding: 9px 10px;
+    white-space: nowrap;
   }
 }
 </style>

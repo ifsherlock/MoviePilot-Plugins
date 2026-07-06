@@ -7,10 +7,33 @@ import {
   remoteEntryUrl,
 } from './support/moviepilotPluginHarness.mjs'
 
+const subtitleViewports = [
+  { name: 'mobile-390', width: 390, height: 844 },
+  { name: 'mobile-430', width: 430, height: 932 },
+  { name: 'tablet-768', width: 768, height: 1024 },
+  { name: 'desktop-1024', width: 1024, height: 768 },
+  { name: 'desktop-1440', width: 1440, height: 900 },
+]
+
 test.beforeEach(async ({ page }, testInfo) => {
   logHarnessInfo(testInfo)
   await installMoviePilotPluginHarness(page)
 })
+
+async function expectNoHorizontalOverflow(page) {
+  const overflow = await page.evaluate(() => {
+    const root = document.scrollingElement || document.documentElement
+    return Math.ceil(root.scrollWidth - window.innerWidth)
+  })
+  expect(overflow).toBeLessThanOrEqual(1)
+}
+
+async function screenshot(page, testInfo, name) {
+  await testInfo.attach(name, {
+    body: await page.screenshot({ fullPage: true }),
+    contentType: 'image/png',
+  })
+}
 
 test('loads SubtitleManualUpload in the real MoviePilot host @host-load', async ({ page }) => {
   test.info().annotations.push(
@@ -73,3 +96,24 @@ test('drives AutoSubv3 core fake-data flows @fixtures', async ({ page }) => {
   await page.getByRole('button', { name: '批量重新生成' }).click()
   await expect(page.getByText('重新生成 AI 字幕').last()).toBeVisible()
 })
+
+for (const viewport of subtitleViewports) {
+  test(`SubtitleManualUpload root and history stay responsive at ${viewport.name} @subtitle-root @subtitle`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height })
+    await openPluginPage(page, 'SubtitleManualUpload')
+
+    await expect(page.getByText('移动端布局回归测试剧集：特别长的中文标题和 English Alias').first()).toBeVisible()
+    await expectNoHorizontalOverflow(page)
+    await screenshot(page, testInfo, `subtitle-root-${viewport.name}.png`)
+
+    if (viewport.width >= 1024) {
+      const mediaGridColumns = await page.locator('.media-list').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length)
+      expect(mediaGridColumns).toBeGreaterThan(1)
+    }
+
+    await page.getByRole('button', { name: '匹配历史' }).click()
+    await expect(page.getByText('入库自动字幕队列').first()).toBeVisible()
+    await expectNoHorizontalOverflow(page)
+    await screenshot(page, testInfo, `subtitle-history-${viewport.name}.png`)
+  })
+}

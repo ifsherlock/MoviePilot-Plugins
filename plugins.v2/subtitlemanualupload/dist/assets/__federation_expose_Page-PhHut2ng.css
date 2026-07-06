@@ -1,0 +1,16 @@
+
+.subtitlemanualupload-page-wrapper[data-v-9ba7aad5] {
+  min-width: 0;
+}
+.sticky-toolbar[data-v-9ba7aad5] {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: rgb(var(--v-theme-surface));
+}
+.sticky-toolbar .text-h6[data-v-9ba7aad5] {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

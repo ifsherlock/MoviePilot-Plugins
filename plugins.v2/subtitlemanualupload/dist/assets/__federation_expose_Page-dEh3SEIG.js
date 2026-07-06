@@ -1,6 +1,6 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-CAfCMqyq.js';
-import AppPage from './__federation_expose_AppPage-BF0jnK8A.js';
+import AppPage from './__federation_expose_AppPage-B9l5nF6F.js';
 
 const {createElementVNode:_createElementVNode,resolveComponent:_resolveComponent,createVNode:_createVNode,withCtx:_withCtx,openBlock:_openBlock,createElementBlock:_createElementBlock} = await importShared('vue');
 
@@ -49,12 +49,14 @@ return (_ctx, _cache) => {
         _cache[2] || (_cache[2] = _createElementVNode("div", { class: "text-h6 ms-3" }, "字幕匹配", -1)),
         _createVNode(_component_VSpacer),
         _createVNode(_component_VBtn, {
+          "aria-label": "刷新字幕匹配状态",
           icon: "mdi-refresh",
           variant: "text",
           loading: pageRef.value?.loading || pageRef.value?.refreshing,
           onClick: _cache[0] || (_cache[0] = $event => (pageRef.value?.loadStatus()))
         }, null, 8, ["loading"]),
         _createVNode(_component_VBtn, {
+          "aria-label": "关闭字幕匹配",
           icon: "mdi-close",
           variant: "text",
           onClick: _cache[1] || (_cache[1] = $event => (emit('close')))
@@ -76,6 +78,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-296f11da"]]);
+const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-9ba7aad5"]]);
 
 export { Page as default };

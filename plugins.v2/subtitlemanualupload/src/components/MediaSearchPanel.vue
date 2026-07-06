@@ -103,9 +103,14 @@ const mediaTypeItems = [
   margin-bottom: 18px;
 }
 
+.search-head > div:first-child {
+  min-width: 0;
+}
+
 .search-head h2 {
   margin: 0;
   letter-spacing: -0.04em;
+  overflow-wrap: anywhere;
 }
 
 .search-head p {
@@ -136,6 +141,26 @@ const mediaTypeItems = [
 
   .search-head {
     display: grid;
+  }
+}
+
+@media (max-width: 600px) {
+  .search-card {
+    border-radius: 20px;
+  }
+
+  .search-card :deep(.v-card-text) {
+    padding: 16px;
+  }
+
+  .search-head {
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+
+  .search-head .v-btn,
+  .search-bar .v-btn {
+    width: 100%;
   }
 }
 </style>
