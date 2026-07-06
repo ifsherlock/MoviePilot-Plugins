@@ -55,12 +55,82 @@
 }
 }
 
-.restart-dialog-card[data-v-3d14acbf] {
+.restart-dialog-card[data-v-c2fb130a] {
+  display: flex;
+  flex-direction: column;
   max-height: calc(100dvh - 24px);
 }
+.restart-dialog-title[data-v-c2fb130a] {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  justify-content: space-between;
+  min-width: 0;
+}
+.restart-dialog-title span[data-v-c2fb130a]:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.restart-dialog-count[data-v-c2fb130a] {
+  flex: 0 0 auto;
+  color: rgba(var(--v-theme-on-surface), 0.58);
+  font-size: 12px;
+  font-weight: 500;
+}
+.restart-dialog-body[data-v-c2fb130a] {
+  min-height: 0;
+  overflow-y: auto;
+}
 @media (max-width: 520px) {
+.restart-dialog-card[data-v-c2fb130a] {
+    width: min(100%, 390px);
+    max-height: calc(100dvh - 24px);
+    margin: 0 auto;
+}
+.restart-dialog-title[data-v-c2fb130a] {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: rgb(var(--v-theme-surface));
+    padding: 16px 16px 10px;
+    white-space: normal;
+}
+.restart-dialog-body[data-v-c2fb130a] {
+    padding: 10px 16px;
+}
+.restart-dialog-actions[data-v-c2fb130a] {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    border-top: 1px solid rgba(var(--v-border-color), 0.16);
+    background: rgb(var(--v-theme-surface));
+    padding: 10px 16px calc(12px + env(safe-area-inset-bottom));
+}
+.restart-actions-spacer[data-v-c2fb130a] {
+    display: none;
+}
+.restart-cancel-action[data-v-c2fb130a],
+  .restart-confirm-action[data-v-c2fb130a] {
+    width: 100%;
+}
 }
 
+@media (max-width: 520px) {
+.restart-dialog-overlay {
+    align-items: end;
+    justify-content: center;
+}
+.restart-dialog-content {
+    width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+    margin: 0 12px 12px;
+    z-index: 2;
+    pointer-events: auto;
+}
+}
 @media (max-width: 900px) {
 .restart-dialog-card .mobile-touch-target {
     --v-btn-height: 46px;

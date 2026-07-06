@@ -251,10 +251,10 @@ function useAutoSubTasks({ api, pluginBase, confirmDelete = window.confirm } = {
   }
 }
 
-const {toDisplayString:_toDisplayString$4,createElementVNode:_createElementVNode$4,createTextVNode:_createTextVNode$5,resolveComponent:_resolveComponent$6,withCtx:_withCtx$5,createVNode:_createVNode$5,openBlock:_openBlock$6,createElementBlock:_createElementBlock$5,createCommentVNode:_createCommentVNode$3} = await importShared('vue');
+const {toDisplayString:_toDisplayString$5,createElementVNode:_createElementVNode$5,createTextVNode:_createTextVNode$5,resolveComponent:_resolveComponent$6,withCtx:_withCtx$5,createVNode:_createVNode$5,openBlock:_openBlock$6,createElementBlock:_createElementBlock$5,createCommentVNode:_createCommentVNode$3} = await importShared('vue');
 
 
-const _hoisted_1$5 = {
+const _hoisted_1$6 = {
   key: 0,
   class: "autosub-mobile-batch-bar",
   "aria-label": "移动端批量操作"
@@ -302,12 +302,12 @@ return (_ctx, _cache) => {
   const _component_VBtn = _resolveComponent$6("VBtn");
 
   return (__props.selectedCount)
-    ? (_openBlock$6(), _createElementBlock$5("aside", _hoisted_1$5, [
-        _createElementVNode$4("div", _hoisted_2$4, [
-          _createElementVNode$4("strong", null, _toDisplayString$4(__props.selectedCount), 1),
-          _cache[3] || (_cache[3] = _createElementVNode$4("span", null, "个已选", -1))
+    ? (_openBlock$6(), _createElementBlock$5("aside", _hoisted_1$6, [
+        _createElementVNode$5("div", _hoisted_2$4, [
+          _createElementVNode$5("strong", null, _toDisplayString$5(__props.selectedCount), 1),
+          _cache[3] || (_cache[3] = _createElementVNode$5("span", null, "个已选", -1))
         ]),
-        _createElementVNode$4("div", _hoisted_3$3, [
+        _createElementVNode$5("div", _hoisted_3$3, [
           _createVNode$5(_component_VBtn, {
             class: "batch-primary-action mobile-touch-target",
             color: "primary",
@@ -356,8 +356,10 @@ return (_ctx, _cache) => {
 };
 const MobileBatchActionBar = /*#__PURE__*/_export_sfc(_sfc_main$6, [['__scopeId',"data-v-2b046da9"]]);
 
-const {createTextVNode:_createTextVNode$4,resolveComponent:_resolveComponent$5,withCtx:_withCtx$4,createVNode:_createVNode$4,openBlock:_openBlock$5,createBlock:_createBlock$3} = await importShared('vue');
+const {createElementVNode:_createElementVNode$4,toDisplayString:_toDisplayString$4,resolveComponent:_resolveComponent$5,withCtx:_withCtx$4,createVNode:_createVNode$4,createTextVNode:_createTextVNode$4,openBlock:_openBlock$5,createBlock:_createBlock$3} = await importShared('vue');
 
+
+const _hoisted_1$5 = { class: "restart-dialog-count" };
 
 const {computed: computed$2} = await importShared('vue');
 
@@ -422,6 +424,8 @@ return (_ctx, _cache) => {
   return (_openBlock$5(), _createBlock$3(_component_VDialog, {
     modelValue: dialog.value,
     "onUpdate:modelValue": _cache[3] || (_cache[3] = $event => ((dialog).value = $event)),
+    class: "restart-dialog-overlay",
+    "content-class": "restart-dialog-content",
     "max-width": "520"
   }, {
     default: _withCtx$4(() => [
@@ -430,13 +434,14 @@ return (_ctx, _cache) => {
         rounded: "lg"
       }, {
         default: _withCtx$4(() => [
-          _createVNode$4(_component_VCardTitle, null, {
-            default: _withCtx$4(() => [...(_cache[4] || (_cache[4] = [
-              _createTextVNode$4("重新生成 AI 字幕", -1)
-            ]))]),
+          _createVNode$4(_component_VCardTitle, { class: "restart-dialog-title" }, {
+            default: _withCtx$4(() => [
+              _cache[4] || (_cache[4] = _createElementVNode$4("span", null, "重新生成 AI 字幕", -1)),
+              _createElementVNode$4("span", _hoisted_1$5, _toDisplayString$4(__props.restartTargets.length) + " 个任务", 1)
+            ]),
             _: 1
           }),
-          _createVNode$4(_component_VCardText, null, {
+          _createVNode$4(_component_VCardText, { class: "restart-dialog-body" }, {
             default: _withCtx$4(() => [
               _createVNode$4(_component_VAlert, {
                 class: "mb-4",
@@ -456,21 +461,21 @@ return (_ctx, _cache) => {
             ]),
             _: 1
           }),
-          _createVNode$4(_component_VCardActions, null, {
+          _createVNode$4(_component_VCardActions, { class: "restart-dialog-actions" }, {
             default: _withCtx$4(() => [
-              _createVNode$4(_component_VSpacer),
+              _createVNode$4(_component_VSpacer, { class: "restart-actions-spacer" }),
               _createVNode$4(_component_VBtn, {
-                class: "mobile-touch-target",
+                class: "restart-cancel-action mobile-touch-target",
                 variant: "text",
                 onClick: _cache[1] || (_cache[1] = $event => (dialog.value = false))
               }, {
                 default: _withCtx$4(() => [...(_cache[5] || (_cache[5] = [
-                  _createTextVNode$4("取消", -1)
+                  _createTextVNode$4(" 取消 ", -1)
                 ]))]),
                 _: 1
               }),
               _createVNode$4(_component_VBtn, {
-                class: "mobile-touch-target",
+                class: "restart-confirm-action mobile-touch-target",
                 color: "primary",
                 variant: "tonal",
                 loading: __props.operation === 'restart',
@@ -495,7 +500,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const RestartDialog = /*#__PURE__*/_export_sfc(_sfc_main$5, [['__scopeId',"data-v-3d14acbf"]]);
+const RestartDialog = /*#__PURE__*/_export_sfc(_sfc_main$5, [['__scopeId',"data-v-c2fb130a"]]);
 
 const {renderList:_renderList$1,Fragment:_Fragment$1,openBlock:_openBlock$4,createElementBlock:_createElementBlock$4,toDisplayString:_toDisplayString$3,createTextVNode:_createTextVNode$3,resolveComponent:_resolveComponent$4,withCtx:_withCtx$3,createBlock:_createBlock$2} = await importShared('vue');
 

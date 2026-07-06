@@ -383,6 +383,41 @@ test('AutoSubv3 mobile toolbar and batch bar stay usable @autosub-batch-bar-poli
   await screenshot(page, testInfo, 'autosub-batch-bar-polish-desktop-1440.png')
 })
 
+test('AutoSubv3 restart dialog behaves as a mobile sheet @autosub-restart-sheet-polish @autosub', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openPluginPage(page, 'AutoSubv3')
+
+  await page.getByText('失败 1').click()
+  const failedCard = page.locator('.task-mobile-card').filter({ hasText: '移动端布局回归测试剧集 S01E02' }).first()
+  await failedCard.getByRole('button', { name: '重新生成' }).click()
+
+  const dialog = page.getByRole('dialog')
+  await expect(dialog).toBeVisible()
+  await expect(dialog.getByText('重新生成 AI 字幕').first()).toBeVisible()
+  await expect(dialog.locator('.restart-dialog-count')).toHaveText('1 个任务')
+  await expect(dialog.getByRole('combobox')).toBeVisible()
+  await expectTouchTargets(dialog.getByRole('button', { name: /取消|重新生成/ }), {
+    label: 'AutoSub restart sheet actions',
+  })
+  const dialogBox = await dialog.boundingBox()
+  expect(dialogBox.width).toBeLessThanOrEqual(390)
+  expect(dialogBox.height).toBeLessThanOrEqual(844)
+  await expectNoHorizontalOverflow(page)
+  await screenshot(page, testInfo, 'autosub-restart-sheet-polish-mobile-390.png')
+  await dialog.getByRole('button', { name: '取消' }).click()
+  await expect(dialog).toBeHidden()
+
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.locator('.task-row').filter({ hasText: '移动端布局回归测试剧集 S01E02' }).first().getByRole('button', { name: '重新生成' }).click()
+  await expect(dialog).toBeVisible()
+  const desktopCardBox = await dialog.locator('.restart-dialog-card').boundingBox()
+  expect(desktopCardBox.width).toBeLessThanOrEqual(560)
+  expect(desktopCardBox.height).toBeLessThan(900)
+  await expectNoHorizontalOverflow(page)
+  await screenshot(page, testInfo, 'autosub-restart-sheet-polish-desktop-1440.png')
+  await dialog.getByRole('button', { name: '取消' }).click()
+})
+
 test('AutoSubv3 task cards and restart dialog stay usable on mobile @autosub-tasks @autosub', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await openPluginPage(page, 'AutoSubv3')
@@ -463,7 +498,7 @@ for (const themeCase of themeCases) {
     await openPluginPage(page, 'AutoSubv3')
 
     await expectHostTheme(page, themeCase.expected)
-    await expect(page.getByText('移动端布局回归测试剧集 S01E01')).toBeVisible()
+    await expect(page.locator('.task-row').filter({ hasText: '移动端布局回归测试剧集 S01E01' }).first()).toBeVisible()
     await expectNoHorizontalOverflow(page)
     await screenshot(page, testInfo, `autosub-root-${themeCase.name}-theme-mobile-430.png`)
   })

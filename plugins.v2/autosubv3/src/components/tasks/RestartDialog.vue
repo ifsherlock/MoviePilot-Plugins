@@ -42,10 +42,18 @@ const sourcePolicy = computed({
 </script>
 
 <template>
-  <VDialog v-model="dialog" max-width="520">
+  <VDialog
+    v-model="dialog"
+    class="restart-dialog-overlay"
+    content-class="restart-dialog-content"
+    max-width="520"
+  >
     <VCard class="restart-dialog-card" rounded="lg">
-      <VCardTitle>重新生成 AI 字幕</VCardTitle>
-      <VCardText>
+      <VCardTitle class="restart-dialog-title">
+        <span>重新生成 AI 字幕</span>
+        <span class="restart-dialog-count">{{ restartTargets.length }} 个任务</span>
+      </VCardTitle>
+      <VCardText class="restart-dialog-body">
         <VAlert
           class="mb-4"
           type="info"
@@ -61,11 +69,17 @@ const sourcePolicy = computed({
           persistent-hint
         />
       </VCardText>
-      <VCardActions>
-        <VSpacer />
-        <VBtn class="mobile-touch-target" variant="text" @click="dialog = false">取消</VBtn>
+      <VCardActions class="restart-dialog-actions">
+        <VSpacer class="restart-actions-spacer" />
         <VBtn
-          class="mobile-touch-target"
+          class="restart-cancel-action mobile-touch-target"
+          variant="text"
+          @click="dialog = false"
+        >
+          取消
+        </VBtn>
+        <VBtn
+          class="restart-confirm-action mobile-touch-target"
           color="primary"
           variant="tonal"
           :loading="operation === 'restart'"
@@ -81,36 +95,95 @@ const sourcePolicy = computed({
 
 <style scoped>
 .restart-dialog-card {
+  display: flex;
+  flex-direction: column;
   max-height: calc(100dvh - 24px);
 }
 
+.restart-dialog-title {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.restart-dialog-title span:first-child {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.restart-dialog-count {
+  flex: 0 0 auto;
+  color: rgba(var(--v-theme-on-surface), 0.58);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.restart-dialog-body {
+  min-height: 0;
+  overflow-y: auto;
+}
+
 @media (max-width: 520px) {
-  .restart-dialog-card :deep(.v-card-title) {
+  .restart-dialog-card {
+    width: min(100%, 390px);
+    max-height: calc(100dvh - 24px);
+    margin: 0 auto;
+  }
+
+  .restart-dialog-title {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: rgb(var(--v-theme-surface));
+    padding: 16px 16px 10px;
     white-space: normal;
-    overflow-wrap: anywhere;
   }
 
-  .restart-dialog-card :deep(.v-card-text) {
-    overflow-y: auto;
+  .restart-dialog-body {
+    padding: 10px 16px;
   }
 
-  .restart-dialog-card :deep(.v-card-actions) {
+  .restart-dialog-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
+    gap: 10px;
+    border-top: 1px solid rgba(var(--v-border-color), 0.16);
+    background: rgb(var(--v-theme-surface));
+    padding: 10px 16px calc(12px + env(safe-area-inset-bottom));
   }
 
-  .restart-dialog-card :deep(.v-card-actions .v-spacer) {
+  .restart-actions-spacer {
     display: none;
   }
 
-  .restart-dialog-card :deep(.v-card-actions .v-btn) {
+  .restart-cancel-action,
+  .restart-confirm-action {
     width: 100%;
   }
 }
 </style>
 
 <style>
+@media (max-width: 520px) {
+  .restart-dialog-overlay {
+    align-items: end;
+    justify-content: center;
+  }
+
+  .restart-dialog-content {
+    width: calc(100vw - 24px);
+    max-height: calc(100dvh - 24px);
+    margin: 0 12px 12px;
+    z-index: 2;
+    pointer-events: auto;
+  }
+}
+
 @media (max-width: 900px) {
   .restart-dialog-card .mobile-touch-target {
     --v-btn-height: 46px;
