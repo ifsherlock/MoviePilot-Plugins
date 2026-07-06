@@ -58,11 +58,17 @@ for (const viewport of subtitleViewports.filter(item => item.width <= 768)) {
     await screenshot(page, testInfo, `subtitle-mobile-contract-root-${viewport.name}.png`)
 
     await page.getByText('移动端布局回归测试剧集：特别长的中文标题和 English Alias').first().click()
-    await expect(page.getByText('S01E01').first()).toBeVisible()
+    await expect(page.locator('.episode-row').filter({ hasText: 'S01E01' }).first()).toBeVisible()
     await expectNoHorizontalOverflow(page)
-    await expectTouchTargets(page.locator('.toolbar-row').getByRole('button', { name: /全选当前列表|批量上传整季字幕/ }).or(page.locator('.episode-row').first().getByRole('button', { name: '单集上传' })), {
-      label: `Subtitle detail ${viewport.name}`,
-    })
+    if (viewport.width <= 600) {
+      await expectTouchTargets(page.locator('.toolbar-row').getByRole('button', { name: '全选当前列表' }).or(page.locator('.subtitle-mobile-action-bar').getByRole('button', { name: /搜索全部季字幕包|上传|AI 生成/ })), {
+        label: `Subtitle detail ${viewport.name}`,
+      })
+    } else {
+      await expectTouchTargets(page.locator('.toolbar-row').getByRole('button', { name: /全选当前列表|批量上传整季字幕/ }).or(page.locator('.episode-row').first().getByRole('button', { name: '单集上传' })), {
+        label: `Subtitle detail ${viewport.name}`,
+      })
+    }
     await expectBottomContentNotObscured(page, '.episode-row')
 
     await page.getByTitle('搜索此集在线字幕').first().click()
@@ -77,7 +83,7 @@ for (const viewport of subtitleViewports.filter(item => item.width <= 768)) {
 
     await expect(page.locator('.task-row').filter({ hasText: '移动端布局回归测试剧集 S01E01' }).first()).toBeVisible()
     await expectNoHorizontalOverflow(page)
-    await expectTouchTargets(page.locator('.autosub-toolbar').getByRole('button', { name: /最新在前|最早在前|全选|批量重新生成|刷新任务|关闭 AI字幕生成/ }), {
+    await expectTouchTargets(page.locator('.autosub-toolbar').getByRole('button', { name: /最新在前|最早在前|全选|刷新任务|关闭 AI字幕生成/ }), {
       label: `AutoSub root ${viewport.name}`,
     })
     await expectBottomContentNotObscured(page, '.task-row')
@@ -85,7 +91,11 @@ for (const viewport of subtitleViewports.filter(item => item.width <= 768)) {
 
     await page.getByText('失败 1').click()
     await page.getByRole('checkbox').first().check()
-    await page.getByRole('button', { name: '批量重新生成' }).click()
+    if (viewport.width <= 600) {
+      await page.locator('.autosub-mobile-batch-bar').getByRole('button', { name: '重跑' }).click()
+    } else {
+      await page.getByRole('button', { name: '批量重新生成' }).click()
+    }
     await expect(page.getByText('重新生成 AI 字幕').last()).toBeVisible()
     await expectDialogUsableOnMobile(page, page.getByRole('dialog'))
     await screenshot(page, testInfo, `autosub-mobile-contract-dialog-${viewport.name}.png`)
@@ -163,13 +173,13 @@ test('drives AutoSubv3 core fake-data flows @fixtures', async ({ page }) => {
   await openPluginPage(page, 'AutoSubv3')
 
   await expect(page.getByText('队列运行中')).toBeVisible()
-  await expect(page.getByText('移动端布局回归测试剧集 S01E01')).toBeVisible()
-  await expect(page.getByText('测试用失败信息：模型返回内容格式不完整')).toBeVisible()
+  await expect(page.locator('.task-mobile-card').filter({ hasText: '移动端布局回归测试剧集 S01E01' }).first()).toBeVisible()
+  await expect(page.locator('.task-mobile-card').filter({ hasText: '测试用失败信息：模型返回内容格式不完整' }).first()).toBeVisible()
 
   await page.getByText('失败 1').click()
-  await expect(page.getByText('移动端布局回归测试剧集 S01E02')).toBeVisible()
+  await expect(page.locator('.task-mobile-card').filter({ hasText: '移动端布局回归测试剧集 S01E02' }).first()).toBeVisible()
   await page.getByRole('checkbox').first().check()
-  await page.getByRole('button', { name: '批量重新生成' }).click()
+  await page.locator('.autosub-mobile-batch-bar').getByRole('button', { name: '重跑' }).click()
   await expect(page.getByText('重新生成 AI 字幕').last()).toBeVisible()
 })
 
@@ -210,7 +220,7 @@ test('renders AutoSubv3 extreme fake-data task states @fixtures-extreme', async 
   await expectNoHorizontalOverflow(page)
 
   await failedCard.getByRole('checkbox').check()
-  await expect(page.getByRole('button', { name: '批量重新生成' })).toBeEnabled()
+  await expect(page.locator('.autosub-mobile-batch-bar').getByRole('button', { name: '重跑' })).toBeEnabled()
   await screenshot(page, testInfo, 'autosub-fixtures-extreme-mobile-390.png')
 })
 
@@ -576,15 +586,15 @@ test('AutoSubv3 toolbar and filters stay usable on mobile @autosub-toolbar @auto
   await openPluginPage(page, 'AutoSubv3')
 
   await expect(page.getByText('AI字幕生成(联动版)').first()).toBeVisible()
-  await expect(page.getByText('移动端布局回归测试剧集 S01E01')).toBeVisible()
+  await expect(page.locator('.task-mobile-card').filter({ hasText: '移动端布局回归测试剧集 S01E01' }).first()).toBeVisible()
   await expectNoHorizontalOverflow(page)
   await screenshot(page, testInfo, 'autosub-toolbar-mobile-390.png')
 
   await page.getByRole('button', { name: /最新在前|最早在前/ }).click()
   await page.getByText('失败 1').click()
-  await expect(page.getByText('移动端布局回归测试剧集 S01E02')).toBeVisible()
+  await expect(page.locator('.task-mobile-card').filter({ hasText: '移动端布局回归测试剧集 S01E02' }).first()).toBeVisible()
   await page.getByRole('checkbox').first().check()
-  await expect(page.getByRole('button', { name: '批量重新生成' })).toBeEnabled()
+  await expect(page.locator('.autosub-mobile-batch-bar').getByRole('button', { name: '重跑' })).toBeEnabled()
   await expectNoHorizontalOverflow(page)
 })
 
@@ -677,12 +687,12 @@ test('AutoSubv3 task cards and restart dialog stay usable on mobile @autosub-tas
   await openPluginPage(page, 'AutoSubv3')
 
   await page.getByText('失败 1').click()
-  await expect(page.getByText('移动端布局回归测试剧集 S01E02')).toBeVisible()
+  await expect(page.locator('.task-mobile-card').filter({ hasText: '移动端布局回归测试剧集 S01E02' }).first()).toBeVisible()
   await expectNoHorizontalOverflow(page)
   await screenshot(page, testInfo, 'autosub-tasks-mobile-390.png')
 
   await page.getByRole('checkbox').first().check()
-  await page.getByRole('button', { name: '批量重新生成' }).click()
+  await page.locator('.autosub-mobile-batch-bar').getByRole('button', { name: '重跑' }).click()
   await expect(page.getByText('重新生成 AI 字幕').last()).toBeVisible()
   await expectNoHorizontalOverflow(page)
   await screenshot(page, testInfo, 'autosub-restart-dialog-mobile-390.png')
@@ -725,7 +735,7 @@ test('AutoSubv3 mobile task cards expose summary, details, and desktop fallback 
 test('AutoSubv3 task cards remain readable on tablet and desktop @autosub-tasks @autosub', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 768, height: 1024 })
   await openPluginPage(page, 'AutoSubv3')
-  await expect(page.getByText('移动端布局回归测试剧集 S01E01')).toBeVisible()
+  await expect(page.locator('.task-row').filter({ hasText: '移动端布局回归测试剧集 S01E01' }).first()).toBeVisible()
   await expectNoHorizontalOverflow(page)
   await screenshot(page, testInfo, 'autosub-tasks-tablet-768.png')
 
