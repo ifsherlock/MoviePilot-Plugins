@@ -2,6 +2,7 @@
 import { ref } from 'vue'
 import AiStatusStrip from './AiStatusStrip.vue'
 import EpisodeMobileCard from './EpisodeMobileCard.vue'
+import MobileActionBar from './MobileActionBar.vue'
 
 defineProps({
   selectedMedia: { type: Object, required: true },
@@ -160,7 +161,7 @@ defineExpose({
             {{ allVisibleSelected ? '取消全选' : '全选当前列表' }}
           </VBtn>
           <VBtn
-            class="mobile-touch-target"
+            class="toolbar-batch-action mobile-touch-target"
             color="primary"
             :disabled="!unlockedVisibleTargets.length"
             @click="$emit('open-batch-upload')"
@@ -169,7 +170,7 @@ defineExpose({
           </VBtn>
           <VBtn
             v-if="aiEnabled"
-            class="mobile-touch-target"
+            class="toolbar-batch-action mobile-touch-target"
             color="warning"
             variant="tonal"
             prepend-icon="mdi-robot-outline"
@@ -181,7 +182,7 @@ defineExpose({
           </VBtn>
           <VBtn
             v-if="aiEnabled && aiBatchCancelTargets.length"
-            class="mobile-touch-target"
+            class="toolbar-batch-action mobile-touch-target"
             color="error"
             variant="tonal"
             prepend-icon="mdi-cancel"
@@ -191,7 +192,7 @@ defineExpose({
             取消 AI
           </VBtn>
           <VBtn
-            class="online-batch-btn mobile-touch-target"
+            class="online-batch-btn toolbar-batch-action mobile-touch-target"
             color="success"
             variant="flat"
             prepend-icon="mdi-cloud-search-outline"
@@ -202,7 +203,7 @@ defineExpose({
             {{ onlineBatchLabel }}
           </VBtn>
           <VBtn
-            class="mobile-touch-target"
+            class="toolbar-batch-action mobile-touch-target"
             color="error"
             variant="tonal"
             :disabled="!selectedTargetIds.length"
@@ -212,7 +213,7 @@ defineExpose({
             清空选中外挂字幕
           </VBtn>
           <VBtn
-            class="mobile-touch-target"
+            class="toolbar-batch-action mobile-touch-target"
             color="warning"
             variant="tonal"
             prepend-icon="mdi-timeline-clock"
@@ -223,7 +224,7 @@ defineExpose({
             批量调轴
           </VBtn>
           <VBtn
-            class="mobile-touch-target"
+            class="toolbar-batch-action mobile-touch-target"
             color="secondary"
             variant="tonal"
             prepend-icon="mdi-restore"
@@ -234,6 +235,34 @@ defineExpose({
             批量恢复
           </VBtn>
         </div>
+
+        <MobileActionBar
+          :selected-count="selectedTargets.length"
+          :visible-count="visibleTargets.length"
+          :unlocked-count="unlockedVisibleTargets.length"
+          :batch-upload-count="batchUploadTargets.length"
+          :ai-enabled="aiEnabled"
+          :ai-available="aiAvailable"
+          :ai-capable-count="aiCapableBatchTargets.length"
+          :ai-cancel-count="aiBatchCancelTargets.length"
+          :ai-submitting="aiSubmitting"
+          :ai-cancelling="aiCancelling"
+          :ai-batch-label="aiBatchLabel"
+          :online-searching="onlineSearching"
+          :online-batch-label="onlineBatchLabel"
+          :clearing="clearing"
+          :timeline-count="selectedTimelineTargets.length"
+          :timeline-fixing="timelineFixing"
+          :timeline-available="timelineAvailable"
+          :restorable-count="selectedRestorableTargets.length"
+          @open-batch-upload="$emit('open-batch-upload')"
+          @open-batch-ai-generate="$emit('open-batch-ai-generate')"
+          @cancel-batch-ai-generate="$emit('cancel-batch-ai-generate')"
+          @open-batch-online-search="$emit('open-batch-online-search')"
+          @clear-selected-subtitles="$emit('clear-selected-subtitles')"
+          @fix-selected-detail-timeline="$emit('fix-selected-detail-timeline')"
+          @restore-selected-backups="$emit('restore-selected-backups')"
+        />
 
         <div v-if="visibleTargets.length" class="episode-list">
           <div
@@ -890,6 +919,14 @@ defineExpose({
 
   .toolbar-row .v-btn {
     width: 100%;
+  }
+
+  .toolbar-batch-action {
+    display: none;
+  }
+
+  .episode-list {
+    padding-bottom: calc(152px + env(safe-area-inset-bottom, 0px));
   }
 
   .episode-row {

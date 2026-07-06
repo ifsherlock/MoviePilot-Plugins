@@ -1,5 +1,5 @@
 import { computed, nextTick, ref } from 'vue'
-import { buildAiSummaryText } from '../utils/aiStatus'
+import { buildAiStatusDetail, buildAiSummaryText } from '../utils/aiStatus'
 
 const EMPTY_AI_TASK_DATA = {
   status: null,
@@ -229,7 +229,7 @@ export function useAiTasks({
     const task = aiTaskForTarget(target)
     if (isStreamTarget(target)) return 'STRM 资源暂不支持 AI 生成字幕'
     if (!aiEnabled.value) return 'AI 字幕联动已关闭'
-    if (!aiAvailable.value) return aiStatus.value.message || '请先安装并启用 AI字幕生成(联动版)'
+    if (!aiAvailable.value) return buildAiStatusDetail(aiStatus.value)
     if (!task) return '调用 AI 字幕生成'
     return task.message || task.status_label || '查看 AI 任务状态'
   }
@@ -299,7 +299,7 @@ export function useAiTasks({
       return
     }
     if (!aiAvailable.value) {
-      error.value = aiStatus.value.message || '请先安装并启用 AI字幕生成(联动版)'
+      error.value = buildAiStatusDetail(aiStatus.value)
       return
     }
     aiSubmitting.value = true

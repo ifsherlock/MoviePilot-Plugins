@@ -1,10 +1,12 @@
-const INSTALL_HINT = '请先安装并启用'
+const INSTALL_HINT = '请安装 AI字幕生成(联动版) 以启用相关功能'
 
 export function buildAiStatusDetail(aiStatus = {}) {
   const message = String(aiStatus?.message || '').trim()
-  const needsInstallHint = message === '插件未启用' || message === '请先安装并启用 AI字幕生成(联动版)'
-  if (!needsInstallHint) return message || '请先安装并启用 AI字幕生成(联动版)'
-  return message === '插件未启用' ? `${message}，${INSTALL_HINT}` : INSTALL_HINT
+  const normalizedMessage = message.replace(/\s+/g, '')
+  const alreadySaysInstall = normalizedMessage.includes('请安装AI字幕生成(联动版)')
+    || normalizedMessage.includes('请先安装并启用AI字幕生成(联动版)')
+  if (!message || message === '插件未启用' || alreadySaysInstall) return INSTALL_HINT
+  return message
 }
 
 export function buildAiSummaryText({ aiEnabled, aiAvailable, aiStatus, aiSummary }) {

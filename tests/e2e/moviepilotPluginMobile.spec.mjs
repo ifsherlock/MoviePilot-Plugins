@@ -311,6 +311,113 @@ test('SubtitleManualUpload episode mobile cards expose key actions @subtitle-epi
   await screenshot(page, testInfo, 'subtitle-episode-card-polish-desktop-1440.png')
 })
 
+test('SubtitleManualUpload mobile batch bar and AI guidance stay concise @subtitle-detail-batch-polish @subtitle', async ({ page }, testInfo) => {
+  await page.route('**/api/v1/plugin/SubtitleManualUpload/status', async route => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        enabled: true,
+        source: 'MoviePilot 本地整理记录',
+        index: {
+          ready: true,
+          updated_at: '2026-07-07 02:26:00',
+          entry_count: 50,
+          media_count: 1,
+          expires_in: 3600,
+        },
+        archive_support: {
+          zip: true,
+          rar: true,
+          rar_tool: 'unar',
+          rar_tool_path: '/usr/bin/unar',
+          rar_python: true,
+          dependency_mode: 'container_install',
+          dependency_status: { state: 'ready' },
+        },
+        timeline_fixer: {
+          available: true,
+          ffmpeg: true,
+          ffprobe: true,
+          modules: { numpy: true, pysubs2: true, webrtcvad: true },
+          configured_max_offset_seconds: 120,
+        },
+        ai_subtitle: {
+          enabled: true,
+          installed: false,
+          available: false,
+          running: false,
+          queue_ready: false,
+          plugin_name: 'AI字幕生成(联动版)',
+          plugin_version: '',
+          message: '插件未启用',
+          counts: {},
+          updated_at: '2026-07-07 02:31:00',
+        },
+        auto_transfer_queue: { total: 0, active: 0, pending: 0, in_progress: 0, completed: 0, skipped: 0, failed: 0 },
+      }),
+    })
+  })
+
+  await page.route('**/api/v1/plugin/SubtitleManualUpload/ai_tasks', async route => {
+    await route.fulfill({
+      contentType: 'application/json',
+      body: JSON.stringify({
+        status: {
+          enabled: true,
+          installed: false,
+          available: false,
+          running: false,
+          queue_ready: false,
+          plugin_name: 'AI字幕生成(联动版)',
+          plugin_version: '',
+          message: '插件未启用',
+          counts: {},
+          updated_at: '2026-07-07 02:31:00',
+        },
+        summary: {},
+        tasks: [],
+        task_by_target: {},
+        tasks_by_target: {},
+      }),
+    })
+  })
+
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openPluginPage(page, 'SubtitleManualUpload')
+  await page.getByText('移动端布局回归测试剧集：特别长的中文标题和 English Alias').first().click()
+
+  const firstCard = page.locator('.episode-mobile-card').filter({ hasText: 'S01E01' }).first()
+  await expect(firstCard).toBeVisible()
+  await firstCard.getByRole('checkbox').check()
+  await expect(page.getByText('1 个已选').first()).toBeVisible()
+
+  const batchBar = page.locator('.subtitle-mobile-action-bar')
+  await expect(batchBar).toBeVisible()
+  await expect(batchBar).toContainText('1 个已选')
+  await expectTouchTargets(batchBar.getByRole('button', { name: /搜索选中|上传|AI 生成|调轴|恢复|清空/ }), {
+    label: 'Subtitle mobile batch action bar',
+  })
+  await batchBar.getByRole('button', { name: /搜索选中/ }).click()
+  await expect(page.getByText('Mobile Layout Regression S01E01 English SDH')).toBeVisible()
+  await page.getByRole('button', { name: '关闭在线字幕搜索' }).click()
+
+  await batchBar.getByRole('button', { name: /AI 生成/ }).click({ force: true })
+  await expect(page.getByText('请安装 AI字幕生成(联动版) 以启用相关功能').first()).toBeVisible()
+  await expect(page.getByText('AI字幕生成(联动版) 插件未启用，请安装 AI字幕生成(联动版) 以启用相关功能')).toHaveCount(0)
+  await expectNoHorizontalOverflow(page)
+  await expectBottomContentNotObscured(page, '.episode-row')
+  await screenshot(page, testInfo, 'subtitle-detail-batch-polish-mobile-390.png')
+
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await expect(page.locator('.subtitle-mobile-action-bar')).toBeHidden()
+  await expect(page.locator('.toolbar-row').getByRole('button', { name: '上传选中字幕' })).toBeVisible()
+  await expect(page.locator('.toolbar-row').getByRole('button', { name: /搜索选中/ })).toBeVisible()
+  const toolbarWraps = await page.locator('.toolbar-row').evaluate(element => element.scrollHeight > element.clientHeight + 8)
+  expect(toolbarWraps).toBe(false)
+  await expectNoHorizontalOverflow(page)
+  await screenshot(page, testInfo, 'subtitle-detail-batch-polish-desktop-1440.png')
+})
+
 test('SubtitleManualUpload dialogs stay scrollable and bounded on mobile @subtitle-dialogs @subtitle', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await openPluginPage(page, 'SubtitleManualUpload')
