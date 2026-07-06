@@ -418,6 +418,62 @@ test('SubtitleManualUpload mobile batch bar and AI guidance stay concise @subtit
   await screenshot(page, testInfo, 'subtitle-detail-batch-polish-desktop-1440.png')
 })
 
+test('SubtitleManualUpload upload and online dialogs behave as mobile sheets @subtitle-upload-online-sheet-polish @subtitle', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openPluginPage(page, 'SubtitleManualUpload')
+  await page.getByText('移动端布局回归测试剧集：特别长的中文标题和 English Alias').first().click()
+
+  const firstCard = page.locator('.episode-mobile-card').filter({ hasText: 'S01E01' }).first()
+  await expect(firstCard).toBeVisible()
+  await firstCard.getByRole('button', { name: '上传' }).click()
+  const uploadDialog = page.getByRole('dialog')
+  await expect(uploadDialog.locator('.upload-dialog')).toBeVisible()
+  await expect(uploadDialog.getByText('把字幕或压缩包拖到这里')).toBeVisible()
+  await expectTouchTargets(uploadDialog.getByRole('button', { name: /选择文件|关闭/ }), {
+    label: 'Subtitle upload mobile sheet entry actions',
+  })
+  const uploadBox = await uploadDialog.locator('.upload-dialog').boundingBox()
+  expect(uploadBox.width).toBeLessThanOrEqual(390)
+  expect(uploadBox.height).toBeLessThanOrEqual(844)
+
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'The.Longest.Mobile.Layout.Regression.Title.2026.S01E01.English.SDH.Very.Long.Subtitle.File.Name.srt',
+    mimeType: 'application/x-subrip',
+    buffer: Buffer.from('1\\n00:00:01,000 --> 00:00:02,000\\nhello\\n'),
+  })
+  await expect(uploadDialog.getByText('确认集数与输出文件名')).toBeVisible()
+  await expectTouchTargets(uploadDialog.locator('.dialog-actions-top').getByRole('button', { name: /关闭|重新选择文件|写入字幕/ }), {
+    label: 'Subtitle upload mobile sheet fixed actions',
+  })
+  await expectNoHorizontalOverflow(page)
+  await screenshot(page, testInfo, 'subtitle-upload-online-sheet-upload-mobile-390.png')
+  await uploadDialog.getByRole('button', { name: '关闭上传字幕' }).click()
+  await expect(uploadDialog).toBeHidden()
+
+  await firstCard.getByRole('button', { name: '在线搜索' }).click()
+  const onlineDialog = page.getByRole('dialog')
+  await expect(onlineDialog.locator('.online-dialog')).toBeVisible()
+  await expect(onlineDialog.getByText('Mobile Layout Regression S01E01 English SDH')).toBeVisible()
+  await expectTouchTargets(onlineDialog.getByRole('button', { name: /下载并生成预览|提交 AI 翻译|搜索/ }).or(onlineDialog.locator('.online-result-action')), {
+    label: 'Subtitle online mobile sheet actions',
+  })
+  const onlineBox = await onlineDialog.locator('.online-dialog').boundingBox()
+  expect(onlineBox.width).toBeLessThanOrEqual(390)
+  expect(onlineBox.height).toBeLessThanOrEqual(844)
+  await expectNoHorizontalOverflow(page)
+  await screenshot(page, testInfo, 'subtitle-upload-online-sheet-online-mobile-390.png')
+  await onlineDialog.getByRole('button', { name: '关闭在线字幕搜索' }).click()
+  await expect(onlineDialog).toBeHidden()
+
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.locator('.episode-row').filter({ hasText: 'S01E01' }).first().getByTitle('搜索此集在线字幕').click()
+  await expect(page.locator('.online-layout')).toBeVisible()
+  const columns = await page.locator('.online-layout').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length)
+  expect(columns).toBe(2)
+  await expectNoHorizontalOverflow(page)
+  await screenshot(page, testInfo, 'subtitle-upload-online-sheet-online-desktop-1440.png')
+})
+
 test('SubtitleManualUpload dialogs stay scrollable and bounded on mobile @subtitle-dialogs @subtitle', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await openPluginPage(page, 'SubtitleManualUpload')

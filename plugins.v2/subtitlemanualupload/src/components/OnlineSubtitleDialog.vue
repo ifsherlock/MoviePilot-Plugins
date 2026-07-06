@@ -63,7 +63,7 @@ defineEmits([
     @update:model-value="$emit('update:modelValue', $event)"
   >
     <VCard class="online-dialog" rounded="xl">
-      <VCardTitle class="dialog-title">
+      <VCardTitle class="dialog-title online-dialog-title">
         <div>
           <span>{{ onlineTitle || '在线字幕搜索' }}</span>
           <p>{{ onlineTargets.length }} 个目标 · 下载会进入匹配预览，提交 AI 翻译会直接进入 AI 状态</p>
@@ -150,7 +150,7 @@ defineEmits([
         </VBtn>
       </VCardActions>
       <VDivider />
-      <VCardText>
+      <VCardText class="online-dialog-body">
         <VAlert
           v-if="onlineError"
           class="mb-4"
@@ -268,7 +268,7 @@ defineEmits([
                 </div>
                 <a
                   v-if="item.page_url"
-                  class="online-open-link"
+                  class="online-open-link online-result-action"
                   :href="item.page_url"
                   target="_blank"
                   rel="noopener noreferrer"
@@ -353,6 +353,10 @@ defineEmits([
   background: var(--smu-dialog-bg);
   color: var(--smu-text);
   backdrop-filter: blur(16px);
+}
+
+.online-dialog-body {
+  min-height: 0;
 }
 
 .dialog-title {
@@ -538,7 +542,7 @@ defineEmits([
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 28px;
+  min-height: 44px;
   padding: 4px 10px;
   border-radius: 999px;
   background: var(--smu-accent-soft);
@@ -586,10 +590,13 @@ defineEmits([
 @media (max-width: 900px) {
   .online-dialog {
     max-height: calc(100dvh - 24px);
+    display: flex;
+    flex-direction: column;
     overflow: hidden;
   }
 
-  .online-dialog :deep(.v-card-text) {
+  .online-dialog-body {
+    min-height: 0;
     overflow-y: auto;
   }
 
@@ -615,6 +622,12 @@ defineEmits([
 }
 
 @media (max-width: 600px) {
+  .online-dialog {
+    width: 100%;
+    max-height: 100dvh;
+    border-radius: 20px 20px 0 0 !important;
+  }
+
   .dialog-title {
     padding: 14px 16px;
   }
@@ -629,8 +642,31 @@ defineEmits([
     min-width: 0;
   }
 
+  .online-title-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr)) 44px;
+  }
+
+  .online-title-actions .mobile-touch-target {
+    min-width: 44px;
+    min-height: 44px;
+  }
+
+  .online-title-actions .mobile-touch-target:nth-child(1),
+  .online-title-actions .mobile-touch-target:nth-child(2) {
+    grid-column: span 1;
+  }
+
   .online-search-actions {
+    position: sticky;
+    z-index: 3;
+    top: 0;
     padding: 12px 16px;
+    border-bottom: 1px solid var(--smu-border);
+  }
+
+  .online-dialog-body {
+    padding-bottom: calc(86px + env(safe-area-inset-bottom, 0px));
   }
 
   .online-results-panel,
@@ -651,11 +687,14 @@ defineEmits([
 
   .online-result-card {
     grid-template-columns: auto minmax(0, 1fr);
+    align-items: start;
+    border-radius: 16px;
   }
 
-  .online-open-link {
+  .online-result-action {
     grid-column: 2;
     justify-self: start;
+    min-width: 72px;
   }
 }
 </style>

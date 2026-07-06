@@ -68,14 +68,15 @@ function onPickFiles(event) {
     <VCard class="upload-dialog" rounded="xl">
       <VCardTitle class="dialog-title">
         <span>{{ uploadTitle || '上传字幕' }}</span>
-        <VBtn icon="mdi-close" variant="text" aria-label="关闭上传字幕" @click="$emit('update:modelValue', false)" />
+        <VBtn class="upload-action-btn" icon="mdi-close" variant="text" aria-label="关闭上传字幕" @click="$emit('update:modelValue', false)" />
       </VCardTitle>
       <VDivider />
       <VCardActions class="dialog-actions dialog-actions-top">
-        <VBtn variant="text" @click="$emit('update:modelValue', false)">关闭</VBtn>
-        <VSpacer />
+        <VBtn class="upload-action-btn" variant="text" @click="$emit('update:modelValue', false)">关闭</VBtn>
+        <VSpacer class="upload-actions-spacer" />
         <VBtn
           v-if="hasPreviewItems"
+          class="upload-action-btn"
           variant="tonal"
           @click="$emit('reset-upload-preview')"
         >
@@ -105,6 +106,7 @@ function onPickFiles(event) {
         </VTooltip>
         <VBtn
           v-if="hasPreviewItems"
+          class="upload-action-btn"
           color="success"
           :disabled="!canApply"
           :loading="applying"
@@ -114,7 +116,7 @@ function onPickFiles(event) {
         </VBtn>
       </VCardActions>
       <VDivider />
-      <VCardText>
+      <VCardText class="upload-dialog-body">
         <div
           v-if="!hasPreviewItems"
           class="dropzone"
@@ -129,6 +131,7 @@ function onPickFiles(event) {
             支持字幕文件、ZIP、RAR、7Z；RAR / 7Z 默认使用容器内 unar 解压。
           </div>
           <VBtn
+            class="upload-action-btn"
             color="primary"
             variant="flat"
             :disabled="preparing"
@@ -164,7 +167,7 @@ function onPickFiles(event) {
               <strong>{{ file.name }}</strong>
               <span>{{ formatBytes(file.size) }}</span>
             </div>
-            <VBtn size="small" variant="text" color="error" @click="$emit('remove-file', file)">移除</VBtn>
+            <VBtn class="upload-action-btn" size="small" variant="text" color="error" @click="$emit('remove-file', file)">移除</VBtn>
           </div>
         </div>
 
@@ -186,6 +189,7 @@ function onPickFiles(event) {
                 @keyup.enter="$emit('apply-batch-language-suffix')"
               />
               <VBtn
+                class="upload-action-btn"
                 variant="tonal"
                 color="primary"
                 :disabled="!batchLanguageSuffix.trim()"
@@ -416,10 +420,13 @@ function onPickFiles(event) {
 @media (max-width: 900px) {
   .upload-dialog {
     max-height: calc(100dvh - 24px);
+    display: flex;
+    flex-direction: column;
     overflow: hidden;
   }
 
-  .upload-dialog :deep(.v-card-text) {
+  .upload-dialog-body {
+    min-height: 0;
     overflow-y: auto;
   }
 
@@ -438,13 +445,19 @@ function onPickFiles(event) {
   .dialog-actions-top {
     align-items: stretch;
   }
-
-  .dialog-actions-top .v-btn {
-    flex: 1 1 auto;
-  }
 }
 
 @media (max-width: 600px) {
+  .upload-dialog {
+    width: 100%;
+    max-height: 100dvh;
+    border-radius: 20px 20px 0 0 !important;
+  }
+
+  .dialog-title {
+    flex: 0 0 auto;
+  }
+
   .dialog-title {
     align-items: start;
   }
@@ -455,7 +468,32 @@ function onPickFiles(event) {
   }
 
   .dialog-actions {
+    order: 4;
+    flex: 0 0 auto;
     padding: 10px 14px;
+    border-top: 1px solid var(--smu-border);
+    background: var(--smu-dialog-bar-bg);
+    box-shadow: 0 -10px 24px rgba(var(--v-theme-shadow), 0.1);
+  }
+
+  .dialog-actions-top {
+    position: sticky;
+    bottom: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .upload-actions-spacer {
+    display: none;
+  }
+
+  .dialog-actions-top .upload-action-btn:last-child:nth-child(n + 2) {
+    grid-column: 1 / -1;
+  }
+
+  .upload-dialog-body {
+    order: 3;
+    padding-bottom: 14px;
   }
 
   .dropzone {
@@ -475,6 +513,12 @@ function onPickFiles(event) {
 
   .file-row .v-btn {
     align-self: stretch;
+  }
+
+  .upload-action-btn {
+    min-width: 44px;
+    min-height: 44px;
+    touch-action: manipulation;
   }
 
   .preview-row {

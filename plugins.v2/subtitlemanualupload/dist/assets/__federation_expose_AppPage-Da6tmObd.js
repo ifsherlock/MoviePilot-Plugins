@@ -4098,7 +4098,7 @@ return (_ctx, _cache) => {
           rounded: "xl"
         }, {
           default: _withCtx$4(() => [
-            _createVNode$5(_component_VCardTitle, { class: "dialog-title" }, {
+            _createVNode$5(_component_VCardTitle, { class: "dialog-title online-dialog-title" }, {
               default: _withCtx$4(() => [
                 _createElementVNode$6("div", null, [
                   _createElementVNode$6("span", null, _toDisplayString$5(__props.onlineTitle || '在线字幕搜索'), 1),
@@ -4210,7 +4210,7 @@ return (_ctx, _cache) => {
               _: 1
             }),
             _createVNode$5(_component_VDivider),
-            _createVNode$5(_component_VCardText, null, {
+            _createVNode$5(_component_VCardText, { class: "online-dialog-body" }, {
               default: _withCtx$4(() => [
                 (__props.onlineError)
                   ? (_openBlock$6(), _createBlock$6(_component_VAlert, {
@@ -4366,7 +4366,7 @@ return (_ctx, _cache) => {
                               (item.page_url)
                                 ? (_openBlock$6(), _createElementBlock$6("a", {
                                     key: 0,
-                                    class: "online-open-link",
+                                    class: "online-open-link online-result-action",
                                     href: item.page_url,
                                     target: "_blank",
                                     rel: "noopener noreferrer"
@@ -4480,7 +4480,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const OnlineSubtitleDialog = /*#__PURE__*/_export_sfc(_sfc_main$6, [['__scopeId',"data-v-3458b465"]]);
+const OnlineSubtitleDialog = /*#__PURE__*/_export_sfc(_sfc_main$6, [['__scopeId',"data-v-d4a4939d"]]);
 
 const {resolveComponent:_resolveComponent$5,openBlock:_openBlock$5,createBlock:_createBlock$5,createCommentVNode:_createCommentVNode$5,createElementVNode:_createElementVNode$5,toDisplayString:_toDisplayString$4,normalizeClass:_normalizeClass$4,createElementBlock:_createElementBlock$5} = await importShared('vue');
 
@@ -5765,6 +5765,7 @@ return (_ctx, _cache) => {
             default: _withCtx(() => [
               _createElementVNode$1("span", null, _toDisplayString(__props.uploadTitle || '上传字幕'), 1),
               _createVNode$1(_component_VBtn, {
+                class: "upload-action-btn",
                 icon: "mdi-close",
                 variant: "text",
                 "aria-label": "关闭上传字幕",
@@ -5777,6 +5778,7 @@ return (_ctx, _cache) => {
           _createVNode$1(_component_VCardActions, { class: "dialog-actions dialog-actions-top" }, {
             default: _withCtx(() => [
               _createVNode$1(_component_VBtn, {
+                class: "upload-action-btn",
                 variant: "text",
                 onClick: _cache[1] || (_cache[1] = $event => (_ctx.$emit('update:modelValue', false)))
               }, {
@@ -5785,10 +5787,11 @@ return (_ctx, _cache) => {
                 ]))]),
                 _: 1
               }),
-              _createVNode$1(_component_VSpacer),
+              _createVNode$1(_component_VSpacer, { class: "upload-actions-spacer" }),
               (__props.hasPreviewItems)
                 ? (_openBlock$1(), _createBlock$1(_component_VBtn, {
                     key: 0,
+                    class: "upload-action-btn",
                     variant: "tonal",
                     onClick: _cache[2] || (_cache[2] = $event => (_ctx.$emit('reset-upload-preview')))
                   }, {
@@ -5823,6 +5826,7 @@ return (_ctx, _cache) => {
               (__props.hasPreviewItems)
                 ? (_openBlock$1(), _createBlock$1(_component_VBtn, {
                     key: 2,
+                    class: "upload-action-btn",
                     color: "success",
                     disabled: !__props.canApply,
                     loading: __props.applying,
@@ -5838,7 +5842,7 @@ return (_ctx, _cache) => {
             _: 1
           }),
           _createVNode$1(_component_VDivider),
-          _createVNode$1(_component_VCardText, null, {
+          _createVNode$1(_component_VCardText, { class: "upload-dialog-body" }, {
             default: _withCtx(() => [
               (!__props.hasPreviewItems)
                 ? (_openBlock$1(), _createElementBlock$1("div", {
@@ -5852,6 +5856,7 @@ return (_ctx, _cache) => {
                     _cache[17] || (_cache[17] = _createElementVNode$1("div", { class: "dropzone-title" }, "把字幕或压缩包拖到这里", -1)),
                     _cache[18] || (_cache[18] = _createElementVNode$1("div", { class: "dropzone-text" }, " 支持字幕文件、ZIP、RAR、7Z；RAR / 7Z 默认使用容器内 unar 解压。 ", -1)),
                     _createVNode$1(_component_VBtn, {
+                      class: "upload-action-btn",
                       color: "primary",
                       variant: "flat",
                       disabled: __props.preparing,
@@ -5902,6 +5907,7 @@ return (_ctx, _cache) => {
                           _createElementVNode$1("span", null, _toDisplayString(__props.formatBytes(file.size)), 1)
                         ]),
                         _createVNode$1(_component_VBtn, {
+                          class: "upload-action-btn",
                           size: "small",
                           variant: "text",
                           color: "error",
@@ -5935,6 +5941,7 @@ return (_ctx, _cache) => {
                           onKeyup: _cache[9] || (_cache[9] = _withKeys($event => (_ctx.$emit('apply-batch-language-suffix')), ["enter"]))
                         }, null, 8, ["model-value"]),
                         _createVNode$1(_component_VBtn, {
+                          class: "upload-action-btn",
                           variant: "tonal",
                           color: "primary",
                           disabled: !__props.batchLanguageSuffix.trim(),
@@ -6002,7 +6009,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const UploadDialog = /*#__PURE__*/_export_sfc(_sfc_main$1, [['__scopeId',"data-v-e42ff558"]]);
+const UploadDialog = /*#__PURE__*/_export_sfc(_sfc_main$1, [['__scopeId',"data-v-abecda7c"]]);
 
 function isStreamTarget(target) {
   if (!target) return false
