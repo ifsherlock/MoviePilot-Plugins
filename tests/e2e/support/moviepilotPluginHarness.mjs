@@ -186,6 +186,17 @@ export async function installMoviePilotPluginHarness(page) {
   })
 
   await page.addInitScript(() => {
+    const theme = localStorage.getItem('theme') || 'light'
+    localStorage.setItem('theme', theme)
+    localStorage.setItem('moviepilot-theme-customizer', JSON.stringify({
+      layout: 'vertical',
+      primaryColor: '#9155FD',
+      radius: 'default',
+      semiDarkMenu: false,
+      shadow: '0',
+      skin: 'default',
+      theme,
+    }))
     localStorage.setItem('auth', JSON.stringify({
       token: 'mobile-plugin-test-token',
       originalPath: '/plugin-app/SubtitleManualUpload',

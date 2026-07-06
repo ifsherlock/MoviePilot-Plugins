@@ -1,4 +1,6 @@
 import { expect, test } from '@playwright/test'
+import { mkdir } from 'node:fs/promises'
+import path from 'node:path'
 import {
   installMoviePilotPluginHarness,
   logHarnessInfo,
@@ -13,6 +15,11 @@ const subtitleViewports = [
   { name: 'tablet-768', width: 768, height: 1024 },
   { name: 'desktop-1024', width: 1024, height: 768 },
   { name: 'desktop-1440', width: 1440, height: 900 },
+]
+const screenshotRoot = path.resolve('test-results/plugin-mobile-screenshots')
+const themeCases = [
+  { name: 'light', expected: 'light' },
+  { name: 'dark', expected: 'dark' },
 ]
 
 test.beforeEach(async ({ page }, testInfo) => {
@@ -29,10 +36,33 @@ async function expectNoHorizontalOverflow(page) {
 }
 
 async function screenshot(page, testInfo, name) {
+  await mkdir(screenshotRoot, { recursive: true })
+  const filePath = path.join(screenshotRoot, name)
+  const body = await page.screenshot({ fullPage: true, path: filePath })
   await testInfo.attach(name, {
-    body: await page.screenshot({ fullPage: true }),
+    body,
     contentType: 'image/png',
   })
+  testInfo.annotations.push({ type: 'screenshot', description: filePath })
+}
+
+async function setHostTheme(page, themeName) {
+  await page.addInitScript(theme => {
+    localStorage.setItem('theme', theme)
+    localStorage.setItem('moviepilot-theme-customizer', JSON.stringify({
+      layout: 'vertical',
+      primaryColor: '#9155FD',
+      radius: 'default',
+      semiDarkMenu: false,
+      shadow: '0',
+      skin: 'default',
+      theme,
+    }))
+  }, themeName)
+}
+
+async function expectHostTheme(page, expectedTheme) {
+  await expect.poll(async () => page.evaluate(() => document.documentElement.getAttribute('data-theme'))).toBe(expectedTheme)
 }
 
 test('loads SubtitleManualUpload in the real MoviePilot host @host-load', async ({ page }) => {
@@ -257,3 +287,27 @@ test('AutoSubv3 task cards remain readable on tablet and desktop @autosub-tasks 
   await expectNoHorizontalOverflow(page)
   await screenshot(page, testInfo, 'autosub-tasks-desktop-1440.png')
 })
+
+for (const themeCase of themeCases) {
+  test(`SubtitleManualUpload follows host ${themeCase.name} theme @theme @subtitle`, async ({ page }, testInfo) => {
+    await setHostTheme(page, themeCase.name)
+    await page.setViewportSize({ width: 430, height: 932 })
+    await openPluginPage(page, 'SubtitleManualUpload')
+
+    await expectHostTheme(page, themeCase.expected)
+    await expect(page.getByText('移动端布局回归测试剧集：特别长的中文标题和 English Alias').first()).toBeVisible()
+    await expectNoHorizontalOverflow(page)
+    await screenshot(page, testInfo, `subtitle-root-${themeCase.name}-theme-mobile-430.png`)
+  })
+
+  test(`AutoSubv3 follows host ${themeCase.name} theme @theme @autosub`, async ({ page }, testInfo) => {
+    await setHostTheme(page, themeCase.name)
+    await page.setViewportSize({ width: 430, height: 932 })
+    await openPluginPage(page, 'AutoSubv3')
+
+    await expectHostTheme(page, themeCase.expected)
+    await expect(page.getByText('移动端布局回归测试剧集 S01E01')).toBeVisible()
+    await expectNoHorizontalOverflow(page)
+    await screenshot(page, testInfo, `autosub-root-${themeCase.name}-theme-mobile-430.png`)
+  })
+}
