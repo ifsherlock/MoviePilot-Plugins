@@ -3040,6 +3040,7 @@ return (_ctx, _cache) => {
                 (__props.aiDialogHasActiveTasks)
                   ? (_openBlock$b(), _createBlock$b(_component_VBtn, {
                       key: 0,
+                      class: "ai-dialog-action",
                       variant: "tonal",
                       color: "error",
                       "prepend-icon": "mdi-cancel",
@@ -3055,6 +3056,7 @@ return (_ctx, _cache) => {
                 (__props.aiAvailable && (__props.aiTaskDialogTarget || __props.aiDialogTasks.length))
                   ? (_openBlock$b(), _createBlock$b(_component_VBtn, {
                       key: 1,
+                      class: "ai-dialog-action",
                       variant: "tonal",
                       color: "warning",
                       "prepend-icon": "mdi-robot-happy-outline",
@@ -3069,6 +3071,7 @@ return (_ctx, _cache) => {
                     }, 8, ["disabled", "loading"]))
                   : _createCommentVNode$a("", true),
                 _createVNode$a(_component_VBtn, {
+                  class: "ai-dialog-action",
                   variant: "tonal",
                   color: "primary",
                   "prepend-icon": "mdi-refresh",
@@ -3092,7 +3095,7 @@ return (_ctx, _cache) => {
             _: 1
           }),
           _createVNode$a(_component_VDivider),
-          _createVNode$a(_component_VCardText, null, {
+          _createVNode$a(_component_VCardText, { class: "ai-task-dialog-body" }, {
             default: _withCtx$9(() => [
               (!__props.aiAvailable)
                 ? (_openBlock$b(), _createBlock$b(_component_VAlert, {
@@ -3170,6 +3173,7 @@ return (_ctx, _cache) => {
                           }, 1024),
                           _createElementVNode$b("span", null, _toDisplayString$a(task.complete_time || task.add_time || '-'), 1),
                           _createVNode$a(_component_VBtn, {
+                            class: "ai-dialog-action",
                             size: "small",
                             variant: "tonal",
                             color: "warning",
@@ -3200,7 +3204,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const AiTaskDialog = /*#__PURE__*/_export_sfc(_sfc_main$b, [['__scopeId',"data-v-ecd8aa9f"]]);
+const AiTaskDialog = /*#__PURE__*/_export_sfc(_sfc_main$b, [['__scopeId',"data-v-ac9c5b28"]]);
 
 const {createElementVNode:_createElementVNode$a,toDisplayString:_toDisplayString$9,createTextVNode:_createTextVNode$8,resolveComponent:_resolveComponent$a,withCtx:_withCtx$8,createVNode:_createVNode$9,renderList:_renderList$6,Fragment:_Fragment$6,openBlock:_openBlock$a,createElementBlock:_createElementBlock$9,createCommentVNode:_createCommentVNode$9,normalizeClass:_normalizeClass$7,createBlock:_createBlock$a} = await importShared('vue');
 
@@ -3262,6 +3266,7 @@ return (_ctx, _cache) => {
               ]),
               _createElementVNode$a("div", _hoisted_1$a, [
                 _createVNode$9(_component_VBtn, {
+                  class: "auto-queue-action",
                   variant: "tonal",
                   "prepend-icon": "mdi-refresh",
                   onClick: _cache[0] || (_cache[0] = $event => (_ctx.$emit('load-auto-transfer-queue')))
@@ -3272,8 +3277,10 @@ return (_ctx, _cache) => {
                   _: 1
                 }),
                 _createVNode$9(_component_VBtn, {
+                  class: "auto-queue-action",
                   icon: "mdi-close",
                   variant: "text",
+                  "aria-label": "关闭入库自动字幕队列",
                   onClick: _cache[1] || (_cache[1] = $event => (_ctx.$emit('update:modelValue', false)))
                 })
               ])
@@ -3281,7 +3288,7 @@ return (_ctx, _cache) => {
             _: 1
           }),
           _createVNode$9(_component_VDivider),
-          _createVNode$9(_component_VCardText, null, {
+          _createVNode$9(_component_VCardText, { class: "auto-queue-body" }, {
             default: _withCtx$8(() => [
               _createElementVNode$a("div", _hoisted_2$9, [
                 (_openBlock$a(true), _createElementBlock$9(_Fragment$6, null, _renderList$6(__props.autoTransferQueue.rate_limits || {}, (rate, provider) => {
@@ -3321,7 +3328,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const AutoTransferQueueDialog = /*#__PURE__*/_export_sfc(_sfc_main$a, [['__scopeId',"data-v-774aa624"]]);
+const AutoTransferQueueDialog = /*#__PURE__*/_export_sfc(_sfc_main$a, [['__scopeId',"data-v-e0b18d0a"]]);
 
 const {renderList:_renderList$5,Fragment:_Fragment$5,openBlock:_openBlock$9,createElementBlock:_createElementBlock$8,createCommentVNode:_createCommentVNode$8,toDisplayString:_toDisplayString$8,createElementVNode:_createElementVNode$9,resolveComponent:_resolveComponent$9,createVNode:_createVNode$8,createTextVNode:_createTextVNode$7,withCtx:_withCtx$7,createBlock:_createBlock$9} = await importShared('vue');
 

@@ -57,6 +57,7 @@ const aiStatusDetail = computed(() => buildAiStatusDetail(props.aiStatus))
         <div class="online-title-actions">
           <VBtn
             v-if="aiDialogHasActiveTasks"
+            class="ai-dialog-action"
             variant="tonal"
             color="error"
             prepend-icon="mdi-cancel"
@@ -67,6 +68,7 @@ const aiStatusDetail = computed(() => buildAiStatusDetail(props.aiStatus))
           </VBtn>
           <VBtn
             v-if="aiAvailable && (aiTaskDialogTarget || aiDialogTasks.length)"
+            class="ai-dialog-action"
             variant="tonal"
             color="warning"
             prepend-icon="mdi-robot-happy-outline"
@@ -77,6 +79,7 @@ const aiStatusDetail = computed(() => buildAiStatusDetail(props.aiStatus))
             {{ aiDialogActionText }}
           </VBtn>
           <VBtn
+            class="ai-dialog-action"
             variant="tonal"
             color="primary"
             prepend-icon="mdi-refresh"
@@ -95,7 +98,7 @@ const aiStatusDetail = computed(() => buildAiStatusDetail(props.aiStatus))
         />
       </VCardTitle>
       <VDivider />
-      <VCardText>
+      <VCardText class="ai-task-dialog-body">
         <VAlert
           v-if="!aiAvailable"
           class="mb-4"
@@ -154,6 +157,7 @@ const aiStatusDetail = computed(() => buildAiStatusDetail(props.aiStatus))
               <VChip size="small" variant="tonal">{{ task.status_label }}</VChip>
               <span>{{ task.complete_time || task.add_time || '-' }}</span>
               <VBtn
+                class="ai-dialog-action"
                 size="small"
                 variant="tonal"
                 color="warning"
@@ -179,6 +183,10 @@ const aiStatusDetail = computed(() => buildAiStatusDetail(props.aiStatus))
   background: var(--smu-dialog-bg);
   color: var(--smu-text);
   backdrop-filter: blur(16px);
+}
+
+.ai-task-dialog-body {
+  min-height: 0;
 }
 
 .dialog-title {
@@ -290,6 +298,7 @@ const aiStatusDetail = computed(() => buildAiStatusDetail(props.aiStatus))
 .ai-task-time span {
   color: var(--smu-text-muted);
   font-size: 12px;
+  overflow-wrap: anywhere;
 }
 
 .ai-task-main p {
@@ -313,10 +322,13 @@ const aiStatusDetail = computed(() => buildAiStatusDetail(props.aiStatus))
 @media (max-width: 900px) {
   .ai-task-dialog {
     max-height: calc(100dvh - 24px);
+    display: flex;
+    flex-direction: column;
     overflow: hidden;
   }
 
-  .ai-task-dialog :deep(.v-card-text) {
+  .ai-task-dialog-body {
+    min-height: 0;
     overflow-y: auto;
   }
 
@@ -349,17 +361,37 @@ const aiStatusDetail = computed(() => buildAiStatusDetail(props.aiStatus))
 }
 
 @media (max-width: 600px) {
+  .ai-task-dialog {
+    width: 100%;
+    max-height: 100dvh;
+    border-radius: 20px 20px 0 0 !important;
+  }
+
   .dialog-title {
     padding: 14px 16px;
   }
 
   .online-title-actions {
+    position: sticky;
+    z-index: 3;
+    bottom: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
     justify-content: stretch;
+    padding: 10px 0 0;
+    border-top: 1px solid var(--smu-border);
+    background: var(--smu-dialog-bg);
   }
 
-  .online-title-actions .v-btn {
-    flex: 1 1 auto;
-    min-width: 0;
+  .ai-dialog-action,
+  .dialog-close-btn {
+    min-width: 44px;
+    min-height: 44px;
+    touch-action: manipulation;
+  }
+
+  .online-title-actions .ai-dialog-action:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
   }
 
   .ai-task-row {

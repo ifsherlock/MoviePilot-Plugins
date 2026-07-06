@@ -26,17 +26,18 @@ defineEmits([
         </div>
         <div class="online-title-actions">
           <VBtn
+            class="auto-queue-action"
             variant="tonal"
             prepend-icon="mdi-refresh"
             @click="$emit('load-auto-transfer-queue')"
           >
             刷新
           </VBtn>
-          <VBtn icon="mdi-close" variant="text" @click="$emit('update:modelValue', false)" />
+          <VBtn class="auto-queue-action" icon="mdi-close" variant="text" aria-label="关闭入库自动字幕队列" @click="$emit('update:modelValue', false)" />
         </div>
       </VCardTitle>
       <VDivider />
-      <VCardText>
+      <VCardText class="auto-queue-body">
         <div class="auto-queue-rates">
           <span
             v-for="(rate, provider) in autoTransferQueue.rate_limits || {}"
@@ -70,6 +71,10 @@ defineEmits([
   border: 1px solid var(--smu-border);
   background: var(--smu-card-bg-strong);
   color: var(--smu-text);
+}
+
+.auto-queue-body {
+  min-height: 0;
 }
 
 .dialog-title {
@@ -119,6 +124,12 @@ defineEmits([
   background: var(--smu-card-bg);
 }
 
+.auto-queue-row strong,
+.auto-queue-row span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
 .auto-queue-row span {
   color: var(--smu-text-muted);
   font-size: 0.82rem;
@@ -148,6 +159,18 @@ defineEmits([
 }
 
 @media (max-width: 720px) {
+  .auto-queue-card {
+    max-height: calc(100dvh - 24px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .auto-queue-body {
+    min-height: 0;
+    overflow-y: auto;
+  }
+
   .dialog-title {
     display: grid;
   }
@@ -155,6 +178,42 @@ defineEmits([
   .online-title-actions {
     width: 100%;
     justify-content: flex-end;
+  }
+}
+
+@media (max-width: 600px) {
+  .auto-queue-card {
+    width: 100%;
+    max-height: 100dvh;
+    border-radius: 20px 20px 0 0 !important;
+  }
+
+  .dialog-title {
+    padding: 14px 16px;
+  }
+
+  .online-title-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 44px;
+    gap: 12px;
+  }
+
+  .auto-queue-action {
+    min-width: 48px;
+    min-height: 48px;
+    touch-action: manipulation;
+  }
+
+  .auto-queue-rates {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+
+  .auto-queue-row {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-items: start;
+    padding: 10px;
   }
 }
 </style>

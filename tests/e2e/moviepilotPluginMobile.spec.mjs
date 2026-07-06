@@ -474,6 +474,56 @@ test('SubtitleManualUpload upload and online dialogs behave as mobile sheets @su
   await screenshot(page, testInfo, 'subtitle-upload-online-sheet-online-desktop-1440.png')
 })
 
+test('SubtitleManualUpload AI status and auto queue dialogs behave as mobile sheets @subtitle-ai-queue-sheet-polish @subtitle', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openPluginPage(page, 'SubtitleManualUpload')
+  await page.getByText('移动端布局回归测试剧集：特别长的中文标题和 English Alias').first().click()
+
+  await page.getByRole('button', { name: /AI：/ }).click()
+  const aiDialog = page.getByRole('dialog')
+  await expect(aiDialog.locator('.ai-task-dialog')).toBeVisible()
+  await expect(aiDialog.getByText('极端失败原因：ASR 提取成功')).toBeVisible()
+  await expectTouchTargets(aiDialog.getByRole('button', { name: /刷新|重新生成|关闭 AI 字幕生成状态/ }), {
+    label: 'Subtitle AI mobile sheet actions',
+  })
+  const aiBox = await aiDialog.locator('.ai-task-dialog').boundingBox()
+  expect(aiBox.width).toBeLessThanOrEqual(390)
+  expect(aiBox.height).toBeLessThanOrEqual(844)
+  await expectNoHorizontalOverflow(page)
+  await screenshot(page, testInfo, 'subtitle-ai-queue-sheet-ai-mobile-390.png')
+  await aiDialog.getByRole('button', { name: '关闭 AI 字幕生成状态' }).click()
+  await expect(aiDialog).toBeHidden()
+
+  await page.getByRole('button', { name: '返回资源列表' }).click()
+  await page.getByRole('button', { name: '匹配历史' }).click()
+  await page.getByText('入库自动字幕队列').first().click()
+  const queueDialog = page.getByRole('dialog')
+  await expect(queueDialog.locator('.auto-queue-card')).toBeVisible()
+  await expect(queueDialog.getByText(/Cloudflare challenge/)).toBeVisible()
+  await expectTouchTargets(queueDialog.getByRole('button', { name: /刷新|关闭入库自动字幕队列/ }), {
+    label: 'Subtitle auto queue mobile sheet actions',
+  })
+  const queueBox = await queueDialog.locator('.auto-queue-card').boundingBox()
+  expect(queueBox.width).toBeLessThanOrEqual(390)
+  expect(queueBox.height).toBeLessThanOrEqual(844)
+  await expectNoHorizontalOverflow(page)
+  await screenshot(page, testInfo, 'subtitle-ai-queue-sheet-queue-mobile-390.png')
+  await queueDialog.getByRole('button', { name: '关闭入库自动字幕队列' }).click()
+  await expect(queueDialog).toBeHidden()
+
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.reload()
+  await expect(page.locator('.plugin-app-page')).toBeVisible()
+  await page.getByText('移动端布局回归测试剧集：特别长的中文标题和 English Alias').first().click()
+  await page.locator('.episode-row').filter({ hasText: 'S01E01' }).first().locator('.ai-row-btn').click()
+  await expect(aiDialog.locator('.ai-task-dialog')).toBeVisible()
+  const desktopAiBox = await aiDialog.locator('.ai-task-dialog').boundingBox()
+  expect(desktopAiBox.width).toBeLessThanOrEqual(860)
+  expect(desktopAiBox.height).toBeLessThan(900)
+  await expectNoHorizontalOverflow(page)
+  await screenshot(page, testInfo, 'subtitle-ai-queue-sheet-ai-desktop-1440.png')
+})
+
 test('SubtitleManualUpload dialogs stay scrollable and bounded on mobile @subtitle-dialogs @subtitle', async ({ page }, testInfo) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await openPluginPage(page, 'SubtitleManualUpload')
