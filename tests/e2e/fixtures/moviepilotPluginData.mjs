@@ -206,6 +206,32 @@ export const onlineManualLinks = {
   ],
 }
 
+export const uploadPreview = {
+  source: 'upload',
+  items: [
+    {
+      upload_id: 'upload-preview-1',
+      source_name: 'The.Longest.Mobile.Layout.Regression.Title.2026.S01E01.English.SDH.Very.Long.Subtitle.File.Name.srt',
+      archive_name: 'Mobile.Layout.Regression.Subtitle.Pack.With.A.Long.Name.zip',
+      detected_label: 'English · SRT',
+      target_id: 'target-s01e01',
+      language_suffix: 'eng',
+      output_name: `${subtitleTargets[0].basename}.eng.srt`,
+      selected: true,
+    },
+    {
+      upload_id: 'upload-preview-2',
+      source_name: 'The.Longest.Mobile.Layout.Regression.Title.2026.S01E02.Japanese.Commentary.ass',
+      archive_name: 'Mobile.Layout.Regression.Subtitle.Pack.With.A.Long.Name.zip',
+      detected_label: 'Japanese · ASS',
+      target_id: 'target-s01e02',
+      language_suffix: 'jpn',
+      output_name: `${subtitleTargets[1].basename}.jpn.ass`,
+      selected: true,
+    },
+  ],
+}
+
 export const aiTasks = {
   status: subtitleStatus.ai_subtitle,
   summary: { pending: 1, in_progress: 1, completed: 2, failed: 1 },

@@ -12,6 +12,7 @@ import {
   subtitleSearchPayload,
   subtitleStatus,
   subtitleTargetsPayload,
+  uploadPreview,
 } from '../fixtures/moviepilotPluginData.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
@@ -118,13 +119,7 @@ function subtitleApiPayload(pathname) {
       messages: [{ level: 'info', provider: 'opensubtitles', message: '测试数据已返回' }],
     }
   }
-  if (pathname.endsWith('/prepare_upload')) {
-    return {
-      preview: {
-        items: [],
-      },
-    }
-  }
+  if (pathname.endsWith('/prepare_upload')) return uploadPreview
   return { ok: true }
 }
 

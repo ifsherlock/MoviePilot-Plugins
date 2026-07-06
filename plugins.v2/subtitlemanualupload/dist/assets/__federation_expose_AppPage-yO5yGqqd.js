@@ -3198,7 +3198,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const AiTaskDialog = /*#__PURE__*/_export_sfc(_sfc_main$9, [['__scopeId',"data-v-26573531"]]);
+const AiTaskDialog = /*#__PURE__*/_export_sfc(_sfc_main$9, [['__scopeId',"data-v-ecd8aa9f"]]);
 
 const {createElementVNode:_createElementVNode$8,toDisplayString:_toDisplayString$7,createTextVNode:_createTextVNode$6,resolveComponent:_resolveComponent$8,withCtx:_withCtx$6,createVNode:_createVNode$7,renderList:_renderList$5,Fragment:_Fragment$5,openBlock:_openBlock$8,createElementBlock:_createElementBlock$7,createCommentVNode:_createCommentVNode$7,normalizeClass:_normalizeClass$6,createBlock:_createBlock$8} = await importShared('vue');
 
@@ -4470,7 +4470,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const OnlineSubtitleDialog = /*#__PURE__*/_export_sfc(_sfc_main$4, [['__scopeId',"data-v-ad8cac45"]]);
+const OnlineSubtitleDialog = /*#__PURE__*/_export_sfc(_sfc_main$4, [['__scopeId',"data-v-b175b520"]]);
 
 const {resolveComponent:_resolveComponent$3,openBlock:_openBlock$3,createBlock:_createBlock$3,createCommentVNode:_createCommentVNode$3,createElementVNode:_createElementVNode$3,toDisplayString:_toDisplayString$2,normalizeClass:_normalizeClass$3,createElementBlock:_createElementBlock$3} = await importShared('vue');
 
@@ -5241,6 +5241,7 @@ return (_ctx, _cache) => {
               _createVNode$1(_component_VBtn, {
                 icon: "mdi-close",
                 variant: "text",
+                "aria-label": "关闭上传字幕",
                 onClick: _cache[0] || (_cache[0] = $event => (_ctx.$emit('update:modelValue', false)))
               })
             ]),
@@ -5475,7 +5476,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const UploadDialog = /*#__PURE__*/_export_sfc(_sfc_main$1, [['__scopeId',"data-v-d2643346"]]);
+const UploadDialog = /*#__PURE__*/_export_sfc(_sfc_main$1, [['__scopeId',"data-v-e42ff558"]]);
 
 function isStreamTarget(target) {
   if (!target) return false

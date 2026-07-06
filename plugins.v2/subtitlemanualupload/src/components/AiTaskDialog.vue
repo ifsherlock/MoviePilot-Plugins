@@ -311,6 +311,15 @@ const aiStatusDetail = computed(() => buildAiStatusDetail(props.aiStatus))
 }
 
 @media (max-width: 900px) {
+  .ai-task-dialog {
+    max-height: calc(100dvh - 24px);
+    overflow: hidden;
+  }
+
+  .ai-task-dialog :deep(.v-card-text) {
+    overflow-y: auto;
+  }
+
   .dialog-title {
     grid-template-columns: minmax(0, 1fr) 40px;
   }
@@ -336,6 +345,50 @@ const aiStatusDetail = computed(() => buildAiStatusDetail(props.aiStatus))
   .ai-task-time {
     grid-column: 1 / -1;
     justify-items: start;
+  }
+}
+
+@media (max-width: 600px) {
+  .dialog-title {
+    padding: 14px 16px;
+  }
+
+  .online-title-actions {
+    justify-content: stretch;
+  }
+
+  .online-title-actions .v-btn {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .ai-task-row {
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 10px;
+    padding: 10px;
+    border-radius: 16px;
+  }
+
+  .ai-task-row > .v-checkbox {
+    grid-row: 1;
+  }
+
+  .ai-task-badge {
+    grid-row: 1;
+    width: 36px;
+    height: 36px;
+  }
+
+  .ai-task-main {
+    grid-column: 1 / -1;
+  }
+
+  .ai-task-time {
+    grid-column: 1 / -1;
+  }
+
+  .ai-task-time .v-btn {
+    width: 100%;
   }
 }
 </style>

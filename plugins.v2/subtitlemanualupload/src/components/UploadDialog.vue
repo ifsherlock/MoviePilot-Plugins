@@ -68,7 +68,7 @@ function onPickFiles(event) {
     <VCard class="upload-dialog" rounded="xl">
       <VCardTitle class="dialog-title">
         <span>{{ uploadTitle || '上传字幕' }}</span>
-        <VBtn icon="mdi-close" variant="text" @click="$emit('update:modelValue', false)" />
+        <VBtn icon="mdi-close" variant="text" aria-label="关闭上传字幕" @click="$emit('update:modelValue', false)" />
       </VCardTitle>
       <VDivider />
       <VCardActions class="dialog-actions dialog-actions-top">
@@ -414,6 +414,15 @@ function onPickFiles(event) {
 }
 
 @media (max-width: 900px) {
+  .upload-dialog {
+    max-height: calc(100dvh - 24px);
+    overflow: hidden;
+  }
+
+  .upload-dialog :deep(.v-card-text) {
+    overflow-y: auto;
+  }
+
   .preview-row {
     grid-template-columns: 1fr;
   }
@@ -432,6 +441,46 @@ function onPickFiles(event) {
 
   .dialog-actions-top .v-btn {
     flex: 1 1 auto;
+  }
+}
+
+@media (max-width: 600px) {
+  .dialog-title {
+    align-items: start;
+  }
+
+  .dialog-title span {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .dialog-actions {
+    padding: 10px 14px;
+  }
+
+  .dropzone {
+    padding: 22px 14px;
+    border-radius: 18px;
+  }
+
+  .support-row span {
+    width: 100%;
+    border-radius: 12px;
+  }
+
+  .file-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .file-row .v-btn {
+    align-self: stretch;
+  }
+
+  .preview-row {
+    gap: 12px;
+    padding: 10px;
+    border-radius: 16px;
   }
 }
 </style>

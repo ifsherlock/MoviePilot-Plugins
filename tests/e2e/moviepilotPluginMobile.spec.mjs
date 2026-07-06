@@ -152,3 +152,50 @@ test('SubtitleManualUpload detail keeps desktop row density @subtitle-detail @su
   expect(columns).toBeGreaterThanOrEqual(9)
   await expectNoHorizontalOverflow(page)
 })
+
+test('SubtitleManualUpload dialogs stay scrollable and bounded on mobile @subtitle-dialogs @subtitle', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openPluginPage(page, 'SubtitleManualUpload')
+
+  await page.getByText('移动端布局回归测试剧集：特别长的中文标题和 English Alias').first().click()
+  await expect(page.getByText('S01E01').first()).toBeVisible()
+
+  await page.getByRole('button', { name: '单集上传' }).first().click()
+  await expect(page.getByText('把字幕或压缩包拖到这里')).toBeVisible()
+  await page.locator('input[type="file"]').setInputFiles({
+    name: 'The.Longest.Mobile.Layout.Regression.Title.2026.S01E01.English.SDH.Very.Long.Subtitle.File.Name.srt',
+    mimeType: 'application/x-subrip',
+    buffer: Buffer.from('1\\n00:00:01,000 --> 00:00:02,000\\nhello\\n'),
+  })
+  await expect(page.getByText('确认集数与输出文件名')).toBeVisible()
+  await expect(page.getByText('The.Longest.Mobile.Layout.Regression.Title.2026.S01E01.English.SDH.Very.Long.Subtitle.File.Name.srt')).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+  await screenshot(page, testInfo, 'subtitle-upload-dialog-mobile-390.png')
+  await page.getByRole('button', { name: '关闭上传字幕' }).click()
+
+  await page.getByTitle('搜索此集在线字幕').first().click()
+  await expect(page.getByText('Mobile Layout Regression S01E01 English SDH')).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+  await screenshot(page, testInfo, 'subtitle-online-dialog-mobile-390.png')
+  await page.getByRole('button', { name: '关闭在线字幕搜索' }).click()
+
+  await page.getByRole('button', { name: /AI：/ }).click()
+  await expect(page.getByText('Whisper 识别中')).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+  await screenshot(page, testInfo, 'subtitle-ai-dialog-mobile-390.png')
+  await page.getByRole('button', { name: '关闭 AI 字幕生成状态' }).click()
+})
+
+test('SubtitleManualUpload online dialog keeps desktop side panel @subtitle-dialogs @subtitle', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openPluginPage(page, 'SubtitleManualUpload')
+
+  await page.getByText('移动端布局回归测试剧集：特别长的中文标题和 English Alias').first().click()
+  await page.getByTitle('搜索此集在线字幕').first().click()
+  await expect(page.getByText('Mobile Layout Regression S01E01 English SDH')).toBeVisible()
+  await screenshot(page, testInfo, 'subtitle-online-dialog-desktop-1440.png')
+
+  const columns = await page.locator('.online-layout').evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length)
+  expect(columns).toBe(2)
+  await expectNoHorizontalOverflow(page)
+})

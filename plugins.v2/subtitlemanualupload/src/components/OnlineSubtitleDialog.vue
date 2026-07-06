@@ -577,6 +577,24 @@ defineEmits([
 }
 
 @media (max-width: 900px) {
+  .online-dialog {
+    max-height: calc(100dvh - 24px);
+    overflow: hidden;
+  }
+
+  .online-dialog :deep(.v-card-text) {
+    overflow-y: auto;
+  }
+
+  .dialog-title {
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .dialog-title > div:first-child {
+    min-width: 0;
+  }
+
   .online-search-actions,
   .online-layout {
     grid-template-columns: 1fr;
@@ -585,6 +603,52 @@ defineEmits([
   .online-title-actions {
     width: 100%;
     justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+}
+
+@media (max-width: 600px) {
+  .dialog-title {
+    padding: 14px 16px;
+  }
+
+  .dialog-title span,
+  .dialog-title p {
+    overflow-wrap: anywhere;
+  }
+
+  .online-title-actions .v-btn {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .online-search-actions {
+    padding: 12px 16px;
+  }
+
+  .online-results-panel,
+  .manual-links-panel {
+    padding: 12px;
+    border-radius: 18px;
+  }
+
+  .online-panel-head {
+    display: grid;
+    align-items: stretch;
+  }
+
+  .online-result-list {
+    max-height: none;
+    overflow-y: visible;
+  }
+
+  .online-result-card {
+    grid-template-columns: auto minmax(0, 1fr);
+  }
+
+  .online-open-link {
+    grid-column: 2;
+    justify-self: start;
   }
 }
 </style>
