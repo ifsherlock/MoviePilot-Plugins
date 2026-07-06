@@ -1,7 +1,7 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-pcqpp-6-.js';
 
-const {computed: computed$2,ref} = await importShared('vue');
+const {computed: computed$3,ref: ref$1} = await importShared('vue');
 
 
 function resolveValue(source) {
@@ -30,19 +30,19 @@ function canDeleteTask(task) {
 }
 
 function useAutoSubTasks({ api, pluginBase, confirmDelete = window.confirm } = {}) {
-  const loading = ref(false);
-  const operating = ref(false);
-  const operation = ref('');
-  const sortOrder = ref('desc');
-  const statusFilter = ref('all');
-  const selectedTaskIds = ref([]);
-  const error = ref('');
-  const message = ref('');
-  const status = ref({});
-  const tasks = ref([]);
-  const restartDialog = ref(false);
-  const restartTargets = ref([]);
-  const restartSourcePolicy = ref('reuse');
+  const loading = ref$1(false);
+  const operating = ref$1(false);
+  const operation = ref$1('');
+  const sortOrder = ref$1('desc');
+  const statusFilter = ref$1('all');
+  const selectedTaskIds = ref$1([]);
+  const error = ref$1('');
+  const message = ref$1('');
+  const status = ref$1({});
+  const tasks = ref$1([]);
+  const restartDialog = ref$1(false);
+  const restartTargets = ref$1([]);
+  const restartSourcePolicy = ref$1('reuse');
   const restartSourceOptions = [
     { title: '沿用原任务来源', value: 'reuse' },
     { title: '自动选择', value: 'auto' },
@@ -51,7 +51,7 @@ function useAutoSubTasks({ api, pluginBase, confirmDelete = window.confirm } = {
     { title: '音轨 ASR', value: 'asr' },
   ];
 
-  const sortedTasks = computed$2(() => {
+  const sortedTasks = computed$3(() => {
     const items = [...tasks.value];
     items.sort((a, b) => {
       const left = new Date(a.add_time || 0).getTime();
@@ -61,24 +61,24 @@ function useAutoSubTasks({ api, pluginBase, confirmDelete = window.confirm } = {
     return items
   });
 
-  const visibleTasks = computed$2(() => {
+  const visibleTasks = computed$3(() => {
     if (statusFilter.value === 'all') return sortedTasks.value
     return sortedTasks.value.filter(task => task.status === statusFilter.value)
   });
 
-  const visibleTaskIds = computed$2(() => new Set(visibleTasks.value.map(task => task.task_id)));
-  const allVisibleSelected = computed$2(() => (
+  const visibleTaskIds = computed$3(() => new Set(visibleTasks.value.map(task => task.task_id)));
+  const allVisibleSelected = computed$3(() => (
     Boolean(visibleTasks.value.length)
     && visibleTasks.value.every(task => selectedTaskIds.value.includes(task.task_id))
   ));
-  const selectedTasks = computed$2(() => {
+  const selectedTasks = computed$3(() => {
     const picked = new Set(selectedTaskIds.value);
     return visibleTasks.value.filter(task => picked.has(task.task_id))
   });
-  const cancellableSelected = computed$2(() => selectedTasks.value.filter(canCancelTask));
-  const restartableSelected = computed$2(() => selectedTasks.value.filter(canRestartTask));
-  const deletableSelected = computed$2(() => selectedTasks.value.filter(canDeleteTask));
-  const statusChips = computed$2(() => [
+  const cancellableSelected = computed$3(() => selectedTasks.value.filter(canCancelTask));
+  const restartableSelected = computed$3(() => selectedTasks.value.filter(canRestartTask));
+  const deletableSelected = computed$3(() => selectedTasks.value.filter(canDeleteTask));
+  const statusChips = computed$3(() => [
     { value: 'all', label: '总数', count: tasks.value.length },
     { value: 'pending', label: '等待', count: status.value.counts?.pending || 0, color: 'info' },
     { value: 'in_progress', label: '处理中', count: status.value.counts?.in_progress || 0, color: 'warning' },
@@ -251,14 +251,14 @@ function useAutoSubTasks({ api, pluginBase, confirmDelete = window.confirm } = {
   }
 }
 
-const {createTextVNode:_createTextVNode$3,resolveComponent:_resolveComponent$4,withCtx:_withCtx$3,createVNode:_createVNode$3,openBlock:_openBlock$4,createBlock:_createBlock$2} = await importShared('vue');
+const {createTextVNode:_createTextVNode$4,resolveComponent:_resolveComponent$5,withCtx:_withCtx$4,createVNode:_createVNode$4,openBlock:_openBlock$5,createBlock:_createBlock$3} = await importShared('vue');
 
 
-const {computed: computed$1} = await importShared('vue');
+const {computed: computed$2} = await importShared('vue');
 
 
 
-const _sfc_main$4 = {
+const _sfc_main$5 = {
   __name: 'RestartDialog',
   props: {
   modelValue: {
@@ -293,54 +293,54 @@ const props = __props;
 
 const emit = __emit;
 
-const dialog = computed$1({
+const dialog = computed$2({
   get: () => props.modelValue,
   set: value => emit('update:modelValue', value),
 });
 
-const sourcePolicy = computed$1({
+const sourcePolicy = computed$2({
   get: () => props.restartSourcePolicy,
   set: value => emit('update:restartSourcePolicy', value),
 });
 
 return (_ctx, _cache) => {
-  const _component_VCardTitle = _resolveComponent$4("VCardTitle");
-  const _component_VAlert = _resolveComponent$4("VAlert");
-  const _component_VSelect = _resolveComponent$4("VSelect");
-  const _component_VCardText = _resolveComponent$4("VCardText");
-  const _component_VSpacer = _resolveComponent$4("VSpacer");
-  const _component_VBtn = _resolveComponent$4("VBtn");
-  const _component_VCardActions = _resolveComponent$4("VCardActions");
-  const _component_VCard = _resolveComponent$4("VCard");
-  const _component_VDialog = _resolveComponent$4("VDialog");
+  const _component_VCardTitle = _resolveComponent$5("VCardTitle");
+  const _component_VAlert = _resolveComponent$5("VAlert");
+  const _component_VSelect = _resolveComponent$5("VSelect");
+  const _component_VCardText = _resolveComponent$5("VCardText");
+  const _component_VSpacer = _resolveComponent$5("VSpacer");
+  const _component_VBtn = _resolveComponent$5("VBtn");
+  const _component_VCardActions = _resolveComponent$5("VCardActions");
+  const _component_VCard = _resolveComponent$5("VCard");
+  const _component_VDialog = _resolveComponent$5("VDialog");
 
-  return (_openBlock$4(), _createBlock$2(_component_VDialog, {
+  return (_openBlock$5(), _createBlock$3(_component_VDialog, {
     modelValue: dialog.value,
     "onUpdate:modelValue": _cache[3] || (_cache[3] = $event => ((dialog).value = $event)),
     "max-width": "520"
   }, {
-    default: _withCtx$3(() => [
-      _createVNode$3(_component_VCard, {
+    default: _withCtx$4(() => [
+      _createVNode$4(_component_VCard, {
         class: "restart-dialog-card",
         rounded: "lg"
       }, {
-        default: _withCtx$3(() => [
-          _createVNode$3(_component_VCardTitle, null, {
-            default: _withCtx$3(() => [...(_cache[4] || (_cache[4] = [
-              _createTextVNode$3("重新生成 AI 字幕", -1)
+        default: _withCtx$4(() => [
+          _createVNode$4(_component_VCardTitle, null, {
+            default: _withCtx$4(() => [...(_cache[4] || (_cache[4] = [
+              _createTextVNode$4("重新生成 AI 字幕", -1)
             ]))]),
             _: 1
           }),
-          _createVNode$3(_component_VCardText, null, {
-            default: _withCtx$3(() => [
-              _createVNode$3(_component_VAlert, {
+          _createVNode$4(_component_VCardText, null, {
+            default: _withCtx$4(() => [
+              _createVNode$4(_component_VAlert, {
                 class: "mb-4",
                 type: "info",
                 variant: "tonal",
                 density: "compact",
                 text: `将重新提交 ${__props.restartTargets.length} 个任务；默认沿用原任务来源，并使用当前最新模型配置。`
               }, null, 8, ["text"]),
-              _createVNode$3(_component_VSelect, {
+              _createVNode$4(_component_VSelect, {
                 modelValue: sourcePolicy.value,
                 "onUpdate:modelValue": _cache[0] || (_cache[0] = $event => ((sourcePolicy).value = $event)),
                 items: __props.restartSourceOptions,
@@ -351,20 +351,20 @@ return (_ctx, _cache) => {
             ]),
             _: 1
           }),
-          _createVNode$3(_component_VCardActions, null, {
-            default: _withCtx$3(() => [
-              _createVNode$3(_component_VSpacer),
-              _createVNode$3(_component_VBtn, {
+          _createVNode$4(_component_VCardActions, null, {
+            default: _withCtx$4(() => [
+              _createVNode$4(_component_VSpacer),
+              _createVNode$4(_component_VBtn, {
                 class: "mobile-touch-target",
                 variant: "text",
                 onClick: _cache[1] || (_cache[1] = $event => (dialog.value = false))
               }, {
-                default: _withCtx$3(() => [...(_cache[5] || (_cache[5] = [
-                  _createTextVNode$3("取消", -1)
+                default: _withCtx$4(() => [...(_cache[5] || (_cache[5] = [
+                  _createTextVNode$4("取消", -1)
                 ]))]),
                 _: 1
               }),
-              _createVNode$3(_component_VBtn, {
+              _createVNode$4(_component_VBtn, {
                 class: "mobile-touch-target",
                 color: "primary",
                 variant: "tonal",
@@ -372,8 +372,8 @@ return (_ctx, _cache) => {
                 disabled: __props.operating || !__props.restartTargets.length,
                 onClick: _cache[2] || (_cache[2] = $event => (emit('confirm')))
               }, {
-                default: _withCtx$3(() => [...(_cache[6] || (_cache[6] = [
-                  _createTextVNode$3(" 重新生成 ", -1)
+                default: _withCtx$4(() => [...(_cache[6] || (_cache[6] = [
+                  _createTextVNode$4(" 重新生成 ", -1)
                 ]))]),
                 _: 1
               }, 8, ["loading", "disabled"])
@@ -390,15 +390,15 @@ return (_ctx, _cache) => {
 }
 
 };
-const RestartDialog = /*#__PURE__*/_export_sfc(_sfc_main$4, [['__scopeId',"data-v-3d14acbf"]]);
+const RestartDialog = /*#__PURE__*/_export_sfc(_sfc_main$5, [['__scopeId',"data-v-3d14acbf"]]);
 
-const {renderList:_renderList$1,Fragment:_Fragment$1,openBlock:_openBlock$3,createElementBlock:_createElementBlock$3,toDisplayString:_toDisplayString$2,createTextVNode:_createTextVNode$2,resolveComponent:_resolveComponent$3,withCtx:_withCtx$2,createBlock:_createBlock$1} = await importShared('vue');
-
-
-const _hoisted_1$3 = { class: "summary-strip" };
+const {renderList:_renderList$1,Fragment:_Fragment$1,openBlock:_openBlock$4,createElementBlock:_createElementBlock$4,toDisplayString:_toDisplayString$3,createTextVNode:_createTextVNode$3,resolveComponent:_resolveComponent$4,withCtx:_withCtx$3,createBlock:_createBlock$2} = await importShared('vue');
 
 
-const _sfc_main$3 = {
+const _hoisted_1$4 = { class: "summary-strip" };
+
+
+const _sfc_main$4 = {
   __name: 'TaskStatusFilter',
   props: {
   statusChips: {
@@ -418,11 +418,11 @@ const _sfc_main$3 = {
 const emit = __emit;
 
 return (_ctx, _cache) => {
-  const _component_VChip = _resolveComponent$3("VChip");
+  const _component_VChip = _resolveComponent$4("VChip");
 
-  return (_openBlock$3(), _createElementBlock$3("div", _hoisted_1$3, [
-    (_openBlock$3(true), _createElementBlock$3(_Fragment$1, null, _renderList$1(__props.statusChips, (chip) => {
-      return (_openBlock$3(), _createBlock$1(_component_VChip, {
+  return (_openBlock$4(), _createElementBlock$4("div", _hoisted_1$4, [
+    (_openBlock$4(true), _createElementBlock$4(_Fragment$1, null, _renderList$1(__props.statusChips, (chip) => {
+      return (_openBlock$4(), _createBlock$2(_component_VChip, {
         key: chip.value,
         size: "small",
         class: "filter-chip",
@@ -430,8 +430,8 @@ return (_ctx, _cache) => {
         color: chip.color || (__props.statusFilter === chip.value ? 'primary' : undefined),
         onClick: $event => (emit('select', chip.value))
       }, {
-        default: _withCtx$2(() => [
-          _createTextVNode$2(_toDisplayString$2(chip.label) + " " + _toDisplayString$2(chip.count), 1)
+        default: _withCtx$3(() => [
+          _createTextVNode$3(_toDisplayString$3(chip.label) + " " + _toDisplayString$3(chip.count), 1)
         ]),
         _: 2
       }, 1032, ["variant", "color", "onClick"]))
@@ -441,9 +441,254 @@ return (_ctx, _cache) => {
 }
 
 };
-const TaskStatusFilter = /*#__PURE__*/_export_sfc(_sfc_main$3, [['__scopeId',"data-v-4ddb4746"]]);
+const TaskStatusFilter = /*#__PURE__*/_export_sfc(_sfc_main$4, [['__scopeId',"data-v-4ddb4746"]]);
 
-const {openBlock:_openBlock$2,createElementBlock:_createElementBlock$2,createCommentVNode:_createCommentVNode$1,renderList:_renderList,Fragment:_Fragment,resolveComponent:_resolveComponent$2,createVNode:_createVNode$2,toDisplayString:_toDisplayString$1,createElementVNode:_createElementVNode$2,createTextVNode:_createTextVNode$1,withCtx:_withCtx$1,normalizeClass:_normalizeClass} = await importShared('vue');
+const {resolveComponent:_resolveComponent$3,createVNode:_createVNode$3,toDisplayString:_toDisplayString$2,createElementVNode:_createElementVNode$3,createTextVNode:_createTextVNode$2,withCtx:_withCtx$2,openBlock:_openBlock$3,createElementBlock:_createElementBlock$3,createCommentVNode:_createCommentVNode$2,createBlock:_createBlock$1,normalizeClass:_normalizeClass$1} = await importShared('vue');
+
+
+const _hoisted_1$3 = { class: "task-mobile-header" };
+const _hoisted_2$3 = { class: "task-mobile-title-block" };
+const _hoisted_3$2 = { class: "task-mobile-title" };
+const _hoisted_4$2 = { class: "task-mobile-subline" };
+const _hoisted_5$1 = { class: "task-mobile-time" };
+const _hoisted_6$1 = {
+  class: "task-mobile-summary",
+  "aria-label": "任务摘要"
+};
+const _hoisted_7$1 = { class: "task-mobile-meta-row" };
+const _hoisted_8$1 = { class: "task-mobile-meta-value" };
+const _hoisted_9$1 = { class: "task-mobile-meta-row" };
+const _hoisted_10$1 = { class: "task-mobile-meta-value" };
+const _hoisted_11$1 = {
+  key: 0,
+  class: "task-mobile-message"
+};
+const _hoisted_12$1 = { class: "task-mobile-actions" };
+const _hoisted_13$1 = {
+  key: 0,
+  class: "task-mobile-details",
+  "aria-label": "任务详情"
+};
+const _hoisted_14 = {
+  key: 0,
+  class: "task-mobile-detail-block"
+};
+const _hoisted_15 = { class: "task-mobile-code" };
+const _hoisted_16 = {
+  key: 1,
+  class: "task-mobile-detail-block"
+};
+const _hoisted_17 = { class: "task-mobile-detail-block" };
+const _hoisted_18 = { class: "task-mobile-code" };
+const _hoisted_19 = {
+  key: 2,
+  class: "task-mobile-danger"
+};
+
+const {computed: computed$1,ref} = await importShared('vue');
+
+
+
+const _sfc_main$3 = {
+  __name: 'TaskMobileCard',
+  props: {
+  task: {
+    type: Object,
+    required: true,
+  },
+  selected: {
+    type: Boolean,
+    default: false,
+  },
+  operating: {
+    type: Boolean,
+    default: false,
+  },
+  canCancel: {
+    type: Boolean,
+    default: false,
+  },
+  canRestart: {
+    type: Boolean,
+    default: false,
+  },
+  canDelete: {
+    type: Boolean,
+    default: false,
+  },
+},
+  emits: ['toggle-task', 'cancel', 'restart', 'delete'],
+  setup(__props, { emit: __emit }) {
+
+const props = __props;
+
+const emit = __emit;
+const expanded = ref(false);
+
+const statusColor = computed$1(() => ({
+  pending: 'info',
+  in_progress: 'warning',
+  completed: 'success',
+  failed: 'error',
+  cancelled: 'default',
+  ignored: 'default',
+  no_audio: 'default',
+})[props.task?.status] || 'default');
+
+const sourceText = computed$1(() => {
+  const source = props.task?.resolved_source_label
+    || props.task?.source_policy_label
+    || props.task?.source_label
+    || props.task?.source
+    || '未标记来源';
+  const asset = props.task?.source_asset_name || props.task?.source_subtitle_name || '';
+  return asset ? `${source} · ${asset}` : source
+});
+
+const timeText = computed$1(() => props.task?.complete_time || props.task?.add_time || '-');
+const outputText = computed$1(() => props.task?.output_name || '尚未生成输出文件');
+const messageText = computed$1(() => props.task?.message || '');
+const hasDetails = computed$1(() => Boolean(props.task?.video_file || messageText.value || outputText.value));
+
+function toggleExpanded() {
+  expanded.value = !expanded.value;
+}
+
+return (_ctx, _cache) => {
+  const _component_VCheckbox = _resolveComponent$3("VCheckbox");
+  const _component_VChip = _resolveComponent$3("VChip");
+  const _component_VBtn = _resolveComponent$3("VBtn");
+
+  return (_openBlock$3(), _createElementBlock$3("article", {
+    class: _normalizeClass$1(["task-mobile-card", { selected: __props.selected }])
+  }, [
+    _createElementVNode$3("header", _hoisted_1$3, [
+      _createVNode$3(_component_VCheckbox, {
+        class: "task-mobile-check mobile-touch-target",
+        "model-value": __props.selected,
+        density: "compact",
+        "hide-details": "",
+        "aria-label": `选择 ${__props.task.video_name || '任务'}`,
+        "onUpdate:modelValue": _cache[0] || (_cache[0] = value => emit('toggle-task', __props.task, value))
+      }, null, 8, ["model-value", "aria-label"]),
+      _createElementVNode$3("div", _hoisted_2$3, [
+        _createElementVNode$3("div", _hoisted_3$2, _toDisplayString$2(__props.task.video_name || '未知视频'), 1),
+        _createElementVNode$3("div", _hoisted_4$2, [
+          _createVNode$3(_component_VChip, {
+            class: "task-mobile-status",
+            size: "x-small",
+            variant: "tonal",
+            color: statusColor.value
+          }, {
+            default: _withCtx$2(() => [
+              _createTextVNode$2(_toDisplayString$2(__props.task.status_label || __props.task.status), 1)
+            ]),
+            _: 1
+          }, 8, ["color"]),
+          _createElementVNode$3("span", _hoisted_5$1, _toDisplayString$2(timeText.value), 1)
+        ])
+      ])
+    ]),
+    _createElementVNode$3("section", _hoisted_6$1, [
+      _createElementVNode$3("div", _hoisted_7$1, [
+        _cache[4] || (_cache[4] = _createElementVNode$3("span", { class: "task-mobile-meta-label" }, "来源", -1)),
+        _createElementVNode$3("span", _hoisted_8$1, _toDisplayString$2(sourceText.value), 1)
+      ]),
+      _createElementVNode$3("div", _hoisted_9$1, [
+        _cache[5] || (_cache[5] = _createElementVNode$3("span", { class: "task-mobile-meta-label" }, "输出", -1)),
+        _createElementVNode$3("span", _hoisted_10$1, _toDisplayString$2(outputText.value), 1)
+      ]),
+      (messageText.value)
+        ? (_openBlock$3(), _createElementBlock$3("p", _hoisted_11$1, _toDisplayString$2(messageText.value), 1))
+        : _createCommentVNode$2("", true)
+    ]),
+    _createElementVNode$3("div", _hoisted_12$1, [
+      _createVNode$3(_component_VBtn, {
+        class: "task-primary-action mobile-touch-target",
+        color: "primary",
+        variant: "tonal",
+        disabled: !__props.canRestart || __props.operating,
+        onClick: _cache[1] || (_cache[1] = $event => (emit('restart', __props.task)))
+      }, {
+        default: _withCtx$2(() => [...(_cache[6] || (_cache[6] = [
+          _createTextVNode$2(" 重新生成 ", -1)
+        ]))]),
+        _: 1
+      }, 8, ["disabled"]),
+      (__props.canCancel)
+        ? (_openBlock$3(), _createBlock$1(_component_VBtn, {
+            key: 0,
+            class: "task-secondary-action mobile-touch-target",
+            color: "warning",
+            variant: "text",
+            disabled: __props.operating,
+            onClick: _cache[2] || (_cache[2] = $event => (emit('cancel', __props.task)))
+          }, {
+            default: _withCtx$2(() => [...(_cache[7] || (_cache[7] = [
+              _createTextVNode$2(" 取消 ", -1)
+            ]))]),
+            _: 1
+          }, 8, ["disabled"]))
+        : _createCommentVNode$2("", true),
+      (hasDetails.value)
+        ? (_openBlock$3(), _createBlock$1(_component_VBtn, {
+            key: 1,
+            class: "task-detail-action mobile-touch-target",
+            variant: "text",
+            "aria-expanded": expanded.value,
+            onClick: toggleExpanded
+          }, {
+            default: _withCtx$2(() => [
+              _createTextVNode$2(_toDisplayString$2(expanded.value ? '收起' : '详情'), 1)
+            ]),
+            _: 1
+          }, 8, ["aria-expanded"]))
+        : _createCommentVNode$2("", true)
+    ]),
+    (expanded.value)
+      ? (_openBlock$3(), _createElementBlock$3("section", _hoisted_13$1, [
+          (__props.task.video_file)
+            ? (_openBlock$3(), _createElementBlock$3("div", _hoisted_14, [
+                _cache[8] || (_cache[8] = _createElementVNode$3("span", { class: "task-mobile-detail-label" }, "视频路径", -1)),
+                _createElementVNode$3("p", _hoisted_15, _toDisplayString$2(__props.task.video_file), 1)
+              ]))
+            : _createCommentVNode$2("", true),
+          (messageText.value)
+            ? (_openBlock$3(), _createElementBlock$3("div", _hoisted_16, [
+                _cache[9] || (_cache[9] = _createElementVNode$3("span", { class: "task-mobile-detail-label" }, "完整原因", -1)),
+                _createElementVNode$3("p", null, _toDisplayString$2(messageText.value), 1)
+              ]))
+            : _createCommentVNode$2("", true),
+          _createElementVNode$3("div", _hoisted_17, [
+            _cache[10] || (_cache[10] = _createElementVNode$3("span", { class: "task-mobile-detail-label" }, "输出文件", -1)),
+            _createElementVNode$3("p", _hoisted_18, _toDisplayString$2(outputText.value), 1)
+          ]),
+          (__props.canDelete)
+            ? (_openBlock$3(), _createElementBlock$3("div", _hoisted_19, [
+                _createVNode$3(_component_VBtn, {
+                  class: "task-danger-action mobile-touch-target",
+                  color: "error",
+                  variant: "tonal",
+                  disabled: __props.operating,
+                  onClick: _cache[3] || (_cache[3] = $event => (emit('delete', __props.task)))
+                }, {
+                  default: _withCtx$2(() => [...(_cache[11] || (_cache[11] = [
+                    _createTextVNode$2(" 删除记录 ", -1)
+                  ]))]),
+                  _: 1
+                }, 8, ["disabled"])
+              ]))
+            : _createCommentVNode$2("", true)
+        ]))
+      : _createCommentVNode$2("", true)
+  ], 2))
+}
+}
+
+};
+const TaskMobileCard = /*#__PURE__*/_export_sfc(_sfc_main$3, [['__scopeId',"data-v-78968305"]]);
+
+const {openBlock:_openBlock$2,createElementBlock:_createElementBlock$2,createCommentVNode:_createCommentVNode$1,renderList:_renderList,Fragment:_Fragment,createVNode:_createVNode$2,resolveComponent:_resolveComponent$2,toDisplayString:_toDisplayString$1,createElementVNode:_createElementVNode$2,createTextVNode:_createTextVNode$1,withCtx:_withCtx$1,normalizeClass:_normalizeClass} = await importShared('vue');
 
 
 const _hoisted_1$2 = {
@@ -559,7 +804,20 @@ return (_ctx, _cache) => {
                 key: task.task_id,
                 class: _normalizeClass(["task-row", { selected: __props.selectedTaskIds.includes(task.task_id) }])
               }, [
+                _createVNode$2(TaskMobileCard, {
+                  task: task,
+                  selected: __props.selectedTaskIds.includes(task.task_id),
+                  operating: __props.operating,
+                  "can-cancel": __props.canCancelTask(task),
+                  "can-restart": __props.canRestartTask(task),
+                  "can-delete": __props.canDeleteTask(task),
+                  onToggleTask: _cache[0] || (_cache[0] = (item, value) => emit('toggle-task', item, value)),
+                  onCancel: _cache[1] || (_cache[1] = item => emit('cancel', item)),
+                  onRestart: _cache[2] || (_cache[2] = item => emit('restart', item)),
+                  onDelete: _cache[3] || (_cache[3] = item => emit('delete', item))
+                }, null, 8, ["task", "selected", "operating", "can-cancel", "can-restart", "can-delete"]),
                 _createVNode$2(_component_VCheckbox, {
+                  class: "task-desktop-check",
                   "model-value": __props.selectedTaskIds.includes(task.task_id),
                   density: "compact",
                   "hide-details": "",
@@ -615,7 +873,7 @@ return (_ctx, _cache) => {
                     disabled: !__props.canCancelTask(task) || __props.operating,
                     onClick: $event => (emit('cancel', task))
                   }, {
-                    default: _withCtx$1(() => [...(_cache[0] || (_cache[0] = [
+                    default: _withCtx$1(() => [...(_cache[4] || (_cache[4] = [
                       _createTextVNode$1(" 取消 ", -1)
                     ]))]),
                     _: 1
@@ -628,7 +886,7 @@ return (_ctx, _cache) => {
                     disabled: !__props.canRestartTask(task) || __props.operating,
                     onClick: $event => (emit('restart', task))
                   }, {
-                    default: _withCtx$1(() => [...(_cache[1] || (_cache[1] = [
+                    default: _withCtx$1(() => [...(_cache[5] || (_cache[5] = [
                       _createTextVNode$1(" 重新生成 ", -1)
                     ]))]),
                     _: 1
@@ -641,7 +899,7 @@ return (_ctx, _cache) => {
                     disabled: !__props.canDeleteTask(task) || __props.operating,
                     onClick: $event => (emit('delete', task))
                   }, {
-                    default: _withCtx$1(() => [...(_cache[2] || (_cache[2] = [
+                    default: _withCtx$1(() => [...(_cache[6] || (_cache[6] = [
                       _createTextVNode$1(" 删除 ", -1)
                     ]))]),
                     _: 1
@@ -654,7 +912,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const TaskTable = /*#__PURE__*/_export_sfc(_sfc_main$2, [['__scopeId',"data-v-1a5117e3"]]);
+const TaskTable = /*#__PURE__*/_export_sfc(_sfc_main$2, [['__scopeId',"data-v-a1752aba"]]);
 
 const {createElementVNode:_createElementVNode$1,toDisplayString:_toDisplayString,createTextVNode:_createTextVNode,resolveComponent:_resolveComponent$1,withCtx:_withCtx,createVNode:_createVNode$1,openBlock:_openBlock$1,createElementBlock:_createElementBlock$1} = await importShared('vue');
 

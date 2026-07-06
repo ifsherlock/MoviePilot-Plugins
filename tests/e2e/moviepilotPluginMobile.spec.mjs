@@ -75,7 +75,7 @@ for (const viewport of subtitleViewports.filter(item => item.width <= 768)) {
     await page.setViewportSize({ width: viewport.width, height: viewport.height })
     await openPluginPage(page, 'AutoSubv3')
 
-    await expect(page.getByText('移动端布局回归测试剧集 S01E01')).toBeVisible()
+    await expect(page.locator('.task-row').filter({ hasText: '移动端布局回归测试剧集 S01E01' }).first()).toBeVisible()
     await expectNoHorizontalOverflow(page)
     await expectTouchTargets(page.locator('.autosub-toolbar').getByRole('button', { name: /最新在前|最早在前|全选|批量重新生成|刷新任务|关闭 AI字幕生成/ }), {
       label: `AutoSub root ${viewport.name}`,
@@ -201,15 +201,15 @@ test('renders AutoSubv3 extreme fake-data task states @fixtures-extreme', async 
   await page.setViewportSize({ width: 390, height: 844 })
   await openPluginPage(page, 'AutoSubv3')
 
-  await expect(page.getByText(/极端移动端任务卡片测试/)).toBeVisible()
-  await expect(page.getByText(/等待前序任务释放 GPU 队列/)).toBeVisible()
-  await expect(page.getByText(/翻译模型连续 3 次返回非 JSON 内容/)).toBeVisible()
+  const pendingCard = page.locator('.task-mobile-card').filter({ hasText: /极端移动端任务卡片测试/ }).first()
+  const failedCard = page.locator('.task-mobile-card').filter({ hasText: /翻译模型连续 3 次返回非 JSON 内容/ }).first()
+  await expect(pendingCard).toBeVisible()
+  await expect(pendingCard.getByText(/等待前序任务释放 GPU 队列/)).toBeVisible()
+  await expect(failedCard).toBeVisible()
+  await expect(failedCard.getByText(/翻译模型连续 3 次返回非 JSON 内容/)).toBeVisible()
   await expectNoHorizontalOverflow(page)
 
-  await page.getByText(/翻译模型连续 3 次返回非 JSON 内容/)
-    .locator('xpath=ancestor::*[contains(@class, "task-row")]')
-    .getByRole('checkbox')
-    .check()
+  await failedCard.getByRole('checkbox').check()
   await expect(page.getByRole('button', { name: '批量重新生成' })).toBeEnabled()
   await screenshot(page, testInfo, 'autosub-fixtures-extreme-mobile-390.png')
 })
@@ -361,6 +361,39 @@ test('AutoSubv3 task cards and restart dialog stay usable on mobile @autosub-tas
   await expectNoHorizontalOverflow(page)
   await screenshot(page, testInfo, 'autosub-restart-dialog-mobile-390.png')
   await page.getByRole('dialog').getByRole('button', { name: '取消' }).click()
+})
+
+test('AutoSubv3 mobile task cards expose summary, details, and desktop fallback @autosub-task-card-polish @autosub', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openPluginPage(page, 'AutoSubv3')
+
+  const failedCard = page
+    .getByText('极端移动端 AI 状态测试 S01E03 With A Very Long Alias')
+    .locator('xpath=ancestor::*[contains(@class, "task-mobile-card")]')
+  await expect(failedCard).toBeVisible()
+  await expect(failedCard.getByText('来源')).toBeVisible()
+  await expect(failedCard.getByText('输出')).toBeVisible()
+  await expect(failedCard.getByText(/翻译模型连续 3 次返回非 JSON 内容/)).toBeVisible()
+
+  await expectTouchTargets(failedCard.getByRole('button', { name: '重新生成' }), {
+    label: 'AutoSub mobile primary action',
+  })
+  await failedCard.getByRole('button', { name: '详情' }).click()
+  await expect(failedCard.getByText('视频路径')).toBeVisible()
+  await expect(failedCard.getByText('/mnt/media/TV/极端移动端 AI 状态测试/Season 01/')).toBeVisible()
+  await expect(failedCard.getByText('完整原因')).toBeVisible()
+  await expect(failedCard.getByRole('button', { name: '删除记录' })).toBeVisible()
+
+  await expectNoHorizontalOverflow(page)
+  await screenshot(page, testInfo, 'autosub-task-card-polish-mobile-390.png')
+
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await expect(page.locator('.task-mobile-card').first()).toBeHidden()
+  await expect(page.locator('.task-row').first()).toBeVisible()
+  const columns = await page.locator('.task-row').first().evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length)
+  expect(columns).toBeGreaterThanOrEqual(3)
+  await expectNoHorizontalOverflow(page)
+  await screenshot(page, testInfo, 'autosub-task-card-polish-desktop-1440.png')
 })
 
 test('AutoSubv3 task cards remain readable on tablet and desktop @autosub-tasks @autosub', async ({ page }, testInfo) => {

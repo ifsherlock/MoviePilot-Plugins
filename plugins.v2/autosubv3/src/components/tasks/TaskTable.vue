@@ -1,4 +1,6 @@
 <script setup>
+import TaskMobileCard from './TaskMobileCard.vue'
+
 defineProps({
   loading: {
     type: Boolean,
@@ -74,7 +76,20 @@ function sourceText(task) {
       class="task-row"
       :class="{ selected: selectedTaskIds.includes(task.task_id) }"
     >
+      <TaskMobileCard
+        :task="task"
+        :selected="selectedTaskIds.includes(task.task_id)"
+        :operating="operating"
+        :can-cancel="canCancelTask(task)"
+        :can-restart="canRestartTask(task)"
+        :can-delete="canDeleteTask(task)"
+        @toggle-task="(item, value) => emit('toggle-task', item, value)"
+        @cancel="item => emit('cancel', item)"
+        @restart="item => emit('restart', item)"
+        @delete="item => emit('delete', item)"
+      />
       <VCheckbox
+        class="task-desktop-check"
         :model-value="selectedTaskIds.includes(task.task_id)"
         density="compact"
         hide-details
@@ -205,45 +220,19 @@ function sourceText(task) {
 
 @media (max-width: 760px) {
   .task-row {
-    grid-template-columns: 36px minmax(0, 1fr);
-    align-items: start;
+    display: block;
+    border: 0;
+    background: transparent;
+    padding: 0;
   }
 
+  .task-desktop-check,
+  .task-main,
   .task-actions {
-    grid-column: 2;
+    display: none;
   }
 }
 
-@media (max-width: 520px) {
-  .task-row {
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: 10px;
-    padding: 12px;
-  }
-
-  .task-main {
-    min-width: 0;
-  }
-
-  .task-actions {
-    grid-column: 1 / -1;
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .task-actions .v-btn {
-    min-width: 0;
-  }
-
-  .task-meta {
-    gap: 6px;
-  }
-
-  .task-meta span {
-    flex: 1 1 100%;
-    overflow-wrap: anywhere;
-  }
-}
 </style>
 
 <style>
