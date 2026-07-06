@@ -117,3 +117,38 @@ for (const viewport of subtitleViewports) {
     await screenshot(page, testInfo, `subtitle-history-${viewport.name}.png`)
   })
 }
+
+test('SubtitleManualUpload detail actions stay usable on mobile @subtitle-detail @subtitle', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openPluginPage(page, 'SubtitleManualUpload')
+
+  await page.getByText('移动端布局回归测试剧集：特别长的中文标题和 English Alias').first().click()
+  await expect(page.getByText('S01E01').first()).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+  await screenshot(page, testInfo, 'subtitle-detail-mobile-390.png')
+
+  await page.getByRole('checkbox').first().check()
+  await expect(page.getByText('1 个已选').first()).toBeVisible()
+
+  await page.getByTitle('搜索此集在线字幕').first().click()
+  await expect(page.getByText('Mobile Layout Regression S01E01 English SDH')).toBeVisible()
+  await page.getByRole('button', { name: '关闭在线字幕搜索' }).click()
+
+  await page.getByTitle('调用 AI 字幕生成').first().click()
+  await expect(page.getByText('AI 状态 · S01E01')).toBeVisible()
+  await page.getByRole('button', { name: '关闭 AI 字幕生成状态' }).click()
+  await expectNoHorizontalOverflow(page)
+})
+
+test('SubtitleManualUpload detail keeps desktop row density @subtitle-detail @subtitle', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openPluginPage(page, 'SubtitleManualUpload')
+
+  await page.getByText('移动端布局回归测试剧集：特别长的中文标题和 English Alias').first().click()
+  await expect(page.getByText('S01E01').first()).toBeVisible()
+  await screenshot(page, testInfo, 'subtitle-detail-desktop-1440.png')
+
+  const columns = await page.locator('.episode-row').first().evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length)
+  expect(columns).toBeGreaterThanOrEqual(9)
+  await expectNoHorizontalOverflow(page)
+})
