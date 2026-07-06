@@ -46,7 +46,7 @@
         "name": "字幕匹配",
         "description": "手动上传字幕、ZIP/RAR/7Z，选择本地已有电影/剧集后自动匹配并按媒体文件名落盘；网盘挂载暂不保证完整可用性。",
         "labels": "字幕,媒体库,整理",
-        "version": "0.1.80",
+        "version": "0.1.81",
         "icon": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/subtitle-match.png",
         "author": "ifsherlock",
         "author_url": "https://github.com/ifsherlock",
@@ -54,6 +54,7 @@
         "system_version": ">=2.13.5",
         "release": true,
         "history": {
+            "v0.1.81": "适配真实 MoviePilot 前端宿主下的移动端布局，优化搜索、详情、历史和上传/在线字幕/AI 弹窗窄屏显示，并补充多视口回归测试以保持桌面布局不变",
             "v0.1.80": "修复字幕匹配检测 AI字幕生成(联动版) 状态时未启用文案重复的问题，状态条标题固定显示检测对象，右侧显示具体状态原因",
             "v0.1.79": "适配 MoviePilot 浅色、深色、幻紫和透明主题，字幕匹配联邦前端改为跟随主站 Vuetify 主题变量，修复深色/透明模式下弹窗和列表发白的问题",
             "v0.1.78": "完成字幕匹配目录分层重排，前端页面壳、工作流/智能体入口和后端服务拆到领域子包，不改变功能行为；如新版异常，可在插件版本历史中回退安装稳定版 v0.1.70",
@@ -134,7 +135,7 @@
         "name": "AI字幕生成(联动版)",
         "description": "自动生成字幕并翻译成中文，支持 faster-whisper 识别、字幕提取和大模型并发翻译，可联动字幕匹配功能。",
         "labels": "字幕,AI,翻译",
-        "version": "3.5.57",
+        "version": "3.5.58",
         "icon": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/autosubtitles.jpeg",
         "author": "ifsherlock",
         "author_url": "https://github.com/ifsherlock",
@@ -142,6 +143,7 @@
         "system_version": ">=2.13.5",
         "v2": true,
         "history": {
+            "v3.5.58": "适配真实 MoviePilot 前端宿主下的移动端任务页，优化工具栏、状态筛选、任务卡片和重跑弹窗窄屏显示，并补充多视口回归测试以保持桌面布局不变",
             "v3.5.57": "优化设置页布局，API 模型获取和测试结果改为就近显示，底部新增保存操作",
             "v3.5.56": "字幕联动设置页新增获取模型和测试模型功能，补充模型配置接口测试",
             "v3.5.55": "后端按职责拆分为 core、storage、tasks、pipeline、monitoring 等分层模块，前端任务页组件化并补充分层合同测试",
