@@ -558,7 +558,7 @@ const {resolveComponent:_resolveComponent$3,createVNode:_createVNode$3,toDisplay
 
 const _hoisted_1$3 = { class: "task-mobile-header" };
 const _hoisted_2$3 = { class: "task-mobile-title-block" };
-const _hoisted_3$2 = { class: "task-mobile-title" };
+const _hoisted_3$2 = ["title"];
 const _hoisted_4$2 = { class: "task-mobile-subline" };
 const _hoisted_5$1 = { class: "task-mobile-time" };
 const _hoisted_6$1 = {
@@ -566,9 +566,9 @@ const _hoisted_6$1 = {
   "aria-label": "任务摘要"
 };
 const _hoisted_7$1 = { class: "task-mobile-meta-row" };
-const _hoisted_8$1 = { class: "task-mobile-meta-value" };
+const _hoisted_8$1 = ["title"];
 const _hoisted_9$1 = { class: "task-mobile-meta-row" };
-const _hoisted_10$1 = { class: "task-mobile-meta-value" };
+const _hoisted_10$1 = ["title"];
 const _hoisted_11$1 = {
   key: 0,
   class: "task-mobile-message"
@@ -682,7 +682,10 @@ return (_ctx, _cache) => {
         "onUpdate:modelValue": _cache[0] || (_cache[0] = value => emit('toggle-task', __props.task, value))
       }, null, 8, ["model-value", "aria-label"]),
       _createElementVNode$3("div", _hoisted_2$3, [
-        _createElementVNode$3("div", _hoisted_3$2, _toDisplayString$2(__props.task.video_name || '未知视频'), 1),
+        _createElementVNode$3("div", {
+          class: "task-mobile-title",
+          title: __props.task.video_name || '未知视频'
+        }, _toDisplayString$2(__props.task.video_name || '未知视频'), 9, _hoisted_3$2),
         _createElementVNode$3("div", _hoisted_4$2, [
           _createVNode$3(_component_VChip, {
             class: "task-mobile-status",
@@ -702,11 +705,17 @@ return (_ctx, _cache) => {
     _createElementVNode$3("section", _hoisted_6$1, [
       _createElementVNode$3("div", _hoisted_7$1, [
         _cache[4] || (_cache[4] = _createElementVNode$3("span", { class: "task-mobile-meta-label" }, "来源", -1)),
-        _createElementVNode$3("span", _hoisted_8$1, _toDisplayString$2(sourceText.value), 1)
+        _createElementVNode$3("span", {
+          class: "task-mobile-meta-value",
+          title: sourceText.value
+        }, _toDisplayString$2(sourceText.value), 9, _hoisted_8$1)
       ]),
       _createElementVNode$3("div", _hoisted_9$1, [
         _cache[5] || (_cache[5] = _createElementVNode$3("span", { class: "task-mobile-meta-label" }, "输出", -1)),
-        _createElementVNode$3("span", _hoisted_10$1, _toDisplayString$2(outputText.value), 1)
+        _createElementVNode$3("span", {
+          class: "task-mobile-meta-value",
+          title: outputText.value
+        }, _toDisplayString$2(outputText.value), 9, _hoisted_10$1)
       ]),
       (messageText.value)
         ? (_openBlock$3(), _createElementBlock$3("p", _hoisted_11$1, _toDisplayString$2(messageText.value), 1))
@@ -796,7 +805,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const TaskMobileCard = /*#__PURE__*/_export_sfc(_sfc_main$3, [['__scopeId',"data-v-78968305"]]);
+const TaskMobileCard = /*#__PURE__*/_export_sfc(_sfc_main$3, [['__scopeId',"data-v-be2713f9"]]);
 
 const {openBlock:_openBlock$2,createElementBlock:_createElementBlock$2,createCommentVNode:_createCommentVNode$1,renderList:_renderList,Fragment:_Fragment,createVNode:_createVNode$2,resolveComponent:_resolveComponent$2,toDisplayString:_toDisplayString$1,createElementVNode:_createElementVNode$2,createTextVNode:_createTextVNode$1,withCtx:_withCtx$1,normalizeClass:_normalizeClass} = await importShared('vue');
 

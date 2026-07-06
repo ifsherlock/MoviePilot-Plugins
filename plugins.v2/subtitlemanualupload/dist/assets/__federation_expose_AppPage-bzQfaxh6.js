@@ -3482,12 +3482,12 @@ const _hoisted_20$3 = {
   class: "history-subtitle-children"
 };
 const _hoisted_21$2 = { class: "episode-path" };
-const _hoisted_22$1 = {
+const _hoisted_22$2 = {
   key: 0,
   class: "history-status compact-status"
 };
-const _hoisted_23$1 = { class: "subtitle-history-list compact-subtitles" };
-const _hoisted_24$1 = { class: "subtitle-history-copy" };
+const _hoisted_23$2 = { class: "subtitle-history-list compact-subtitles" };
+const _hoisted_24$2 = { class: "subtitle-history-copy" };
 const _hoisted_25$1 = { class: "subtitle-history-actions" };
 const _hoisted_26$1 = {
   key: 0,
@@ -3751,7 +3751,7 @@ return (_ctx, _cache) => {
                                       ? (_openBlock$8(), _createElementBlock$7("div", _hoisted_20$3, [
                                           _createElementVNode$8("div", _hoisted_21$2, _toDisplayString$7(target.relative_path), 1),
                                           (target.timeline_task)
-                                            ? (_openBlock$8(), _createElementBlock$7("div", _hoisted_22$1, [
+                                            ? (_openBlock$8(), _createElementBlock$7("div", _hoisted_22$2, [
                                                 _createElementVNode$8("span", null, "调轴：" + _toDisplayString$7(__props.timelineTaskText(target.timeline_task)), 1),
                                                 (_openBlock$8(true), _createElementBlock$7(_Fragment$4, null, _renderList$4(__props.timelineMetaItems(target.timeline_task.timeline), (meta) => {
                                                   return (_openBlock$8(), _createElementBlock$7("span", {
@@ -3761,13 +3761,13 @@ return (_ctx, _cache) => {
                                                 }), 128))
                                               ]))
                                             : _createCommentVNode$7("", true),
-                                          _createElementVNode$8("div", _hoisted_23$1, [
+                                          _createElementVNode$8("div", _hoisted_23$2, [
                                             (_openBlock$8(true), _createElementBlock$7(_Fragment$4, null, _renderList$4(target.subtitles, (subtitle) => {
                                               return (_openBlock$8(), _createElementBlock$7("div", {
                                                 key: subtitle.path,
                                                 class: "subtitle-history-item"
                                               }, [
-                                                _createElementVNode$8("div", _hoisted_24$1, [
+                                                _createElementVNode$8("div", _hoisted_24$2, [
                                                   _createElementVNode$8("strong", null, _toDisplayString$7(subtitle.name), 1),
                                                   _createElementVNode$8("span", null, _toDisplayString$7(__props.formatBytes(subtitle.size)) + " · " + _toDisplayString$7(subtitle.modified_at || '未知时间'), 1)
                                                 ]),
@@ -4570,39 +4570,42 @@ const _hoisted_1$4 = { class: "episode-mobile-header" };
 const _hoisted_2$4 = { class: "episode-mobile-title-block" };
 const _hoisted_3$4 = { class: "episode-mobile-title-line" };
 const _hoisted_4$4 = { class: "episode-mobile-index" };
-const _hoisted_5$3 = { class: "episode-mobile-chips" };
-const _hoisted_6$2 = {
+const _hoisted_5$3 = ["title"];
+const _hoisted_6$2 = { class: "episode-mobile-chips" };
+const _hoisted_7$2 = {
   key: 1,
   class: "episode-mobile-chip warning"
 };
-const _hoisted_7$2 = {
+const _hoisted_8$1 = {
   class: "episode-mobile-summary",
   "aria-label": "剧集摘要"
 };
-const _hoisted_8$1 = { class: "episode-mobile-meta-row" };
 const _hoisted_9$1 = { class: "episode-mobile-meta-row" };
-const _hoisted_10$1 = { class: "episode-mobile-path" };
-const _hoisted_11$1 = { class: "episode-mobile-actions" };
-const _hoisted_12$1 = {
+const _hoisted_10$1 = ["title"];
+const _hoisted_11$1 = { class: "episode-mobile-meta-row" };
+const _hoisted_12$1 = ["title"];
+const _hoisted_13$1 = { class: "episode-mobile-actions" };
+const _hoisted_14$1 = {
   key: 0,
   class: "episode-mobile-details",
   "aria-label": "剧集详情"
 };
-const _hoisted_13$1 = { class: "episode-mobile-detail-block" };
-const _hoisted_14$1 = { class: "episode-mobile-detail-tags" };
-const _hoisted_15$1 = { key: 0 };
-const _hoisted_16$1 = { key: 1 };
-const _hoisted_17$1 = {
+const _hoisted_15$1 = { class: "episode-mobile-detail-block" };
+const _hoisted_16$1 = { class: "episode-mobile-detail-tags" };
+const _hoisted_17$1 = { key: 0 };
+const _hoisted_18$1 = { key: 1 };
+const _hoisted_19$1 = {
   key: 0,
   class: "episode-mobile-subtitles"
 };
-const _hoisted_18$1 = { class: "episode-mobile-subtitle-copy" };
-const _hoisted_19$1 = { class: "episode-mobile-subtitle-actions" };
-const _hoisted_20$1 = {
+const _hoisted_20$1 = { class: "episode-mobile-subtitle-copy" };
+const _hoisted_21$1 = ["title"];
+const _hoisted_22$1 = { class: "episode-mobile-subtitle-actions" };
+const _hoisted_23$1 = {
   key: 1,
   class: "episode-mobile-empty"
 };
-const _hoisted_21$1 = { class: "episode-mobile-low-actions" };
+const _hoisted_24$1 = { class: "episode-mobile-low-actions" };
 
 
 const _sfc_main$4 = {
@@ -4672,9 +4675,11 @@ return (_ctx, _cache) => {
       _createElementVNode$4("div", _hoisted_2$4, [
         _createElementVNode$4("div", _hoisted_3$4, [
           _createElementVNode$4("span", _hoisted_4$4, _toDisplayString$3(episodeLabel(__props.target)), 1),
-          _createElementVNode$4("strong", null, _toDisplayString$3(__props.compactTargetName(__props.target)), 1)
+          _createElementVNode$4("strong", {
+            title: __props.compactTargetName(__props.target)
+          }, _toDisplayString$3(__props.compactTargetName(__props.target)), 9, _hoisted_5$3)
         ]),
-        _createElementVNode$4("div", _hoisted_5$3, [
+        _createElementVNode$4("div", _hoisted_6$2, [
           _createElementVNode$4("span", {
             class: _normalizeClass$3(["episode-mobile-chip", { positive: __props.target.has_subtitle }])
           }, _toDisplayString$3((__props.target.subtitles || []).length ? `${__props.target.subtitles.length} 个外挂字幕` : '暂无外挂字幕'), 3),
@@ -4685,7 +4690,7 @@ return (_ctx, _cache) => {
               }, " AI：" + _toDisplayString$3(__props.aiTaskForTarget(__props.target) ? __props.aiStatusText(__props.aiTaskForTarget(__props.target)) : (__props.aiAvailable ? '可生成' : '不可用')), 3))
             : _createCommentVNode$4("", true),
           (__props.locked)
-            ? (_openBlock$4(), _createElementBlock$4("span", _hoisted_6$2, "已锁定"))
+            ? (_openBlock$4(), _createElementBlock$4("span", _hoisted_7$2, "已锁定"))
             : _createCommentVNode$4("", true)
         ])
       ]),
@@ -4697,18 +4702,23 @@ return (_ctx, _cache) => {
         onClick: _cache[1] || (_cache[1] = $event => (emit('toggle-detail-expanded', __props.target)))
       }, null, 8, ["icon", "title"])
     ]),
-    _createElementVNode$4("section", _hoisted_7$2, [
-      _createElementVNode$4("div", _hoisted_8$1, [
-        _cache[6] || (_cache[6] = _createElementVNode$4("span", null, "文件", -1)),
-        _createElementVNode$4("strong", null, _toDisplayString$3(__props.target.basename || __props.compactTargetName(__props.target)), 1)
-      ]),
+    _createElementVNode$4("section", _hoisted_8$1, [
       _createElementVNode$4("div", _hoisted_9$1, [
+        _cache[6] || (_cache[6] = _createElementVNode$4("span", null, "文件", -1)),
+        _createElementVNode$4("strong", {
+          title: __props.target.basename || __props.compactTargetName(__props.target)
+        }, _toDisplayString$3(__props.target.basename || __props.compactTargetName(__props.target)), 9, _hoisted_10$1)
+      ]),
+      _createElementVNode$4("div", _hoisted_11$1, [
         _cache[7] || (_cache[7] = _createElementVNode$4("span", null, "调轴", -1)),
         _createElementVNode$4("strong", null, _toDisplayString$3(__props.timelineResultForTarget(__props.detailRowForTarget(__props.target))), 1)
       ]),
-      _createElementVNode$4("p", _hoisted_10$1, _toDisplayString$3(__props.target.relative_path || __props.target.path), 1)
+      _createElementVNode$4("p", {
+        class: "episode-mobile-path",
+        title: __props.target.relative_path || __props.target.path
+      }, _toDisplayString$3(__props.target.relative_path || __props.target.path), 9, _hoisted_12$1)
     ]),
-    _createElementVNode$4("div", _hoisted_11$1, [
+    _createElementVNode$4("div", _hoisted_13$1, [
       _createVNode$4(_component_VBtn, {
         class: "episode-online-action mobile-touch-target",
         color: "success",
@@ -4747,15 +4757,15 @@ return (_ctx, _cache) => {
         : _createCommentVNode$4("", true)
     ]),
     (__props.expanded)
-      ? (_openBlock$4(), _createElementBlock$4("section", _hoisted_12$1, [
-          _createElementVNode$4("div", _hoisted_13$1, [
+      ? (_openBlock$4(), _createElementBlock$4("section", _hoisted_14$1, [
+          _createElementVNode$4("div", _hoisted_15$1, [
             _cache[10] || (_cache[10] = _createElementVNode$4("span", null, "完整路径", -1)),
             _createElementVNode$4("p", null, _toDisplayString$3(__props.target.path || __props.target.relative_path), 1)
           ]),
-          _createElementVNode$4("div", _hoisted_14$1, [
+          _createElementVNode$4("div", _hoisted_16$1, [
             _createElementVNode$4("span", null, _toDisplayString$3(__props.timelineResultForTarget(__props.detailRowForTarget(__props.target))), 1),
             (__props.detailRowForTarget(__props.target).task)
-              ? (_openBlock$4(), _createElementBlock$4("span", _hoisted_15$1, "AI：" + _toDisplayString$3(__props.aiStatusText(__props.detailRowForTarget(__props.target).task)), 1))
+              ? (_openBlock$4(), _createElementBlock$4("span", _hoisted_17$1, "AI：" + _toDisplayString$3(__props.aiStatusText(__props.detailRowForTarget(__props.target).task)), 1))
               : _createCommentVNode$4("", true),
             (_openBlock$4(true), _createElementBlock$4(_Fragment$2, null, _renderList$2(__props.timelineMetaItems(__props.timelineTaskForTarget(__props.target)?.timeline), (meta) => {
               return (_openBlock$4(), _createElementBlock$4("span", {
@@ -4763,21 +4773,23 @@ return (_ctx, _cache) => {
               }, _toDisplayString$3(meta), 1))
             }), 128)),
             (__props.isStreamTarget(__props.target))
-              ? (_openBlock$4(), _createElementBlock$4("span", _hoisted_16$1, "STRM 资源不启用 AI 生成和智能调轴"))
+              ? (_openBlock$4(), _createElementBlock$4("span", _hoisted_18$1, "STRM 资源不启用 AI 生成和智能调轴"))
               : _createCommentVNode$4("", true)
           ]),
           ((__props.target.subtitles || []).length)
-            ? (_openBlock$4(), _createElementBlock$4("div", _hoisted_17$1, [
+            ? (_openBlock$4(), _createElementBlock$4("div", _hoisted_19$1, [
                 (_openBlock$4(true), _createElementBlock$4(_Fragment$2, null, _renderList$2(__props.target.subtitles, (subtitle) => {
                   return (_openBlock$4(), _createElementBlock$4("div", {
                     key: subtitle.path,
                     class: "episode-mobile-subtitle"
                   }, [
-                    _createElementVNode$4("div", _hoisted_18$1, [
-                      _createElementVNode$4("strong", null, _toDisplayString$3(subtitle.name), 1),
+                    _createElementVNode$4("div", _hoisted_20$1, [
+                      _createElementVNode$4("strong", {
+                        title: subtitle.name
+                      }, _toDisplayString$3(subtitle.name), 9, _hoisted_21$1),
                       _createElementVNode$4("span", null, _toDisplayString$3(__props.formatBytes(subtitle.size)) + " · " + _toDisplayString$3(subtitle.modified_at || '未知时间'), 1)
                     ]),
-                    _createElementVNode$4("div", _hoisted_19$1, [
+                    _createElementVNode$4("div", _hoisted_22$1, [
                       _createVNode$4(_component_VBtn, {
                         class: "mobile-touch-target",
                         variant: "tonal",
@@ -4821,8 +4833,8 @@ return (_ctx, _cache) => {
                   ]))
                 }), 128))
               ]))
-            : (_openBlock$4(), _createElementBlock$4("div", _hoisted_20$1, "当前集暂无外挂字幕。")),
-          _createElementVNode$4("div", _hoisted_21$1, [
+            : (_openBlock$4(), _createElementBlock$4("div", _hoisted_23$1, "当前集暂无外挂字幕。")),
+          _createElementVNode$4("div", _hoisted_24$1, [
             _createVNode$4(_component_VBtn, {
               class: "mobile-touch-target",
               variant: "text",
@@ -4842,7 +4854,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const EpisodeMobileCard = /*#__PURE__*/_export_sfc(_sfc_main$4, [['__scopeId',"data-v-408289df"]]);
+const EpisodeMobileCard = /*#__PURE__*/_export_sfc(_sfc_main$4, [['__scopeId',"data-v-819d916d"]]);
 
 const {toDisplayString:_toDisplayString$2,createElementVNode:_createElementVNode$3,createTextVNode:_createTextVNode$2,resolveComponent:_resolveComponent$3,withCtx:_withCtx$2,createVNode:_createVNode$3,openBlock:_openBlock$3,createBlock:_createBlock$3,createCommentVNode:_createCommentVNode$3,createElementBlock:_createElementBlock$3} = await importShared('vue');
 

@@ -41,7 +41,7 @@
         "name": "字幕匹配",
         "description": "手动上传字幕、ZIP/RAR/7Z，选择本地已有电影/剧集后自动匹配并按媒体文件名落盘；网盘挂载暂不保证完整可用性。",
         "labels": "字幕,媒体库,整理",
-        "version": "0.1.82",
+        "version": "0.1.83",
         "icon": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/subtitle-match.png",
         "author": "ifsherlock",
         "author_url": "https://github.com/ifsherlock",
@@ -49,6 +49,7 @@
         "system_version": ">=2.13.5",
         "release": true,
         "history": {
+            "v0.1.83": "优化字幕匹配移动端长文件名和路径展示，剧集标题、文件名和外挂字幕名默认单行省略，完整路径保留在展开详情中，并验证真实 MoviePilot 前端宿主下桌面布局不变",
             "v0.1.82": "二次优化真实 MoviePilot 前端宿主下的字幕匹配移动端体验，新增剧集移动卡片、底部批量操作栏和移动端 sheet 弹窗，精简 AI字幕生成(联动版) 未启用提示，并验证浅色/深色主题与桌面详情/侧栏布局不受影响",
             "v0.1.81": "适配真实 MoviePilot 前端宿主下的移动端布局，优化搜索、详情、历史和上传/在线字幕/AI 弹窗窄屏显示，并补充多视口回归测试以保持桌面布局不变",
             "v0.1.80": "修复字幕匹配检测 AI字幕生成(联动版) 状态时未启用文案重复的问题，状态条标题固定显示检测对象，右侧显示具体状态原因",
@@ -137,7 +138,7 @@
         "name": "AI字幕生成(联动版)",
         "description": "自动生成字幕并翻译成中文，支持 faster-whisper 识别、字幕提取和大模型并发翻译，可联动字幕匹配功能。",
         "labels": "字幕,AI,翻译",
-        "version": "3.5.59",
+        "version": "3.5.60",
         "icon": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/autosubtitles.jpeg",
         "author": "ifsherlock",
         "author_url": "https://github.com/ifsherlock",
@@ -145,6 +146,7 @@
         "system_version": ">=2.13.5",
         "v2": true,
         "history": {
+            "v3.5.60": "优化 AI字幕生成移动端任务卡片长标题、来源和输出文件展示，默认单行省略，完整路径和失败原因保留在详情区，并验证真实 MoviePilot 前端宿主下桌面任务列表布局不变",
             "v3.5.59": "二次优化真实 MoviePilot 前端宿主下的 AI字幕生成移动端任务页，任务卡片、批量底部操作栏和重跑 sheet 更适合触控，并验证浅色/深色主题与桌面任务列表/工具栏布局不受影响",
             "v3.5.58": "适配真实 MoviePilot 前端宿主下的移动端任务页，优化工具栏、状态筛选、任务卡片和重跑弹窗窄屏显示，并补充多视口回归测试以保持桌面布局不变",
             "v3.5.57": "优化设置页布局，API 模型获取和测试结果改为就近显示，底部新增保存操作",

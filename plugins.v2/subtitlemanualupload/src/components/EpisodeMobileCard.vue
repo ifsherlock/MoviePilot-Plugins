@@ -56,7 +56,7 @@ function episodeLabel(target) {
       <div class="episode-mobile-title-block">
         <div class="episode-mobile-title-line">
           <span class="episode-mobile-index">{{ episodeLabel(target) }}</span>
-          <strong>{{ compactTargetName(target) }}</strong>
+          <strong :title="compactTargetName(target)">{{ compactTargetName(target) }}</strong>
         </div>
         <div class="episode-mobile-chips">
           <span class="episode-mobile-chip" :class="{ positive: target.has_subtitle }">
@@ -80,13 +80,15 @@ function episodeLabel(target) {
     <section class="episode-mobile-summary" aria-label="剧集摘要">
       <div class="episode-mobile-meta-row">
         <span>文件</span>
-        <strong>{{ target.basename || compactTargetName(target) }}</strong>
+        <strong :title="target.basename || compactTargetName(target)">{{ target.basename || compactTargetName(target) }}</strong>
       </div>
       <div class="episode-mobile-meta-row">
         <span>调轴</span>
         <strong>{{ timelineResultForTarget(detailRowForTarget(target)) }}</strong>
       </div>
-      <p class="episode-mobile-path">{{ target.relative_path || target.path }}</p>
+      <p class="episode-mobile-path" :title="target.relative_path || target.path">
+        {{ target.relative_path || target.path }}
+      </p>
     </section>
 
     <div class="episode-mobile-actions">
@@ -144,7 +146,7 @@ function episodeLabel(target) {
           class="episode-mobile-subtitle"
         >
           <div class="episode-mobile-subtitle-copy">
-            <strong>{{ subtitle.name }}</strong>
+            <strong :title="subtitle.name">{{ subtitle.name }}</strong>
             <span>{{ formatBytes(subtitle.size) }} · {{ subtitle.modified_at || '未知时间' }}</span>
           </div>
           <div class="episode-mobile-subtitle-actions">
@@ -250,7 +252,9 @@ function episodeLabel(target) {
     color: var(--smu-text);
     font-size: 15px;
     line-height: 1.45;
-    overflow-wrap: anywhere;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .episode-mobile-index {
@@ -307,7 +311,9 @@ function episodeLabel(target) {
     min-width: 0;
     color: var(--smu-text);
     font-weight: 650;
-    overflow-wrap: anywhere;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .episode-mobile-path {
@@ -320,7 +326,7 @@ function episodeLabel(target) {
     overflow: hidden;
     overflow-wrap: anywhere;
     -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
+    -webkit-line-clamp: 1;
   }
 
   .episode-mobile-actions {
@@ -381,7 +387,9 @@ function episodeLabel(target) {
   .episode-mobile-subtitle-copy strong,
   .episode-mobile-subtitle-copy span {
     min-width: 0;
-    overflow-wrap: anywhere;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .episode-mobile-subtitle-copy span {

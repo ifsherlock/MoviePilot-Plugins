@@ -73,7 +73,7 @@ function toggleExpanded() {
         @update:model-value="value => emit('toggle-task', task, value)"
       />
       <div class="task-mobile-title-block">
-        <div class="task-mobile-title">{{ task.video_name || '未知视频' }}</div>
+        <div class="task-mobile-title" :title="task.video_name || '未知视频'">{{ task.video_name || '未知视频' }}</div>
         <div class="task-mobile-subline">
           <VChip class="task-mobile-status" size="x-small" variant="tonal" :color="statusColor">
             {{ task.status_label || task.status }}
@@ -86,11 +86,11 @@ function toggleExpanded() {
     <section class="task-mobile-summary" aria-label="任务摘要">
       <div class="task-mobile-meta-row">
         <span class="task-mobile-meta-label">来源</span>
-        <span class="task-mobile-meta-value">{{ sourceText }}</span>
+        <span class="task-mobile-meta-value" :title="sourceText">{{ sourceText }}</span>
       </div>
       <div class="task-mobile-meta-row">
         <span class="task-mobile-meta-label">输出</span>
-        <span class="task-mobile-meta-value">{{ outputText }}</span>
+        <span class="task-mobile-meta-value" :title="outputText">{{ outputText }}</span>
       </div>
       <p v-if="messageText" class="task-mobile-message">{{ messageText }}</p>
     </section>
@@ -199,7 +199,9 @@ function toggleExpanded() {
     font-size: 15px;
     font-weight: 650;
     line-height: 1.45;
-    overflow-wrap: anywhere;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .task-mobile-subline {
@@ -242,7 +244,9 @@ function toggleExpanded() {
 
   .task-mobile-meta-value {
     min-width: 0;
-    overflow-wrap: anywhere;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
   }
 
   .task-mobile-message {
