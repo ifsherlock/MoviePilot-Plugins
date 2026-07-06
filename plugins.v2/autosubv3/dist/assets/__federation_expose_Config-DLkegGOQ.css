@@ -1,0 +1,32 @@
+
+.autosub-config[data-v-e15e0481] {
+  background: rgb(var(--v-theme-background));
+}
+.config-shell[data-v-e15e0481] {
+  padding: 18px;
+}
+.config-section[data-v-e15e0481] {
+  margin-bottom: 20px;
+}
+.section-title[data-v-e15e0481] {
+  color: rgba(var(--v-theme-on-surface), 0.68);
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.api-actions[data-v-e15e0481] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+.api-feedback[data-v-e15e0481] {
+  margin-top: 2px;
+}
+.config-footer[data-v-e15e0481] {
+  align-items: center;
+  border-top: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+  display: flex;
+  gap: 10px;
+  padding-top: 16px;
+}

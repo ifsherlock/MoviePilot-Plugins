@@ -123,10 +123,17 @@ onMounted(loadTasks)
 <style scoped>
 .autosub-page {
   min-height: 100%;
+  min-width: 0;
   background: rgb(var(--v-theme-background));
 }
 
 .autosub-content {
   padding: 18px;
+}
+
+@media (max-width: 760px) {
+  .autosub-content {
+    padding: 12px;
+  }
 }
 </style>

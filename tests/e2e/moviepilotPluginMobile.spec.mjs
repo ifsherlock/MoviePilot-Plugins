@@ -199,3 +199,32 @@ test('SubtitleManualUpload online dialog keeps desktop side panel @subtitle-dial
   expect(columns).toBe(2)
   await expectNoHorizontalOverflow(page)
 })
+
+test('AutoSubv3 toolbar and filters stay usable on mobile @autosub-toolbar @autosub', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openPluginPage(page, 'AutoSubv3')
+
+  await expect(page.getByText('AI字幕生成(联动版)').first()).toBeVisible()
+  await expect(page.getByText('移动端布局回归测试剧集 S01E01')).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+  await screenshot(page, testInfo, 'autosub-toolbar-mobile-390.png')
+
+  await page.getByRole('button', { name: /最新在前|最早在前/ }).click()
+  await page.getByText('失败 1').click()
+  await expect(page.getByText('移动端布局回归测试剧集 S01E02')).toBeVisible()
+  await page.getByRole('checkbox').first().check()
+  await expect(page.getByRole('button', { name: '批量重新生成' })).toBeEnabled()
+  await expectNoHorizontalOverflow(page)
+})
+
+test('AutoSubv3 toolbar keeps desktop row layout @autosub-toolbar @autosub', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openPluginPage(page, 'AutoSubv3')
+
+  await expect(page.getByText('队列运行中')).toBeVisible()
+  await screenshot(page, testInfo, 'autosub-toolbar-desktop-1440.png')
+
+  const toolbarWraps = await page.locator('.autosub-toolbar').evaluate(element => element.scrollHeight > element.clientHeight + 8)
+  expect(toolbarWraps).toBe(false)
+  await expectNoHorizontalOverflow(page)
+})

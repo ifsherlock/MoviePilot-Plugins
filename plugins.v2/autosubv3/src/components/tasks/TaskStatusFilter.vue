@@ -35,10 +35,25 @@ const emit = defineEmits(['select'])
   flex-wrap: wrap;
   gap: 8px;
   margin-bottom: 14px;
+  min-width: 0;
 }
 
 .filter-chip {
   cursor: pointer;
   user-select: none;
+}
+
+@media (max-width: 760px) {
+  .summary-strip {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding-bottom: 4px;
+    scrollbar-width: thin;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .filter-chip {
+    flex: 0 0 auto;
+  }
 }
 </style>
