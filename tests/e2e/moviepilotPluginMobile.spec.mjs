@@ -262,12 +262,53 @@ test('SubtitleManualUpload detail keeps desktop row density @subtitle-detail @su
   await openPluginPage(page, 'SubtitleManualUpload')
 
   await page.getByText('移动端布局回归测试剧集：特别长的中文标题和 English Alias').first().click()
-  await expect(page.getByText('S01E01').first()).toBeVisible()
+  await expect(page.locator('.episode-row').filter({ hasText: 'S01E01' }).first()).toBeVisible()
   await screenshot(page, testInfo, 'subtitle-detail-desktop-1440.png')
 
   const columns = await page.locator('.episode-row').first().evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length)
   expect(columns).toBeGreaterThanOrEqual(9)
   await expectNoHorizontalOverflow(page)
+})
+
+test('SubtitleManualUpload episode mobile cards expose key actions @subtitle-episode-card-polish @subtitle', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openPluginPage(page, 'SubtitleManualUpload')
+
+  await page.getByText('移动端布局回归测试剧集：特别长的中文标题和 English Alias').first().click()
+  const firstCard = page.locator('.episode-mobile-card').filter({ hasText: 'S01E01' }).first()
+  await expect(firstCard).toBeVisible()
+  await expectTouchTargets(firstCard.getByRole('button', { name: /在线搜索|上传/ }).or(firstCard.getByTitle('调用 AI 字幕生成')), {
+    label: 'Subtitle episode mobile primary actions',
+  })
+  await firstCard.getByRole('checkbox').check()
+  await expect(page.getByText('1 个已选').first()).toBeVisible()
+
+  await firstCard.getByTitle('展开详情').click()
+  await expect(firstCard.getByText('完整路径')).toBeVisible()
+  await expect(firstCard.locator('.episode-mobile-detail-block').filter({ hasText: '/mnt/media/TV/移动端布局回归测试剧集/Season 01/' })).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+  await screenshot(page, testInfo, 'subtitle-episode-card-polish-mobile-390.png')
+
+  await firstCard.getByRole('button', { name: '在线搜索' }).click()
+  await expect(page.getByText('Mobile Layout Regression S01E01 English SDH')).toBeVisible()
+  await page.getByRole('button', { name: '关闭在线字幕搜索' }).click()
+
+  await firstCard.getByRole('button', { name: '上传' }).click()
+  await expect(page.getByText('把字幕或压缩包拖到这里')).toBeVisible()
+  await page.getByRole('button', { name: '关闭上传字幕' }).click()
+
+  await firstCard.getByTitle('调用 AI 字幕生成').click()
+  await expect(page.getByText('AI 状态 · S01E01')).toBeVisible()
+  await page.getByRole('button', { name: '关闭 AI 字幕生成状态' }).click()
+  await expectNoHorizontalOverflow(page)
+
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await expect(page.locator('.episode-mobile-card').first()).toBeHidden()
+  await expect(page.locator('.episode-row').first()).toBeVisible()
+  const columns = await page.locator('.episode-row').first().evaluate(element => getComputedStyle(element).gridTemplateColumns.split(' ').length)
+  expect(columns).toBeGreaterThanOrEqual(9)
+  await expectNoHorizontalOverflow(page)
+  await screenshot(page, testInfo, 'subtitle-episode-card-polish-desktop-1440.png')
 })
 
 test('SubtitleManualUpload dialogs stay scrollable and bounded on mobile @subtitle-dialogs @subtitle', async ({ page }, testInfo) => {

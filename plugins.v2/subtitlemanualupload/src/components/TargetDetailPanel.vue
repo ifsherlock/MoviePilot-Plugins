@@ -1,6 +1,7 @@
 <script setup>
 import { ref } from 'vue'
 import AiStatusStrip from './AiStatusStrip.vue'
+import EpisodeMobileCard from './EpisodeMobileCard.vue'
 
 defineProps({
   selectedMedia: { type: Object, required: true },
@@ -241,7 +242,42 @@ defineExpose({
             class="episode-row"
             :class="{ locked: isLocked(target.id) }"
           >
+            <EpisodeMobileCard
+              :target="target"
+              :selected="selectedTargetIds.includes(target.id)"
+              :locked="isLocked(target.id)"
+              :disabled="isTargetActionDisabled(target)"
+              :expanded="detailExpanded(target)"
+              :ai-enabled="aiEnabled"
+              :ai-available="aiAvailable"
+              :timeline-available="timelineAvailable"
+              :timeline-fixing="timelineFixing"
+              :clearing="clearing"
+              :compact-target-name="compactTargetName"
+              :format-bytes="formatBytes"
+              :is-stream-target="isStreamTarget"
+              :detail-row-for-target="detailRowForTarget"
+              :ai-task-for-target="aiTaskForTarget"
+              :ai-task-status-class="aiTaskStatusClass"
+              :ai-task-icon="aiTaskIcon"
+              :ai-task-color="aiTaskColor"
+              :ai-task-title="aiTaskTitle"
+              :ai-status-text="aiStatusText"
+              :timeline-result-for-target="timelineResultForTarget"
+              :timeline-meta-items="timelineMetaItems"
+              :timeline-task-for-target="timelineTaskForTarget"
+              @toggle-target="(targetId, value) => $emit('toggle-target', targetId, value)"
+              @toggle-detail-expanded="item => $emit('toggle-detail-expanded', item)"
+              @open-single-ai-generate="item => $emit('open-single-ai-generate', item)"
+              @open-single-online-search="item => $emit('open-single-online-search', item)"
+              @toggle-lock="targetId => $emit('toggle-lock', targetId)"
+              @open-single-upload="item => $emit('open-single-upload', item)"
+              @fix-history-subtitle-timeline="(item, subtitle) => $emit('fix-history-subtitle-timeline', item, subtitle)"
+              @restore-subtitle-backup="(item, subtitle) => $emit('restore-subtitle-backup', item, subtitle)"
+              @delete-subtitle="(item, subtitle) => $emit('delete-subtitle', item, subtitle)"
+            />
             <VCheckbox
+              class="episode-desktop-check"
               :model-value="selectedTargetIds.includes(target.id)"
               density="compact"
               hide-details
@@ -857,45 +893,21 @@ defineExpose({
   }
 
   .episode-row {
-    grid-template-columns: auto auto minmax(42px, auto) minmax(0, 1fr);
-    gap: 8px;
-    padding: 10px;
-    border-radius: 16px;
+    display: block;
+    border: 0;
+    background: transparent;
+    padding: 0;
   }
 
-  .episode-index {
-    min-width: 42px;
-    min-height: 32px;
-  }
-
-  .episode-copy {
-    grid-column: 1 / -1;
-    grid-row: 2;
-  }
-
+  .episode-desktop-check,
+  .episode-expand-btn,
+  .episode-index,
+  .episode-copy,
   .episode-row > .cc-btn,
   .episode-row > .ai-row-btn,
-  .episode-row > .v-btn:not(.episode-expand-btn) {
-    grid-row: 3;
-    justify-self: stretch;
-  }
-
-  .episode-row > .v-btn:not(.episode-expand-btn, .cc-btn, .ai-row-btn) {
-    min-width: 0;
-  }
-
+  .episode-row > .v-btn:not(.episode-expand-btn),
   .episode-expanded {
-    padding: 10px;
-    border-radius: 14px;
-  }
-
-  .subtitle-history-actions {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }
-
-  .subtitle-history-actions .v-btn {
-    min-width: 0;
+    display: none;
   }
 }
 </style>
