@@ -94,7 +94,12 @@ defineEmits([
           >
             停止等待
           </VBtn>
-          <VBtn icon="mdi-close" variant="text" @click="$emit('close-online-dialog')" />
+          <VBtn
+            icon="mdi-close"
+            variant="text"
+            aria-label="关闭在线字幕搜索"
+            @click="$emit('close-online-dialog')"
+          />
         </div>
       </VCardTitle>
       <VDivider />

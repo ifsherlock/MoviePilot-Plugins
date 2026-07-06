@@ -97,7 +97,12 @@ defineExpose({
     <VCardText>
       <div class="detail-head">
         <div class="selected-media">
-          <button class="back-btn" @click="$emit('reset-selection')">
+          <button
+            class="back-btn"
+            type="button"
+            aria-label="返回资源列表"
+            @click="$emit('reset-selection')"
+          >
             <VIcon icon="mdi-arrow-left" />
           </button>
           <div class="mini-poster">

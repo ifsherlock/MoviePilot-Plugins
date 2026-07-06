@@ -389,6 +389,7 @@ const {
   aiTaskStatusClass,
   aiTaskIconForTask,
   aiStatusText,
+  openAiTaskDialog,
   focusAiStatusStrip,
   openBatchAiGenerate,
   cancelBatchAiGenerate,

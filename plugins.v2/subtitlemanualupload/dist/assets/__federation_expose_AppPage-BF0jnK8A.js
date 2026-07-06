@@ -3083,6 +3083,7 @@ return (_ctx, _cache) => {
                 class: "dialog-close-btn",
                 icon: "mdi-close",
                 variant: "text",
+                "aria-label": "关闭 AI 字幕生成状态",
                 onClick: _cache[3] || (_cache[3] = $event => (_ctx.$emit('update:modelValue', false)))
               })
             ]),
@@ -3197,7 +3198,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const AiTaskDialog = /*#__PURE__*/_export_sfc(_sfc_main$9, [['__scopeId',"data-v-6ca4c763"]]);
+const AiTaskDialog = /*#__PURE__*/_export_sfc(_sfc_main$9, [['__scopeId',"data-v-26573531"]]);
 
 const {createElementVNode:_createElementVNode$8,toDisplayString:_toDisplayString$7,createTextVNode:_createTextVNode$6,resolveComponent:_resolveComponent$8,withCtx:_withCtx$6,createVNode:_createVNode$7,renderList:_renderList$5,Fragment:_Fragment$5,openBlock:_openBlock$8,createElementBlock:_createElementBlock$7,createCommentVNode:_createCommentVNode$7,normalizeClass:_normalizeClass$6,createBlock:_createBlock$8} = await importShared('vue');
 
@@ -4141,6 +4142,7 @@ return (_ctx, _cache) => {
                   _createVNode$3(_component_VBtn, {
                     icon: "mdi-close",
                     variant: "text",
+                    "aria-label": "关闭在线字幕搜索",
                     onClick: _cache[3] || (_cache[3] = $event => (_ctx.$emit('close-online-dialog')))
                   })
                 ])
@@ -4468,7 +4470,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const OnlineSubtitleDialog = /*#__PURE__*/_export_sfc(_sfc_main$4, [['__scopeId',"data-v-2c9bc9d7"]]);
+const OnlineSubtitleDialog = /*#__PURE__*/_export_sfc(_sfc_main$4, [['__scopeId',"data-v-ad8cac45"]]);
 
 const {resolveComponent:_resolveComponent$3,openBlock:_openBlock$3,createBlock:_createBlock$3,createCommentVNode:_createCommentVNode$3,createElementVNode:_createElementVNode$3,toDisplayString:_toDisplayString$2,normalizeClass:_normalizeClass$3,createElementBlock:_createElementBlock$3} = await importShared('vue');
 
@@ -4719,6 +4721,8 @@ return (_ctx, _cache) => {
             _createElementVNode$2("div", _hoisted_2$2, [
               _createElementVNode$2("button", {
                 class: "back-btn",
+                type: "button",
+                "aria-label": "返回资源列表",
                 onClick: _cache[0] || (_cache[0] = $event => (_ctx.$emit('reset-selection')))
               }, [
                 _createVNode$2(_component_VIcon, { icon: "mdi-arrow-left" })
@@ -5116,7 +5120,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const TargetDetailPanel = /*#__PURE__*/_export_sfc(_sfc_main$2, [['__scopeId',"data-v-7a88134c"]]);
+const TargetDetailPanel = /*#__PURE__*/_export_sfc(_sfc_main$2, [['__scopeId',"data-v-bb3500da"]]);
 
 const {toDisplayString:_toDisplayString,createElementVNode:_createElementVNode$1,resolveComponent:_resolveComponent$1,createVNode:_createVNode$1,withCtx:_withCtx,createTextVNode:_createTextVNode,openBlock:_openBlock$1,createBlock:_createBlock$1,createCommentVNode:_createCommentVNode$1,mergeProps:_mergeProps,normalizeClass:_normalizeClass$1,createElementBlock:_createElementBlock$1,renderList:_renderList,Fragment:_Fragment,withKeys:_withKeys} = await importShared('vue');
 
@@ -5838,6 +5842,7 @@ const {
   aiTaskStatusClass,
   aiTaskIconForTask,
   aiStatusText,
+  openAiTaskDialog,
   focusAiStatusStrip,
   openBatchAiGenerate,
   cancelBatchAiGenerate,
@@ -6315,7 +6320,7 @@ return (_ctx, _cache) => {
             onMarkPosterFailed: _unref(markPosterFailed),
             onLoadTargets: _unref(loadTargets),
             onChangeSeason: _unref(changeSeason),
-            onOpenAiTaskDialog: _ctx.openAiTaskDialog,
+            onOpenAiTaskDialog: _unref(openAiTaskDialog),
             onToggleSelectAll: _unref(toggleSelectAll),
             onOpenBatchUpload: _unref(openBatchUpload),
             onOpenBatchAiGenerate: _unref(openBatchAiGenerate),
@@ -6476,6 +6481,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-f0a0486a"]]);
+const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-4fc2bc0d"]]);
 
 export { AppPage as default };

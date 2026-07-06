@@ -2,6 +2,17 @@ import { expect } from '@playwright/test'
 import { existsSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
+import {
+  aiTasks,
+  autoSubTasks,
+  autoTransferQueue,
+  onlineManualLinks,
+  onlineResults,
+  subtitleHistory,
+  subtitleSearchPayload,
+  subtitleStatus,
+  subtitleTargetsPayload,
+} from '../fixtures/moviepilotPluginData.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const repoRoot = path.resolve(__dirname, '../../..')
@@ -83,6 +94,48 @@ function hostApiFallback(pathname) {
   return {}
 }
 
+function subtitleApiPayload(pathname) {
+  if (pathname.endsWith('/status')) return subtitleStatus
+  if (pathname.endsWith('/auto_transfer_queue')) return autoTransferQueue
+  if (pathname.endsWith('/online_status')) {
+    return {
+      enabled_providers: ['subhd', 'opensubtitles'],
+      assrt_api_configured: false,
+      opensubtitles_api_configured: true,
+      capabilities: { auto_search: true },
+    }
+  }
+  if (pathname.endsWith('/search')) return subtitleSearchPayload()
+  if (pathname.endsWith('/targets')) return subtitleTargetsPayload()
+  if (pathname.endsWith('/match_history')) return subtitleHistory
+  if (pathname.endsWith('/ai_tasks')) return aiTasks
+  if (pathname.endsWith('/timeline_tasks')) return { tasks: [] }
+  if (pathname.endsWith('/online_manual_links')) return onlineManualLinks
+  if (pathname.endsWith('/online_search_provider')) {
+    return {
+      provider: 'opensubtitles',
+      results: onlineResults,
+      messages: [{ level: 'info', provider: 'opensubtitles', message: '测试数据已返回' }],
+    }
+  }
+  if (pathname.endsWith('/prepare_upload')) {
+    return {
+      preview: {
+        items: [],
+      },
+    }
+  }
+  return { ok: true }
+}
+
+function autoSubApiPayload(pathname) {
+  if (pathname.endsWith('/tasks')) return autoSubTasks
+  if (pathname.endsWith('/cancel')) return { message: '已取消测试任务' }
+  if (pathname.endsWith('/restart')) return { message: '已重新提交测试任务' }
+  if (pathname.endsWith('/delete')) return { message: '已删除测试任务' }
+  return { ok: true }
+}
+
 export function remoteEntryUrl(id) {
   return toServedPath(pluginRemoteEntries[id])
 }
@@ -124,6 +177,14 @@ export async function installMoviePilotPluginHarness(page) {
         { id: 'SubtitleManualUpload', url: remoteEntryUrl('SubtitleManualUpload') },
         { id: 'AutoSubv3', url: remoteEntryUrl('AutoSubv3') },
       ]))
+      return
+    }
+    if (requestUrl.pathname.startsWith('/api/v1/plugin/SubtitleManualUpload/')) {
+      await route.fulfill(jsonResponse(subtitleApiPayload(requestUrl.pathname)))
+      return
+    }
+    if (requestUrl.pathname.startsWith('/api/v1/plugin/AutoSubv3/')) {
+      await route.fulfill(jsonResponse(autoSubApiPayload(requestUrl.pathname)))
       return
     }
     await route.fulfill(jsonResponse(hostApiFallback(requestUrl.pathname)))

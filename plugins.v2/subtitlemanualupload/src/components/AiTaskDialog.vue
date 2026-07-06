@@ -86,7 +86,13 @@ const aiStatusDetail = computed(() => buildAiStatusDetail(props.aiStatus))
             刷新
           </VBtn>
         </div>
-        <VBtn class="dialog-close-btn" icon="mdi-close" variant="text" @click="$emit('update:modelValue', false)" />
+        <VBtn
+          class="dialog-close-btn"
+          icon="mdi-close"
+          variant="text"
+          aria-label="关闭 AI 字幕生成状态"
+          @click="$emit('update:modelValue', false)"
+        />
       </VCardTitle>
       <VDivider />
       <VCardText>
