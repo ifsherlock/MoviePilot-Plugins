@@ -355,6 +355,7 @@ return (_ctx, _cache) => {
             default: _withCtx$3(() => [
               _createVNode$3(_component_VSpacer),
               _createVNode$3(_component_VBtn, {
+                class: "mobile-touch-target",
                 variant: "text",
                 onClick: _cache[1] || (_cache[1] = $event => (dialog.value = false))
               }, {
@@ -364,6 +365,7 @@ return (_ctx, _cache) => {
                 _: 1
               }),
               _createVNode$3(_component_VBtn, {
+                class: "mobile-touch-target",
                 color: "primary",
                 variant: "tonal",
                 loading: __props.operation === 'restart',
@@ -388,7 +390,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const RestartDialog = /*#__PURE__*/_export_sfc(_sfc_main$4, [['__scopeId',"data-v-0330dbfa"]]);
+const RestartDialog = /*#__PURE__*/_export_sfc(_sfc_main$4, [['__scopeId',"data-v-3d14acbf"]]);
 
 const {renderList:_renderList$1,Fragment:_Fragment$1,openBlock:_openBlock$3,createElementBlock:_createElementBlock$3,toDisplayString:_toDisplayString$2,createTextVNode:_createTextVNode$2,resolveComponent:_resolveComponent$3,withCtx:_withCtx$2,createBlock:_createBlock$1} = await importShared('vue');
 
@@ -606,6 +608,7 @@ return (_ctx, _cache) => {
                 ]),
                 _createElementVNode$2("div", _hoisted_13, [
                   _createVNode$2(_component_VBtn, {
+                    class: "mobile-touch-target",
                     size: "small",
                     color: "warning",
                     variant: "tonal",
@@ -618,6 +621,7 @@ return (_ctx, _cache) => {
                     _: 1
                   }, 8, ["disabled", "onClick"]),
                   _createVNode$2(_component_VBtn, {
+                    class: "mobile-touch-target",
                     size: "small",
                     color: "primary",
                     variant: "tonal",
@@ -630,6 +634,7 @@ return (_ctx, _cache) => {
                     _: 1
                   }, 8, ["disabled", "onClick"]),
                   _createVNode$2(_component_VBtn, {
+                    class: "mobile-touch-target",
                     size: "small",
                     color: "error",
                     variant: "tonal",
@@ -649,7 +654,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const TaskTable = /*#__PURE__*/_export_sfc(_sfc_main$2, [['__scopeId',"data-v-ee85a604"]]);
+const TaskTable = /*#__PURE__*/_export_sfc(_sfc_main$2, [['__scopeId',"data-v-1a5117e3"]]);
 
 const {createElementVNode:_createElementVNode$1,toDisplayString:_toDisplayString,createTextVNode:_createTextVNode,resolveComponent:_resolveComponent$1,withCtx:_withCtx,createVNode:_createVNode$1,openBlock:_openBlock$1,createElementBlock:_createElementBlock$1} = await importShared('vue');
 
@@ -733,6 +738,7 @@ return (_ctx, _cache) => {
     ]),
     _createElementVNode$1("div", _hoisted_4, [
       _createVNode$1(_component_VBtn, {
+        class: "mobile-touch-target",
         variant: "tonal",
         "prepend-icon": __props.sortOrder === 'desc' ? 'mdi-sort-clock-descending' : 'mdi-sort-clock-ascending',
         onClick: toggleSortOrder
@@ -743,6 +749,7 @@ return (_ctx, _cache) => {
         _: 1
       }, 8, ["prepend-icon"]),
       _createVNode$1(_component_VBtn, {
+        class: "mobile-touch-target",
         variant: "tonal",
         "prepend-icon": "mdi-checkbox-multiple-marked-outline",
         disabled: !__props.visibleTasks.length,
@@ -754,6 +761,7 @@ return (_ctx, _cache) => {
         _: 1
       }, 8, ["disabled"]),
       _createVNode$1(_component_VBtn, {
+        class: "mobile-touch-target",
         color: "warning",
         variant: "tonal",
         "prepend-icon": "mdi-cancel",
@@ -767,6 +775,7 @@ return (_ctx, _cache) => {
         _: 1
       }, 8, ["disabled", "loading"]),
       _createVNode$1(_component_VBtn, {
+        class: "mobile-touch-target",
         color: "primary",
         variant: "tonal",
         "prepend-icon": "mdi-restart",
@@ -780,6 +789,7 @@ return (_ctx, _cache) => {
         _: 1
       }, 8, ["disabled", "loading"]),
       _createVNode$1(_component_VBtn, {
+        class: "mobile-touch-target",
         color: "error",
         variant: "tonal",
         "prepend-icon": "mdi-delete-outline",
@@ -793,6 +803,7 @@ return (_ctx, _cache) => {
         _: 1
       }, 8, ["disabled", "loading"]),
       _createVNode$1(_component_VBtn, {
+        class: "mobile-touch-target",
         "aria-label": "刷新任务",
         icon: "mdi-refresh",
         variant: "text",
@@ -800,6 +811,7 @@ return (_ctx, _cache) => {
         onClick: _cache[4] || (_cache[4] = $event => (emit('refresh')))
       }, null, 8, ["loading"]),
       _createVNode$1(_component_VBtn, {
+        class: "mobile-touch-target",
         "aria-label": "关闭 AI字幕生成",
         icon: "mdi-close",
         variant: "text",
@@ -811,7 +823,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const TaskToolbar = /*#__PURE__*/_export_sfc(_sfc_main$1, [['__scopeId',"data-v-eb277298"]]);
+const TaskToolbar = /*#__PURE__*/_export_sfc(_sfc_main$1, [['__scopeId',"data-v-bdeeddea"]]);
 
 const {unref:_unref,isRef:_isRef,createVNode:_createVNode,resolveComponent:_resolveComponent,openBlock:_openBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,createElementVNode:_createElementVNode,createElementBlock:_createElementBlock} = await importShared('vue');
 

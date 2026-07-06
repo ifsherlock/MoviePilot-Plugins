@@ -1,0 +1,26 @@
+
+.subtitlemanualupload-page-wrapper[data-v-dd738e6b] {
+  min-width: 0;
+}
+.sticky-toolbar[data-v-dd738e6b] {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: rgb(var(--v-theme-surface));
+}
+.sticky-toolbar .text-h6[data-v-dd738e6b] {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+.subtitlemanualupload-page-wrapper .mobile-touch-target {
+    --v-btn-height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    width: 44px;
+    height: 44px;
+}
+}

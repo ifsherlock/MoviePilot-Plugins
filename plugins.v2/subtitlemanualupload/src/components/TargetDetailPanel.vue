@@ -124,7 +124,7 @@ defineExpose({
             <p>{{ visibleTargets.length }} 个本地目标 · {{ selectedTargets.length }} 个已选 · {{ lockedTargetIds.length }} 个锁定</p>
           </div>
         </div>
-        <VBtn variant="tonal" :loading="resolving" @click="$emit('load-targets', selectedMedia, selectedSeason)">
+        <VBtn class="mobile-touch-target" variant="tonal" :loading="resolving" @click="$emit('load-targets', selectedMedia, selectedSeason)">
           刷新列表
         </VBtn>
       </div>
@@ -155,10 +155,11 @@ defineExpose({
 
       <div class="match-panel">
         <div class="toolbar-row">
-          <VBtn variant="tonal" @click="$emit('toggle-select-all')">
+          <VBtn class="mobile-touch-target" variant="tonal" @click="$emit('toggle-select-all')">
             {{ allVisibleSelected ? '取消全选' : '全选当前列表' }}
           </VBtn>
           <VBtn
+            class="mobile-touch-target"
             color="primary"
             :disabled="!unlockedVisibleTargets.length"
             @click="$emit('open-batch-upload')"
@@ -167,6 +168,7 @@ defineExpose({
           </VBtn>
           <VBtn
             v-if="aiEnabled"
+            class="mobile-touch-target"
             color="warning"
             variant="tonal"
             prepend-icon="mdi-robot-outline"
@@ -178,6 +180,7 @@ defineExpose({
           </VBtn>
           <VBtn
             v-if="aiEnabled && aiBatchCancelTargets.length"
+            class="mobile-touch-target"
             color="error"
             variant="tonal"
             prepend-icon="mdi-cancel"
@@ -187,7 +190,7 @@ defineExpose({
             取消 AI
           </VBtn>
           <VBtn
-            class="online-batch-btn"
+            class="online-batch-btn mobile-touch-target"
             color="success"
             variant="flat"
             prepend-icon="mdi-cloud-search-outline"
@@ -198,6 +201,7 @@ defineExpose({
             {{ onlineBatchLabel }}
           </VBtn>
           <VBtn
+            class="mobile-touch-target"
             color="error"
             variant="tonal"
             :disabled="!selectedTargetIds.length"
@@ -207,6 +211,7 @@ defineExpose({
             清空选中外挂字幕
           </VBtn>
           <VBtn
+            class="mobile-touch-target"
             color="warning"
             variant="tonal"
             prepend-icon="mdi-timeline-clock"
@@ -217,6 +222,7 @@ defineExpose({
             批量调轴
           </VBtn>
           <VBtn
+            class="mobile-touch-target"
             color="secondary"
             variant="tonal"
             prepend-icon="mdi-restore"
@@ -311,6 +317,7 @@ defineExpose({
               @click="$emit('toggle-lock', target.id)"
             />
             <VBtn
+              class="mobile-touch-target"
               color="primary"
               variant="tonal"
               size="small"
@@ -889,6 +896,16 @@ defineExpose({
 
   .subtitle-history-actions .v-btn {
     min-width: 0;
+  }
+}
+</style>
+
+<style>
+@media (max-width: 900px) {
+  .detail-card .mobile-touch-target {
+    --v-btn-height: 44px;
+    min-width: 44px;
+    min-height: 44px;
   }
 }
 </style>

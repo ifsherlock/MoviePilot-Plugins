@@ -70,6 +70,7 @@ defineEmits([
         </div>
         <div class="online-title-actions">
           <VBtn
+            class="mobile-touch-target"
             color="success"
             :disabled="!selectedOnlineResults.length || onlineAiDownloading"
             :loading="onlinePreviewDownloading"
@@ -78,6 +79,7 @@ defineEmits([
             下载并生成预览
           </VBtn>
           <VBtn
+            class="mobile-touch-target"
             color="primary"
             variant="tonal"
             :disabled="!canSubmitOnlineAiTranslate || onlinePreviewDownloading"
@@ -88,6 +90,7 @@ defineEmits([
           </VBtn>
           <VBtn
             v-if="onlineDownloading"
+            class="mobile-touch-target"
             color="warning"
             variant="tonal"
             @click="$emit('stop-online-download')"
@@ -95,6 +98,7 @@ defineEmits([
             停止等待
           </VBtn>
           <VBtn
+            class="mobile-touch-target"
             icon="mdi-close"
             variant="text"
             aria-label="关闭在线字幕搜索"
@@ -127,6 +131,7 @@ defineEmits([
           @update:model-value="$emit('update:onlineSelectedProviders', $event)"
         />
         <VBtn
+          class="mobile-touch-target"
           color="primary"
           :disabled="!onlineSelectedProviders.length"
           :loading="onlineSearching"
@@ -136,6 +141,7 @@ defineEmits([
         </VBtn>
         <VBtn
           v-if="onlineSearching"
+          class="mobile-touch-target"
           color="warning"
           variant="tonal"
           @click="$emit('stop-online-search')"
@@ -327,8 +333,9 @@ defineEmits([
         />
       </VCardText>
       <VCardActions class="justify-end">
-        <VBtn variant="text" @click="$emit('update:onlineAiConfirmDialog', false)">取消</VBtn>
+        <VBtn class="mobile-touch-target" variant="text" @click="$emit('update:onlineAiConfirmDialog', false)">取消</VBtn>
         <VBtn
+          class="mobile-touch-target"
           color="primary"
           variant="flat"
           :loading="onlineAiDownloading"
@@ -649,6 +656,17 @@ defineEmits([
   .online-open-link {
     grid-column: 2;
     justify-self: start;
+  }
+}
+</style>
+
+<style>
+@media (max-width: 900px) {
+  .online-dialog .mobile-touch-target,
+  .online-open-link {
+    --v-btn-height: 44px;
+    min-width: 44px;
+    min-height: 44px;
   }
 }
 </style>

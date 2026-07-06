@@ -104,6 +104,7 @@ function sourceText(task) {
       </div>
       <div class="task-actions">
         <VBtn
+          class="mobile-touch-target"
           size="small"
           color="warning"
           variant="tonal"
@@ -113,6 +114,7 @@ function sourceText(task) {
           取消
         </VBtn>
         <VBtn
+          class="mobile-touch-target"
           size="small"
           color="primary"
           variant="tonal"
@@ -122,6 +124,7 @@ function sourceText(task) {
           重新生成
         </VBtn>
         <VBtn
+          class="mobile-touch-target"
           size="small"
           color="error"
           variant="tonal"
@@ -239,6 +242,16 @@ function sourceText(task) {
   .task-meta span {
     flex: 1 1 100%;
     overflow-wrap: anywhere;
+  }
+}
+</style>
+
+<style>
+@media (max-width: 900px) {
+  .autosub-page .task-row .mobile-touch-target {
+    --v-btn-height: 46px;
+    min-width: 44px;
+    min-height: 46px;
   }
 }
 </style>

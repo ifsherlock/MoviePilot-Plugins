@@ -4104,6 +4104,7 @@ return (_ctx, _cache) => {
                 ]),
                 _createElementVNode$4("div", _hoisted_1$4, [
                   _createVNode$3(_component_VBtn, {
+                    class: "mobile-touch-target",
                     color: "success",
                     disabled: !__props.selectedOnlineResults.length || __props.onlineAiDownloading,
                     loading: __props.onlinePreviewDownloading,
@@ -4115,6 +4116,7 @@ return (_ctx, _cache) => {
                     _: 1
                   }, 8, ["disabled", "loading"]),
                   _createVNode$3(_component_VBtn, {
+                    class: "mobile-touch-target",
                     color: "primary",
                     variant: "tonal",
                     disabled: !__props.canSubmitOnlineAiTranslate || __props.onlinePreviewDownloading,
@@ -4129,6 +4131,7 @@ return (_ctx, _cache) => {
                   (__props.onlineDownloading)
                     ? (_openBlock$4(), _createBlock$4(_component_VBtn, {
                         key: 0,
+                        class: "mobile-touch-target",
                         color: "warning",
                         variant: "tonal",
                         onClick: _cache[2] || (_cache[2] = $event => (_ctx.$emit('stop-online-download')))
@@ -4140,6 +4143,7 @@ return (_ctx, _cache) => {
                       }))
                     : _createCommentVNode$4("", true),
                   _createVNode$3(_component_VBtn, {
+                    class: "mobile-touch-target",
                     icon: "mdi-close",
                     variant: "text",
                     "aria-label": "关闭在线字幕搜索",
@@ -4175,6 +4179,7 @@ return (_ctx, _cache) => {
                   "onUpdate:modelValue": _cache[6] || (_cache[6] = $event => (_ctx.$emit('update:onlineSelectedProviders', $event)))
                 }, null, 8, ["model-value", "items"]),
                 _createVNode$3(_component_VBtn, {
+                  class: "mobile-touch-target",
                   color: "primary",
                   disabled: !__props.onlineSelectedProviders.length,
                   loading: __props.onlineSearching,
@@ -4188,6 +4193,7 @@ return (_ctx, _cache) => {
                 (__props.onlineSearching)
                   ? (_openBlock$4(), _createBlock$4(_component_VBtn, {
                       key: 0,
+                      class: "mobile-touch-target",
                       color: "warning",
                       variant: "tonal",
                       onClick: _cache[8] || (_cache[8] = $event => (_ctx.$emit('stop-online-search')))
@@ -4437,6 +4443,7 @@ return (_ctx, _cache) => {
             _createVNode$3(_component_VCardActions, { class: "justify-end" }, {
               default: _withCtx$2(() => [
                 _createVNode$3(_component_VBtn, {
+                  class: "mobile-touch-target",
                   variant: "text",
                   onClick: _cache[13] || (_cache[13] = $event => (_ctx.$emit('update:onlineAiConfirmDialog', false)))
                 }, {
@@ -4446,6 +4453,7 @@ return (_ctx, _cache) => {
                   _: 1
                 }),
                 _createVNode$3(_component_VBtn, {
+                  class: "mobile-touch-target",
                   color: "primary",
                   variant: "flat",
                   loading: __props.onlineAiDownloading,
@@ -4470,7 +4478,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const OnlineSubtitleDialog = /*#__PURE__*/_export_sfc(_sfc_main$4, [['__scopeId',"data-v-b175b520"]]);
+const OnlineSubtitleDialog = /*#__PURE__*/_export_sfc(_sfc_main$4, [['__scopeId',"data-v-3458b465"]]);
 
 const {resolveComponent:_resolveComponent$3,openBlock:_openBlock$3,createBlock:_createBlock$3,createCommentVNode:_createCommentVNode$3,createElementVNode:_createElementVNode$3,toDisplayString:_toDisplayString$2,normalizeClass:_normalizeClass$3,createElementBlock:_createElementBlock$3} = await importShared('vue');
 
@@ -4748,6 +4756,7 @@ return (_ctx, _cache) => {
               ])
             ]),
             _createVNode$2(_component_VBtn, {
+              class: "mobile-touch-target",
               variant: "tonal",
               loading: __props.resolving,
               onClick: _cache[2] || (_cache[2] = $event => (_ctx.$emit('load-targets', __props.selectedMedia, __props.selectedSeason)))
@@ -4786,6 +4795,7 @@ return (_ctx, _cache) => {
           _createElementVNode$2("div", _hoisted_9, [
             _createElementVNode$2("div", _hoisted_10, [
               _createVNode$2(_component_VBtn, {
+                class: "mobile-touch-target",
                 variant: "tonal",
                 onClick: _cache[4] || (_cache[4] = $event => (_ctx.$emit('toggle-select-all')))
               }, {
@@ -4795,6 +4805,7 @@ return (_ctx, _cache) => {
                 _: 1
               }),
               _createVNode$2(_component_VBtn, {
+                class: "mobile-touch-target",
                 color: "primary",
                 disabled: !__props.unlockedVisibleTargets.length,
                 onClick: _cache[5] || (_cache[5] = $event => (_ctx.$emit('open-batch-upload')))
@@ -4807,6 +4818,7 @@ return (_ctx, _cache) => {
               (__props.aiEnabled)
                 ? (_openBlock$2(), _createBlock$2(_component_VBtn, {
                     key: 0,
+                    class: "mobile-touch-target",
                     color: "warning",
                     variant: "tonal",
                     "prepend-icon": "mdi-robot-outline",
@@ -4823,6 +4835,7 @@ return (_ctx, _cache) => {
               (__props.aiEnabled && __props.aiBatchCancelTargets.length)
                 ? (_openBlock$2(), _createBlock$2(_component_VBtn, {
                     key: 1,
+                    class: "mobile-touch-target",
                     color: "error",
                     variant: "tonal",
                     "prepend-icon": "mdi-cancel",
@@ -4836,7 +4849,7 @@ return (_ctx, _cache) => {
                   }, 8, ["loading"]))
                 : _createCommentVNode$2("", true),
               _createVNode$2(_component_VBtn, {
-                class: "online-batch-btn",
+                class: "online-batch-btn mobile-touch-target",
                 color: "success",
                 variant: "flat",
                 "prepend-icon": "mdi-cloud-search-outline",
@@ -4850,6 +4863,7 @@ return (_ctx, _cache) => {
                 _: 1
               }, 8, ["disabled", "loading"]),
               _createVNode$2(_component_VBtn, {
+                class: "mobile-touch-target",
                 color: "error",
                 variant: "tonal",
                 disabled: !__props.selectedTargetIds.length,
@@ -4862,6 +4876,7 @@ return (_ctx, _cache) => {
                 _: 1
               }, 8, ["disabled", "loading"]),
               _createVNode$2(_component_VBtn, {
+                class: "mobile-touch-target",
                 color: "warning",
                 variant: "tonal",
                 "prepend-icon": "mdi-timeline-clock",
@@ -4875,6 +4890,7 @@ return (_ctx, _cache) => {
                 _: 1
               }, 8, ["disabled", "loading"]),
               _createVNode$2(_component_VBtn, {
+                class: "mobile-touch-target",
                 color: "secondary",
                 variant: "tonal",
                 "prepend-icon": "mdi-restore",
@@ -4991,6 +5007,7 @@ return (_ctx, _cache) => {
                         onClick: $event => (_ctx.$emit('toggle-lock', target.id))
                       }, null, 8, ["icon", "color", "title", "onClick"]),
                       _createVNode$2(_component_VBtn, {
+                        class: "mobile-touch-target",
                         color: "primary",
                         variant: "tonal",
                         size: "small",
@@ -5120,7 +5137,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const TargetDetailPanel = /*#__PURE__*/_export_sfc(_sfc_main$2, [['__scopeId',"data-v-8714c3a6"]]);
+const TargetDetailPanel = /*#__PURE__*/_export_sfc(_sfc_main$2, [['__scopeId',"data-v-1aaed40e"]]);
 
 const {toDisplayString:_toDisplayString,createElementVNode:_createElementVNode$1,resolveComponent:_resolveComponent$1,createVNode:_createVNode$1,withCtx:_withCtx,createTextVNode:_createTextVNode,openBlock:_openBlock$1,createBlock:_createBlock$1,createCommentVNode:_createCommentVNode$1,mergeProps:_mergeProps,normalizeClass:_normalizeClass$1,createElementBlock:_createElementBlock$1,renderList:_renderList,Fragment:_Fragment,withKeys:_withKeys} = await importShared('vue');
 

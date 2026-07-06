@@ -28,13 +28,14 @@ const pageRef = ref(null)
       <div class="text-h6 ms-3">字幕匹配</div>
       <VSpacer />
       <VBtn
+        class="mobile-touch-target"
         aria-label="刷新字幕匹配状态"
         icon="mdi-refresh"
         variant="text"
         :loading="pageRef?.loading || pageRef?.refreshing"
         @click="pageRef?.loadStatus()"
       />
-      <VBtn aria-label="关闭字幕匹配" icon="mdi-close" variant="text" @click="emit('close')" />
+      <VBtn class="mobile-touch-target" aria-label="关闭字幕匹配" icon="mdi-close" variant="text" @click="emit('close')" />
     </VToolbar>
     <VDivider />
 
@@ -65,5 +66,17 @@ const pageRef = ref(null)
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+</style>
+
+<style>
+@media (max-width: 900px) {
+  .subtitlemanualupload-page-wrapper .mobile-touch-target {
+    --v-btn-height: 44px;
+    min-width: 44px;
+    min-height: 44px;
+    width: 44px;
+    height: 44px;
+  }
 }
 </style>

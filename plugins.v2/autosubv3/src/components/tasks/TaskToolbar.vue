@@ -65,6 +65,7 @@ function toggleSortOrder() {
     </div>
     <div class="toolbar-actions">
       <VBtn
+        class="mobile-touch-target"
         variant="tonal"
         :prepend-icon="sortOrder === 'desc' ? 'mdi-sort-clock-descending' : 'mdi-sort-clock-ascending'"
         @click="toggleSortOrder"
@@ -72,6 +73,7 @@ function toggleSortOrder() {
         {{ sortOrder === 'desc' ? '最新在前' : '最早在前' }}
       </VBtn>
       <VBtn
+        class="mobile-touch-target"
         variant="tonal"
         prepend-icon="mdi-checkbox-multiple-marked-outline"
         :disabled="!visibleTasks.length"
@@ -80,6 +82,7 @@ function toggleSortOrder() {
         {{ allVisibleSelected ? '取消全选' : '全选' }}
       </VBtn>
       <VBtn
+        class="mobile-touch-target"
         color="warning"
         variant="tonal"
         prepend-icon="mdi-cancel"
@@ -90,6 +93,7 @@ function toggleSortOrder() {
         批量取消
       </VBtn>
       <VBtn
+        class="mobile-touch-target"
         color="primary"
         variant="tonal"
         prepend-icon="mdi-restart"
@@ -100,6 +104,7 @@ function toggleSortOrder() {
         批量重新生成
       </VBtn>
       <VBtn
+        class="mobile-touch-target"
         color="error"
         variant="tonal"
         prepend-icon="mdi-delete-outline"
@@ -109,8 +114,8 @@ function toggleSortOrder() {
       >
         批量删除
       </VBtn>
-      <VBtn aria-label="刷新任务" icon="mdi-refresh" variant="text" :loading="loading" @click="emit('refresh')" />
-      <VBtn aria-label="关闭 AI字幕生成" icon="mdi-close" variant="text" @click="emit('close')" />
+      <VBtn class="mobile-touch-target" aria-label="刷新任务" icon="mdi-refresh" variant="text" :loading="loading" @click="emit('refresh')" />
+      <VBtn class="mobile-touch-target" aria-label="关闭 AI字幕生成" icon="mdi-close" variant="text" @click="emit('close')" />
     </div>
   </header>
 </template>
@@ -175,11 +180,6 @@ function toggleSortOrder() {
     width: 100%;
   }
 
-  .toolbar-actions .v-btn:not(.v-btn--icon) {
-    flex: 1 1 calc(50% - 8px);
-    min-width: 0;
-  }
-
   .toolbar-actions .v-btn:nth-child(3),
   .toolbar-actions .v-btn:nth-child(4),
   .toolbar-actions .v-btn:nth-child(5) {
@@ -188,6 +188,26 @@ function toggleSortOrder() {
 
   .toolbar-actions .v-btn--icon {
     flex: 0 0 auto;
+  }
+}
+</style>
+
+<style>
+@media (max-width: 900px) {
+  .autosub-page .toolbar-actions .mobile-touch-target {
+    --v-btn-height: 46px;
+    min-width: 44px;
+    min-height: 46px;
+  }
+
+  .autosub-page .toolbar-actions .mobile-touch-target:not(.v-btn--icon) {
+    flex: 1 1 calc(50% - 8px);
+    min-width: 0;
+  }
+
+  .autosub-page .toolbar-actions .mobile-touch-target.v-btn--icon {
+    width: 46px;
+    height: 46px;
   }
 }
 </style>

@@ -8,6 +8,12 @@ import {
   openPluginPage,
   remoteEntryUrl,
 } from './support/moviepilotPluginHarness.mjs'
+import {
+  expectBottomContentNotObscured,
+  expectDialogUsableOnMobile,
+  expectNoHorizontalOverflow,
+  expectTouchTargets,
+} from './support/mobileAssertions.mjs'
 
 const subtitleViewports = [
   { name: 'mobile-390', width: 390, height: 844 },
@@ -27,14 +33,6 @@ test.beforeEach(async ({ page }, testInfo) => {
   await installMoviePilotPluginHarness(page)
 })
 
-async function expectNoHorizontalOverflow(page) {
-  const overflow = await page.evaluate(() => {
-    const root = document.scrollingElement || document.documentElement
-    return Math.ceil(root.scrollWidth - window.innerWidth)
-  })
-  expect(overflow).toBeLessThanOrEqual(1)
-}
-
 async function screenshot(page, testInfo, name) {
   await mkdir(screenshotRoot, { recursive: true })
   const filePath = path.join(screenshotRoot, name)
@@ -44,6 +42,54 @@ async function screenshot(page, testInfo, name) {
     contentType: 'image/png',
   })
   testInfo.annotations.push({ type: 'screenshot', description: filePath })
+}
+
+for (const viewport of subtitleViewports.filter(item => item.width <= 768)) {
+  test(`Mobile UI contract holds for SubtitleManualUpload at ${viewport.name} @mobile-contract`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height })
+    await openPluginPage(page, 'SubtitleManualUpload')
+
+    await expect(page.getByText('移动端布局回归测试剧集：特别长的中文标题和 English Alias').first()).toBeVisible()
+    await expectNoHorizontalOverflow(page)
+    await expectTouchTargets(page.locator('.sticky-toolbar').getByRole('button', { name: /刷新字幕匹配状态|关闭字幕匹配/ }).or(page.getByRole('button', { name: '匹配历史' })), {
+      label: `Subtitle root ${viewport.name}`,
+    })
+    await expectBottomContentNotObscured(page, '.media-card')
+    await screenshot(page, testInfo, `subtitle-mobile-contract-root-${viewport.name}.png`)
+
+    await page.getByText('移动端布局回归测试剧集：特别长的中文标题和 English Alias').first().click()
+    await expect(page.getByText('S01E01').first()).toBeVisible()
+    await expectNoHorizontalOverflow(page)
+    await expectTouchTargets(page.locator('.toolbar-row').getByRole('button', { name: /全选当前列表|批量上传整季字幕/ }).or(page.locator('.episode-row').first().getByRole('button', { name: '单集上传' })), {
+      label: `Subtitle detail ${viewport.name}`,
+    })
+    await expectBottomContentNotObscured(page, '.episode-row')
+
+    await page.getByTitle('搜索此集在线字幕').first().click()
+    await expect(page.getByText('Mobile Layout Regression S01E01 English SDH')).toBeVisible()
+    await expectDialogUsableOnMobile(page, page.getByRole('dialog'))
+    await screenshot(page, testInfo, `subtitle-mobile-contract-dialog-${viewport.name}.png`)
+  })
+
+  test(`Mobile UI contract holds for AutoSubv3 at ${viewport.name} @mobile-contract`, async ({ page }, testInfo) => {
+    await page.setViewportSize({ width: viewport.width, height: viewport.height })
+    await openPluginPage(page, 'AutoSubv3')
+
+    await expect(page.getByText('移动端布局回归测试剧集 S01E01')).toBeVisible()
+    await expectNoHorizontalOverflow(page)
+    await expectTouchTargets(page.locator('.autosub-toolbar').getByRole('button', { name: /最新在前|最早在前|全选|批量重新生成|刷新任务|关闭 AI字幕生成/ }), {
+      label: `AutoSub root ${viewport.name}`,
+    })
+    await expectBottomContentNotObscured(page, '.task-row')
+    await screenshot(page, testInfo, `autosub-mobile-contract-root-${viewport.name}.png`)
+
+    await page.getByText('失败 1').click()
+    await page.getByRole('checkbox').first().check()
+    await page.getByRole('button', { name: '批量重新生成' }).click()
+    await expect(page.getByText('重新生成 AI 字幕').last()).toBeVisible()
+    await expectDialogUsableOnMobile(page, page.getByRole('dialog'))
+    await screenshot(page, testInfo, `autosub-mobile-contract-dialog-${viewport.name}.png`)
+  })
 }
 
 async function setHostTheme(page, themeName) {

@@ -63,8 +63,9 @@ const sourcePolicy = computed({
       </VCardText>
       <VCardActions>
         <VSpacer />
-        <VBtn variant="text" @click="dialog = false">取消</VBtn>
+        <VBtn class="mobile-touch-target" variant="text" @click="dialog = false">取消</VBtn>
         <VBtn
+          class="mobile-touch-target"
           color="primary"
           variant="tonal"
           :loading="operation === 'restart'"
@@ -104,6 +105,22 @@ const sourcePolicy = computed({
   }
 
   .restart-dialog-card :deep(.v-card-actions .v-btn) {
+    width: 100%;
+  }
+}
+</style>
+
+<style>
+@media (max-width: 900px) {
+  .restart-dialog-card .mobile-touch-target {
+    --v-btn-height: 46px;
+    min-width: 44px;
+    min-height: 46px;
+  }
+}
+
+@media (max-width: 520px) {
+  .restart-dialog-card .mobile-touch-target {
     width: 100%;
   }
 }
