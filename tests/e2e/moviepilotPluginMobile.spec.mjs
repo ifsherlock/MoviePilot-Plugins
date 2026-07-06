@@ -173,6 +173,47 @@ test('drives AutoSubv3 core fake-data flows @fixtures', async ({ page }) => {
   await expect(page.getByText('重新生成 AI 字幕').last()).toBeVisible()
 })
 
+test('renders SubtitleManualUpload extreme fake-data states @fixtures-extreme', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openPluginPage(page, 'SubtitleManualUpload')
+
+  await page.getByText('移动端布局回归测试剧集：特别长的中文标题和 English Alias').first().click()
+  await page.getByTitle('搜索此集在线字幕').first().click()
+  await expect(page.getByText(/EXTREME MOBILE RESULT/)).toBeVisible()
+  await expect(page.getByText(/需要手动打开源站验证/)).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+  await page.getByRole('button', { name: '关闭在线字幕搜索' }).click()
+
+  await page.getByRole('button', { name: /AI：/ }).click()
+  await expect(page.getByText('极端失败原因：ASR 提取成功')).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+  await page.getByRole('button', { name: '关闭 AI 字幕生成状态' }).click()
+
+  await page.getByRole('button', { name: '返回资源列表' }).click()
+  await page.getByRole('button', { name: '匹配历史' }).click()
+  await page.getByText('入库自动字幕队列').first().click()
+  await expect(page.getByText(/Cloudflare challenge/)).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+  await screenshot(page, testInfo, 'subtitle-fixtures-extreme-mobile-390.png')
+})
+
+test('renders AutoSubv3 extreme fake-data task states @fixtures-extreme', async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await openPluginPage(page, 'AutoSubv3')
+
+  await expect(page.getByText(/极端移动端任务卡片测试/)).toBeVisible()
+  await expect(page.getByText(/等待前序任务释放 GPU 队列/)).toBeVisible()
+  await expect(page.getByText(/翻译模型连续 3 次返回非 JSON 内容/)).toBeVisible()
+  await expectNoHorizontalOverflow(page)
+
+  await page.getByText(/翻译模型连续 3 次返回非 JSON 内容/)
+    .locator('xpath=ancestor::*[contains(@class, "task-row")]')
+    .getByRole('checkbox')
+    .check()
+  await expect(page.getByRole('button', { name: '批量重新生成' })).toBeEnabled()
+  await screenshot(page, testInfo, 'autosub-fixtures-extreme-mobile-390.png')
+})
+
 for (const viewport of subtitleViewports) {
   test(`SubtitleManualUpload root and history stay responsive at ${viewport.name} @subtitle-root @subtitle`, async ({ page }, testInfo) => {
     await page.setViewportSize({ width: viewport.width, height: viewport.height })
