@@ -1,4 +1,10 @@
 {
+    "scripts": {
+        "test:plugin-mobile": "playwright test --config playwright.config.mjs"
+    },
+    "devDependencies": {
+        "@playwright/test": "^1.55.1"
+    },
     "MediaCoverGenerator": {
         "name": "Emby媒体库封面生成",
         "description": "生成媒体库动态/静态封面，支持 Emby/Jellyfin",
