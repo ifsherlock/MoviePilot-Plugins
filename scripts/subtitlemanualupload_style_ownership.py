@@ -30,13 +30,13 @@ class FragmentRange:
 
 
 FRAGMENT_RANGES = [
-    FragmentRange("app-page-shell", "AppPage", "stay-in-app-page", 730, 768),
-    FragmentRange("media-stage-shell", "AppPage", "stay-in-app-page", 770, 853),
-    FragmentRange("target-detail-panel-entry", "TargetDetailPanel", "move-in-3.2", 855, 931),
-    FragmentRange("auto-transfer-queue-dialog-entry", "AutoTransferQueueDialog", "move-in-3.4", 933, 939),
-    FragmentRange("ai-task-dialog-entry", "AiTaskDialog", "move-in-3.3", 941, 969),
-    FragmentRange("online-subtitle-dialog-entry", "OnlineSubtitleDialog", "move-in-3.3", 971, 1016),
-    FragmentRange("upload-preview-dialog-entry", "UploadDialog", "move-in-3.3", 1017, 1054),
+    FragmentRange("app-page-shell", "AppPage", "stay-in-app-page", 864, 904),
+    FragmentRange("media-stage-shell", "AppPage", "stay-in-app-page", 905, 989),
+    FragmentRange("target-detail-panel-entry", "TargetDetailPanel", "move-in-3.2", 990, 1068),
+    FragmentRange("auto-transfer-queue-dialog-entry", "AutoTransferQueueDialog", "move-in-3.4", 1069, 1077),
+    FragmentRange("ai-task-dialog-entry", "AiTaskDialog", "move-in-3.3", 1078, 1108),
+    FragmentRange("online-subtitle-dialog-entry", "OnlineSubtitleDialog", "move-in-3.3", 1109, 1155),
+    FragmentRange("upload-preview-dialog-entry", "UploadDialog", "move-in-3.3", 1156, 1193),
 ]
 
 COMPONENT_OWNERS = {
@@ -99,6 +99,10 @@ LEGACY_ORPHAN_SELECTORS = {
 
 FRAMEWORK_DESCENDANT_SELECTORS = {
     "v-btn",
+    "v-field",
+    "v-field__input",
+    "v-icon",
+    "v-selection-control",
 }
 
 
@@ -117,11 +121,15 @@ def _fragment_for_line(line_number: int) -> FragmentRange:
     for fragment in FRAGMENT_RANGES:
         if fragment.start <= line_number <= fragment.end:
             return fragment
-    return FragmentRange("unclassified-template-fragment", "Unknown", "review-before-extract", line_number, line_number)
+    return FragmentRange("app-page-template", "AppPage", "stay-in-app-page", line_number, line_number)
 
 
 def _fragment_for_usage(source_path: str, line_number: int) -> FragmentRange:
     if source_path != frontend_inventory._relative(APP_PAGE):
+        mobile_prefix = "plugins.v2/subtitlemanualupload/src/mobile/"
+        if source_path.startswith(mobile_prefix):
+            owner = Path(source_path).stem
+            return FragmentRange(owner, owner, "mobile-renderer", line_number, line_number)
         owner, migration = COMPONENT_OWNERS.get(source_path, ("Unknown", "review-before-extract"))
         return FragmentRange(Path(source_path).stem, owner, migration, line_number, line_number)
     return _fragment_for_line(line_number)
@@ -166,6 +174,10 @@ def _template_class_usages(template_sources: list[dict[str, Any]]) -> dict[str, 
             dynamic_match = re.search(r'(?<![A-Za-z0-9_-]):class\s*=\s*"([^"]*)"', line)
             if dynamic_match:
                 expression = dynamic_match.group(1)
+                for selector in re.findall(r"([A-Za-z_][A-Za-z0-9_-]*)\s*:", expression):
+                    add_usage(selector, source_path, line_number, "dynamic-class")
+                for selector in re.findall(r"['\"]([A-Za-z_][A-Za-z0-9_-]*)['\"]", expression):
+                    add_usage(selector, source_path, line_number, "dynamic-class")
                 if "auto-queue-${task.status}" in expression:
                     for selector in ("auto-queue-failed", "auto-queue-in_progress", "auto-queue-pending"):
                         add_usage(selector, source_path, line_number, "dynamic-auto-queue-status")

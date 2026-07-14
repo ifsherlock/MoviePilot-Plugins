@@ -4,6 +4,7 @@ import { buildAiStatusDetail } from '../utils/aiStatus'
 
 const props = defineProps({
   modelValue: { type: Boolean, default: false },
+  mobile: { type: Boolean, default: false },
   aiTaskDialogTarget: { type: Object, default: null },
   compactTargetName: { type: Function, required: true },
   aiSummaryText: { type: String, default: '' },
@@ -45,10 +46,16 @@ const aiStatusDetail = computed(() => buildAiStatusDetail(props.aiStatus))
 <template>
   <VDialog
     :model-value="modelValue"
+    :fullscreen="props.mobile"
+    :scrollable="props.mobile"
     max-width="860"
     @update:model-value="$emit('update:modelValue', $event)"
   >
-    <VCard class="ai-task-dialog" rounded="xl">
+    <VCard
+      class="ai-task-dialog"
+      :class="{ 'smu-mobile-dialog-card': props.mobile }"
+      :rounded="props.mobile ? 0 : 'xl'"
+    >
       <VCardTitle class="dialog-title">
         <div>
           <span>{{ aiTaskDialogTarget ? `AI 状态 · ${compactTargetName(aiTaskDialogTarget)}` : 'AI 字幕生成状态' }}</span>

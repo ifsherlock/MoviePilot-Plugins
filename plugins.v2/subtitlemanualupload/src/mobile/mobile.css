@@ -1,0 +1,62 @@
+.smu-mobile-page {
+  --smu-mobile-edge: 16px;
+  --smu-mobile-gap: 12px;
+  --smu-mobile-radius: 12px;
+  min-height: 100%;
+  padding: 12px var(--smu-mobile-edge) calc(120px + env(safe-area-inset-bottom));
+  background: rgb(var(--v-theme-background));
+  color: var(--smu-text);
+  font-family: "LXGW WenKai Screen", "Noto Serif SC", "PingFang SC", sans-serif;
+}
+
+.smu-mobile-page .v-alert {
+  margin-bottom: var(--smu-mobile-gap);
+  border-radius: var(--smu-mobile-radius);
+}
+
+.smu-mobile-history {
+  display: grid;
+  gap: var(--smu-mobile-gap);
+}
+
+.smu-mobile-history-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 42px;
+}
+
+.smu-mobile-history-header h2 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 700;
+}
+
+.smu-mobile-history .auto-queue-entry,
+.smu-mobile-history .global-history-list {
+  margin-top: 0;
+}
+
+.smu-mobile-dialog-card {
+  min-height: 100dvh;
+  border-radius: 0 !important;
+}
+
+.smu-mobile-dialog-card .v-card__title {
+  padding-top: max(16px, env(safe-area-inset-top));
+}
+
+.smu-mobile-dialog-card .v-card__text {
+  padding-bottom: max(24px, env(safe-area-inset-bottom));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .smu-mobile-page *,
+  .smu-mobile-page *::before,
+  .smu-mobile-page *::after {
+    scroll-behavior: auto !important;
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+  }
+}

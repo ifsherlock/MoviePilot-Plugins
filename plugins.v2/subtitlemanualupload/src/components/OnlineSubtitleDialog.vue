@@ -1,6 +1,7 @@
 <script setup>
 defineProps({
   modelValue: { type: Boolean, default: false },
+  mobile: { type: Boolean, default: false },
   onlineTitle: { type: String, default: '' },
   onlineTargets: { type: Array, default: () => [] },
   selectedOnlineResults: { type: Array, default: () => [] },
@@ -59,12 +60,26 @@ defineEmits([
 <template>
   <VDialog
     :model-value="modelValue"
+    :fullscreen="mobile"
+    :scrollable="mobile"
     max-width="1080"
     @update:model-value="$emit('update:modelValue', $event)"
   >
-    <VCard class="online-dialog" rounded="xl">
-      <VCardTitle class="dialog-title">
-        <div>
+    <VCard
+      class="online-dialog"
+      :class="{ 'smu-mobile-dialog-card': mobile }"
+      :rounded="mobile ? 0 : 'xl'"
+    >
+      <VCardTitle class="dialog-title" :class="{ 'mobile-online-dialog-title': mobile }">
+        <VBtn
+          v-if="mobile"
+          class="mobile-online-back-btn"
+          icon="mdi-arrow-left"
+          variant="text"
+          title="退出搜索"
+          @click="$emit('close-online-dialog')"
+        />
+        <div class="online-dialog-heading">
           <span>{{ onlineTitle || '在线字幕搜索' }}</span>
           <p>{{ onlineTargets.length }} 个目标 · 下载会进入匹配预览，提交 AI 翻译会直接进入 AI 状态</p>
         </div>
@@ -94,7 +109,12 @@ defineEmits([
           >
             停止等待
           </VBtn>
-          <VBtn icon="mdi-close" variant="text" @click="$emit('close-online-dialog')" />
+          <VBtn
+            v-if="!mobile"
+            icon="mdi-close"
+            variant="text"
+            @click="$emit('close-online-dialog')"
+          />
         </div>
       </VCardTitle>
       <VDivider />
@@ -224,7 +244,7 @@ defineEmits([
             </div>
 
             <div v-if="onlineSearching && !filteredOnlineResults.length" class="online-loading">
-              正在从 API 搜索字幕，先返回的结果会先显示...
+              {{ mobile ? '正在搜索字幕' : '正在从 API 搜索字幕，先返回的结果会先显示...' }}
             </div>
             <div v-if="filteredOnlineResults.length" class="online-result-list">
               <div
@@ -267,7 +287,7 @@ defineEmits([
               </div>
             </div>
             <div v-else-if="!onlineSearching" class="empty-state">
-              {{ hasOnlineResults ? '当前平台筛选下没有结果。' : '没有可自动下载的字幕结果。可以换关键词重试，或使用右侧手动搜索。' }}
+              {{ hasOnlineResults ? '当前平台筛选下没有结果。' : (mobile ? '搜索无结果，请手动搜索' : '没有可自动下载的字幕结果。可以换关键词重试，或使用右侧手动搜索。') }}
             </div>
           </section>
 
@@ -362,6 +382,33 @@ defineEmits([
   flex-shrink: 0;
   align-items: center;
   gap: 8px;
+}
+
+.mobile-online-dialog-title {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+}
+
+.mobile-online-dialog-title .online-dialog-heading {
+  min-width: 0;
+}
+
+.mobile-online-dialog-title .online-title-actions {
+  grid-column: 1 / -1;
+  width: 100%;
+  justify-content: flex-start;
+  overflow-x: auto;
+  padding-top: 4px;
+  scrollbar-width: none;
+}
+
+.mobile-online-dialog-title .online-title-actions::-webkit-scrollbar {
+  display: none;
+}
+
+.mobile-online-dialog-title .online-title-actions .v-btn {
+  flex: 0 0 auto;
 }
 
 .online-search-actions {

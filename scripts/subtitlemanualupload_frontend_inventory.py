@@ -13,6 +13,7 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[1]
 APP_PAGE = REPO_ROOT / "plugins.v2" / "subtitlemanualupload" / "src" / "components" / "AppPage.vue"
 COMPONENTS_DIR = APP_PAGE.parent
+SRC_DIR = COMPONENTS_DIR.parent
 API_CLIENT = REPO_ROOT / "plugins.v2" / "subtitlemanualupload" / "src" / "api" / "subtitleManualUploadApi.js"
 COMPOSABLES_DIR = REPO_ROOT / "plugins.v2" / "subtitlemanualupload" / "src" / "composables"
 
@@ -36,7 +37,7 @@ TEXT_ATTR_RE = re.compile(
     r"(?<![:A-Za-z0-9_-])(?P<name>label|title|placeholder|aria-label|alt)\s*=\s*(['\"])(?P<value>.*?)(?<!\\)\2",
     re.DOTALL,
 )
-VUE_IMPORT_RE = re.compile(r"from\s+['\"](?P<path>\./[^'\"]+\.vue)['\"]")
+VUE_IMPORT_RE = re.compile(r"from\s+['\"](?P<path>\.{1,2}/[^'\"]+\.vue)['\"]")
 
 
 class _VisibleTextParser(HTMLParser):
@@ -150,7 +151,7 @@ def _component_template_sources() -> list[dict[str, Any]]:
             continue
         for match in VUE_IMPORT_RE.finditer(script["body"]):
             imported = (path.parent / match.group("path")).resolve()
-            if imported.suffix == ".vue" and COMPONENTS_DIR.resolve() in imported.parents and imported.exists():
+            if imported.suffix == ".vue" and (imported == SRC_DIR.resolve() or SRC_DIR.resolve() in imported.parents) and imported.exists():
                 queue.append(imported)
     return sources
 

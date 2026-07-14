@@ -10,6 +10,10 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = REPO_ROOT / "scripts" / "subtitlemanualupload_frontend_inventory.py"
 APP_PAGE = REPO_ROOT / "plugins.v2" / "subtitlemanualupload" / "src" / "components" / "AppPage.vue"
+MATCH_HISTORY_PANEL = APP_PAGE.parent / "MatchHistoryPanel.vue"
+ONLINE_DIALOG = APP_PAGE.parent / "OnlineSubtitleDialog.vue"
+MOBILE_DETAIL = REPO_ROOT / "plugins.v2" / "subtitlemanualupload" / "src" / "mobile" / "MobileSubtitleDetail.vue"
+MOBILE_TARGET_CARD = REPO_ROOT / "plugins.v2" / "subtitlemanualupload" / "src" / "mobile" / "MobileTargetCard.vue"
 
 
 def load_inventory_module():
@@ -45,6 +49,9 @@ def test_frontend_inventory_cli_outputs_valid_json_with_core_fields():
     assert "plugins.v2/subtitlemanualupload/src/components/MatchHistoryPanel.vue" in component_paths
     assert "plugins.v2/subtitlemanualupload/src/components/OnlineSubtitleDialog.vue" in component_paths
     assert "plugins.v2/subtitlemanualupload/src/components/UploadDialog.vue" in component_paths
+    assert "plugins.v2/subtitlemanualupload/src/mobile/MobileSubtitlePage.vue" in component_paths
+    assert "plugins.v2/subtitlemanualupload/src/mobile/MobileSubtitleHome.vue" in component_paths
+    assert "plugins.v2/subtitlemanualupload/src/mobile/MobileSubtitleDetail.vue" in component_paths
     component_style_paths = {item["path"] for item in inventory["component_styles"]}
     assert "plugins.v2/subtitlemanualupload/src/components/MediaSearchPanel.vue" in component_style_paths
     assert "plugins.v2/subtitlemanualupload/src/components/TargetDetailPanel.vue" in component_style_paths
@@ -53,6 +60,8 @@ def test_frontend_inventory_cli_outputs_valid_json_with_core_fields():
     assert "plugins.v2/subtitlemanualupload/src/components/MatchHistoryPanel.vue" in component_style_paths
     assert "plugins.v2/subtitlemanualupload/src/components/OnlineSubtitleDialog.vue" in component_style_paths
     assert "plugins.v2/subtitlemanualupload/src/components/UploadDialog.vue" in component_style_paths
+    assert "plugins.v2/subtitlemanualupload/src/mobile/MobileSubtitleHome.vue" in component_style_paths
+    assert "plugins.v2/subtitlemanualupload/src/mobile/MobileSubtitleDetail.vue" in component_style_paths
 
 
 def test_frontend_inventory_reports_app_page_contract_surfaces():
@@ -74,8 +83,30 @@ def test_frontend_inventory_reports_app_page_contract_surfaces():
     assert "hero-card" in classes["template_classes"]
     assert "media-card" in classes["template_classes"]
     assert "ai-status-strip" in classes["template_classes"]
+    assert "mobile-search-dock" in classes["template_classes"]
 
     texts = inventory["visible_text_inventory"]["all_static_texts"]
     assert "字幕匹配" in texts
     assert "匹配历史" in texts
     assert "搜索此集在线字幕" in texts
+
+
+def test_mobile_copy_and_history_layout_stay_isolated_from_desktop_defaults():
+    history_source = MATCH_HISTORY_PANEL.read_text(encoding="utf-8")
+    online_source = ONLINE_DIALOG.read_text(encoding="utf-8")
+    detail_source = MOBILE_DETAIL.read_text(encoding="utf-8")
+    target_source = MOBILE_TARGET_CARD.read_text(encoding="utf-8")
+
+    assert "mobile: { type: Boolean, default: false }" in history_source
+    assert "mobile: { type: Boolean, default: false }" in online_source
+    assert "mobileHistoryMeta" in history_source
+    assert ".mobile-history-list .media-copy h3" in history_source
+    assert "-webkit-line-clamp: 2" in history_source
+    assert "mobile-subtitle-badge" in history_source
+    assert "正在搜索字幕" in online_source
+    assert "搜索无结果，请手动搜索" in online_source
+    assert "mobile-online-back-btn" in online_source
+    assert "搜索" in detail_source
+    assert '<VIcon start icon="mdi-upload-file" />' in detail_source
+    assert "在线" in target_source
+    assert '<VIcon start icon="mdi-upload-file" />' in target_source

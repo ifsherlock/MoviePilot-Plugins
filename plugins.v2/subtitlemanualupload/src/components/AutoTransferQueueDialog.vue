@@ -1,6 +1,7 @@
 <script setup>
 defineProps({
   modelValue: { type: Boolean, default: false },
+  mobile: { type: Boolean, default: false },
   autoQueueSummaryText: { type: String, default: '' },
   autoTransferQueue: { type: Object, default: () => ({}) },
   autoQueueTasks: { type: Array, default: () => [] },
@@ -15,10 +16,16 @@ defineEmits([
 <template>
   <VDialog
     :model-value="modelValue"
+    :fullscreen="mobile"
+    :scrollable="mobile"
     max-width="760"
     @update:model-value="$emit('update:modelValue', $event)"
   >
-    <VCard class="auto-queue-card" rounded="xl">
+    <VCard
+      class="auto-queue-card"
+      :class="{ 'smu-mobile-dialog-card': mobile }"
+      :rounded="mobile ? 0 : 'xl'"
+    >
       <VCardTitle class="dialog-title">
         <div>
           <span>入库自动字幕队列</span>

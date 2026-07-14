@@ -1,5 +1,5 @@
 <script setup>
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue'
 import '../styles/theme.css'
 import { createSubtitleManualUploadApi } from '../api/subtitleManualUploadApi'
 import { aiRestartSourceOptions, useAiTasks } from '../composables/useAiTasks'
@@ -19,6 +19,8 @@ import MediaSearchPanel from './MediaSearchPanel.vue'
 import OnlineSubtitleDialog from './OnlineSubtitleDialog.vue'
 import TargetDetailPanel from './TargetDetailPanel.vue'
 import UploadDialog from './UploadDialog.vue'
+import MobileSubtitlePage from '../mobile/MobileSubtitlePage.vue'
+import { useMobileViewport } from '../mobile/useMobileViewport'
 import {
   buildOutputName,
   compactTargetName,
@@ -65,6 +67,8 @@ const props = defineProps({
     default: false,
   },
 })
+
+const isMobileViewport = useMobileViewport()
 
 const pluginBase = computed(() => `plugin/${props.pluginId || 'SubtitleManualUpload'}`)
 const pluginApi = computed(() => createSubtitleManualUploadApi(props.api, pluginBase))
@@ -649,6 +653,174 @@ async function clearSelectedSubtitles() {
   }
 }
 
+// The mobile renderer consumes this view model only. Requests, polling, and write
+// guards stay in the domain composables above so desktop and mobile never diverge.
+const mobileView = reactive({
+  feedback: {
+    error,
+    message,
+  },
+  home: {
+    rootTab,
+    status,
+    indexSummary,
+    searchKeyword,
+    mediaType,
+    medias,
+    mediaTotal,
+    mediaHasMore,
+    searching,
+    refreshing,
+    posterImageSrc,
+    posterLoading,
+    posterFetchPriority,
+    mediaLabel,
+    mediaStat,
+    formatMediaType,
+  },
+  detail: {
+    selectedMedia,
+    selectedSeason,
+    selectedTargets,
+    selectedTargetIds,
+    visibleTargets,
+    seasonCards,
+    resolving,
+    aiEnabled,
+    aiAvailable,
+    aiSubmitting,
+    aiCancelling,
+    aiBatchLabel,
+    aiBatchCancelTargets,
+    aiCapableBatchTargets,
+    onlineSearching,
+    onlineBatchLabel,
+    batchUploadTargets,
+    unlockedVisibleTargets,
+    allVisibleSelected,
+    clearing,
+    selectedTimelineTargets,
+    timelineFixing,
+    timelineAvailable,
+    selectedRestorableTargets,
+    lastWritten,
+    posterImageSrc,
+    mediaLabel,
+    formatMediaType,
+    compactTargetName,
+    formatBytes,
+    isLocked,
+    isTargetActionDisabled,
+    isStreamTarget,
+    detailExpanded,
+    detailRowForTarget,
+    aiTaskForTarget,
+    aiStatusText,
+    timelineTaskForTarget,
+    timelineMetaItems,
+    timelineResultForTarget,
+    timelineResultText,
+  },
+  history: {
+    panelProps: {
+      rootTab,
+      autoQueueTasks,
+      autoQueueSummary,
+      autoQueueSummaryText,
+      matchHistoryItems,
+      matchHistoryTotal,
+      matchHistoryHasMore,
+      matchHistoryLoading,
+      clearing,
+      timelineFixing,
+      timelineAvailable,
+      posterImageSrc,
+      mediaLabel,
+      posterLoading,
+      posterFetchPriority,
+      markPosterFailed,
+      formatMediaType,
+      historyMediaStat,
+      historyExpanded,
+      toggleHistoryExpanded,
+      historySelectedCount,
+      historyDeletableTargets,
+      toggleHistoryItemTargets,
+      allHistoryTargetsSelected,
+      clearHistorySelectedSubtitles,
+      historySelectedTimelineTargets,
+      fixHistorySelectedTimeline,
+      historySeasonGroups,
+      historySeasonKey,
+      allHistorySeasonTargetsSelected,
+      historySeasonPartiallySelected,
+      toggleHistorySeasonTargets,
+      historySeasonExpanded,
+      toggleHistorySeasonExpanded,
+      historySeasonSelectedCount,
+      historySelectedIds,
+      toggleHistoryTarget,
+      historyTargetExpanded,
+      toggleHistoryTargetExpanded,
+      compactTargetName,
+      isTargetActionDisabled,
+      openSingleOnlineSearch,
+      timelineTaskText,
+      timelineMetaItems,
+      formatBytes,
+      fixHistorySubtitleTimeline,
+      isStreamTarget,
+      deleteSubtitle,
+    },
+  },
+})
+
+const mobileActions = {
+  home: {
+    setRootTab,
+    setSearchKeyword(value) {
+      searchKeyword.value = value || ''
+    },
+    setMediaType(value) {
+      mediaType.value = value || 'all'
+    },
+    submitSearch: submitRootSearch,
+    refreshIndex,
+    selectMedia,
+    markPosterFailed,
+    loadMoreMedia,
+    openAutoQueue() {
+      autoQueueDialog.value = true
+    },
+  },
+  detail: {
+    resetSelection,
+    markPosterFailed,
+    loadTargets,
+    changeSeason,
+    toggleSelectAll,
+    openBatchUpload,
+    openBatchAiGenerate,
+    cancelBatchAiGenerate,
+    openBatchOnlineSearch,
+    clearSelectedSubtitles,
+    fixSelectedDetailTimeline,
+    restoreSelectedBackups,
+    toggleTarget,
+    toggleDetailExpanded,
+    openSingleAiGenerate,
+    openSingleOnlineSearch,
+    toggleLock,
+    openSingleUpload,
+    fixHistorySubtitleTimeline,
+    restoreSubtitleBackup,
+    deleteSubtitle,
+  },
+  history: {
+    loadMoreMatchHistory,
+  },
+}
+
 onMounted(() => {
   loadStatus()
   loadAutoTransferQueue()
@@ -683,7 +855,13 @@ defineExpose({
 </script>
 
 <template>
-  <div class="subtitle-upload-page">
+  <MobileSubtitlePage
+    v-if="isMobileViewport"
+    :view="mobileView"
+    :actions="mobileActions"
+  />
+
+  <div v-else class="subtitle-upload-page">
     <div v-if="!selectedMedia" class="root-tabs">
       <button
         type="button"
@@ -886,16 +1064,20 @@ defineExpose({
       />
     </section>
 
-    <AutoTransferQueueDialog
+  </div>
+
+  <AutoTransferQueueDialog
       v-model="autoQueueDialog"
+      :mobile="isMobileViewport"
       :auto-queue-summary-text="autoQueueSummaryText"
       :auto-transfer-queue="autoTransferQueue"
       :auto-queue-tasks="autoQueueTasks"
       @load-auto-transfer-queue="loadAutoTransferQueue"
     />
 
-    <AiTaskDialog
+  <AiTaskDialog
       v-model="aiTaskDialog"
+      :mobile="isMobileViewport"
       v-model:ai-restart-source-policy="aiRestartSourcePolicy"
       v-model:ai-restart-subtitle-path="aiRestartSubtitlePath"
       v-model:ai-selected-task-ids="aiSelectedTaskIds"
@@ -924,8 +1106,9 @@ defineExpose({
       @regenerate-single-ai-task="regenerateSingleAiTask"
     />
 
-    <OnlineSubtitleDialog
+  <OnlineSubtitleDialog
       v-model="onlineDialog"
+      :mobile="isMobileViewport"
       v-model:online-keyword="onlineKeyword"
       v-model:online-selected-providers="onlineSelectedProviders"
       v-model:online-messages-collapsed="onlineMessagesCollapsed"
@@ -970,8 +1153,9 @@ defineExpose({
       @toggle-online-result="toggleOnlineResult"
       @confirm-online-ai-translate="confirmOnlineAiTranslate"
     />
-    <UploadDialog
+  <UploadDialog
       v-model="uploadDialog"
+      :mobile="isMobileViewport"
       v-model:fix-timeline="fixTimeline"
       v-model:batch-language-suffix="batchLanguageSuffix"
       :upload-title="uploadTitle"
@@ -1006,8 +1190,7 @@ defineExpose({
       @toggle-preview-item="togglePreviewItem"
       @update-preview-target="updatePreviewTarget"
       @update-language-suffix="updateLanguageSuffix"
-    />
-  </div>
+  />
 </template>
 
 <style scoped>

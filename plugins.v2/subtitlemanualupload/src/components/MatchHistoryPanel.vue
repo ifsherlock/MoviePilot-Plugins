@@ -1,5 +1,6 @@
 <script setup>
 defineProps({
+  mobile: { type: Boolean, default: false },
   rootTab: { type: String, default: 'match' },
   autoQueueTasks: { type: Array, default: () => [] },
   autoQueueSummary: { type: Object, default: () => ({}) },
@@ -50,6 +51,19 @@ defineProps({
   deleteSubtitle: { type: Function, required: true },
 })
 
+function subtitleCount(item) {
+  const explicitCount = Number(item?.subtitle_count)
+  if (Number.isFinite(explicitCount) && explicitCount > 0) return explicitCount
+  return (item?.targets || []).reduce((count, target) => count + (target.subtitles || []).length, 0)
+}
+
+function mobileHistoryMeta(item) {
+  const timestamp = item?.latest_at || '未知时间'
+  if (item?.media_type !== 'tv') return timestamp
+  const episodeCount = Number(item?.episode_count || item?.target_count || (item?.targets || []).length)
+  return episodeCount > 0 ? `${episodeCount} 集 · ${timestamp}` : timestamp
+}
+
 defineEmits([
   'open-auto-queue',
   'load-more-match-history',
@@ -71,7 +85,11 @@ defineEmits([
     </VBtn>
   </div>
 
-  <div v-if="rootTab === 'history' && matchHistoryItems.length" class="global-history-list">
+  <div
+    v-if="rootTab === 'history' && matchHistoryItems.length"
+    class="global-history-list"
+    :class="{ 'mobile-history-list': mobile }"
+  >
     <div
       v-for="(item, index) in matchHistoryItems"
       :key="item.id"
@@ -98,15 +116,30 @@ defineEmits([
         <div class="media-copy">
           <div class="media-type">{{ formatMediaType(item.media_type) }}</div>
           <h3>{{ mediaLabel(item) }}</h3>
-          <p>{{ historyMediaStat(item) }} · {{ item.latest_at || '未知时间' }}</p>
+          <p v-if="mobile">{{ mobileHistoryMeta(item) }}</p>
+          <p v-else>{{ historyMediaStat(item) }} · {{ item.latest_at || '未知时间' }}</p>
         </div>
+        <span
+          v-if="mobile && subtitleCount(item)"
+          class="mobile-subtitle-badge"
+          :aria-label="`${subtitleCount(item)} 个外挂字幕`"
+        >
+          {{ subtitleCount(item) }}
+        </span>
         <VIcon :icon="historyExpanded(item) ? 'mdi-chevron-up' : 'mdi-chevron-down'" />
       </button>
       <div v-if="historyExpanded(item)" class="global-history-targets">
         <div class="history-bulk-toolbar">
           <div class="history-bulk-copy">
             <strong>已选 {{ historySelectedCount(item) }}/{{ historyDeletableTargets(item).length }} 集</strong>
-            <span>{{ item.subtitle_count }} 个外挂字幕</span>
+            <span v-if="!mobile">{{ item.subtitle_count }} 个外挂字幕</span>
+            <span
+              v-else-if="subtitleCount(item)"
+              class="mobile-subtitle-badge"
+              :aria-label="`${subtitleCount(item)} 个外挂字幕`"
+            >
+              {{ subtitleCount(item) }}
+            </span>
           </div>
           <div class="history-bulk-actions">
             <VBtn
@@ -165,7 +198,15 @@ defineEmits([
               >
                 <VIcon :icon="historySeasonExpanded(item, season) ? 'mdi-chevron-down' : 'mdi-chevron-right'" />
                 <strong>{{ season.label }}</strong>
-                <span>{{ season.targets.length }} 集 · {{ season.subtitleCount }} 个外挂字幕</span>
+                <span v-if="!mobile">{{ season.targets.length }} 集 · {{ season.subtitleCount }} 个外挂字幕</span>
+                <span v-else>{{ season.targets.length }} 集</span>
+                <span
+                  v-if="mobile && season.subtitleCount"
+                  class="mobile-subtitle-badge"
+                  :aria-label="`${season.subtitleCount} 个外挂字幕`"
+                >
+                  {{ season.subtitleCount }}
+                </span>
                 <em v-if="historySeasonSelectedCount(item, season)">已选 {{ historySeasonSelectedCount(item, season) }}</em>
               </button>
             </div>
@@ -193,9 +234,16 @@ defineEmits([
                     class="history-episode-toggle"
                     @click.stop="toggleHistoryTargetExpanded(target)"
                   >
-                    <VIcon :icon="historyTargetExpanded(target) ? 'mdi-chevron-down' : 'mdi-chevron-right'" />
-                    <span class="episode-title">{{ compactTargetName(target) }}</span>
-                    <small>{{ (target.subtitles || []).length }} 个外挂字幕</small>
+                <VIcon :icon="historyTargetExpanded(target) ? 'mdi-chevron-down' : 'mdi-chevron-right'" />
+                <span class="episode-title">{{ compactTargetName(target) }}</span>
+                <small v-if="!mobile">{{ (target.subtitles || []).length }} 个外挂字幕</small>
+                <span
+                  v-else-if="(target.subtitles || []).length"
+                  class="mobile-subtitle-badge"
+                  :aria-label="`${(target.subtitles || []).length} 个外挂字幕`"
+                >
+                  {{ (target.subtitles || []).length }}
+                </span>
                   </button>
                   <VBtn
                     size="small"
@@ -365,6 +413,50 @@ defineEmits([
   margin: 0;
   color: var(--smu-text-muted);
   font-size: 13px;
+}
+
+.mobile-history-list .global-history-head {
+  grid-template-columns: 54px minmax(0, 1fr) auto auto;
+  align-items: start;
+}
+
+.mobile-history-list .media-copy h3,
+.mobile-history-list .history-episode-toggle .episode-title {
+  display: -webkit-box;
+  overflow: hidden;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.mobile-history-list .media-copy h3 {
+  line-height: 1.3;
+}
+
+.mobile-history-list .history-episode-toggle {
+  min-width: 0;
+  align-items: flex-start;
+}
+
+.mobile-history-list .history-episode-toggle .episode-title {
+  min-width: 0;
+  flex: 1 1 auto;
+  line-height: 1.35;
+}
+
+.mobile-subtitle-badge {
+  display: inline-grid;
+  min-width: 20px;
+  height: 20px;
+  place-items: center;
+  padding: 0 5px;
+  border: 1px solid var(--smu-border-active);
+  border-radius: 999px;
+  background: var(--smu-accent-soft);
+  color: var(--smu-accent);
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1;
 }
 
 .global-history-targets {

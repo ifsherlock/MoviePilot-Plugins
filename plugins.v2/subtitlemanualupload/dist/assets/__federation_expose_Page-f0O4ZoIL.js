@@ -1,6 +1,6 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { _ as _export_sfc } from './_plugin-vue_export-helper-CAfCMqyq.js';
-import AppPage from './__federation_expose_AppPage-JG37UtpK.js';
+import { _ as _export_sfc } from './_plugin-vue_export-helper-BZVPKICR.js';
+import AppPage from './__federation_expose_AppPage-C9ewrjfL.js';
 
 const {createElementVNode:_createElementVNode,resolveComponent:_resolveComponent,createVNode:_createVNode,withCtx:_withCtx,openBlock:_openBlock,createElementBlock:_createElementBlock} = await importShared('vue');
 
@@ -76,6 +76,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-296f11da"]]);
+const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-b6172153"]]);
 
 export { Page as default };

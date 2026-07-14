@@ -3,6 +3,7 @@ import { ref } from 'vue'
 
 defineProps({
   modelValue: { type: Boolean, default: false },
+  mobile: { type: Boolean, default: false },
   uploadTitle: { type: String, default: '' },
   hasPreviewItems: { type: Boolean, default: false },
   allSelectedPreviewTargetsAreStream: { type: Boolean, default: false },
@@ -62,10 +63,16 @@ function onPickFiles(event) {
 <template>
   <VDialog
     :model-value="modelValue"
+    :fullscreen="mobile"
+    :scrollable="mobile"
     max-width="980"
     @update:model-value="$emit('update:modelValue', $event)"
   >
-    <VCard class="upload-dialog" rounded="xl">
+    <VCard
+      class="upload-dialog"
+      :class="{ 'smu-mobile-dialog-card': mobile }"
+      :rounded="mobile ? 0 : 'xl'"
+    >
       <VCardTitle class="dialog-title">
         <span>{{ uploadTitle || '上传字幕' }}</span>
         <VBtn icon="mdi-close" variant="text" @click="$emit('update:modelValue', false)" />
