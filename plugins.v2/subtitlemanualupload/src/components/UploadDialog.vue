@@ -178,7 +178,7 @@ function onPickFiles(event) {
         <div v-if="hasPreviewItems" class="preview-list">
           <div class="preview-head">
             <div>
-              <div class="section-kicker">字幕匹配</div>
+              <div class="section-kicker">海拉鲁字幕大师</div>
               <h3>确认集数与输出文件名</h3>
             </div>
             <div class="batch-language">

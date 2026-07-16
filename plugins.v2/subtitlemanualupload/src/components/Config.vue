@@ -220,7 +220,7 @@ onMounted(() => {
 <template>
   <div class="subtitlemanualupload-config">
     <VToolbar density="comfortable" color="transparent">
-      <div class="text-h6 ms-3">字幕匹配配置</div>
+      <div class="text-h6 ms-3">海拉鲁字幕大师配置</div>
       <VSpacer />
       <VBtn icon="mdi-content-save" variant="text" color="primary" @click="saveConfig" />
       <VBtn icon="mdi-close" variant="text" @click="emit('close')" />

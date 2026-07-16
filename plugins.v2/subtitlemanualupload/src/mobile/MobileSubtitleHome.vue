@@ -36,7 +36,7 @@ function chooseMediaType(value) {
     <section class="mobile-overview" aria-label="运行概览">
       <div class="mobile-overview-head">
         <div>
-          <div class="mobile-overview-label">字幕匹配</div>
+          <div class="mobile-overview-label">海拉鲁字幕大师</div>
           <strong>{{ status.enabled ? '运行中' : '未启用' }}</strong>
         </div>
         <span class="mobile-status-dot" :class="{ active: status.enabled }" />

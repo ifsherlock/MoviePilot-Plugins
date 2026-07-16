@@ -881,8 +881,8 @@ defineExpose({
 
     <div v-if="!hideTitle" class="hero-card">
       <div>
-        <h1>字幕匹配</h1>
-        <p>从 MoviePilot 本地库选择资源，上传字幕后确认匹配与改名结果。</p>
+        <h1>海拉鲁字幕大师</h1>
+        <p>脱胎自 ChineseSubFinder，为 MoviePilot 提供字幕搜索、上传、匹配与改名。</p>
       </div>
     </div>
 

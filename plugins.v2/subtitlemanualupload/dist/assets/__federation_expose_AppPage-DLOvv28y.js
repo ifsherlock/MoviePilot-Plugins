@@ -5474,7 +5474,7 @@ return (_ctx, _cache) => {
                 ? (_openBlock$5(), _createElementBlock$5("div", _hoisted_3$5, [
                     _createElementVNode$5("div", _hoisted_4$4, [
                       _cache[21] || (_cache[21] = _createElementVNode$5("div", null, [
-                        _createElementVNode$5("div", { class: "section-kicker" }, "字幕匹配"),
+                        _createElementVNode$5("div", { class: "section-kicker" }, "海拉鲁字幕大师"),
                         _createElementVNode$5("h3", null, "确认集数与输出文件名")
                       ], -1)),
                       _createElementVNode$5("div", _hoisted_5$4, [
@@ -5556,7 +5556,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const UploadDialog = /*#__PURE__*/_export_sfc(_sfc_main$5, [['__scopeId',"data-v-93288765"]]);
+const UploadDialog = /*#__PURE__*/_export_sfc(_sfc_main$5, [['__scopeId',"data-v-0a743c1b"]]);
 
 const {resolveComponent:_resolveComponent$4,createVNode:_createVNode$4,toDisplayString:_toDisplayString$2,createElementVNode:_createElementVNode$4,openBlock:_openBlock$4,createElementBlock:_createElementBlock$4,createCommentVNode:_createCommentVNode$4,createTextVNode:_createTextVNode$2,withCtx:_withCtx$2,mergeProps:_mergeProps$1,createBlock:_createBlock$4,renderList:_renderList$2,Fragment:_Fragment$4,normalizeClass:_normalizeClass$3} = await importShared('vue');
 
@@ -5851,7 +5851,7 @@ return (_ctx, _cache) => {
         title: "返回资源列表",
         onClick: _cache[0] || (_cache[0] = $event => (__props.actions.resetSelection()))
       }),
-      _cache[13] || (_cache[13] = _createElementVNode$3("span", null, "字幕匹配", -1)),
+      _cache[13] || (_cache[13] = _createElementVNode$3("span", null, "海拉鲁字幕大师", -1)),
       _createVNode$3(_component_VBtn, {
         icon: "mdi-refresh",
         variant: "text",
@@ -6082,7 +6082,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const MobileSubtitleDetail = /*#__PURE__*/_export_sfc(_sfc_main$3, [['__scopeId',"data-v-b367387a"]]);
+const MobileSubtitleDetail = /*#__PURE__*/_export_sfc(_sfc_main$3, [['__scopeId',"data-v-7a097863"]]);
 
 const {createElementVNode:_createElementVNode$2,toDisplayString:_toDisplayString,normalizeClass:_normalizeClass$1,createTextVNode:_createTextVNode,openBlock:_openBlock$2,createElementBlock:_createElementBlock$2,createCommentVNode:_createCommentVNode$2,resolveComponent:_resolveComponent$2,createVNode:_createVNode$2,renderList:_renderList,Fragment:_Fragment$2,withCtx:_withCtx,createBlock:_createBlock$2,withModifiers:_withModifiers} = await importShared('vue');
 
@@ -6179,7 +6179,7 @@ return (_ctx, _cache) => {
     _createElementVNode$2("section", _hoisted_2$2, [
       _createElementVNode$2("div", _hoisted_3$2, [
         _createElementVNode$2("div", null, [
-          _cache[8] || (_cache[8] = _createElementVNode$2("div", { class: "mobile-overview-label" }, "字幕匹配", -1)),
+          _cache[8] || (_cache[8] = _createElementVNode$2("div", { class: "mobile-overview-label" }, "海拉鲁字幕大师", -1)),
           _createElementVNode$2("strong", null, _toDisplayString(status.value.enabled ? '运行中' : '未启用'), 1)
         ]),
         _createElementVNode$2("span", {
@@ -6397,7 +6397,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const MobileSubtitleHome = /*#__PURE__*/_export_sfc(_sfc_main$2, [['__scopeId',"data-v-ff32ade1"]]);
+const MobileSubtitleHome = /*#__PURE__*/_export_sfc(_sfc_main$2, [['__scopeId',"data-v-bcf84dff"]]);
 
 const {resolveComponent:_resolveComponent$1,openBlock:_openBlock$1,createBlock:_createBlock$1,createCommentVNode:_createCommentVNode$1,createVNode:_createVNode$1,createElementVNode:_createElementVNode$1,mergeProps:_mergeProps,createElementBlock:_createElementBlock$1,Fragment:_Fragment$1} = await importShared('vue');
 
@@ -6458,7 +6458,7 @@ return (_ctx, _cache) => {
                   _createVNode$1(_component_VBtn, {
                     icon: "mdi-arrow-left",
                     variant: "text",
-                    title: "返回字幕匹配",
+                    title: "返回海拉鲁字幕大师",
                     onClick: _cache[0] || (_cache[0] = $event => (__props.actions.home.setRootTab('match')))
                   }),
                   _cache[4] || (_cache[4] = _createElementVNode$1("h2", null, "匹配历史", -1)),
@@ -7374,8 +7374,8 @@ return (_ctx, _cache) => {
           (!__props.hideTitle)
             ? (_openBlock(), _createElementBlock("div", _hoisted_3, [...(_cache[20] || (_cache[20] = [
                 _createElementVNode("div", null, [
-                  _createElementVNode("h1", null, "字幕匹配"),
-                  _createElementVNode("p", null, "从 MoviePilot 本地库选择资源，上传字幕后确认匹配与改名结果。")
+                  _createElementVNode("h1", null, "海拉鲁字幕大师"),
+                  _createElementVNode("p", null, "脱胎自 ChineseSubFinder，为 MoviePilot 提供字幕搜索、上传、匹配与改名。")
                 ], -1)
               ]))]))
             : _createCommentVNode("", true),
@@ -7705,6 +7705,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-e91a8ee6"]]);
+const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-59528a46"]]);
 
 export { AppPage as default };

@@ -373,7 +373,7 @@ def run_baseline(cdp: str, out_dir: Path, url: str) -> dict:
     client.console_plugin_errors = []
     client.runtime_exceptions = []
     client.send("Page.navigate", {"url": run_url})
-    page_ready = wait_for(client, "document.body?.innerText.includes('字幕匹配')", seconds=30)
+    page_ready = wait_for(client, "document.body?.innerText.includes('海拉鲁字幕大师')", seconds=30)
     if not page_ready:
         body_text = client.evaluate("document.body?.innerText || ''")
         raise RuntimeError(f"plugin page did not load; visible text starts with: {body_text[:200]!r}")
@@ -437,7 +437,7 @@ def run_baseline(cdp: str, out_dir: Path, url: str) -> dict:
     ai_shot = client.screenshot("ai-status-1440x1000.png")
 
     client.send("Page.navigate", {"url": cache_busted_url(url)})
-    wait_for(client, "document.body?.innerText.includes('字幕匹配')", seconds=30)
+    wait_for(client, "document.body?.innerText.includes('海拉鲁字幕大师')", seconds=30)
     client.pump(3)
     responsive = []
     for width, height in ((1440, 1000), (768, 1000), (390, 900)):
@@ -447,7 +447,7 @@ def run_baseline(cdp: str, out_dir: Path, url: str) -> dict:
         responsive.append(
             {
                 "viewport": f"{width}x{height}",
-                "title_visible": "字幕匹配" in text,
+                "title_visible": "海拉鲁字幕大师" in text,
                 "content_visible": ("资源选择" in text or "百万英镑" in text or "本地路径" in text),
                 "screenshot": client.screenshot(f"responsive-{width}x{height}.png"),
             }
@@ -457,7 +457,7 @@ def run_baseline(cdp: str, out_dir: Path, url: str) -> dict:
         "url": url,
         "assets": asset_hash_results(client),
         "entry": {
-            "has_title": "字幕匹配" in entry_text,
+            "has_title": "海拉鲁字幕大师" in entry_text,
             "has_resource_selector": "资源选择" in entry_text,
             "screenshot": entry_shot,
         },

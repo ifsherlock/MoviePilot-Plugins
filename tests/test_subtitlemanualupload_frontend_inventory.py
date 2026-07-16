@@ -86,7 +86,7 @@ def test_frontend_inventory_reports_app_page_contract_surfaces():
     assert "mobile-search-dock" in classes["template_classes"]
 
     texts = inventory["visible_text_inventory"]["all_static_texts"]
-    assert "字幕匹配" in texts
+    assert "海拉鲁字幕大师" in texts
     assert "匹配历史" in texts
     assert "搜索此集在线字幕" in texts
 

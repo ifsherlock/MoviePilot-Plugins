@@ -1,6 +1,12 @@
-# 字幕匹配
+# 海拉鲁字幕大师
 
-MoviePilot V2 插件，提供手动上传字幕并匹配改名的页面。
+MoviePilot V2 字幕管理插件，脱胎自 [ChineseSubFinder](https://github.com/ChineseSubFinder/ChineseSubFinder)，提供在线搜索、手动上传、自动匹配、规范改名与智能调轴能力。
+
+## v0.1.82 更新
+
+- 字幕匹配插件品牌升级为“海拉鲁字幕大师”，桌面端、手机端、配置页和插件市场显示名同步更新。
+- 启用全新像素风海拉鲁图标，并使用独立资源文件名避免旧图缓存。
+- 补充“脱胎自 ChineseSubFinder”的项目说明；保留 `SubtitleManualUpload` 插件 ID、配置前缀、API 路径和现有功能兼容性。
 
 ## v0.1.81 更新
 
