@@ -28,7 +28,7 @@ defineEmits([
     >
       <VCardTitle class="dialog-title">
         <div>
-          <span>入库自动字幕队列</span>
+          <span>自动入库队列</span>
           <p>{{ autoQueueSummaryText }}</p>
         </div>
         <div class="online-title-actions">
@@ -64,7 +64,7 @@ defineEmits([
           </div>
         </div>
         <div v-else class="empty-state compact-empty">
-          当前没有入库自动字幕任务。
+          当前没有自动入库任务。
         </div>
       </VCardText>
     </VCard>

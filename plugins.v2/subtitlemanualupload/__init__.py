@@ -163,7 +163,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "海拉鲁字幕大师"
     plugin_desc = "脱胎自 ChineseSubFinder，支持字幕搜索、上传、匹配、改名与智能调轴。"
     plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/hyrule-subtitle-master.png"
-    plugin_version = "0.1.82"
+    plugin_version = "0.1.83"
     plugin_author = "ifsherlock"
     author_url = "https://github.com/ifsherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -218,6 +218,7 @@ class SubtitleManualUpload(_PluginBase):
     _entry_map_max_size = 2000
     _media_index_cache_max_keys = 20
     _match_history_cache_ttl_seconds = 86400
+    _match_history_validation_interval_seconds = 300
     _timeline_task_ttl_seconds = 86400
     _rar_dependency_status: Dict[str, Any] = {
         "mode": "none",
@@ -239,11 +240,19 @@ class SubtitleManualUpload(_PluginBase):
     }
     _match_history_cache: Dict[str, Any] = {
         "loaded_at": None,
+        "validated_at": None,
         "signature": "",
         "items": [],
         "entry_count": 0,
         "persisted": False,
     }
+    _match_history_generation = 0
+    _match_history_refreshing = False
+    _match_history_refresh_started_at = ""
+    _match_history_refresh_completed_at = ""
+    _match_history_refresh_error = ""
+    _match_history_refresh_lock = threading.Lock()
+    _match_history_build_lock = threading.Lock()
     _timeline_tasks: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
     _tmdb_detail_cache: Dict[str, Dict[str, Any]] = {}
 

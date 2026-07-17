@@ -153,6 +153,7 @@ def subtitle_history(owner) -> SubtitleHistory:
         http_exception=HTTPException,
         logger=logger,
         target_entry_cache=target_entry_cache(owner),
+        subtitle_inventory=owner.services.subtitle_inventory(),
     )
 
 

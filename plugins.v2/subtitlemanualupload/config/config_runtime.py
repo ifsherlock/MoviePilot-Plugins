@@ -68,7 +68,21 @@ def sync_class_runtime_config(owner_cls: type, owner: Any) -> None:
 def reset_runtime_state(owner: Any) -> None:
     owner._entry_map = OrderedDict()
     owner._media_index_cache = OrderedDict()
-    owner._match_history_cache = {"loaded_at": None, "signature": "", "items": [], "entry_count": 0, "persisted": False}
+    owner._match_history_cache = {
+        "loaded_at": None,
+        "validated_at": None,
+        "signature": "",
+        "items": [],
+        "entry_count": 0,
+        "persisted": False,
+    }
+    owner._match_history_generation = 0
+    owner._match_history_refreshing = False
+    owner._match_history_refresh_started_at = ""
+    owner._match_history_refresh_completed_at = ""
+    owner._match_history_refresh_error = ""
+    owner._match_history_refresh_lock = threading.Lock()
+    owner._match_history_build_lock = threading.Lock()
     owner._timeline_tasks = OrderedDict()
     owner._transfer_auto_recent = {}
     owner._transfer_auto_lock = threading.Lock()

@@ -5,6 +5,8 @@ const props = defineProps({
   rootTab: { type: String, required: true },
   matchHistorySummary: { type: String, required: true },
   indexSummary: { type: String, required: true },
+  autoQueueVisible: { type: Boolean, default: false },
+  autoQueueSummaryText: { type: String, default: '' },
   refreshing: { type: Boolean, default: false },
   matchHistoryLoading: { type: Boolean, default: false },
   searching: { type: Boolean, default: false },
@@ -15,6 +17,7 @@ const props = defineProps({
 const emit = defineEmits([
   'update:searchKeyword',
   'update:mediaType',
+  'open-auto-queue',
   'refresh-index',
   'submit',
 ])
@@ -41,18 +44,28 @@ const mediaTypeItems = [
       <div class="search-head">
         <div>
           <div class="section-kicker">{{ rootTab === 'history' ? '历史记录' : '资源选择' }}</div>
-          <h2>{{ rootTab === 'history' ? '查看已匹配字幕' : '选择本地已有资源' }}</h2>
+          <h2 v-if="rootTab === 'history'">查看已匹配字幕</h2>
           <p>{{ rootTab === 'history' ? matchHistorySummary : `仅展示 MoviePilot 已整理到本地库的视频资源。${indexSummary}` }}</p>
         </div>
-        <VBtn
-          variant="tonal"
-          color="primary"
-          prepend-icon="mdi-refresh"
-          :loading="refreshing"
-          @click="$emit('refresh-index')"
-        >
-          刷新媒体库清单
-        </VBtn>
+        <div class="search-head-actions">
+          <VBtn
+            v-if="autoQueueVisible"
+            variant="text"
+            prepend-icon="mdi-tray-full"
+            @click="$emit('open-auto-queue')"
+          >
+            自动入库队列 · {{ autoQueueSummaryText }}
+          </VBtn>
+          <VBtn
+            variant="tonal"
+            color="primary"
+            prepend-icon="mdi-refresh"
+            :loading="refreshing"
+            @click="$emit('refresh-index')"
+          >
+            刷新媒体库清单
+          </VBtn>
+        </div>
       </div>
       <div class="search-bar">
         <VTextField
@@ -114,6 +127,15 @@ const mediaTypeItems = [
   line-height: 1.7;
 }
 
+.search-head-actions {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  justify-content: flex-end;
+}
+
 .section-kicker {
   color: var(--smu-accent);
   font-size: 12px;
@@ -136,6 +158,10 @@ const mediaTypeItems = [
 
   .search-head {
     display: grid;
+  }
+
+  .search-head-actions {
+    justify-content: flex-start;
   }
 }
 </style>

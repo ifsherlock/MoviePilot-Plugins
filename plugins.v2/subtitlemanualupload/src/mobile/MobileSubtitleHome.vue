@@ -64,7 +64,7 @@ function chooseMediaType(value) {
       </button>
       <button type="button" @click="actions.openAutoQueue()">
         <span class="mobile-action-icon"><VIcon icon="mdi-tray-full" /></span>
-        <span>自动队列</span>
+        <span>自动入库队列</span>
         <VIcon icon="mdi-chevron-right" />
       </button>
     </div>

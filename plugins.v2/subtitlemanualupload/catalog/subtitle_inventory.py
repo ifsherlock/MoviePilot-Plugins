@@ -52,59 +52,97 @@ class SubtitleInventory:
         self._logger_warning = logger_warning
 
     def subtitle_files_for_target(self, target_entry: Dict[str, Any]) -> List[Dict[str, Any]]:
-        storage = self._normalize_text(target_entry.get("storage")) or "local"
-        if storage != "local":
+        target_key = self._target_key(target_entry)
+        if not target_key:
             return []
+        return self.subtitle_files_for_targets([target_entry]).get(target_key, [])
+
+    def subtitle_files_for_targets(
+        self,
+        target_entries: Iterable[Dict[str, Any]],
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        entries = [entry for entry in target_entries if isinstance(entry, dict)]
+        result = {key: [] for key in (self._target_key(entry) for entry in entries) if key}
         if self._trust_transfer_history_paths:
-            return []
+            return result
 
-        video_path_raw = self._normalize_text(target_entry.get("path"))
-        if not video_path_raw:
-            return []
+        entries_by_directory: Dict[Path, List[Dict[str, Any]]] = {}
+        for entry in entries:
+            storage = self._normalize_text(entry.get("storage")) or "local"
+            path_text = self._normalize_text(entry.get("path"))
+            if storage != "local" or not path_text:
+                continue
+            video_path = Path(path_text)
+            entries_by_directory.setdefault(video_path.parent, []).append(entry)
 
-        video_path = Path(video_path_raw)
-        media_dir = video_path.parent
-        if not media_dir.exists() or not media_dir.is_dir():
-            return []
-
-        stem = video_path.stem
-        subtitles: List[Dict[str, Any]] = []
-        try:
-            for sub_file in media_dir.iterdir():
-                if not sub_file.is_file():
-                    continue
-                if sub_file.suffix.lower() not in self._subtitle_exts:
-                    continue
-                if sub_file.stem != stem and not sub_file.name.startswith(f"{stem}."):
-                    continue
-                try:
-                    raw_bytes = sub_file.read_bytes()
-                except Exception:
-                    raw_bytes = b""
-                language_profile = self._detect_language_profile(sub_file.name, raw_bytes)
-                backup_path = self._subtitle_backup_path(sub_file)
-                subtitles.append(
-                    {
-                        "name": sub_file.name,
-                        "path": str(sub_file),
-                        "relative_path": str(sub_file).replace("\\", "/"),
-                        "ext": sub_file.suffix.lower(),
-                        "language_suffix": language_profile.get("suffix", ""),
-                        "language_category": language_profile.get("category", ""),
-                        "backup_path": str(backup_path) if backup_path.exists() else "",
-                        "backup_available": backup_path.exists(),
-                        "size": sub_file.stat().st_size,
-                        "modified_at": datetime.fromtimestamp(sub_file.stat().st_mtime).isoformat(timespec="seconds"),
-                    }
+        for media_dir, directory_entries in entries_by_directory.items():
+            try:
+                subtitle_files = [
+                    item
+                    for item in media_dir.iterdir()
+                    if item.suffix.lower() in self._subtitle_exts and item.is_file()
+                ]
+            except Exception as exc:
+                self._logger_warning(
+                    "[SubtitleManualUpload] 读取外挂字幕目录失败 directory=%s error=%s",
+                    media_dir,
+                    exc,
                 )
-        except Exception as exc:
-            self._logger_warning(
-                "[SubtitleManualUpload] 读取外挂字幕失败 video=%s error=%s",
-                video_path.name,
-                exc,
-            )
-        subtitles.sort(key=lambda item: item.get("name", ""))
-        return subtitles
+                continue
+
+            metadata_by_path: Dict[Path, Optional[Dict[str, Any]]] = {}
+            for entry in directory_entries:
+                target_key = self._target_key(entry)
+                path_text = self._normalize_text(entry.get("path"))
+                if not target_key or not path_text:
+                    continue
+                video_path = Path(path_text)
+                stem = video_path.stem
+                matched_files = [
+                    item
+                    for item in subtitle_files
+                    if item.stem == stem or item.name.startswith(f"{stem}.")
+                ]
+                if not matched_files or not video_path.is_file():
+                    continue
+                subtitles = []
+                for sub_file in matched_files:
+                    if sub_file not in metadata_by_path:
+                        metadata_by_path[sub_file] = self._subtitle_file_metadata(sub_file)
+                    metadata = metadata_by_path[sub_file]
+                    if metadata:
+                        subtitles.append(dict(metadata))
+                subtitles.sort(key=lambda item: item.get("name", ""))
+                result[target_key] = subtitles
+        return result
+
+    def _target_key(self, target_entry: Dict[str, Any]) -> str:
+        return self._normalize_text(target_entry.get("id") or target_entry.get("path"))
+
+    def _subtitle_file_metadata(self, sub_file: Path) -> Optional[Dict[str, Any]]:
+        try:
+            raw_bytes = sub_file.read_bytes()
+        except Exception:
+            raw_bytes = b""
+        try:
+            stat = sub_file.stat()
+        except Exception:
+            return None
+        language_profile = self._detect_language_profile(sub_file.name, raw_bytes)
+        backup_path = self._subtitle_backup_path(sub_file)
+        backup_available = backup_path.exists()
+        return {
+            "name": sub_file.name,
+            "path": str(sub_file),
+            "relative_path": str(sub_file).replace("\\", "/"),
+            "ext": sub_file.suffix.lower(),
+            "language_suffix": language_profile.get("suffix", ""),
+            "language_category": language_profile.get("category", ""),
+            "backup_path": str(backup_path) if backup_available else "",
+            "backup_available": backup_available,
+            "size": stat.st_size,
+            "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
+        }
 
     def embedded_subtitle_tracks_for_target(self, target_entry: Dict[str, Any]) -> List[Dict[str, Any]]:
         storage = self._normalize_text(target_entry.get("storage")) or "local"

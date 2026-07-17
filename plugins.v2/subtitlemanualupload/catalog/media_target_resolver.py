@@ -363,8 +363,13 @@ class MediaTargetResolver:
     def is_stream_path(self, path: Any) -> bool:
         return is_stream_path(path, normalize_text=self._normalize_text, stream_exts=self._stream_exts)
 
-    def target_from_entry(self, entry: Dict[str, Any]) -> Dict[str, Any]:
-        subtitles = self._subtitle_files_provider(entry)
+    def target_from_entry(
+        self,
+        entry: Dict[str, Any],
+        *,
+        subtitles: Optional[List[Dict[str, Any]]] = None,
+    ) -> Dict[str, Any]:
+        resolved_subtitles = self._subtitle_files_provider(entry) if subtitles is None else subtitles
         path = self._normalize_text(entry.get("path"))
         return {
             "id": entry.get("id"),
@@ -390,9 +395,9 @@ class MediaTargetResolver:
             "storage": entry.get("storage", "local"),
             "writable": entry.get("writable", True),
             "is_stream": self.is_stream_path(path),
-            "has_subtitle": bool(subtitles),
-            "subtitle_count": len(subtitles),
-            "subtitles": subtitles,
+            "has_subtitle": bool(resolved_subtitles),
+            "subtitle_count": len(resolved_subtitles),
+            "subtitles": resolved_subtitles,
         }
 
 

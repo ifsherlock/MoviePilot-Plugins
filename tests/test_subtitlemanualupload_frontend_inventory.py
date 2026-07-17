@@ -11,6 +11,8 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SCRIPT_PATH = REPO_ROOT / "scripts" / "subtitlemanualupload_frontend_inventory.py"
 APP_PAGE = REPO_ROOT / "plugins.v2" / "subtitlemanualupload" / "src" / "components" / "AppPage.vue"
 MATCH_HISTORY_PANEL = APP_PAGE.parent / "MatchHistoryPanel.vue"
+MEDIA_SEARCH_PANEL = APP_PAGE.parent / "MediaSearchPanel.vue"
+AUTO_QUEUE_DIALOG = APP_PAGE.parent / "AutoTransferQueueDialog.vue"
 ONLINE_DIALOG = APP_PAGE.parent / "OnlineSubtitleDialog.vue"
 MOBILE_DETAIL = REPO_ROOT / "plugins.v2" / "subtitlemanualupload" / "src" / "mobile" / "MobileSubtitleDetail.vue"
 MOBILE_TARGET_CARD = REPO_ROOT / "plugins.v2" / "subtitlemanualupload" / "src" / "mobile" / "MobileTargetCard.vue"
@@ -80,7 +82,7 @@ def test_frontend_inventory_reports_app_page_contract_surfaces():
     classes = inventory["css_class_inventory"]
     assert "subtitle-upload-page" in classes["template_classes"]
     assert "subtitle-upload-page" in classes["style_class_selectors"]
-    assert "hero-card" in classes["template_classes"]
+    assert "hero-card" not in classes["template_classes"]
     assert "media-card" in classes["template_classes"]
     assert "ai-status-strip" in classes["template_classes"]
     assert "mobile-search-dock" in classes["template_classes"]
@@ -110,3 +112,18 @@ def test_mobile_copy_and_history_layout_stay_isolated_from_desktop_defaults():
     assert '<VIcon start icon="mdi-upload-file" />' in detail_source
     assert "在线" in target_source
     assert '<VIcon start icon="mdi-upload-file" />' in target_source
+
+
+def test_desktop_header_and_auto_queue_copy_have_single_owners():
+    app_source = APP_PAGE.read_text(encoding="utf-8")
+    search_source = MEDIA_SEARCH_PANEL.read_text(encoding="utf-8")
+    history_source = MATCH_HISTORY_PANEL.read_text(encoding="utf-8")
+    queue_source = AUTO_QUEUE_DIALOG.read_text(encoding="utf-8")
+
+    assert "hero-card" not in app_source
+    assert "选择本地已有资源" not in search_source
+    assert "自动入库队列" in search_source
+    assert "自动入库队列" in queue_source
+    assert "入库自动字幕队列" not in search_source
+    assert "入库自动字幕队列" not in queue_source
+    assert "auto-queue-entry" not in history_source

@@ -6,7 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_DIR = ROOT / "plugins.v2" / "subtitlemanualupload"
 BRAND_NAME = "海拉鲁字幕大师"
-VERSION = "0.1.82"
+VERSION = "0.1.83"
 ICON_URL = (
     "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/"
     "main/icons/hyrule-subtitle-master.png"
@@ -54,7 +54,6 @@ def test_branding_reaches_user_visible_surfaces_and_icon():
     visible_surfaces = (
         PLUGIN_DIR / "README.md",
         PLUGIN_DIR / "index.html",
-        PLUGIN_DIR / "src" / "components" / "AppPage.vue",
         PLUGIN_DIR / "src" / "components" / "Config.vue",
         PLUGIN_DIR / "src" / "components" / "Page.vue",
         PLUGIN_DIR / "src" / "components" / "UploadDialog.vue",

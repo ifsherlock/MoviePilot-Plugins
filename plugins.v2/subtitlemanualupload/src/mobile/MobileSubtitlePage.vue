@@ -50,7 +50,7 @@ defineProps({
           <VBtn
             icon="mdi-tray-full"
             variant="text"
-            title="自动队列"
+            title="自动入库队列"
             @click="actions.home.openAutoQueue()"
           />
         </header>
@@ -58,7 +58,6 @@ defineProps({
         <MatchHistoryPanel
           mobile
           v-bind="view.history.panelProps"
-          @open-auto-queue="actions.home.openAutoQueue()"
           @load-more-match-history="actions.history.loadMoreMatchHistory()"
         />
       </section>

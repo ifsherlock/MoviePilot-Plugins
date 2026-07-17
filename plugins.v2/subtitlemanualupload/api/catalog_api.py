@@ -54,19 +54,19 @@ class CatalogApi:
         media_type = owner._normalize_text(request.query_params.get("media_type")) or "all"
         page = max(owner._safe_int(request.query_params.get("page"), 1), 1)
         page_size = min(max(owner._safe_int(request.query_params.get("page_size"), 20), 5), 80)
-        items = services.history().match_history_items(keyword=keyword, media_type=media_type)
-        total = len(items)
-        start = (page - 1) * page_size
-        end = start + page_size
+        history_page = services.history().match_history_page(
+            keyword=keyword,
+            media_type=media_type,
+            page=page,
+            page_size=page_size,
+        )
         return owner._ok(
             {
                 "keyword": keyword,
                 "media_type": media_type,
                 "page": page,
                 "page_size": page_size,
-                "total": total,
-                "has_more": end < total,
-                "items": items[start:end],
+                **history_page,
             }
         )
 

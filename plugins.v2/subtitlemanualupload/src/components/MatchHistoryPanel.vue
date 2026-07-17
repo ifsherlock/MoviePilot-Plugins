@@ -2,13 +2,11 @@
 defineProps({
   mobile: { type: Boolean, default: false },
   rootTab: { type: String, default: 'match' },
-  autoQueueTasks: { type: Array, default: () => [] },
-  autoQueueSummary: { type: Object, default: () => ({}) },
-  autoQueueSummaryText: { type: String, default: '' },
   matchHistoryItems: { type: Array, default: () => [] },
   matchHistoryTotal: { type: Number, default: 0 },
   matchHistoryHasMore: { type: Boolean, default: false },
   matchHistoryLoading: { type: Boolean, default: false },
+  matchHistoryRefreshing: { type: Boolean, default: false },
   clearing: { type: Boolean, default: false },
   timelineFixing: { type: Boolean, default: false },
   timelineAvailable: { type: Boolean, default: false },
@@ -64,27 +62,10 @@ function mobileHistoryMeta(item) {
   return episodeCount > 0 ? `${episodeCount} 集 · ${timestamp}` : timestamp
 }
 
-defineEmits([
-  'open-auto-queue',
-  'load-more-match-history',
-])
+defineEmits(['load-more-match-history'])
 </script>
 
 <template>
-  <div
-    v-if="rootTab === 'history' && (autoQueueTasks.length || autoQueueSummary.active)"
-    class="auto-queue-entry"
-  >
-    <VBtn
-      variant="tonal"
-      color="primary"
-      prepend-icon="mdi-tray-full"
-      @click="$emit('open-auto-queue')"
-    >
-      入库自动字幕队列 · {{ autoQueueSummaryText }}
-    </VBtn>
-  </div>
-
   <div
     v-if="rootTab === 'history' && matchHistoryItems.length"
     class="global-history-list"
@@ -323,17 +304,11 @@ defineEmits([
     </VBtn>
   </div>
   <div v-else-if="rootTab === 'history'" class="empty-state">
-    {{ matchHistoryLoading ? '正在读取匹配历史...' : '还没有找到已匹配字幕记录。' }}
+    {{ matchHistoryLoading || matchHistoryRefreshing ? '正在读取匹配历史...' : '还没有找到已匹配字幕记录。' }}
   </div>
 </template>
 
 <style scoped>
-.auto-queue-entry {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 12px;
-}
-
 .global-history-list {
   display: grid;
   gap: 12px;

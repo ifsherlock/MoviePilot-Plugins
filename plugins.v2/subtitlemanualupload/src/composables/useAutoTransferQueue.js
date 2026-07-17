@@ -36,7 +36,7 @@ export function useAutoTransferQueue({
     if (autoQueueSummary.value.failed) parts.push(`${autoQueueSummary.value.failed} 个失败`)
     if (autoQueueSummary.value.completed) parts.push(`${autoQueueSummary.value.completed} 个完成`)
     if (autoQueueSummary.value.skipped) parts.push(`${autoQueueSummary.value.skipped} 个跳过`)
-    return parts.length ? parts.join(' / ') : '暂无入库自动字幕任务'
+    return parts.length ? parts.join(' / ') : '暂无自动入库任务'
   })
 
   function applyAutoTransferSummary(summary) {
@@ -64,7 +64,7 @@ export function useAutoTransferQueue({
       autoTransferQueue.value = unwrapResponse(response) || autoTransferQueue.value
       scheduleAutoQueuePolling()
     } catch (err) {
-      error.value = errorMessage(err, '读取入库自动字幕队列失败')
+      error.value = errorMessage(err, '读取自动入库队列失败')
     }
   }
 

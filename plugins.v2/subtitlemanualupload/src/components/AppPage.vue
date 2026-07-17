@@ -171,6 +171,7 @@ const {
 const {
   rootTab,
   matchHistoryLoading,
+  matchHistoryRefreshing,
   matchHistoryItems,
   matchHistoryTotal,
   matchHistoryHasMore,
@@ -724,13 +725,11 @@ const mobileView = reactive({
   history: {
     panelProps: {
       rootTab,
-      autoQueueTasks,
-      autoQueueSummary,
-      autoQueueSummaryText,
       matchHistoryItems,
       matchHistoryTotal,
       matchHistoryHasMore,
       matchHistoryLoading,
+      matchHistoryRefreshing,
       clearing,
       timelineFixing,
       timelineAvailable,
@@ -879,13 +878,6 @@ defineExpose({
       </button>
     </div>
 
-    <div v-if="!hideTitle" class="hero-card">
-      <div>
-        <h1>海拉鲁字幕大师</h1>
-        <p>脱胎自 ChineseSubFinder，为 MoviePilot 提供字幕搜索、上传、匹配与改名。</p>
-      </div>
-    </div>
-
     <VAlert
       v-if="error"
       class="mb-4"
@@ -908,9 +900,12 @@ defineExpose({
         :root-tab="rootTab"
         :match-history-summary="matchHistorySummary"
         :index-summary="indexSummary"
+        :auto-queue-visible="Boolean(autoQueueTasks.length || autoQueueSummary.total || autoQueueSummary.active)"
+        :auto-queue-summary-text="autoQueueSummaryText"
         :refreshing="refreshing"
-        :match-history-loading="matchHistoryLoading"
+        :match-history-loading="matchHistoryLoading || matchHistoryRefreshing"
         :searching="searching"
+        @open-auto-queue="autoQueueDialog = true"
         @refresh-index="refreshIndex"
         @submit="submitRootSearch"
       />
@@ -934,13 +929,11 @@ defineExpose({
 
       <MatchHistoryPanel
         :root-tab="rootTab"
-        :auto-queue-tasks="autoQueueTasks"
-        :auto-queue-summary="autoQueueSummary"
-        :auto-queue-summary-text="autoQueueSummaryText"
         :match-history-items="matchHistoryItems"
         :match-history-total="matchHistoryTotal"
         :match-history-has-more="matchHistoryHasMore"
         :match-history-loading="matchHistoryLoading"
+        :match-history-refreshing="matchHistoryRefreshing"
         :clearing="clearing"
         :timeline-fixing="timelineFixing"
         :timeline-available="timelineAvailable"
@@ -981,7 +974,6 @@ defineExpose({
         :fix-history-subtitle-timeline="fixHistorySubtitleTimeline"
         :is-stream-target="isStreamTarget"
         :delete-subtitle="deleteSubtitle"
-        @open-auto-queue="autoQueueDialog = true"
         @load-more-match-history="loadMoreMatchHistory"
       />
     </section>
@@ -1200,26 +1192,6 @@ defineExpose({
   background: var(--smu-page-bg);
   color: var(--smu-text);
   font-family: "LXGW WenKai Screen", "Noto Serif SC", "PingFang SC", sans-serif;
-}
-
-.hero-card {
-  padding: 26px;
-  margin-bottom: 18px;
-  border: 1px solid var(--smu-border);
-  border-radius: 28px;
-  background: var(--smu-card-bg-strong);
-  box-shadow: var(--smu-shadow);
-  backdrop-filter: blur(14px);
-}
-
-.hero-card h1 {
-  margin: 0;
-}
-
-.hero-card p {
-  margin: 8px 0 0;
-  color: var(--smu-text-muted);
-  line-height: 1.7;
 }
 
 .root-tabs {

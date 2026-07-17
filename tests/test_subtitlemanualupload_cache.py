@@ -2721,6 +2721,123 @@ def test_match_history_cache_reuses_scanned_items_until_invalidated(tmp_path):
     assert calls["count"] == 2
 
 
+def test_match_history_page_uses_current_snapshot_without_filesystem_scan():
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    now = module.datetime.now()
+    plugin._match_history_cache = {
+        "loaded_at": now,
+        "validated_at": now,
+        "signature": "snapshot",
+        "items": [
+            {
+                "id": "movie",
+                "media_type": "movie",
+                "title": "Movie",
+                "targets": [{"id": "m1", "basename": "Movie", "subtitles": []}],
+            }
+        ],
+        "entry_count": 1,
+        "persisted": False,
+    }
+    plugin._entry_filesystem_signature = lambda *_args, **_kwargs: (_ for _ in ()).throw(
+        AssertionError("cached page must not inspect the filesystem")
+    )
+
+    page = plugin.services.history().match_history_page(page=1, page_size=20)
+
+    assert page["total"] == 1
+    assert page["refreshing"] is False
+    assert page["items"][0]["targets"][0]["basename"] == "Movie"
+
+
+def test_match_history_page_starts_only_one_background_refresh_for_missing_snapshot(monkeypatch):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    history_module = plugin_submodule(module, "matching.subtitle_history")
+    refresh_started = module.threading.Event()
+    allow_refresh_to_finish = module.threading.Event()
+    refresh_finished = module.threading.Event()
+    calls = {"count": 0}
+
+    def blocked_rebuild(_history, **_kwargs):
+        calls["count"] += 1
+        refresh_started.set()
+        allow_refresh_to_finish.wait(timeout=2)
+        refresh_finished.set()
+        return []
+
+    monkeypatch.setattr(history_module.SubtitleHistory, "rebuild_match_history_cache", blocked_rebuild)
+    endpoint = next(route["endpoint"] for route in plugin.get_api() if route["path"] == "/match_history")
+
+    first = endpoint(FakeRequest(query_params={"page": "1", "page_size": "20"}))
+    second = endpoint(FakeRequest(query_params={"page": "1", "page_size": "20"}))
+
+    assert first["data"]["ready"] is False
+    assert first["data"]["refreshing"] is True
+    assert second["data"]["refreshing"] is True
+    assert refresh_started.wait(timeout=1)
+    assert calls["count"] == 1
+
+    allow_refresh_to_finish.set()
+    assert refresh_finished.wait(timeout=1)
+
+
+def test_match_history_rebuild_populates_first_snapshot_from_empty_local_cache(tmp_path):
+    module, histories, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    histories.data = [
+        make_history_entry(
+            tmp_path,
+            "m1",
+            "Movie.mkv",
+            media_key="movie",
+            media_type="movie",
+            title="Movie",
+            storage="local",
+        )
+    ]
+    (tmp_path / "Movie.chi.srt").write_text("subtitle", encoding="utf-8")
+
+    items = plugin.services.history().rebuild_match_history_cache()
+
+    assert [item["id"] for item in items] == ["movie"]
+    assert plugin._match_history_cache["loaded_at"] is not None
+    assert [entry["id"] for entry in plugin._local_entries_cache["entries"]] == ["m1"]
+
+
+def test_subtitle_inventory_batches_entries_by_directory(tmp_path, monkeypatch):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    inventory_module = plugin_submodule(module, "catalog.subtitle_inventory")
+    video1 = tmp_path / "Show.S01E01.mkv"
+    video2 = tmp_path / "Show.S01E02.mkv"
+    subtitle1 = tmp_path / "Show.S01E01.chi.srt"
+    subtitle2 = tmp_path / "Show.S01E02.chi.srt"
+    for path in (video1, video2, subtitle1, subtitle2):
+        path.write_text(path.name, encoding="utf-8")
+
+    original_iterdir = inventory_module.Path.iterdir
+    calls = {"count": 0}
+
+    def counted_iterdir(path):
+        if path == tmp_path:
+            calls["count"] += 1
+        return original_iterdir(path)
+
+    monkeypatch.setattr(inventory_module.Path, "iterdir", counted_iterdir)
+    entries = [
+        {"id": "e1", "path": str(video1), "storage": "local"},
+        {"id": "e2", "path": str(video2), "storage": "local"},
+    ]
+
+    subtitles = plugin._subtitle_inventory().subtitle_files_for_targets(entries)
+
+    assert calls["count"] == 1
+    assert [item["name"] for item in subtitles["e1"]] == [subtitle1.name]
+    assert [item["name"] for item in subtitles["e2"]] == [subtitle2.name]
+
+
 def test_match_history_filters_deleted_local_targets(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
@@ -2859,6 +2976,7 @@ def test_api_match_history_builds_targets_with_media_target_resolver(tmp_path):
     plugin._target_from_entry = lambda *args, **kwargs: (_ for _ in ()).throw(
         AssertionError("match history should build targets through MediaTargetResolver")
     )
+    plugin.services.history().rebuild_match_history_cache()
 
     match_history_endpoint = next(
         route["endpoint"] for route in plugin.get_api() if route["path"] == "/match_history"
@@ -4481,7 +4599,14 @@ def test_auto_subtitle_preference_config_normalizes_legacy_strings(tmp_path):
     assert module.SubtitleManualUpload._auto_ass_to_srt_for_ai == plugin._auto_ass_to_srt_for_ai
     assert plugin._entry_map == {}
     assert plugin._media_index_cache == {}
-    assert plugin._match_history_cache == {"loaded_at": None, "signature": "", "items": [], "entry_count": 0, "persisted": False}
+    assert plugin._match_history_cache == {
+        "loaded_at": None,
+        "validated_at": None,
+        "signature": "",
+        "items": [],
+        "entry_count": 0,
+        "persisted": False,
+    }
     assert plugin._timeline_tasks == {}
     assert plugin._transfer_auto_recent == {}
     assert plugin._transfer_auto_lock is not old_transfer_lock

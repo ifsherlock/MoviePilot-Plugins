@@ -21,6 +21,7 @@ export function useMatchHistory({
 }) {
   const rootTab = ref('match')
   const matchHistoryLoading = ref(false)
+  const matchHistoryRefreshing = ref(false)
   const matchHistoryItems = ref([])
   const matchHistoryPage = ref(1)
   const matchHistoryPageSize = MATCH_HISTORY_PAGE_SIZE
@@ -33,6 +34,7 @@ export function useMatchHistory({
   let historyTimelineTimer = null
 
   const matchHistorySummary = computed(() => {
+    if (matchHistoryRefreshing.value && !matchHistoryTotal.value) return '正在读取匹配历史'
     if (!matchHistoryTotal.value) return '暂无已匹配字幕记录'
     return `${matchHistoryTotal.value} 部资源有外挂字幕记录`
   })
@@ -260,11 +262,11 @@ export function useMatchHistory({
 
   function scheduleHistoryTimelinePolling() {
     stopHistoryTimelinePolling()
-    if (!historyHasActiveTimelineTask()) return
+    if (!matchHistoryRefreshing.value && !historyHasActiveTimelineTask()) return
     historyTimelineTimer = setTimeout(async () => {
       await loadMatchHistory()
       scheduleHistoryTimelinePolling()
-    }, 3000)
+    }, matchHistoryRefreshing.value ? 1000 : 3000)
   }
 
   function submitRootSearch() {
@@ -292,6 +294,10 @@ export function useMatchHistory({
       matchHistoryTotal.value = Number(data.total || 0)
       matchHistoryHasMore.value = Boolean(data.has_more)
       matchHistoryItems.value = append ? [...matchHistoryItems.value, ...(data.items || [])] : (data.items || [])
+      matchHistoryRefreshing.value = Boolean(data.refreshing)
+      if (data.refresh_error && !data.refreshing) {
+        error.value = String(data.refresh_error)
+      }
       scheduleHistoryTimelinePolling()
     } catch (err) {
       error.value = errorMessage(err, '读取匹配历史失败')
@@ -317,6 +323,7 @@ export function useMatchHistory({
   return {
     rootTab,
     matchHistoryLoading,
+    matchHistoryRefreshing,
     matchHistoryItems,
     matchHistoryPage,
     matchHistoryPageSize,
