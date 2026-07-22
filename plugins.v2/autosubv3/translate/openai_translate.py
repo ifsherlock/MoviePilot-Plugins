@@ -8,6 +8,8 @@ import openai
 import httpx
 from cacheout import Cache
 
+from .api_diagnostics import safe_api_url, sanitize_api_error
+
 OpenAISessionCache = Cache(maxsize=100, ttl=3600, timer=time.time, default=None)
 
 
@@ -17,9 +19,12 @@ class OpenAi:
     _model: str = "inclusionAI/Ling-flash-2.0"
 
     def __init__(self, api_key: str = None, api_url: str = None, proxy: dict = None, model: str = None,
-                 compatible: bool = False):
+                 compatible: bool = False, logger=None, endpoint_name: str = ""):
         self._api_key = api_key
         self._api_url = api_url
+        self._logger = logger
+        self._endpoint_name = endpoint_name or "默认线路"
+        self._last_error = ""
         base_url = self._api_url if compatible else self._api_url + "/v1"
 
         if proxy and proxy.get("https"):
@@ -66,6 +71,15 @@ class OpenAi:
     def model(self) -> str:
         return self._model
 
+    @property
+    def last_error(self) -> str:
+        return self._last_error
+
+    def _log(self, level: str, message: str, *args) -> None:
+        callback = getattr(self._logger, level, None) if self._logger else None
+        if callback:
+            callback(message, *args)
+
     def list_models(self) -> List[str]:
         response = self.client.models.list()
         models = []
@@ -81,6 +95,7 @@ class OpenAi:
             temperature=0,
             max_tokens=8,
         )
+        self._last_error = ""
         return (completion.choices[0].message.content or "").strip()
 
     @staticmethod
@@ -152,15 +167,34 @@ class OpenAi:
                 )
                 result = completion.choices[0].message.content.strip()
                 result = self._clean_text(result)
+                self._last_error = ""
                 return True, result
             except Exception as e:
-                last_error = str(e)
+                last_error = sanitize_api_error(e, self._api_key, self._api_url)
+                self._last_error = last_error
                 if attempt < max_retries:
                     sleep_time = (2 ** attempt) + random.uniform(0.1, 0.9)
-                    print(f"翻译请求失败 (第{attempt + 1}次尝试)：{last_error}，{sleep_time:.1f}秒后重试...")
+                    self._log(
+                        "warning",
+                        "[AutoSubv3] AI 单条翻译失败 endpoint=%s model=%s attempt=%s/%s error=%s，%.1f 秒后重试",
+                        self._endpoint_name,
+                        self._model,
+                        attempt + 1,
+                        max_retries + 1,
+                        last_error,
+                        sleep_time,
+                    )
                     time.sleep(sleep_time)
                 else:
-                    print(f"翻译请求失败 (已重试{max_retries}次)：{last_error}")
+                    self._log(
+                        "error",
+                        "[AutoSubv3] AI 单条翻译最终失败 endpoint=%s url=%s model=%s attempts=%s error=%s",
+                        self._endpoint_name,
+                        safe_api_url(self._api_url),
+                        self._model,
+                        max_retries + 1,
+                        last_error,
+                    )
                     return False, f"{last_error}"
 
     def translate_batch_to_zh(self, texts: List[str], max_retries: int = 3) -> Tuple[bool, List[Optional[str]]]:
@@ -215,7 +249,17 @@ class OpenAi:
                 # 诊断日志
                 raw_len = len(raw_text)
                 clean_len = len(clean_text)
-                print(f"[BatchTranslate] attempt={attempt+1} | raw_len={raw_len} | clean_len={clean_len} {usage_str} | raw_start: {raw_text[:60].replace(chr(10),' ')}")
+                self._log(
+                    "debug",
+                    "[AutoSubv3] AI 批量响应 endpoint=%s model=%s attempt=%s raw_len=%s clean_len=%s %s raw_start=%s",
+                    self._endpoint_name,
+                    self._model,
+                    attempt + 1,
+                    raw_len,
+                    clean_len,
+                    usage_str,
+                    raw_text[:60].replace(chr(10), " "),
+                )
 
                 # 尝试解析 JSON
                 output_batch = None
@@ -227,7 +271,7 @@ class OpenAi:
                     if arr_match:
                         try:
                             output_batch = json.loads(arr_match.group(0))
-                            print(f"[BatchTranslate] JSON修复成功，从正则提取")
+                            self._log("debug", "[AutoSubv3] AI 批量响应 JSON 修复成功 endpoint=%s", self._endpoint_name)
                         except Exception:
                             pass
                     if output_batch is None:
@@ -261,15 +305,41 @@ class OpenAi:
                     if 0 <= idx < len(translations):
                         translations[idx] = zh
 
-                print(f"[BatchTranslate] 批量成功: {len(translations)}条 {usage_str}")
+                self._last_error = ""
+                self._log(
+                    "debug",
+                    "[AutoSubv3] AI 批量翻译成功 endpoint=%s model=%s count=%s %s",
+                    self._endpoint_name,
+                    self._model,
+                    len(translations),
+                    usage_str,
+                )
                 return True, translations
 
             except Exception as e:
-                last_error = str(e)
+                last_error = sanitize_api_error(e, self._api_key, self._api_url)
+                self._last_error = last_error
                 if attempt < max_retries:
                     sleep_time = (2 ** attempt) + random.uniform(0.1, 0.9)
-                    print(f"[BatchTranslate] 失败 attempt={attempt+1}: {last_error}，重试...")
+                    self._log(
+                        "warning",
+                        "[AutoSubv3] AI 批量翻译失败 endpoint=%s model=%s attempt=%s/%s error=%s，%.1f 秒后重试",
+                        self._endpoint_name,
+                        self._model,
+                        attempt + 1,
+                        max_retries + 1,
+                        last_error,
+                        sleep_time,
+                    )
                     time.sleep(sleep_time)
                 else:
-                    print(f"[BatchTranslate] 全局失败 (已重试{max_retries}次): {last_error}")
+                    self._log(
+                        "error",
+                        "[AutoSubv3] AI 批量翻译最终失败 endpoint=%s url=%s model=%s attempts=%s error=%s",
+                        self._endpoint_name,
+                        safe_api_url(self._api_url),
+                        self._model,
+                        max_retries + 1,
+                        last_error,
+                    )
                     return False, [None] * len(texts)

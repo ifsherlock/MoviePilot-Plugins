@@ -1,5 +1,6 @@
 <script setup>
 import { computed, reactive, ref, watch } from 'vue'
+import ApiEndpointSettings from './config/ApiEndpointSettings.vue'
 
 const props = defineProps({
   api: {
@@ -43,6 +44,9 @@ const defaultConfig = {
   openai_url: 'https://api.siliconflow.cn',
   openai_key: '',
   openai_model: 'inclusionAI/Ling-flash-2.0',
+  openai_endpoints: [],
+  openai_active_endpoint: '',
+  openai_fallback_enabled: true,
   context_window: 5,
   max_retries: 3,
   enable_merge: false,
@@ -52,22 +56,63 @@ const defaultConfig = {
   parallel_workers: 10,
 }
 
+function normalizeModelValue(value) {
+  if (typeof value === 'string') {
+    const text = value.trim()
+    if (text === '[object Object]') return ''
+    if (text.startsWith('{') || text.startsWith('[')) {
+      try {
+        return normalizeModelValue(JSON.parse(text))
+      } catch {
+        const match = text.match(/['"](?:value|id|model|title)['"]\s*:\s*['"]([^'"]+)['"]/);
+        if (match) return match[1].trim()
+      }
+    }
+    return text
+  }
+  if (!value || typeof value !== 'object') return ''
+  return String(value.value || value.id || value.model || value.title || '').trim()
+}
+
 function normalizeInitialConfig(value = {}) {
   const merged = { ...defaultConfig, ...(value || {}) }
   merged.generation_mode = merged.generation_mode === 'fallback' ? 'fallback' : 'monitor'
+  const rawEndpoints = Array.isArray(merged.openai_endpoints) ? merged.openai_endpoints : []
+  merged.openai_endpoints = rawEndpoints.length
+    ? rawEndpoints.map((item, index) => ({
+        id: item.id || `endpoint-${index + 1}`,
+        name: item.name || `API 线路 ${index + 1}`,
+        api_url: item.api_url || item.openai_url || 'https://api.openai.com',
+        api_key: item.api_key || item.openai_key || '',
+        model: normalizeModelValue(item.model || item.openai_model),
+        use_proxy: Boolean(item.use_proxy ?? item.openai_proxy),
+        compatible: Boolean(item.compatible),
+        enabled: item.enabled !== false,
+      }))
+    : [{
+        id: 'default',
+        name: '默认线路',
+        api_url: merged.openai_url,
+        api_key: merged.openai_key,
+        model: normalizeModelValue(merged.openai_model),
+        use_proxy: Boolean(merged.openai_proxy),
+        compatible: Boolean(merged.compatible),
+        enabled: true,
+      }]
+  const activeExists = merged.openai_endpoints.some(item => (
+    item.id === merged.openai_active_endpoint && item.enabled
+  ))
+  if (!activeExists) {
+    merged.openai_active_endpoint = merged.openai_endpoints.find(item => item.enabled)?.id || merged.openai_endpoints[0]?.id || ''
+  }
   return merged
 }
 
 const config = reactive(normalizeInitialConfig(props.initialConfig))
 const saving = ref(false)
-const loadingModels = ref(false)
-const testingModel = ref(false)
 const error = ref('')
-const apiError = ref('')
-const apiMessage = ref('')
-const remoteModels = ref([])
+const activeTab = ref('basic')
 const pluginBase = computed(() => `plugin/${props.pluginId || 'AutoSubv3'}`)
-const apiReady = computed(() => typeof props.api?.post === 'function')
 
 const whisperModels = [
   { title: 'tiny', value: 'tiny' },
@@ -86,90 +131,45 @@ const preferences = [
   { title: '英文优先', value: 'english_first' },
   { title: '原音优先', value: 'origin_first' },
 ]
-const modelItems = computed(() => {
-  const items = [...remoteModels.value]
-  if (config.openai_model && !items.some(item => item.value === config.openai_model)) {
-    items.unshift({ title: config.openai_model, value: config.openai_model })
-  }
-  return items
-})
 watch(
   () => props.initialConfig,
   (value) => {
     Object.assign(config, normalizeInitialConfig(value))
   },
 )
-watch(
-  () => [config.openai_url, config.openai_key, config.openai_model, config.openai_proxy, config.compatible],
-  () => {
-    apiError.value = ''
-    apiMessage.value = ''
-  },
-)
 
-function unwrapResponse(response) {
-  return response?.data?.data || response?.data || response || {}
-}
-
-function responseMessage(response) {
-  return response?.data?.message || response?.message || ''
-}
-
-function errorMessage(err, fallback) {
-  return err?.response?.data?.detail || err?.message || fallback
-}
-
-function apiPayload() {
-  return {
-    openai_url: config.openai_url,
-    openai_key: config.openai_key,
-    openai_model: config.openai_model,
-    openai_proxy: config.openai_proxy,
-    compatible: config.compatible,
+function updateEndpoints(value) {
+  config.openai_endpoints = Array.isArray(value)
+    ? value.map(item => ({ ...item, model: normalizeModelValue(item.model) }))
+    : []
+  const active = config.openai_endpoints.find(item => item.id === config.openai_active_endpoint && item.enabled)
+  if (!active) {
+    config.openai_active_endpoint = config.openai_endpoints.find(item => item.enabled)?.id || ''
   }
 }
 
-function apiClient() {
-  if (!apiReady.value) throw new Error('当前页面未注入插件 API 客户端，请刷新后重试')
-  return props.api
-}
-
-async function fetchModels() {
-  loadingModels.value = true
-  apiError.value = ''
-  apiMessage.value = ''
-  try {
-    const response = await apiClient().post(`${pluginBase.value}/models`, apiPayload())
-    const data = unwrapResponse(response)
-    remoteModels.value = data.models || []
-    apiMessage.value = responseMessage(response) || `已获取 ${remoteModels.value.length} 个模型`
-  } catch (err) {
-    apiError.value = errorMessage(err, '获取模型列表失败')
-  } finally {
-    loadingModels.value = false
-  }
-}
-
-async function testModel() {
-  testingModel.value = true
-  apiError.value = ''
-  apiMessage.value = ''
-  try {
-    const response = await apiClient().post(`${pluginBase.value}/test_model`, apiPayload())
-    const data = unwrapResponse(response)
-    apiMessage.value = responseMessage(response) || `模型 ${data.model || config.openai_model} 可用`
-  } catch (err) {
-    apiError.value = errorMessage(err, '测试模型失败')
-  } finally {
-    testingModel.value = false
-  }
+function syncLegacyApiFields() {
+  const active = config.openai_endpoints.find(item => item.id === config.openai_active_endpoint && item.enabled)
+    || config.openai_endpoints.find(item => item.enabled)
+  if (!active) return
+  active.model = normalizeModelValue(active.model)
+  config.openai_active_endpoint = active.id
+  config.openai_url = active.api_url
+  config.openai_key = active.api_key
+  config.openai_model = active.model
+  config.openai_proxy = Boolean(active.use_proxy)
+  config.compatible = Boolean(active.compatible)
 }
 
 function save() {
   saving.value = true
   error.value = ''
   try {
-    emit('save', { ...config })
+    syncLegacyApiFields()
+    emit('save', {
+      ...config,
+      openai_endpoints: config.openai_endpoints.map(item => ({ ...item })),
+    })
   } catch (err) {
     error.value = err?.message || '保存配置失败'
   } finally {
@@ -189,10 +189,18 @@ function save() {
     </VToolbar>
     <VDivider />
 
+    <VTabs v-model="activeTab" class="config-tabs" color="primary" density="comfortable">
+      <VTab value="basic" prepend-icon="mdi-tune-variant">基础设置</VTab>
+      <VTab value="api" prepend-icon="mdi-api">AI API</VTab>
+    </VTabs>
+    <VDivider />
+
     <div class="config-shell">
       <VAlert v-if="error" class="mb-4" type="error" variant="tonal" density="compact" :text="error" />
 
-      <section class="config-section">
+      <VWindow v-model="activeTab">
+        <VWindowItem value="basic">
+          <section class="config-section">
         <div class="section-title">基础设置</div>
         <VRow>
           <VCol cols="12" md="6">
@@ -233,73 +241,7 @@ function save() {
             <VSwitch v-model="config.enable_asr" label="允许 ASR 生成字幕" hide-details />
           </VCol>
         </VRow>
-      </section>
-
-      <section class="config-section">
-        <div class="section-title">API 配置</div>
-        <VRow>
-          <VCol cols="12" md="6">
-            <VTextField v-model="config.openai_url" label="API URL" placeholder="https://api.siliconflow.cn" />
-          </VCol>
-          <VCol cols="12" md="6">
-            <VTextField v-model="config.openai_key" label="API 密钥" type="password" placeholder="sk-xxx" />
-          </VCol>
-        </VRow>
-
-        <VRow align="center">
-          <VCol cols="12" md="6">
-            <VCombobox
-              v-model="config.openai_model"
-              :items="modelItems"
-              item-title="title"
-              item-value="value"
-              label="模型"
-              placeholder="inclusionAI/Ling-flash-2.0"
-            />
-          </VCol>
-          <VCol cols="12" md="6" class="api-actions">
-            <VBtn
-              color="primary"
-              variant="tonal"
-              prepend-icon="mdi-format-list-bulleted"
-              :loading="loadingModels"
-              :disabled="testingModel || !apiReady"
-              @click="fetchModels"
-            >
-              获取模型
-            </VBtn>
-            <VBtn
-              color="secondary"
-              variant="tonal"
-              prepend-icon="mdi-check-circle-outline"
-              :loading="testingModel"
-              :disabled="loadingModels || !apiReady"
-              @click="testModel"
-            >
-              测试模型
-            </VBtn>
-          </VCol>
-        </VRow>
-
-        <VRow>
-          <VCol cols="12" md="3">
-            <VSwitch v-model="config.openai_proxy" label="使用代理服务器" hide-details />
-          </VCol>
-          <VCol cols="12" md="3">
-            <VSwitch v-model="config.compatible" label="兼容模式" hide-details />
-          </VCol>
-          <VCol cols="12" md="6">
-            <VAlert
-              v-if="apiError || apiMessage"
-              class="api-feedback"
-              :type="apiError ? 'error' : 'success'"
-              variant="tonal"
-              density="compact"
-              :text="apiError || apiMessage"
-            />
-          </VCol>
-        </VRow>
-      </section>
+          </section>
 
       <section class="config-section">
         <div class="section-title">翻译参数</div>
@@ -323,7 +265,7 @@ function save() {
             <VTextField v-model="config.parallel_workers" label="并发线程数" placeholder="10" />
           </VCol>
         </VRow>
-      </section>
+          </section>
 
       <section class="config-section">
         <div class="section-title">Whisper 与输出</div>
@@ -365,7 +307,7 @@ function save() {
             <VSwitch v-model="config.proxy" label="使用代理下载模型" hide-details />
           </VCol>
         </VRow>
-      </section>
+          </section>
 
       <section class="config-section">
         <div class="section-title">路径</div>
@@ -389,7 +331,22 @@ function save() {
             />
           </VCol>
         </VRow>
-      </section>
+          </section>
+        </VWindowItem>
+
+        <VWindowItem value="api">
+          <ApiEndpointSettings
+            :api="api"
+            :plugin-base="pluginBase"
+            :endpoints="config.openai_endpoints"
+            :active-endpoint="config.openai_active_endpoint"
+            :fallback-enabled="config.openai_fallback_enabled"
+            @update:endpoints="updateEndpoints"
+            @update:active-endpoint="config.openai_active_endpoint = $event"
+            @update:fallback-enabled="config.openai_fallback_enabled = $event"
+          />
+        </VWindowItem>
+      </VWindow>
 
       <div class="config-footer">
         <VBtn variant="text" prepend-icon="mdi-format-list-bulleted" @click="emit('switch')">查看任务</VBtn>
@@ -411,6 +368,10 @@ function save() {
   padding: 18px;
 }
 
+.config-tabs {
+  padding-inline: 10px;
+}
+
 .config-section {
   margin-bottom: 20px;
 }
@@ -420,17 +381,6 @@ function save() {
   font-size: 13px;
   font-weight: 600;
   margin-bottom: 8px;
-}
-
-.api-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: center;
-}
-
-.api-feedback {
-  margin-top: 2px;
 }
 
 .config-footer {

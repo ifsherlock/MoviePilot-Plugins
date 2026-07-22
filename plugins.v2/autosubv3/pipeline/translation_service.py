@@ -11,7 +11,15 @@ from ..core.models import TranslationQualityException, UserInterruptException
 class TranslationService:
     @staticmethod
     def initial_stats() -> dict:
-        return {'total': 0, 'batch_success': 0, 'batch_fail': 0, 'line_fallback': 0, 'translated': 0, 'failed': 0}
+        return {
+            'total': 0,
+            'batch_success': 0,
+            'batch_fail': 0,
+            'line_fallback': 0,
+            'translated': 0,
+            'failed': 0,
+            'last_error': '',
+        }
 
     def __init__(
         self,
@@ -88,6 +96,11 @@ class TranslationService:
             max_retries = self._max_retries()
         return self._openai().translate_to_zh(text, context, max_retries=max_retries)
 
+    def _remember_api_error(self, value: Any) -> None:
+        error = re.sub(r"\s+", " ", str(value or "")).strip()
+        if error:
+            self._stats()['last_error'] = error[:500]
+
     def process_items(self, all_subs: list, items: list, process_batch=None, process_single=None) -> list:
         if self._enable_batch() and len(items) > 1:
             return (process_batch or self.process_batch)(all_subs, items)
@@ -132,6 +145,7 @@ class TranslationService:
             self._stats()['translated'] += 1
             return item
 
+        self._remember_api_error(trans)
         if self._output_mode() == 'chinese_only':
             item.content = "[翻译失败]"
         else:
@@ -154,6 +168,10 @@ class TranslationService:
                 f"翻译失败率过高：失败 {failed}/{total} 条（{failure_rate:.0%}），"
                 f"超过阈值 {threshold:.0%}，已停止输出字幕文件"
             )
+            api_error = self._stats().get('last_error') or getattr(self._openai(), "last_error", "")
+            api_error = re.sub(r"\s+", " ", str(api_error or "")).strip()
+            if api_error:
+                message += f"；最近 API 错误：{api_error[:500]}"
             self._logger.error(f"[翻译] {message}")
             raise TranslationQualityException(message)
         return translated, failed, failure_rate
@@ -250,6 +268,7 @@ class TranslationService:
                     stats["batch_ok"] += 1
                     stats["line_ok"] += len(translations)
                     return {gidx: batch_map[gidx] for gidx in indices}
+                self._remember_api_error(getattr(self._openai(), "last_error", ""))
             except UserInterruptException:
                 raise
             except Exception as e:
@@ -266,6 +285,7 @@ class TranslationService:
                     line_ok_count += 1
                     item.content = self.format_translated_content(item.content, trans)
                 else:
+                    self._remember_api_error(trans)
                     if self._output_mode() == 'chinese_only':
                         item.content = "[翻译失败]"
                     else:

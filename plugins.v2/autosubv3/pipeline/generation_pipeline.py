@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import traceback
 from typing import Any
@@ -12,6 +13,17 @@ class GenerationPipeline:
     def __init__(self, plugin, logger):
         self._plugin = plugin
         self._logger = logger
+
+    @staticmethod
+    def _compact_error(message: Any) -> str:
+        return re.sub(r"\s+", " ", str(message or "")).strip()[:800]
+
+    def _set_task_error(self, message: Any) -> str:
+        detail = self._compact_error(message) or "字幕生成失败，未返回具体原因"
+        task = getattr(self._plugin, "_current_processing_task", None)
+        if task:
+            task.error_message = detail
+        return detail
 
     def process_autosub(
         self,
@@ -29,7 +41,8 @@ class GenerationPipeline:
     ) -> TaskStatus:
         plugin = self._plugin
         if not video_file:
-            self._logger.error("[Step 0] video_file 为空")
+            detail = self._set_task_error("视频文件路径为空")
+            self._logger.error("[Step 0] %s", detail)
             return TaskStatus.FAILED
         self._logger.info(f"[Step 1] 检查文件大小：{video_file}")
         if os.path.getsize(video_file) < plugin._file_size * 1024 * 1024:
@@ -99,7 +112,11 @@ class GenerationPipeline:
                     if plugin._send_notify:
                         plugin.post_message(mtype=NotificationType.Plugin, title="【自动字幕生成】", text=message)
                     return TaskStatus.IGNORED
-                message = f" 媒体: {file_name}\n 生成字幕失败，跳过后续处理"
+                detail = self._set_task_error(
+                    "字幕源生成失败：未提取到可用外挂/内嵌字幕，ASR 也未生成有效字幕；请检查来源选择、音轨和 Whisper 配置"
+                )
+                self._logger.error("[Step 5] %s media=%s", detail, video_file)
+                message = f" 媒体: {file_name}\n {detail}"
                 if plugin._send_notify:
                     plugin.post_message(mtype=NotificationType.Plugin, title="【自动字幕生成】", text=message)
                 return TaskStatus.FAILED
@@ -158,9 +175,10 @@ class GenerationPipeline:
             self._logger.info("")
             return TaskStatus.CANCELLED
         except Exception as e:
-            self._logger.error(f"自动字幕生成 处理异常：{e}")
+            detail = self._set_task_error(f"{type(e).__name__}: {e}")
+            self._logger.error("自动字幕生成处理异常 media=%s error=%s", video_file, detail)
             end_time = time.time()
-            message = f" 媒体: {file_name}\n 处理失败\n 耗时：{round(end_time - start_time, 2)}秒"
+            message = f" 媒体: {file_name}\n 处理失败：{detail}\n 耗时：{round(end_time - start_time, 2)}秒"
             if plugin._send_notify:
                 plugin.post_message(mtype=NotificationType.Plugin, title="【自动字幕生成】", text=message)
             self._logger.error(traceback.format_exc())

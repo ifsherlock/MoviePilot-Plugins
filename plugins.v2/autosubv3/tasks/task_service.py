@@ -103,6 +103,11 @@ class TaskService:
             "independent_monitor_enabled": self._plugin._generation_mode != GenerationMode.FALLBACK.value and not monitor_taken_over,
             "independent_monitor_blocked_reason": "字幕匹配入库自动处理已启用" if monitor_taken_over else "",
             "message": message,
+            "api_endpoints": {
+                "configured": len(getattr(self._plugin, "_openai_endpoints", None) or []),
+                "active_endpoint": getattr(self._plugin, "_openai_active_endpoint", "") or "",
+                "fallback_enabled": bool(getattr(self._plugin, "_openai_fallback_enabled", False)),
+            },
             "counts": self.task_counts(),
             "updated_at": latest_time,
         }

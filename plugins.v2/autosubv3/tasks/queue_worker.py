@@ -177,7 +177,9 @@ class QueueWorker:
                 else:
                     task.status = result_status
                     task.complete_time = datetime.now()
-                    task.error_message = "" if task.status == TaskStatus.COMPLETED else self._status_message(task.status)
+                    task.error_message = "" if task.status == TaskStatus.COMPLETED else (
+                        task.error_message or self._status_message(task.status)
+                    )
                 self._tasks_provider()[task.task_id] = task
                 self._save_tasks()
                 self.task_queue.task_done()

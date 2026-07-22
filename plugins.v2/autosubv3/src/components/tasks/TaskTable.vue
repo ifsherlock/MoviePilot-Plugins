@@ -99,8 +99,14 @@ function sourceText(task) {
           <span v-if="task.output_name">输出：{{ task.output_name }}</span>
           <span>{{ task.add_time || '-' }}</span>
           <span>{{ task.complete_time || '-' }}</span>
-          <span v-if="task.message">{{ task.message }}</span>
         </div>
+        <VTooltip v-if="task.status === 'failed' && task.message" location="top" max-width="560">
+          <template #activator="{ props: tooltipProps }">
+            <div v-bind="tooltipProps" class="task-message task-message-error">{{ task.message }}</div>
+          </template>
+          <span>{{ task.message }}</span>
+        </VTooltip>
+        <div v-else-if="task.message" class="task-message">{{ task.message }}</div>
       </div>
       <div class="task-actions">
         <VBtn
@@ -179,6 +185,23 @@ function sourceText(task) {
   margin-top: 6px;
   color: rgba(var(--v-theme-on-surface), 0.58);
   font-size: 12px;
+}
+
+.task-message {
+  display: -webkit-box;
+  margin-top: 7px;
+  overflow: hidden;
+  color: rgba(var(--v-theme-on-surface), 0.68);
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.task-message-error {
+  color: rgb(var(--v-theme-error));
+  cursor: help;
 }
 
 .task-actions {

@@ -8,8 +8,9 @@ import queue
 import re
 import sys
 import tempfile
+import threading
 import types
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 
 
@@ -46,6 +47,8 @@ def load_plugin_module():
     )
 
     package_name = "autosubv3_cancel_testpkg"
+    translate_package = types.ModuleType(f"{package_name}.translate")
+    translate_package.__path__ = [str(package_dir / "translate")]
     modules = {
         "fastapi": types.SimpleNamespace(HTTPException=HTTPException, Request=object),
         "watchdog": types.ModuleType("watchdog"),
@@ -72,7 +75,7 @@ def load_plugin_module():
         "app.utils": types.ModuleType("app.utils"),
         "app.utils.system": types.SimpleNamespace(SystemUtils=object),
         f"{package_name}.ffmpeg": types.SimpleNamespace(Ffmpeg=object),
-        f"{package_name}.translate": types.ModuleType(f"{package_name}.translate"),
+        f"{package_name}.translate": translate_package,
         f"{package_name}.translate.openai_translate": types.SimpleNamespace(OpenAi=object),
     }
     for name, module in modules.items():
@@ -743,6 +746,53 @@ def test_force_generate_retries_video_marked_no_audio(tmp_path):
     assert (tmp_path / "Movie.chi&eng.aiasr.srt").exists()
 
 
+def test_generation_pipeline_keeps_source_failure_reason_on_task(tmp_path):
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    video.write_bytes(b"video")
+    plugin._current_processing_task = module.TaskItem(
+        task_id="source-failure",
+        video_file=str(video),
+        source=module.TaskSource.MANUAL,
+        add_time=module.datetime.now(),
+    )
+    plugin.is_video_skipped = lambda _path: False
+    plugin.is_video_skip_chinese = lambda _path: False
+    plugin._AutoSubv3__generate_subtitle = lambda *args, **kwargs: (False, "", None)
+
+    status = plugin._AutoSubv3__process_autosub(str(video), force_generate=True)
+
+    assert status == module.TaskStatus.FAILED
+    assert "字幕源生成失败" in plugin._current_processing_task.error_message
+    assert "Whisper 配置" in plugin._current_processing_task.error_message
+
+
+def test_generation_pipeline_keeps_exception_type_and_message_on_task(tmp_path):
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "Movie.mkv"
+    video.write_bytes(b"video")
+    plugin._current_processing_task = module.TaskItem(
+        task_id="api-failure",
+        video_file=str(video),
+        source=module.TaskSource.MANUAL,
+        add_time=module.datetime.now(),
+    )
+    plugin.is_video_skipped = lambda _path: False
+    plugin.is_video_skip_chinese = lambda _path: False
+
+    def fail_generation(*args, **kwargs):
+        raise RuntimeError("HTTP 401 invalid key")
+
+    plugin._AutoSubv3__generate_subtitle = fail_generation
+
+    status = plugin._AutoSubv3__process_autosub(str(video), force_generate=True)
+
+    assert status == module.TaskStatus.FAILED
+    assert plugin._current_processing_task.error_message == "RuntimeError: HTTP 401 invalid key"
+
+
 def test_prefer_audio_keeps_first_audio_when_no_default_or_language_match():
     module = load_plugin_module()
 
@@ -1060,7 +1110,12 @@ def test_openai_model_config_apis_use_form_payload():
         {"title": "z-model", "value": "z-model"},
     ]
     assert models["data"]["count"] == 2
-    assert test["data"] == {"model": "model-a", "reply": "OK"}
+    assert test["data"] == {
+        "model": "model-a",
+        "reply": "OK",
+        "endpoint_id": "",
+        "endpoint_name": "",
+    }
     assert created[0] == {
         "api_key": "sk-test",
         "api_url": "https://api.example.com",
@@ -1097,6 +1152,410 @@ def test_openai_model_test_requires_model_name():
         assert exc.detail == "请先填写或选择模型"
     else:
         raise AssertionError("api_test_model should reject empty model")
+
+
+def test_openai_model_config_apis_accept_endpoint_payload():
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    api_module = sys.modules[f"{module.__name__}.tasks.api"]
+    created = []
+
+    class FakeRequest:
+        async def json(self):
+            return {
+                "endpoint": {
+                    "id": "backup",
+                "name": "备用线路",
+                "api_url": "https://backup.example.com/v1",
+                "api_key": "sk-backup",
+                "model": {"title": "backup-model", "value": "backup-model"},
+                "use_proxy": False,
+                "compatible": True,
+                }
+            }
+
+    class FakeOpenAi:
+        def __init__(self, **kwargs):
+            created.append(kwargs)
+            self.model = kwargs.get("model") or ""
+
+        def list_models(self):
+            return ["backup-model"]
+
+        def test_model(self):
+            return "OK"
+
+    api_module.OpenAi = FakeOpenAi
+    api = plugin._get_task_api()
+
+    models = asyncio.run(api.api_models(FakeRequest()))
+    tested = asyncio.run(api.api_test_model(FakeRequest()))
+
+    assert models["data"]["endpoint_id"] == "backup"
+    assert models["data"]["endpoint_name"] == "备用线路"
+    assert tested["data"]["endpoint_id"] == "backup"
+    assert tested["data"]["model"] == "backup-model"
+    assert created[0]["api_url"] == "https://backup.example.com/v1"
+    assert created[0]["model"] is None
+    assert created[1]["model"] == "backup-model"
+    assert created[1]["compatible"] is True
+
+
+def test_openai_model_api_reports_sanitized_client_creation_error():
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    api_module = sys.modules[f"{module.__name__}.tasks.api"]
+
+    class FakeRequest:
+        async def json(self):
+            return {
+                "endpoint": {
+                    "api_url": "https://user:password@example.com/v1?token=sk-private",
+                    "api_key": "sk-private",
+                    "model": "model-a",
+                }
+            }
+
+    class BrokenOpenAi:
+        def __init__(self, **kwargs):
+            raise ValueError(f"invalid endpoint {kwargs['api_url']} with {kwargs['api_key']}")
+
+    api_module.OpenAi = BrokenOpenAi
+    api = plugin._get_task_api()
+
+    try:
+        asyncio.run(api.api_models(FakeRequest()))
+    except Exception as exc:
+        assert exc.status_code == 502
+        assert "sk-private" not in exc.detail
+        assert "user:password" not in exc.detail
+        assert "***" in exc.detail
+    else:
+        raise AssertionError("api_models should report client creation errors")
+
+
+def test_openai_endpoint_config_migrates_legacy_fields_and_keeps_compatibility_mirror():
+    module = load_plugin_module()
+    endpoint_module = sys.modules[f"{module.__name__}.translate.openai_endpoints"]
+    config = {
+        "openai_url": "https://legacy.example.com",
+        "openai_key": "sk-legacy",
+        "openai_model": "legacy-model",
+        "openai_proxy": True,
+        "compatible": True,
+    }
+
+    endpoints, active_id, fallback_enabled = endpoint_module.normalize_openai_endpoints(config)
+    changed = endpoint_module.apply_openai_endpoint_compatibility_fields(
+        config,
+        endpoints,
+        active_id,
+        fallback_enabled,
+    )
+
+    assert changed is True
+    assert active_id == "default"
+    assert fallback_enabled is True
+    assert endpoints == [
+        {
+            "id": "default",
+            "name": "默认线路",
+            "api_url": "https://legacy.example.com",
+            "api_key": "sk-legacy",
+            "model": "legacy-model",
+            "use_proxy": True,
+            "compatible": True,
+            "enabled": True,
+        }
+    ]
+    assert config["openai_endpoints"] == endpoints
+    assert config["openai_key"] == "sk-legacy"
+
+
+def test_openai_endpoint_config_repairs_object_model_values():
+    module = load_plugin_module()
+    endpoint_module = sys.modules[f"{module.__name__}.translate.openai_endpoints"]
+    config = {
+        "openai_endpoints": [
+            {
+                "id": "grok",
+                "name": "grok",
+                "api_url": "https://gateway.example.com/v1",
+                "api_key": "sk-test",
+                "model": "{'title': 'grok-4.5', 'value': 'grok-4.5'}",
+                "compatible": True,
+                "enabled": True,
+            }
+        ],
+        "openai_active_endpoint": "grok",
+    }
+
+    endpoints, active_id, fallback_enabled = endpoint_module.normalize_openai_endpoints(config)
+    endpoint_module.apply_openai_endpoint_compatibility_fields(config, endpoints, active_id, fallback_enabled)
+
+    assert endpoint_module.normalize_openai_model({"title": "LongCat-2.0", "value": "LongCat-2.0"}) == "LongCat-2.0"
+    assert endpoint_module.normalize_openai_model("{'title': 'grok-4.5', 'value': 'grok-4.5'}") == "grok-4.5"
+    assert endpoint_module.normalize_openai_model('[{"id": "model-a"}]') == "model-a"
+    assert endpoint_module.normalize_openai_model("[object Object]") == ""
+    assert endpoints[0]["model"] == "grok-4.5"
+    assert config["openai_model"] == "grok-4.5"
+    assert config["openai_endpoints"][0]["model"] == "grok-4.5"
+
+
+def test_openai_endpoint_pool_falls_back_and_cools_failed_primary():
+    module = load_plugin_module()
+    endpoint_module = sys.modules[f"{module.__name__}.translate.openai_endpoints"]
+    calls = []
+    clock = [100.0]
+
+    class FakeLogger:
+        def warning(self, *args):
+            pass
+
+        def error(self, *args):
+            pass
+
+        def info(self, *args):
+            pass
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            self.name = kwargs["endpoint_name"]
+            self.last_error = ""
+
+        def translate_to_zh(self, text, context=None, max_retries=3):
+            calls.append(self.name)
+            if self.name == "主线路":
+                self.last_error = "HTTP 401 invalid api key"
+                return False, self.last_error
+            return True, "翻译成功"
+
+        def translate_batch_to_zh(self, texts, max_retries=3):
+            return True, ["成功"] * len(texts)
+
+    endpoints = [
+        {"id": "primary", "name": "主线路", "api_url": "https://primary.example.com", "api_key": "k1", "model": "m1", "enabled": True},
+        {"id": "backup", "name": "备用线路", "api_url": "https://backup.example.com", "api_key": "k2", "model": "m2", "enabled": True},
+    ]
+    pool = endpoint_module.OpenAiEndpointPool(
+        endpoints,
+        active_id="primary",
+        fallback_enabled=True,
+        proxy=None,
+        logger=FakeLogger(),
+        client_factory=FakeClient,
+        time_func=lambda: clock[0],
+    )
+
+    first = pool.translate_to_zh("hello")
+    second = pool.translate_to_zh("again")
+
+    assert first == (True, "翻译成功")
+    assert second == (True, "翻译成功")
+    assert calls == ["主线路", "备用线路", "备用线路"]
+    assert pool.last_error == ""
+
+
+def test_openai_endpoint_pool_skips_client_that_failed_to_initialize():
+    module = load_plugin_module()
+    endpoint_module = sys.modules[f"{module.__name__}.translate.openai_endpoints"]
+    calls = []
+
+    class FakeLogger:
+        def warning(self, *args):
+            pass
+
+        def error(self, *args):
+            pass
+
+        def debug(self, *args):
+            pass
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            self.name = kwargs["endpoint_name"]
+            self.last_error = ""
+            if self.name == "损坏线路":
+                raise ValueError(f"bad endpoint {kwargs['api_url']} {kwargs['api_key']}")
+
+        def translate_to_zh(self, text, context=None, max_retries=3):
+            calls.append(self.name)
+            return True, "备用成功"
+
+        def translate_batch_to_zh(self, texts, max_retries=3):
+            return True, ["备用成功"] * len(texts)
+
+    endpoints = [
+        {
+            "id": "broken",
+            "name": "损坏线路",
+            "api_url": "https://bad.example.com?token=sk-bad",
+            "api_key": "sk-bad",
+            "model": "m1",
+            "enabled": True,
+        },
+        {
+            "id": "backup",
+            "name": "备用线路",
+            "api_url": "https://backup.example.com",
+            "api_key": "sk-backup",
+            "model": "m2",
+            "enabled": True,
+        },
+    ]
+    pool = endpoint_module.OpenAiEndpointPool(
+        endpoints,
+        active_id="broken",
+        fallback_enabled=True,
+        proxy=None,
+        logger=FakeLogger(),
+        client_factory=FakeClient,
+    )
+
+    assert pool.translate_to_zh("hello") == (True, "备用成功")
+    assert calls == ["备用线路"]
+
+
+def test_openai_endpoint_diagnostics_hide_url_credentials_and_api_key():
+    module = load_plugin_module()
+    endpoint_module = sys.modules[f"{module.__name__}.translate.openai_endpoints"]
+    diagnostics_module = sys.modules[f"{module.__name__}.translate.api_diagnostics"]
+    warnings = []
+
+    class FakeLogger:
+        def warning(self, *args):
+            warnings.append(args)
+
+        def error(self, *args):
+            pass
+
+        def debug(self, *args):
+            pass
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            self.last_error = ""
+
+        def translate_to_zh(self, text, context=None, max_retries=3):
+            self.last_error = "request rejected for sk-secret"
+            return False, self.last_error
+
+        def translate_batch_to_zh(self, texts, max_retries=3):
+            return False, [None] * len(texts)
+
+    endpoint = {
+        "id": "primary",
+        "name": "主线路",
+        "api_url": "https://user:password@example.com/v1?api_key=sk-secret#debug",
+        "api_key": "sk-secret",
+        "model": "model-a",
+        "enabled": True,
+    }
+    pool = endpoint_module.OpenAiEndpointPool(
+        [endpoint],
+        active_id="primary",
+        fallback_enabled=True,
+        proxy=None,
+        logger=FakeLogger(),
+        client_factory=FakeClient,
+    )
+
+    success, error = pool.translate_to_zh("hello")
+
+    assert success is False
+    assert "sk-secret" not in error
+    assert "***" in error
+    assert diagnostics_module.safe_api_url(endpoint["api_url"]) == "https://example.com/v1"
+    assert diagnostics_module.safe_api_url("https://user:pass@example.com:bad/v1?secret=yes") == "https://example.com:bad/v1"
+    rendered_warning = " ".join(str(item) for item in warnings[0])
+    assert "user:password" not in rendered_warning
+    assert "api_key=" not in rendered_warning
+
+
+def test_queue_worker_preserves_specific_failure_message():
+    module = load_plugin_module()
+    queue_module = sys.modules[f"{module.__name__}.tasks.queue_worker"]
+    event = threading.Event()
+    task = module.TaskItem(
+        task_id="task-error",
+        video_file="/media/Movie.mkv",
+        source=module.TaskSource.MANUAL,
+        add_time=datetime.now(),
+    )
+    tasks = {task.task_id: task}
+
+    def process_task(*args, **kwargs):
+        worker.current_task.error_message = "备用线路：HTTP 429 rate limit"
+        return module.TaskStatus.FAILED
+
+    def save_tasks():
+        if tasks[task.task_id].status == module.TaskStatus.FAILED:
+            event.set()
+
+    worker = queue_module.QueueWorker(
+        event,
+        lambda: tasks,
+        save_tasks,
+        process_task,
+        lambda status: "字幕生成失败，请查看日志",
+        types.SimpleNamespace(info=lambda *args: None, warning=lambda *args: None, error=lambda *args: None),
+        task_queue=queue.Queue(),
+    )
+    worker.task_queue.put(task)
+
+    worker.consume()
+
+    assert task.status == module.TaskStatus.FAILED
+    assert task.error_message == "备用线路：HTTP 429 rate limit"
+
+
+def test_autosub_config_uses_parallel_basic_and_api_tabs():
+    root = Path(__file__).resolve().parents[1]
+    config_source = (root / "plugins.v2" / "autosubv3" / "src" / "components" / "Config.vue").read_text(encoding="utf-8")
+    endpoint_source = (
+        root / "plugins.v2" / "autosubv3" / "src" / "components" / "config" / "ApiEndpointSettings.vue"
+    ).read_text(encoding="utf-8")
+    task_table_source = (
+        root / "plugins.v2" / "autosubv3" / "src" / "components" / "tasks" / "TaskTable.vue"
+    ).read_text(encoding="utf-8")
+
+    assert '<VTab value="basic"' in config_source
+    assert '<VTab value="api"' in config_source
+    assert "ApiEndpointSettings" in config_source
+    assert "openai_endpoints" in config_source
+    assert "openai_active_endpoint" in config_source
+    assert "自动 fallback" in endpoint_source
+    assert "添加线路" in endpoint_source
+    assert "获取模型" in endpoint_source
+    assert "测试 API" in endpoint_source
+    assert "moveEndpoint" in endpoint_source
+    assert "toggleEndpoint" in endpoint_source
+    assert "normalizeModelValue" in endpoint_source
+    assert "map(normalizeModelValue)" in endpoint_source
+    assert 'item-title="title"' not in endpoint_source
+    assert "至少保留一条启用线路" in endpoint_source
+    assert "task-message-error" in task_table_source
+    assert "VTooltip" in task_table_source
+
+
+def test_autosub_release_metadata_versions_match():
+    root = Path(__file__).resolve().parents[1]
+    module = load_plugin_module()
+    package = json.loads((root / "package.json").read_text(encoding="utf-8"))
+    package_v2 = json.loads((root / "package.v2.json").read_text(encoding="utf-8"))
+    plugin_package = json.loads(
+        (root / "plugins.v2" / "autosubv3" / "package.json").read_text(encoding="utf-8")
+    )
+    readme = (root / "plugins.v2" / "autosubv3" / "README.md").read_text(encoding="utf-8")
+    version = module.AutoSubv3.plugin_version
+
+    assert version == "3.5.59"
+    assert package["AutoSubv3"]["version"] == version
+    assert package_v2["AutoSubv3"]["version"] == version
+    assert plugin_package["version"] == version
+    assert f"v{version}" in package["AutoSubv3"]["history"]
+    assert f"v{version}" in package_v2["AutoSubv3"]["history"]
+    assert f"## v{version} 更新" in readme
 
 
 def test_task_api_payload_keeps_frontend_contract(tmp_path):
@@ -1251,6 +1710,7 @@ def test_translation_high_failure_rate_blocks_subtitle_output():
                 "batch_success": 0,
                 "batch_fail": 1,
                 "line_fallback": 6,
+                "last_error": "主线路：HTTP 429 rate limit",
             }
         )
         return valid_subs
@@ -1265,6 +1725,7 @@ def test_translation_high_failure_rate_blocks_subtitle_output():
         plugin._AutoSubv3__translate_zh_subtitle("en", "source.srt", "dest.srt")
     except module.TranslationQualityException as exc:
         assert "40%" in str(exc)
+        assert "HTTP 429 rate limit" in str(exc)
     else:
         raise AssertionError("high translation failure rate should block subtitle output")
 

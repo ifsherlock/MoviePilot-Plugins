@@ -34,7 +34,12 @@ from .storage.task_store import TaskStore
 from .tasks.api import AutoSubTaskApi
 from .tasks.queue_worker import QueueWorker
 from .tasks.task_service import TaskService
-from .translate.openai_translate import OpenAi
+from .translate.openai_endpoints import (
+    OpenAiEndpointPool,
+    apply_openai_endpoint_compatibility_fields,
+    configured_openai_endpoints,
+    normalize_openai_endpoints,
+)
 
 try:
     from app.core.plugin import PluginManager
@@ -52,7 +57,7 @@ class AutoSubv3(AutoSubv3CompatMixin, _PluginBase):
     # 主题色
     plugin_color = "#2C4F7E"
     # 插件版本
-    plugin_version = "3.5.57"
+    plugin_version = "3.5.59"
     # 插件作者
     plugin_author = "ifsherlock"
     # 作者主页
@@ -82,6 +87,9 @@ class AutoSubv3(AutoSubv3CompatMixin, _PluginBase):
     _file_size = None
     _translate_zh = None
     _openai = None
+    _openai_endpoints = None
+    _openai_active_endpoint = None
+    _openai_fallback_enabled = None
     _enable_batch = None
     _batch_size = None
     _parallel_workers = None
@@ -148,18 +156,33 @@ class AutoSubv3(AutoSubv3CompatMixin, _PluginBase):
         self._max_segment_duration = float(config.get('max_segment_duration')) if config.get('max_segment_duration') else 8.0
         self._max_segment_chars = int(config.get('max_segment_chars')) if config.get('max_segment_chars') else 50
         self._translate_zh = config.get('translate_zh', False)
+        self._openai_endpoints, self._openai_active_endpoint, self._openai_fallback_enabled = normalize_openai_endpoints(config)
+        if apply_openai_endpoint_compatibility_fields(
+            config,
+            self._openai_endpoints,
+            self._openai_active_endpoint,
+            self._openai_fallback_enabled,
+        ):
+            self.update_config(config)
+        self._openai = None
         if self._translate_zh:
-            openai_key = config.get('openai_key')
-            if not openai_key:
-                logger.error(f"翻译依赖于OpenAI，请先维护openai_key")
+            configured_endpoints = configured_openai_endpoints(self._openai_endpoints)
+            if not configured_endpoints:
+                logger.error("翻译依赖于 AI API，请至少配置一个已启用且包含 URL、密钥和模型的端点")
                 return
-            openai_url = config.get('openai_url', "https://api.openai.com")
-            openai_proxy = config.get('openai_proxy', False)
-            openai_model = config.get('openai_model', "inclusionAI/Ling-flash-2.0")
-            compatible = config.get('compatible', False)
-            self._openai = OpenAi(api_key=openai_key, api_url=openai_url,
-                                  proxy=settings.PROXY if openai_proxy else None,
-                                  model=openai_model, compatible=bool(compatible))
+            self._openai = OpenAiEndpointPool(
+                configured_endpoints,
+                active_id=self._openai_active_endpoint,
+                fallback_enabled=self._openai_fallback_enabled,
+                proxy=settings.PROXY,
+                logger=logger,
+            )
+            logger.info(
+                "[AutoSubv3] AI API 端点已加载 count=%s primary=%s fallback=%s",
+                self._openai.endpoint_count,
+                self._openai_active_endpoint,
+                self._openai_fallback_enabled,
+            )
             self._enable_batch = config.get('enable_batch', True)
             self._batch_size = int(config.get('batch_size')) if config.get('batch_size') else 20
             self._parallel_workers = int(config.get('parallel_workers')) if config.get('parallel_workers') else 10

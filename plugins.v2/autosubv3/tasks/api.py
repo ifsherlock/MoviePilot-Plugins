@@ -4,6 +4,8 @@ from typing import Any, Dict, List
 from fastapi import HTTPException, Request
 
 from ..core.models import OverwritePolicy, SourcePolicy, TaskSource, TriggerType
+from ..translate.api_diagnostics import sanitize_api_error
+from ..translate.openai_endpoints import normalize_openai_model
 from ..translate.openai_translate import OpenAi
 
 try:
@@ -149,30 +151,46 @@ class AutoSubTaskApi:
 
     async def api_models(self, request: Request) -> Dict[str, Any]:
         body = await request.json()
-        client = self._build_openai_client(body, require_model=False)
+        endpoint = self._endpoint_payload(body)
         try:
+            client = self._build_openai_client(endpoint, require_model=False)
             model_ids = sorted(set(client.list_models()))
+        except HTTPException:
+            raise
         except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"获取模型列表失败：{exc}")
+            raise HTTPException(
+                status_code=502,
+                detail=f"获取模型列表失败：{sanitize_api_error(exc, endpoint.get('api_key'), endpoint.get('api_url'))}",
+            )
         return self._plugin._ok(
             {
                 "models": [{"title": item, "value": item} for item in model_ids],
                 "count": len(model_ids),
+                "endpoint_id": self._plugin._normalize_text(endpoint.get("id")),
+                "endpoint_name": self._plugin._normalize_text(endpoint.get("name")),
             },
             message=f"已获取 {len(model_ids)} 个模型",
         )
 
     async def api_test_model(self, request: Request) -> Dict[str, Any]:
         body = await request.json()
-        client = self._build_openai_client(body, require_model=True)
+        endpoint = self._endpoint_payload(body)
         try:
+            client = self._build_openai_client(endpoint, require_model=True)
             reply = client.test_model()
+        except HTTPException:
+            raise
         except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"模型测试失败：{exc}")
+            raise HTTPException(
+                status_code=502,
+                detail=f"模型测试失败：{sanitize_api_error(exc, endpoint.get('api_key'), endpoint.get('api_url'))}",
+            )
         return self._plugin._ok(
             {
                 "model": client.model,
                 "reply": reply,
+                "endpoint_id": self._plugin._normalize_text(endpoint.get("id")),
+                "endpoint_name": self._plugin._normalize_text(endpoint.get("name")),
             },
             message=f"模型 {client.model} 可用",
         )
@@ -195,16 +213,17 @@ class AutoSubTaskApi:
         return self._plugin._ok(self._plugin.tasks_payload(paths=list(filter_paths), limit=limit))
 
     def _build_openai_client(self, body: Dict[str, Any], require_model: bool) -> OpenAi:
-        api_key = self._plugin._normalize_text(body.get("openai_key"))
-        api_url = self._plugin._normalize_text(body.get("openai_url")) or "https://api.openai.com"
-        model = self._plugin._normalize_text(body.get("openai_model"))
+        api_key = self._plugin._normalize_text(body.get("api_key") or body.get("openai_key"))
+        api_url = self._plugin._normalize_text(body.get("api_url") or body.get("openai_url")) or "https://api.openai.com"
+        model = normalize_openai_model(body.get("model") or body.get("openai_model"))
         if not api_key:
             raise HTTPException(status_code=400, detail="请先填写 API 密钥")
         if not api_url:
             raise HTTPException(status_code=400, detail="请先填写 API URL")
         if require_model and not model:
             raise HTTPException(status_code=400, detail="请先填写或选择模型")
-        proxy = getattr(settings, "PROXY", None) if body.get("openai_proxy") and settings else None
+        use_proxy = body.get("use_proxy") if "use_proxy" in body else body.get("openai_proxy")
+        proxy = getattr(settings, "PROXY", None) if use_proxy and settings else None
         return OpenAi(
             api_key=api_key,
             api_url=api_url.rstrip("/"),
@@ -212,3 +231,10 @@ class AutoSubTaskApi:
             model=model if require_model else None,
             compatible=bool(body.get("compatible")),
         )
+
+    @staticmethod
+    def _endpoint_payload(body: Any) -> Dict[str, Any]:
+        if not isinstance(body, dict):
+            return {}
+        endpoint = body.get("endpoint")
+        return endpoint if isinstance(endpoint, dict) else body
