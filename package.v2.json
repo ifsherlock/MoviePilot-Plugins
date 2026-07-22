@@ -41,7 +41,7 @@
         "name": "海拉鲁字幕大师",
         "description": "海拉鲁字幕大师，脱胎自 ChineseSubFinder；支持手动上传字幕、ZIP/RAR/7Z，选择本地电影/剧集后自动匹配并按媒体文件名落盘；网盘挂载暂不保证完整可用性。",
         "labels": "字幕,ChineseSubFinder,媒体库,整理",
-        "version": "0.1.83",
+        "version": "0.1.84",
         "icon": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/hyrule-subtitle-master.png",
         "author": "ifsherlock",
         "author_url": "https://github.com/ifsherlock",
@@ -49,6 +49,7 @@
         "system_version": ">=2.13.5",
         "release": true,
         "history": {
+            "v0.1.84": "修复批量 AI 来源选择和当前资源任务队列入口；自动入库队列增加长错误省略、1970 时间修正、失败重试、清空历史与低可信强制入库；修复 SubHD 将无结果页热门榜单误识别为搜索结果导致“揭秘日”返回“奥德赛”，并适配 data-sid 新版下载准备流程",
             "v0.1.83": "优化匹配历史加载：快照分页即时返回、后台单实例刷新并按目录批量扫描字幕；整理主界面层级，自动入库队列移至刷新按钮左侧并统一桌面与手机端文案",
             "v0.1.82": "字幕匹配插件品牌升级为海拉鲁字幕大师，启用全新像素风图标；项目脱胎自 ChineseSubFinder，现有插件 ID、配置和功能保持兼容",
             "v0.1.81": "优化字幕匹配手机网页：简化在线与搜索入口，补齐上传和返回操作，匹配历史标题支持两行截断，外挂字幕数改为圆形徽标",

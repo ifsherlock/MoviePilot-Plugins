@@ -424,6 +424,45 @@ def test_subhd_prefers_douban_id_and_parses_subtitle_rows():
     assert results[0].download_url.startswith("subhd-page:")
 
 
+def test_subhd_keyword_search_ignores_unrelated_popular_detail_links():
+    module = load_online_module()
+    search_html = """
+    <a class="link-dark" href="/d/36808876">1 奥德赛<br>The Odyssey</a>
+    <a class="link-dark" href="/d/37450627">2 痴迷<br>Obsession</a>
+    """
+    fetcher = FakeWebFetcher({"/search/": search_html})
+    provider = module.SubHDProvider(fetcher)
+
+    results = provider.search(
+        "Non-View 2026",
+        [{"media_type": "movie", "title": "Disclosure Day", "year": "2026"}],
+        "movie",
+    )
+
+    assert results == []
+    assert len(fetcher.requested) == 1
+    assert not any("/d/36808876" in url for url in fetcher.requested)
+
+
+def test_subhd_keyword_search_prefers_direct_subtitle_rows():
+    module = load_online_module()
+    search_html = """
+    <a href="/d/36860212"><img alt="揭秘日 Disclosure Day"></a>
+    <a class="link-dark" href="/a/vlSDLm">Disclosure.Day.2026.2160p 简体中文字幕</a>
+    """
+    fetcher = FakeWebFetcher({"/search/": search_html})
+    provider = module.SubHDProvider(fetcher)
+
+    results = provider.search(
+        "揭秘日",
+        [{"media_type": "movie", "title": "揭秘日", "original_title": "Disclosure Day", "year": "2026"}],
+        "movie",
+    )
+
+    assert [item.result_id for item in results] == ["vlSDLm"]
+    assert len(fetcher.requested) == 1
+
+
 def test_subhd_download_uses_api_html_url_fallback():
     module = load_online_module()
 
@@ -479,6 +518,44 @@ def test_subhd_download_falls_back_to_down_page_href_when_api_url_empty():
 
     assert filename == "from-page.zip"
     assert content.startswith(b"PK\x03\x04")
+
+
+def test_subhd_download_prepares_new_data_sid_button():
+    module = load_online_module()
+
+    class PreparedSubHDFetcher(FakeWebFetcher):
+        def __init__(self):
+            super().__init__()
+            self.posts = []
+
+        def get_text(self, url, *, referer=""):
+            self.requested.append(url)
+            if "/a/vlSDLm" in url:
+                return 200, '<button class="subtitle-prepare-download" data-sid="vlSDLm">下载字幕文件</button>', url
+            if "/down/vlSDLm" in url:
+                return 200, "<html></html>", url
+            return 404, "", url
+
+        def post_json(self, url, payload, *, referer=""):
+            self.posts.append((url, payload, referer))
+            if url.endswith("/api/sub/prepare-download"):
+                return {"success": True, "url": "/down/vlSDLm"}
+            if url.endswith("/api/sub/down"):
+                return {"success": True, "pass": True, "url": "/download/subtitle.zip"}
+            raise AssertionError(f"unexpected SubHD API: {url}")
+
+    fetcher = PreparedSubHDFetcher()
+    provider = module.SubHDProvider(fetcher)
+
+    filename, content = provider.download({"page_url": "https://subhd.tv/a/vlSDLm"})
+
+    assert filename == "subtitle.zip"
+    assert content.startswith(b"PK\x03\x04")
+    assert [item[0] for item in fetcher.posts] == [
+        "https://subhd.tv/api/sub/prepare-download",
+        "https://subhd.tv/api/sub/down",
+    ]
+    assert fetcher.posts[0][1] == {"sid": "vlSDLm"}
 
 
 def test_zimuku_searches_candidates_and_filters_episode():

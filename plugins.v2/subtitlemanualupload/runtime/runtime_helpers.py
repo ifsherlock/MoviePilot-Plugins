@@ -58,7 +58,10 @@ def decode_preview_bytes(raw_bytes: bytes) -> str:
 
 def timestamp_iso(ts: Any) -> str:
     try:
-        return datetime.fromtimestamp(float(ts)).isoformat(timespec="seconds")
+        value = float(ts)
+        if value <= 0:
+            return ""
+        return datetime.fromtimestamp(value).isoformat(timespec="seconds")
     except Exception:
         return ""
 

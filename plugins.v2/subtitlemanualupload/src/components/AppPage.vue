@@ -155,17 +155,22 @@ const {
 const {
   autoTransferQueue,
   autoQueueDialog,
+  autoQueueMutating,
+  autoQueueActionTaskId,
   autoQueueSummary,
   autoQueueTasks,
   autoQueueSummaryText,
   applyAutoTransferSummary,
   stopAutoQueuePolling,
   loadAutoTransferQueue,
+  retryAutoTransferTask,
+  clearAutoTransferHistory,
 } = useAutoTransferQueue({
   pluginApi,
   unwrapResponse,
   errorMessage,
   error,
+  message,
 })
 
 const {
@@ -375,6 +380,7 @@ const {
   aiBatchLabel,
   aiSummaryText,
   aiDialogTasks,
+  aiDialogHasScopeTargets,
   aiDialogHasExistingTasks,
   aiDialogHasActiveTasks,
   aiDialogSelectedAllowedTasks,
@@ -395,6 +401,7 @@ const {
   aiTaskIconForTask,
   aiStatusText,
   focusAiStatusStrip,
+  openAiTaskDialog,
   openBatchAiGenerate,
   cancelBatchAiGenerate,
   cancelDialogAiTasks,
@@ -1064,7 +1071,12 @@ defineExpose({
       :auto-queue-summary-text="autoQueueSummaryText"
       :auto-transfer-queue="autoTransferQueue"
       :auto-queue-tasks="autoQueueTasks"
+      :auto-queue-mutating="autoQueueMutating"
+      :auto-queue-action-task-id="autoQueueActionTaskId"
       @load-auto-transfer-queue="loadAutoTransferQueue"
+      @retry-auto-transfer-task="retryAutoTransferTask"
+      @force-auto-transfer-task="task => retryAutoTransferTask(task, { forceLowConfidence: true })"
+      @clear-auto-transfer-history="clearAutoTransferHistory"
     />
 
   <AiTaskDialog
@@ -1080,6 +1092,7 @@ defineExpose({
       :ai-cancelling="aiCancelling"
       :ai-available="aiAvailable"
       :ai-dialog-tasks="aiDialogTasks"
+      :ai-dialog-has-scope-targets="aiDialogHasScopeTargets"
       :ai-dialog-has-existing-tasks="aiDialogHasExistingTasks"
       :ai-dialog-selected-allowed-tasks="aiDialogSelectedAllowedTasks"
       :ai-submitting="aiSubmitting"

@@ -157,6 +157,54 @@ class AutoTransferQueue:
             owner._auto_transfer_tasks.move_to_end(task_id)
             self.trim_locked()
 
+    def retry_task(self, task_id: str, *, force_low_confidence: bool = False) -> bool:
+        owner = self._owner
+        with owner._transfer_auto_lock:
+            task = (owner._auto_transfer_tasks or OrderedDict()).get(task_id)
+            if not task or task.get("status") not in {"failed", "skipped"}:
+                return False
+            if force_low_confidence and not (
+                task.get("status") == "failed" and "低可信" in str(task.get("message") or "")
+            ):
+                return False
+            entry = owner._json_clone(task.get("entry") or {})
+            if not entry:
+                return False
+            if force_low_confidence:
+                entry["_force_timeline_write"] = True
+            else:
+                entry.pop("_force_timeline_write", None)
+            now = self._time.time()
+            task.update(
+                {
+                    "entry": entry,
+                    "group_key": task.get("entry_key") if force_low_confidence else task.get("group_key"),
+                    "status": "pending",
+                    "active": True,
+                    "message": "等待重新处理自动入库字幕",
+                    "result": {},
+                    "updated_ts": now,
+                    "next_run_ts": 0,
+                    "retry_count": int(task.get("retry_count") or 0) + 1,
+                }
+            )
+            owner._auto_transfer_tasks.move_to_end(task_id)
+        if self._ensure_worker:
+            self._ensure_worker()
+        return True
+
+    def clear_history(self) -> int:
+        owner = self._owner
+        with owner._transfer_auto_lock:
+            removable = [
+                task_id
+                for task_id, task in (owner._auto_transfer_tasks or OrderedDict()).items()
+                if task.get("status") not in AUTO_TRANSFER_ACTIVE_STATUSES
+            ]
+            for task_id in removable:
+                owner._auto_transfer_tasks.pop(task_id, None)
+        return len(removable)
+
     def claim_next_batch(self) -> Tuple[List[Dict[str, Any]], float]:
         owner = self._owner
         with owner._transfer_auto_lock:

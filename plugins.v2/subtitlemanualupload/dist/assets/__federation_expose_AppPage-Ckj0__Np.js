@@ -209,6 +209,12 @@ function createSubtitleManualUploadApi(api, pluginBase) {
     autoTransferQueue() {
       return get('/auto_transfer_queue')
     },
+    retryAutoTransferTask(payload) {
+      return post('/auto_transfer_queue/retry', payload)
+    },
+    clearAutoTransferHistory(payload = {}) {
+      return post('/auto_transfer_queue/clear_history', payload)
+    },
     onlineStatus() {
       return get('/online_status')
     },
@@ -355,6 +361,7 @@ function useAiTasks({
     }
     return aiTaskData.value.tasks || []
   });
+  const aiDialogHasScopeTargets = computed$d(() => aiTaskScopeTargets.value.length > 0);
   const aiDialogHasExistingTasks = computed$d(() => Boolean(aiDialogTasks.value.length));
   const aiDialogActiveTasks = computed$d(() => aiDialogTasks.value.filter(task => isAiTaskActive(task)));
   const aiDialogHasActiveTasks = computed$d(() => aiDialogActiveTasks.value.length > 0);
@@ -525,14 +532,14 @@ function useAiTasks({
     return task.message || task.status_label || task.status
   }
 
-  function openAiTaskDialog(target = null) {
+  function openAiTaskDialog(target = null, options = {}) {
     aiTaskDialogTarget.value = target;
     aiRestartSubtitlePath.value = '';
     aiSelectedTaskIds.value = [];
     aiTaskDialog.value = true;
-    const scopeTargets = target
-      ? [target]
-      : (aiTaskScopeTargets.value.length ? aiTaskScopeTargets.value : visibleTargets.value);
+    const scopeTargets = Array.isArray(options.targets) && options.targets.length
+      ? options.targets
+      : (target ? [target] : visibleTargets.value);
     aiTaskScopeTargets.value = scopeTargets;
     const existingTasks = target
       ? (aiTaskForTarget(target) ? [aiTaskForTarget(target)] : [])
@@ -627,7 +634,7 @@ function useAiTasks({
   }
 
   function openBatchAiGenerate() {
-    submitAiForTargets(batchUploadTargets.value);
+    openAiTaskDialog(null, { targets: batchUploadTargets.value });
   }
 
   function cancelBatchAiGenerate() {
@@ -635,7 +642,9 @@ function useAiTasks({
   }
 
   function cancelDialogAiTasks() {
-    const scopeTargets = aiTaskDialogTarget.value ? [aiTaskDialogTarget.value] : visibleTargets.value;
+    const scopeTargets = aiTaskDialogTarget.value
+      ? [aiTaskDialogTarget.value]
+      : (aiTaskScopeTargets.value.length ? aiTaskScopeTargets.value : visibleTargets.value);
     cancelAiForTargets(scopeTargets);
   }
 
@@ -734,6 +743,7 @@ function useAiTasks({
     aiBatchLabel,
     aiSummaryText,
     aiDialogTasks,
+    aiDialogHasScopeTargets,
     aiDialogHasExistingTasks,
     aiDialogActiveTasks,
     aiDialogHasActiveTasks,
@@ -795,9 +805,12 @@ function useAutoTransferQueue({
   unwrapResponse,
   errorMessage,
   error,
+  message,
 }) {
   const autoTransferQueue = ref$e(createEmptyAutoTransferQueue());
   const autoQueueDialog = ref$e(false);
+  const autoQueueMutating = ref$e(false);
+  const autoQueueActionTaskId = ref$e('');
   let autoQueueTimer = null;
 
   const autoQueueSummary = computed$c(() => autoTransferQueue.value?.summary || {});
@@ -842,9 +855,50 @@ function useAutoTransferQueue({
     }
   }
 
+  async function retryAutoTransferTask(task, options = {}) {
+    if (!task?.id || autoQueueMutating.value) return
+    const forceLowConfidence = Boolean(options.forceLowConfidence);
+    if (forceLowConfidence && !window.confirm('确认无视智能调轴低可信结果，强制重新处理并直接入库？')) return
+    autoQueueMutating.value = true;
+    autoQueueActionTaskId.value = task.id;
+    error.value = '';
+    try {
+      const response = await pluginApi.value.retryAutoTransferTask({
+        task_id: task.id,
+        force_low_confidence: forceLowConfidence,
+      });
+      autoTransferQueue.value = unwrapResponse(response) || autoTransferQueue.value;
+      message.value = response?.message || (forceLowConfidence ? '已强制重试自动入库任务' : '已重试自动入库任务');
+      scheduleAutoQueuePolling();
+    } catch (err) {
+      error.value = errorMessage(err, '重试自动入库任务失败');
+    } finally {
+      autoQueueMutating.value = false;
+      autoQueueActionTaskId.value = '';
+    }
+  }
+
+  async function clearAutoTransferHistory() {
+    if (autoQueueMutating.value) return
+    if (!window.confirm('确认清空已完成、已跳过和失败的自动入库历史任务？正在处理的任务会保留。')) return
+    autoQueueMutating.value = true;
+    error.value = '';
+    try {
+      const response = await pluginApi.value.clearAutoTransferHistory();
+      autoTransferQueue.value = unwrapResponse(response) || autoTransferQueue.value;
+      message.value = response?.message || '已清空自动入库历史任务';
+    } catch (err) {
+      error.value = errorMessage(err, '清空自动入库历史失败');
+    } finally {
+      autoQueueMutating.value = false;
+    }
+  }
+
   return {
     autoTransferQueue,
     autoQueueDialog,
+    autoQueueMutating,
+    autoQueueActionTaskId,
     autoQueueSummary,
     autoQueueTasks,
     autoQueueActive,
@@ -853,6 +907,8 @@ function useAutoTransferQueue({
     stopAutoQueuePolling,
     scheduleAutoQueuePolling,
     loadAutoTransferQueue,
+    retryAutoTransferTask,
+    clearAutoTransferHistory,
   }
 }
 
@@ -2955,10 +3011,10 @@ const _hoisted_3$c = {
   class: "ai-task-list"
 };
 const _hoisted_4$b = { class: "ai-task-badge" };
-const _hoisted_5$9 = { class: "ai-task-main" };
-const _hoisted_6$8 = { key: 0 };
-const _hoisted_7$8 = { class: "ai-task-time" };
-const _hoisted_8$7 = {
+const _hoisted_5$a = { class: "ai-task-main" };
+const _hoisted_6$9 = { key: 0 };
+const _hoisted_7$9 = { class: "ai-task-time" };
+const _hoisted_8$8 = {
   key: 3,
   class: "empty-state"
 };
@@ -2978,6 +3034,7 @@ const _sfc_main$d = {
   aiCancelling: { type: Boolean, default: false },
   aiAvailable: { type: Boolean, default: false },
   aiDialogTasks: { type: Array, default: () => [] },
+  aiDialogHasScopeTargets: { type: Boolean, default: false },
   aiDialogHasExistingTasks: { type: Boolean, default: false },
   aiDialogSelectedAllowedTasks: { type: Array, default: () => [] },
   aiSubmitting: { type: Boolean, default: false },
@@ -3060,7 +3117,7 @@ return (_ctx, _cache) => {
                       _: 1
                     }, 8, ["loading"]))
                   : _createCommentVNode$d("", true),
-                (__props.aiAvailable && (__props.aiTaskDialogTarget || __props.aiDialogTasks.length))
+                (__props.aiAvailable && (__props.aiDialogHasScopeTargets || __props.aiTaskDialogTarget || __props.aiDialogTasks.length))
                   ? (_openBlock$d(), _createBlock$d(_component_VBtn, {
                       key: 1,
                       variant: "tonal",
@@ -3110,7 +3167,7 @@ return (_ctx, _cache) => {
                     text: aiStatusDetail.value
                   }, null, 8, ["text"]))
                 : _createCommentVNode$d("", true),
-              (__props.aiAvailable && (__props.aiTaskDialogTarget || __props.aiDialogTasks.length))
+              (__props.aiAvailable && (__props.aiDialogHasScopeTargets || __props.aiTaskDialogTarget || __props.aiDialogTasks.length))
                 ? (_openBlock$d(), _createElementBlock$d("div", _hoisted_2$c, [
                     _createVNode$c(_component_VSelect, {
                       "model-value": __props.aiRestartSourcePolicy,
@@ -3157,15 +3214,15 @@ return (_ctx, _cache) => {
                             icon: __props.aiTaskIconForTask(task)
                           }, null, 8, ["icon"])
                         ]),
-                        _createElementVNode$d("div", _hoisted_5$9, [
+                        _createElementVNode$d("div", _hoisted_5$a, [
                           _createElementVNode$d("strong", null, _toDisplayString$b(task.target_label || task.video_name), 1),
                           _createElementVNode$d("span", null, _toDisplayString$b(task.source_asset_name || task.source_subtitle_name ? `字幕源：${task.source_asset_name || task.source_subtitle_name}` : (task.resolved_source_label || task.source_policy_label || task.video_name)), 1),
                           (task.output_name)
-                            ? (_openBlock$d(), _createElementBlock$d("span", _hoisted_6$8, "输出：" + _toDisplayString$b(task.output_name), 1))
+                            ? (_openBlock$d(), _createElementBlock$d("span", _hoisted_6$9, "输出：" + _toDisplayString$b(task.output_name), 1))
                             : _createCommentVNode$d("", true),
                           _createElementVNode$d("p", null, _toDisplayString$b(__props.aiStatusText(task)), 1)
                         ]),
-                        _createElementVNode$d("div", _hoisted_7$8, [
+                        _createElementVNode$d("div", _hoisted_7$9, [
                           _createVNode$c(_component_VChip, {
                             size: "small",
                             variant: "tonal"
@@ -3193,7 +3250,7 @@ return (_ctx, _cache) => {
                       ], 2))
                     }), 128))
                   ]))
-                : (_openBlock$d(), _createElementBlock$d("div", _hoisted_8$7, " 当前资源还没有 AI 字幕生成任务。可以点击单集 AI 图标，或使用上方“AI 生成”批量提交。 "))
+                : (_openBlock$d(), _createElementBlock$d("div", _hoisted_8$8, " 当前资源还没有 AI 字幕生成任务。可以点击单集 AI 图标，或使用上方“AI 生成”批量提交。 "))
             ]),
             _: 1
           })
@@ -3207,9 +3264,9 @@ return (_ctx, _cache) => {
 }
 
 };
-const AiTaskDialog = /*#__PURE__*/_export_sfc(_sfc_main$d, [['__scopeId',"data-v-66111cb3"]]);
+const AiTaskDialog = /*#__PURE__*/_export_sfc(_sfc_main$d, [['__scopeId',"data-v-1794d529"]]);
 
-const {createElementVNode:_createElementVNode$c,toDisplayString:_toDisplayString$a,createTextVNode:_createTextVNode$9,resolveComponent:_resolveComponent$c,withCtx:_withCtx$9,createVNode:_createVNode$b,renderList:_renderList$8,Fragment:_Fragment$a,openBlock:_openBlock$c,createElementBlock:_createElementBlock$c,createCommentVNode:_createCommentVNode$c,normalizeClass:_normalizeClass$9,createBlock:_createBlock$c} = await importShared('vue');
+const {createElementVNode:_createElementVNode$c,toDisplayString:_toDisplayString$a,createTextVNode:_createTextVNode$9,resolveComponent:_resolveComponent$c,withCtx:_withCtx$9,openBlock:_openBlock$c,createBlock:_createBlock$c,createCommentVNode:_createCommentVNode$c,createVNode:_createVNode$b,renderList:_renderList$8,Fragment:_Fragment$a,createElementBlock:_createElementBlock$c,mergeProps:_mergeProps$4,normalizeClass:_normalizeClass$9} = await importShared('vue');
 
 
 const _hoisted_1$c = { class: "online-title-actions" };
@@ -3218,7 +3275,14 @@ const _hoisted_3$b = {
   key: 0,
   class: "auto-queue-list"
 };
-const _hoisted_4$a = {
+const _hoisted_4$a = { class: "auto-queue-copy" };
+const _hoisted_5$9 = ["title"];
+const _hoisted_6$8 = { key: 0 };
+const _hoisted_7$8 = {
+  key: 0,
+  class: "auto-queue-actions"
+};
+const _hoisted_8$7 = {
   key: 1,
   class: "empty-state compact-empty"
 };
@@ -3232,10 +3296,15 @@ const _sfc_main$c = {
   autoQueueSummaryText: { type: String, default: '' },
   autoTransferQueue: { type: Object, default: () => ({}) },
   autoQueueTasks: { type: Array, default: () => [] },
+  autoQueueMutating: { type: Boolean, default: false },
+  autoQueueActionTaskId: { type: String, default: '' },
 },
   emits: [
   'update:modelValue',
   'load-auto-transfer-queue',
+  'retry-auto-transfer-task',
+  'force-auto-transfer-task',
+  'clear-auto-transfer-history',
 ],
   setup(__props) {
 
@@ -3247,6 +3316,7 @@ return (_ctx, _cache) => {
   const _component_VBtn = _resolveComponent$c("VBtn");
   const _component_VCardTitle = _resolveComponent$c("VCardTitle");
   const _component_VDivider = _resolveComponent$c("VDivider");
+  const _component_VTooltip = _resolveComponent$c("VTooltip");
   const _component_VCardText = _resolveComponent$c("VCardText");
   const _component_VCard = _resolveComponent$c("VCard");
   const _component_VDialog = _resolveComponent$c("VDialog");
@@ -3256,7 +3326,7 @@ return (_ctx, _cache) => {
     fullscreen: __props.mobile,
     scrollable: __props.mobile,
     "max-width": "760",
-    "onUpdate:modelValue": _cache[2] || (_cache[2] = $event => (_ctx.$emit('update:modelValue', $event)))
+    "onUpdate:modelValue": _cache[3] || (_cache[3] = $event => (_ctx.$emit('update:modelValue', $event)))
   }, {
     default: _withCtx$9(() => [
       _createVNode$b(_component_VCard, {
@@ -3267,24 +3337,40 @@ return (_ctx, _cache) => {
           _createVNode$b(_component_VCardTitle, { class: "dialog-title" }, {
             default: _withCtx$9(() => [
               _createElementVNode$c("div", null, [
-                _cache[3] || (_cache[3] = _createElementVNode$c("span", null, "自动入库队列", -1)),
+                _cache[4] || (_cache[4] = _createElementVNode$c("span", null, "自动入库队列", -1)),
                 _createElementVNode$c("p", null, _toDisplayString$a(__props.autoQueueSummaryText), 1)
               ]),
               _createElementVNode$c("div", _hoisted_1$c, [
+                (__props.autoQueueTasks.some(task => !['pending', 'in_progress'].includes(task.status)))
+                  ? (_openBlock$c(), _createBlock$c(_component_VBtn, {
+                      key: 0,
+                      variant: "text",
+                      color: "error",
+                      "prepend-icon": "mdi-delete-sweep-outline",
+                      disabled: __props.autoQueueMutating,
+                      onClick: _cache[0] || (_cache[0] = $event => (_ctx.$emit('clear-auto-transfer-history')))
+                    }, {
+                      default: _withCtx$9(() => [...(_cache[5] || (_cache[5] = [
+                        _createTextVNode$9(" 清空历史 ", -1)
+                      ]))]),
+                      _: 1
+                    }, 8, ["disabled"]))
+                  : _createCommentVNode$c("", true),
                 _createVNode$b(_component_VBtn, {
                   variant: "tonal",
                   "prepend-icon": "mdi-refresh",
-                  onClick: _cache[0] || (_cache[0] = $event => (_ctx.$emit('load-auto-transfer-queue')))
+                  disabled: __props.autoQueueMutating,
+                  onClick: _cache[1] || (_cache[1] = $event => (_ctx.$emit('load-auto-transfer-queue')))
                 }, {
-                  default: _withCtx$9(() => [...(_cache[4] || (_cache[4] = [
+                  default: _withCtx$9(() => [...(_cache[6] || (_cache[6] = [
                     _createTextVNode$9(" 刷新 ", -1)
                   ]))]),
                   _: 1
-                }),
+                }, 8, ["disabled"]),
                 _createVNode$b(_component_VBtn, {
                   icon: "mdi-close",
                   variant: "text",
-                  onClick: _cache[1] || (_cache[1] = $event => (_ctx.$emit('update:modelValue', false)))
+                  onClick: _cache[2] || (_cache[2] = $event => (_ctx.$emit('update:modelValue', false)))
                 })
               ])
             ]),
@@ -3305,19 +3391,60 @@ return (_ctx, _cache) => {
                         key: task.id,
                         class: _normalizeClass$9(["auto-queue-row", `auto-queue-${task.status}`])
                       }, [
-                        _createElementVNode$c("strong", null, _toDisplayString$a(task.target_label || task.title || task.id), 1),
-                        _createElementVNode$c("span", null, [
-                          _createTextVNode$9(_toDisplayString$a(task.message || task.status), 1),
+                        _createElementVNode$c("div", _hoisted_4$a, [
+                          _createElementVNode$c("strong", {
+                            title: task.target_label || task.title || task.id
+                          }, _toDisplayString$a(task.target_label || task.title || task.id), 9, _hoisted_5$9),
+                          _createVNode$b(_component_VTooltip, {
+                            location: "top",
+                            "max-width": "520",
+                            text: task.message || task.status
+                          }, {
+                            activator: _withCtx$9(({ props: tooltipProps }) => [
+                              _createElementVNode$c("span", _mergeProps$4({ ref_for: true }, tooltipProps, { class: "auto-queue-message" }), _toDisplayString$a(task.message || task.status), 17)
+                            ]),
+                            _: 2
+                          }, 1032, ["text"]),
                           (task.next_run_at)
-                            ? (_openBlock$c(), _createElementBlock$c(_Fragment$a, { key: 0 }, [
-                                _createTextVNode$9(" · 下次 " + _toDisplayString$a(task.next_run_at), 1)
-                              ], 64))
+                            ? (_openBlock$c(), _createElementBlock$c("small", _hoisted_6$8, "下次 " + _toDisplayString$a(task.next_run_at), 1))
                             : _createCommentVNode$c("", true)
-                        ])
+                        ]),
+                        (task.can_retry)
+                          ? (_openBlock$c(), _createElementBlock$c("div", _hoisted_7$8, [
+                              (task.can_force_low_confidence)
+                                ? (_openBlock$c(), _createBlock$c(_component_VBtn, {
+                                    key: 0,
+                                    size: "small",
+                                    color: "warning",
+                                    variant: "tonal",
+                                    loading: __props.autoQueueActionTaskId === task.id,
+                                    disabled: __props.autoQueueMutating && __props.autoQueueActionTaskId !== task.id,
+                                    onClick: $event => (_ctx.$emit('force-auto-transfer-task', task))
+                                  }, {
+                                    default: _withCtx$9(() => [...(_cache[7] || (_cache[7] = [
+                                      _createTextVNode$9(" 强制入库 ", -1)
+                                    ]))]),
+                                    _: 1
+                                  }, 8, ["loading", "disabled", "onClick"]))
+                                : _createCommentVNode$c("", true),
+                              _createVNode$b(_component_VBtn, {
+                                size: "small",
+                                variant: "tonal",
+                                loading: __props.autoQueueActionTaskId === task.id,
+                                disabled: __props.autoQueueMutating && __props.autoQueueActionTaskId !== task.id,
+                                onClick: $event => (_ctx.$emit('retry-auto-transfer-task', task))
+                              }, {
+                                default: _withCtx$9(() => [...(_cache[8] || (_cache[8] = [
+                                  _createTextVNode$9(" 重试 ", -1)
+                                ]))]),
+                                _: 1
+                              }, 8, ["loading", "disabled", "onClick"])
+                            ]))
+                          : _createCommentVNode$c("", true)
                       ], 2))
                     }), 128))
                   ]))
-                : (_openBlock$c(), _createElementBlock$c("div", _hoisted_4$a, " 当前没有自动入库任务。 "))
+                : (_openBlock$c(), _createElementBlock$c("div", _hoisted_8$7, " 当前没有自动入库任务。 "))
             ]),
             _: 1
           })
@@ -3331,7 +3458,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const AutoTransferQueueDialog = /*#__PURE__*/_export_sfc(_sfc_main$c, [['__scopeId',"data-v-209aac63"]]);
+const AutoTransferQueueDialog = /*#__PURE__*/_export_sfc(_sfc_main$c, [['__scopeId',"data-v-919aa78a"]]);
 
 const {renderList:_renderList$7,Fragment:_Fragment$9,openBlock:_openBlock$b,createElementBlock:_createElementBlock$b,createCommentVNode:_createCommentVNode$b,toDisplayString:_toDisplayString$9,createElementVNode:_createElementVNode$b,resolveComponent:_resolveComponent$b,createVNode:_createVNode$a,createTextVNode:_createTextVNode$8,withCtx:_withCtx$8,createBlock:_createBlock$b} = await importShared('vue');
 
@@ -6657,17 +6784,22 @@ const {
 const {
   autoTransferQueue,
   autoQueueDialog,
+  autoQueueMutating,
+  autoQueueActionTaskId,
   autoQueueSummary,
   autoQueueTasks,
   autoQueueSummaryText,
   applyAutoTransferSummary,
   stopAutoQueuePolling,
   loadAutoTransferQueue,
+  retryAutoTransferTask,
+  clearAutoTransferHistory,
 } = useAutoTransferQueue({
   pluginApi,
   unwrapResponse,
   errorMessage,
   error,
+  message,
 });
 
 const {
@@ -6870,6 +7002,7 @@ const {
   aiBatchLabel,
   aiSummaryText,
   aiDialogTasks,
+  aiDialogHasScopeTargets,
   aiDialogHasExistingTasks,
   aiDialogHasActiveTasks,
   aiDialogSelectedAllowedTasks,
@@ -6889,6 +7022,7 @@ const {
   aiTaskIconForTask,
   aiStatusText,
   focusAiStatusStrip,
+  openAiTaskDialog,
   openBatchAiGenerate,
   cancelBatchAiGenerate,
   cancelDialogAiTasks,
@@ -7530,7 +7664,7 @@ return (_ctx, _cache) => {
                   onMarkPosterFailed: _unref(markPosterFailed),
                   onLoadTargets: _unref(loadTargets),
                   onChangeSeason: _unref(changeSeason),
-                  onOpenAiTaskDialog: _ctx.openAiTaskDialog,
+                  onOpenAiTaskDialog: _unref(openAiTaskDialog),
                   onToggleSelectAll: _unref(toggleSelectAll),
                   onOpenBatchUpload: _unref(openBatchUpload),
                   onOpenBatchAiGenerate: _unref(openBatchAiGenerate),
@@ -7558,18 +7692,23 @@ return (_ctx, _cache) => {
       "auto-queue-summary-text": _unref(autoQueueSummaryText),
       "auto-transfer-queue": _unref(autoTransferQueue),
       "auto-queue-tasks": _unref(autoQueueTasks),
-      onLoadAutoTransferQueue: _unref(loadAutoTransferQueue)
-    }, null, 8, ["modelValue", "mobile", "auto-queue-summary-text", "auto-transfer-queue", "auto-queue-tasks", "onLoadAutoTransferQueue"]),
+      "auto-queue-mutating": _unref(autoQueueMutating),
+      "auto-queue-action-task-id": _unref(autoQueueActionTaskId),
+      onLoadAutoTransferQueue: _unref(loadAutoTransferQueue),
+      onRetryAutoTransferTask: _unref(retryAutoTransferTask),
+      onForceAutoTransferTask: _cache[6] || (_cache[6] = task => _unref(retryAutoTransferTask)(task, { forceLowConfidence: true })),
+      onClearAutoTransferHistory: _unref(clearAutoTransferHistory)
+    }, null, 8, ["modelValue", "mobile", "auto-queue-summary-text", "auto-transfer-queue", "auto-queue-tasks", "auto-queue-mutating", "auto-queue-action-task-id", "onLoadAutoTransferQueue", "onRetryAutoTransferTask", "onClearAutoTransferHistory"]),
     _createVNode(AiTaskDialog, {
       modelValue: _unref(aiTaskDialog),
-      "onUpdate:modelValue": _cache[6] || (_cache[6] = $event => (_isRef(aiTaskDialog) ? (aiTaskDialog).value = $event : null)),
+      "onUpdate:modelValue": _cache[7] || (_cache[7] = $event => (_isRef(aiTaskDialog) ? (aiTaskDialog).value = $event : null)),
       mobile: _unref(isMobileViewport),
       "ai-restart-source-policy": _unref(aiRestartSourcePolicy),
-      "onUpdate:aiRestartSourcePolicy": _cache[7] || (_cache[7] = $event => (_isRef(aiRestartSourcePolicy) ? (aiRestartSourcePolicy).value = $event : null)),
+      "onUpdate:aiRestartSourcePolicy": _cache[8] || (_cache[8] = $event => (_isRef(aiRestartSourcePolicy) ? (aiRestartSourcePolicy).value = $event : null)),
       "ai-restart-subtitle-path": _unref(aiRestartSubtitlePath),
-      "onUpdate:aiRestartSubtitlePath": _cache[8] || (_cache[8] = $event => (_isRef(aiRestartSubtitlePath) ? (aiRestartSubtitlePath).value = $event : null)),
+      "onUpdate:aiRestartSubtitlePath": _cache[9] || (_cache[9] = $event => (_isRef(aiRestartSubtitlePath) ? (aiRestartSubtitlePath).value = $event : null)),
       "ai-selected-task-ids": _unref(aiSelectedTaskIds),
-      "onUpdate:aiSelectedTaskIds": _cache[9] || (_cache[9] = $event => (_isRef(aiSelectedTaskIds) ? (aiSelectedTaskIds).value = $event : null)),
+      "onUpdate:aiSelectedTaskIds": _cache[10] || (_cache[10] = $event => (_isRef(aiSelectedTaskIds) ? (aiSelectedTaskIds).value = $event : null)),
       "ai-task-dialog-target": _unref(aiTaskDialogTarget),
       "compact-target-name": _unref(compactTargetName),
       "ai-summary-text": _unref(aiSummaryText),
@@ -7577,6 +7716,7 @@ return (_ctx, _cache) => {
       "ai-cancelling": _unref(aiCancelling),
       "ai-available": _unref(aiAvailable),
       "ai-dialog-tasks": _unref(aiDialogTasks),
+      "ai-dialog-has-scope-targets": _unref(aiDialogHasScopeTargets),
       "ai-dialog-has-existing-tasks": _unref(aiDialogHasExistingTasks),
       "ai-dialog-selected-allowed-tasks": _unref(aiDialogSelectedAllowedTasks),
       "ai-submitting": _unref(aiSubmitting),
@@ -7593,26 +7733,26 @@ return (_ctx, _cache) => {
       onRegenerateDialogAiTasks: _unref(regenerateDialogAiTasks),
       onLoadAiTasks: _unref(loadAiTasks),
       onRegenerateSingleAiTask: _unref(regenerateSingleAiTask)
-    }, null, 8, ["modelValue", "mobile", "ai-restart-source-policy", "ai-restart-subtitle-path", "ai-selected-task-ids", "ai-task-dialog-target", "compact-target-name", "ai-summary-text", "ai-dialog-has-active-tasks", "ai-cancelling", "ai-available", "ai-dialog-tasks", "ai-dialog-has-existing-tasks", "ai-dialog-selected-allowed-tasks", "ai-submitting", "ai-dialog-action-text", "ai-tasks-loading", "ai-status", "ai-restart-source-options", "ai-dialog-source-label", "ai-restart-subtitle-options", "is-ai-task-allowed", "ai-task-icon-for-task", "ai-status-text", "onCancelDialogAiTasks", "onRegenerateDialogAiTasks", "onLoadAiTasks", "onRegenerateSingleAiTask"]),
+    }, null, 8, ["modelValue", "mobile", "ai-restart-source-policy", "ai-restart-subtitle-path", "ai-selected-task-ids", "ai-task-dialog-target", "compact-target-name", "ai-summary-text", "ai-dialog-has-active-tasks", "ai-cancelling", "ai-available", "ai-dialog-tasks", "ai-dialog-has-scope-targets", "ai-dialog-has-existing-tasks", "ai-dialog-selected-allowed-tasks", "ai-submitting", "ai-dialog-action-text", "ai-tasks-loading", "ai-status", "ai-restart-source-options", "ai-dialog-source-label", "ai-restart-subtitle-options", "is-ai-task-allowed", "ai-task-icon-for-task", "ai-status-text", "onCancelDialogAiTasks", "onRegenerateDialogAiTasks", "onLoadAiTasks", "onRegenerateSingleAiTask"]),
     _createVNode(OnlineSubtitleDialog, {
       modelValue: _unref(onlineDialog),
       "onUpdate:modelValue": [
-        _cache[10] || (_cache[10] = $event => (_isRef(onlineDialog) ? (onlineDialog).value = $event : null)),
+        _cache[11] || (_cache[11] = $event => (_isRef(onlineDialog) ? (onlineDialog).value = $event : null)),
         _unref(updateOnlineDialog)
       ],
       mobile: _unref(isMobileViewport),
       "online-keyword": _unref(onlineKeyword),
-      "onUpdate:onlineKeyword": _cache[11] || (_cache[11] = $event => (_isRef(onlineKeyword) ? (onlineKeyword).value = $event : null)),
+      "onUpdate:onlineKeyword": _cache[12] || (_cache[12] = $event => (_isRef(onlineKeyword) ? (onlineKeyword).value = $event : null)),
       "online-selected-providers": _unref(onlineSelectedProviders),
-      "onUpdate:onlineSelectedProviders": _cache[12] || (_cache[12] = $event => (_isRef(onlineSelectedProviders) ? (onlineSelectedProviders).value = $event : null)),
+      "onUpdate:onlineSelectedProviders": _cache[13] || (_cache[13] = $event => (_isRef(onlineSelectedProviders) ? (onlineSelectedProviders).value = $event : null)),
       "online-messages-collapsed": _unref(onlineMessagesCollapsed),
-      "onUpdate:onlineMessagesCollapsed": _cache[13] || (_cache[13] = $event => (_isRef(onlineMessagesCollapsed) ? (onlineMessagesCollapsed).value = $event : null)),
+      "onUpdate:onlineMessagesCollapsed": _cache[14] || (_cache[14] = $event => (_isRef(onlineMessagesCollapsed) ? (onlineMessagesCollapsed).value = $event : null)),
       "online-language-filter": _unref(onlineLanguageFilter),
-      "onUpdate:onlineLanguageFilter": _cache[14] || (_cache[14] = $event => (_isRef(onlineLanguageFilter) ? (onlineLanguageFilter).value = $event : null)),
+      "onUpdate:onlineLanguageFilter": _cache[15] || (_cache[15] = $event => (_isRef(onlineLanguageFilter) ? (onlineLanguageFilter).value = $event : null)),
       "online-provider-filter": _unref(onlineProviderFilter),
-      "onUpdate:onlineProviderFilter": _cache[15] || (_cache[15] = $event => (_isRef(onlineProviderFilter) ? (onlineProviderFilter).value = $event : null)),
+      "onUpdate:onlineProviderFilter": _cache[16] || (_cache[16] = $event => (_isRef(onlineProviderFilter) ? (onlineProviderFilter).value = $event : null)),
       "online-ai-confirm-dialog": _unref(onlineAiConfirmDialog),
-      "onUpdate:onlineAiConfirmDialog": _cache[16] || (_cache[16] = $event => (_isRef(onlineAiConfirmDialog) ? (onlineAiConfirmDialog).value = $event : null)),
+      "onUpdate:onlineAiConfirmDialog": _cache[17] || (_cache[17] = $event => (_isRef(onlineAiConfirmDialog) ? (onlineAiConfirmDialog).value = $event : null)),
       "online-title": _unref(onlineTitle),
       "online-targets": _unref(onlineTargets),
       "selected-online-results": _unref(selectedOnlineResults),
@@ -7652,12 +7792,12 @@ return (_ctx, _cache) => {
     }, null, 8, ["modelValue", "mobile", "online-keyword", "online-selected-providers", "online-messages-collapsed", "online-language-filter", "online-provider-filter", "online-ai-confirm-dialog", "online-title", "online-targets", "selected-online-results", "online-ai-downloading", "online-preview-downloading", "can-submit-online-ai-translate", "online-downloading", "online-provider-items", "online-searching", "online-error", "online-messages", "online-message-type", "online-message-summary", "has-online-results", "filtered-online-results", "online-results", "online-language-filter-items", "online-provider-filter-items", "online-provider-progress-items", "selected-online-result-ids", "online-manual-links", "online-ai-confirm-text", "provider-progress-color", "provider-progress-text", "provider-name", "online-result-key", "online-result-meta", "is-online-result-downloadable", "onUpdate:modelValue", "onDownloadOnlinePreview", "onRequestOnlineAiTranslate", "onStopOnlineDownload", "onCloseOnlineDialog", "onRunOnlineSearch", "onStopOnlineSearch", "onToggleOnlineResult", "onConfirmOnlineAiTranslate"]),
     _createVNode(UploadDialog, {
       modelValue: _unref(uploadDialog),
-      "onUpdate:modelValue": _cache[17] || (_cache[17] = $event => (_isRef(uploadDialog) ? (uploadDialog).value = $event : null)),
+      "onUpdate:modelValue": _cache[18] || (_cache[18] = $event => (_isRef(uploadDialog) ? (uploadDialog).value = $event : null)),
       mobile: _unref(isMobileViewport),
       "fix-timeline": _unref(fixTimeline),
-      "onUpdate:fixTimeline": _cache[18] || (_cache[18] = $event => (_isRef(fixTimeline) ? (fixTimeline).value = $event : null)),
+      "onUpdate:fixTimeline": _cache[19] || (_cache[19] = $event => (_isRef(fixTimeline) ? (fixTimeline).value = $event : null)),
       "batch-language-suffix": _unref(batchLanguageSuffix),
-      "onUpdate:batchLanguageSuffix": _cache[19] || (_cache[19] = $event => (_isRef(batchLanguageSuffix) ? (batchLanguageSuffix).value = $event : null)),
+      "onUpdate:batchLanguageSuffix": _cache[20] || (_cache[20] = $event => (_isRef(batchLanguageSuffix) ? (batchLanguageSuffix).value = $event : null)),
       "upload-title": _unref(uploadTitle),
       "has-preview-items": _unref(hasPreviewItems),
       "all-selected-preview-targets-are-stream": _unref(allSelectedPreviewTargetsAreStream),
@@ -7696,6 +7836,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-ee41e470"]]);
+const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-4e7a375b"]]);
 
 export { AppPage as default };

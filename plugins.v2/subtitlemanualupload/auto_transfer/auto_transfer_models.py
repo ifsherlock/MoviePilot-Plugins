@@ -54,4 +54,8 @@ def public_auto_transfer_task(
     public_task["created_at"] = timestamp_iso(public_task.pop("created_ts", 0))
     public_task["updated_at"] = timestamp_iso(public_task.pop("updated_ts", 0))
     public_task["next_run_at"] = timestamp_iso(public_task.pop("next_run_ts", 0))
+    status = public_task.get("status")
+    message = str(public_task.get("message") or "")
+    public_task["can_retry"] = status in {"failed", "skipped"}
+    public_task["can_force_low_confidence"] = status == "failed" and "低可信" in message
     return public_task

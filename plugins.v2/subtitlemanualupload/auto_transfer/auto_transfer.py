@@ -335,6 +335,12 @@ class AutoTransferService:
     def update_auto_transfer_task(self, task_id: str, **updates: Any) -> None:
         self._queue.update_task(task_id, **updates)
 
+    def retry_auto_transfer_task(self, task_id: str, *, force_low_confidence: bool = False) -> bool:
+        return self._queue.retry_task(task_id, force_low_confidence=force_low_confidence)
+
+    def clear_auto_transfer_history(self) -> int:
+        return self._queue.clear_history()
+
     def claim_next_auto_transfer_batch(self) -> Tuple[List[Dict[str, Any]], float]:
         return self._queue.claim_next_batch()
 

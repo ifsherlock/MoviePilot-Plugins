@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict
 
-from fastapi import Request
+from fastapi import HTTPException, Request
 
 from ..config.config_schema import host_from_url
 from ..timeline.timeline_fixer import check_timeline_fixer_dependencies
@@ -87,3 +87,25 @@ class StatusApi:
         owner = self.owner
         limit = min(max(owner._safe_int(request.query_params.get("limit"), 100), 1), 200)
         return owner._ok(owner.services.auto_transfer().auto_transfer_queue_snapshot(limit=limit))
+
+    async def retry_auto_transfer_task(self, request: Request) -> Dict[str, Any]:
+        owner = self.owner
+        body = await request.json()
+        task_id = owner._normalize_text(body.get("task_id")) if isinstance(body, dict) else ""
+        force_low_confidence = bool(body.get("force_low_confidence")) if isinstance(body, dict) else False
+        if not task_id:
+            raise HTTPException(status_code=400, detail="缺少自动入库任务 ID")
+        service = owner.services.auto_transfer()
+        if not service.retry_auto_transfer_task(task_id, force_low_confidence=force_low_confidence):
+            raise HTTPException(status_code=409, detail="任务不存在、仍在处理中或不允许重试")
+        message = "已强制重新处理低可信调轴任务" if force_low_confidence else "已重新加入自动入库队列"
+        return owner._ok(service.auto_transfer_queue_snapshot(limit=200), message=message)
+
+    async def clear_auto_transfer_history(self, request: Request) -> Dict[str, Any]:
+        owner = self.owner
+        service = owner.services.auto_transfer()
+        cleared = service.clear_auto_transfer_history()
+        return owner._ok(
+            {**service.auto_transfer_queue_snapshot(limit=200), "cleared": cleared},
+            message=f"已清空 {cleared} 条自动入库历史任务",
+        )

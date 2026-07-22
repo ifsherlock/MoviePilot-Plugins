@@ -12,6 +12,7 @@ const props = defineProps({
   aiCancelling: { type: Boolean, default: false },
   aiAvailable: { type: Boolean, default: false },
   aiDialogTasks: { type: Array, default: () => [] },
+  aiDialogHasScopeTargets: { type: Boolean, default: false },
   aiDialogHasExistingTasks: { type: Boolean, default: false },
   aiDialogSelectedAllowedTasks: { type: Array, default: () => [] },
   aiSubmitting: { type: Boolean, default: false },
@@ -73,7 +74,7 @@ const aiStatusDetail = computed(() => buildAiStatusDetail(props.aiStatus))
             取消任务
           </VBtn>
           <VBtn
-            v-if="aiAvailable && (aiTaskDialogTarget || aiDialogTasks.length)"
+            v-if="aiAvailable && (aiDialogHasScopeTargets || aiTaskDialogTarget || aiDialogTasks.length)"
             variant="tonal"
             color="warning"
             prepend-icon="mdi-robot-happy-outline"
@@ -104,7 +105,7 @@ const aiStatusDetail = computed(() => buildAiStatusDetail(props.aiStatus))
           variant="tonal"
           :text="aiStatusDetail"
         />
-        <div v-if="aiAvailable && (aiTaskDialogTarget || aiDialogTasks.length)" class="ai-restart-options">
+        <div v-if="aiAvailable && (aiDialogHasScopeTargets || aiTaskDialogTarget || aiDialogTasks.length)" class="ai-restart-options">
           <VSelect
             :model-value="aiRestartSourcePolicy"
             :items="aiRestartSourceOptions"

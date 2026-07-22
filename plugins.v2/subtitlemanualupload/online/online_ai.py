@@ -153,6 +153,7 @@ class OnlineAiService:
         target_entries: List[Dict[str, Any]],
         prepared_uploads: List[Dict[str, Any]],
         allow_risky_offset: bool = False,
+        force_low_confidence: bool = False,
     ) -> Tuple[Dict[str, Dict[str, str]], List[Dict[str, Any]]]:
         owner = self._owner
         targets = [owner._target_from_entry(item) for item in target_entries]
@@ -233,18 +234,23 @@ class OnlineAiService:
                     detail=f"在线字幕智能调轴失败: {operation['upload_info'].get('source_name')} - {exc}",
                 ) from exc
             if owner._timeline_result_blocks_auto_write(timeline_result):
-                owner._set_timeline_task(
-                    operation,
-                    status="failed",
-                    message=f"在线字幕智能调轴低可信，已拒绝提交 AI: {owner._timeline_rejection_message(timeline_result)}",
-                    timeline_result=timeline_result,
-                )
-                raise self._http_exception(
-                    status_code=409,
-                    detail=(
-                        f"在线字幕智能调轴低可信，已拒绝提交 AI: {operation['upload_info'].get('source_name')} - "
-                        f"{owner._timeline_rejection_message(timeline_result)}"
-                    ),
+                rejection = owner._timeline_rejection_message(timeline_result)
+                if not force_low_confidence:
+                    owner._set_timeline_task(
+                        operation,
+                        status="failed",
+                        message=f"在线字幕智能调轴低可信，已拒绝提交 AI: {rejection}",
+                        timeline_result=timeline_result,
+                    )
+                    raise self._http_exception(
+                        status_code=409,
+                        detail=f"在线字幕智能调轴低可信，已拒绝提交 AI: {operation['upload_info'].get('source_name')} - {rejection}",
+                    )
+                self._logger.warning(
+                    "[SubtitleManualUpload] 用户强制提交低可信调轴字幕到 AI source=%s target=%s result=%s",
+                    operation["upload_info"].get("source_name"),
+                    operation["target_entry"].get("target_label"),
+                    rejection,
                 )
             owner._set_timeline_task(
                 operation,

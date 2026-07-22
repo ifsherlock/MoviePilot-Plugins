@@ -230,6 +230,7 @@ class SubtitleWriter:
         operations: List[Dict[str, Any]],
         fix_timeline: bool = False,
         allow_risky_offset: bool = False,
+        force_low_confidence: bool = False,
     ) -> Tuple[List[Dict[str, Any]], int, int]:
         owner = self._owner
         fixed_dir = session_dir / "timeline_fixed"
@@ -288,18 +289,23 @@ class SubtitleWriter:
                         detail=f"智能调轴失败: {operation['upload_info'].get('source_name')} - {exc}",
                     ) from exc
                 if owner._timeline_result_blocks_auto_write(timeline_result):
-                    owner._set_timeline_task(
-                        operation,
-                        status="failed",
-                        message=f"智能调轴低可信，已拒绝写入: {owner._timeline_rejection_message(timeline_result)}",
-                        timeline_result=timeline_result,
-                    )
-                    raise self._http_exception(
-                        status_code=409,
-                        detail=(
-                            f"智能调轴低可信，已拒绝写入: {operation['upload_info'].get('source_name')} - "
-                            f"{owner._timeline_rejection_message(timeline_result)}"
-                        ),
+                    rejection = owner._timeline_rejection_message(timeline_result)
+                    if not force_low_confidence:
+                        owner._set_timeline_task(
+                            operation,
+                            status="failed",
+                            message=f"智能调轴低可信，已拒绝写入: {rejection}",
+                            timeline_result=timeline_result,
+                        )
+                        raise self._http_exception(
+                            status_code=409,
+                            detail=f"智能调轴低可信，已拒绝写入: {operation['upload_info'].get('source_name')} - {rejection}",
+                        )
+                    self._logger.warning(
+                        "[SubtitleManualUpload] 用户强制写入低可信调轴结果 source=%s target=%s result=%s",
+                        operation["upload_info"].get("source_name"),
+                        operation["target_entry"].get("target_label"),
+                        rejection,
                     )
                 operation["write_source_path"] = fixed_source_path
                 operation["timeline_result"] = timeline_result

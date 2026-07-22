@@ -21,9 +21,12 @@ export function useAutoTransferQueue({
   unwrapResponse,
   errorMessage,
   error,
+  message,
 }) {
   const autoTransferQueue = ref(createEmptyAutoTransferQueue())
   const autoQueueDialog = ref(false)
+  const autoQueueMutating = ref(false)
+  const autoQueueActionTaskId = ref('')
   let autoQueueTimer = null
 
   const autoQueueSummary = computed(() => autoTransferQueue.value?.summary || {})
@@ -68,9 +71,50 @@ export function useAutoTransferQueue({
     }
   }
 
+  async function retryAutoTransferTask(task, options = {}) {
+    if (!task?.id || autoQueueMutating.value) return
+    const forceLowConfidence = Boolean(options.forceLowConfidence)
+    if (forceLowConfidence && !window.confirm('确认无视智能调轴低可信结果，强制重新处理并直接入库？')) return
+    autoQueueMutating.value = true
+    autoQueueActionTaskId.value = task.id
+    error.value = ''
+    try {
+      const response = await pluginApi.value.retryAutoTransferTask({
+        task_id: task.id,
+        force_low_confidence: forceLowConfidence,
+      })
+      autoTransferQueue.value = unwrapResponse(response) || autoTransferQueue.value
+      message.value = response?.message || (forceLowConfidence ? '已强制重试自动入库任务' : '已重试自动入库任务')
+      scheduleAutoQueuePolling()
+    } catch (err) {
+      error.value = errorMessage(err, '重试自动入库任务失败')
+    } finally {
+      autoQueueMutating.value = false
+      autoQueueActionTaskId.value = ''
+    }
+  }
+
+  async function clearAutoTransferHistory() {
+    if (autoQueueMutating.value) return
+    if (!window.confirm('确认清空已完成、已跳过和失败的自动入库历史任务？正在处理的任务会保留。')) return
+    autoQueueMutating.value = true
+    error.value = ''
+    try {
+      const response = await pluginApi.value.clearAutoTransferHistory()
+      autoTransferQueue.value = unwrapResponse(response) || autoTransferQueue.value
+      message.value = response?.message || '已清空自动入库历史任务'
+    } catch (err) {
+      error.value = errorMessage(err, '清空自动入库历史失败')
+    } finally {
+      autoQueueMutating.value = false
+    }
+  }
+
   return {
     autoTransferQueue,
     autoQueueDialog,
+    autoQueueMutating,
+    autoQueueActionTaskId,
     autoQueueSummary,
     autoQueueTasks,
     autoQueueActive,
@@ -79,5 +123,7 @@ export function useAutoTransferQueue({
     stopAutoQueuePolling,
     scheduleAutoQueuePolling,
     loadAutoTransferQueue,
+    retryAutoTransferTask,
+    clearAutoTransferHistory,
   }
 }

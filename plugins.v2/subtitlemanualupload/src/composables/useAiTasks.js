@@ -85,6 +85,7 @@ export function useAiTasks({
     }
     return aiTaskData.value.tasks || []
   })
+  const aiDialogHasScopeTargets = computed(() => aiTaskScopeTargets.value.length > 0)
   const aiDialogHasExistingTasks = computed(() => Boolean(aiDialogTasks.value.length))
   const aiDialogActiveTasks = computed(() => aiDialogTasks.value.filter(task => isAiTaskActive(task)))
   const aiDialogHasActiveTasks = computed(() => aiDialogActiveTasks.value.length > 0)
@@ -255,14 +256,14 @@ export function useAiTasks({
     return task.message || task.status_label || task.status
   }
 
-  function openAiTaskDialog(target = null) {
+  function openAiTaskDialog(target = null, options = {}) {
     aiTaskDialogTarget.value = target
     aiRestartSubtitlePath.value = ''
     aiSelectedTaskIds.value = []
     aiTaskDialog.value = true
-    const scopeTargets = target
-      ? [target]
-      : (aiTaskScopeTargets.value.length ? aiTaskScopeTargets.value : visibleTargets.value)
+    const scopeTargets = Array.isArray(options.targets) && options.targets.length
+      ? options.targets
+      : (target ? [target] : visibleTargets.value)
     aiTaskScopeTargets.value = scopeTargets
     const existingTasks = target
       ? (aiTaskForTarget(target) ? [aiTaskForTarget(target)] : [])
@@ -357,7 +358,7 @@ export function useAiTasks({
   }
 
   function openBatchAiGenerate() {
-    submitAiForTargets(batchUploadTargets.value)
+    openAiTaskDialog(null, { targets: batchUploadTargets.value })
   }
 
   function cancelBatchAiGenerate() {
@@ -365,7 +366,9 @@ export function useAiTasks({
   }
 
   function cancelDialogAiTasks() {
-    const scopeTargets = aiTaskDialogTarget.value ? [aiTaskDialogTarget.value] : visibleTargets.value
+    const scopeTargets = aiTaskDialogTarget.value
+      ? [aiTaskDialogTarget.value]
+      : (aiTaskScopeTargets.value.length ? aiTaskScopeTargets.value : visibleTargets.value)
     cancelAiForTargets(scopeTargets)
   }
 
@@ -464,6 +467,7 @@ export function useAiTasks({
     aiBatchLabel,
     aiSummaryText,
     aiDialogTasks,
+    aiDialogHasScopeTargets,
     aiDialogHasExistingTasks,
     aiDialogActiveTasks,
     aiDialogHasActiveTasks,

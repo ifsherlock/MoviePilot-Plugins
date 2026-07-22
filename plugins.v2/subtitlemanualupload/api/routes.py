@@ -75,6 +75,20 @@ def build_api_routes(owner: Any) -> List[Dict[str, Any]]:
             "summary": "查询入库自动字幕处理队列",
         },
         {
+            "path": "/auto_transfer_queue/retry",
+            "endpoint": status_api.retry_auto_transfer_task,
+            "methods": ["POST"],
+            "auth": "bear",
+            "summary": "重试自动入库字幕任务",
+        },
+        {
+            "path": "/auto_transfer_queue/clear_history",
+            "endpoint": status_api.clear_auto_transfer_history,
+            "methods": ["POST"],
+            "auth": "bear",
+            "summary": "清空自动入库字幕历史任务",
+        },
+        {
             "path": "/prepare_upload",
             "endpoint": upload_api.prepare_upload,
             "methods": ["POST"],

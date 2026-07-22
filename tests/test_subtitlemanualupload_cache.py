@@ -564,6 +564,8 @@ def test_plugin_api_route_contract_is_stable():
         ("/timeline_tasks", ("POST",), "bear", "查询智能调轴任务状态"),
         ("/timeline_fix_existing", ("POST",), "bear", "对匹配历史中的外挂字幕执行智能调轴"),
         ("/auto_transfer_queue", ("GET",), "bear", "查询入库自动字幕处理队列"),
+        ("/auto_transfer_queue/retry", ("POST",), "bear", "重试自动入库字幕任务"),
+        ("/auto_transfer_queue/clear_history", ("POST",), "bear", "清空自动入库字幕历史任务"),
         ("/prepare_upload", ("POST",), "bear", "上传字幕并生成匹配预览"),
         ("/apply_upload", ("POST",), "bear", "应用字幕匹配结果并写入目标目录"),
         ("/clear_subtitles", ("POST",), "bear", "清空选中目标视频的外挂字幕"),
@@ -1716,6 +1718,56 @@ def test_write_operations_rejects_low_confidence_timeline_result(tmp_path):
         raise AssertionError("low confidence timeline result should block write")
     assert not destination.exists()
     assert plugin.services.timeline_tasks().task_for_target_id("t1")["status"] == "failed"
+
+
+def test_write_operations_allows_explicit_low_confidence_override(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    session_dir = tmp_path / "session"
+    session_dir.mkdir()
+    video = tmp_path / "Movie.mkv"
+    source = tmp_path / "subtitle.srt"
+    destination = tmp_path / "Movie.chi.srt"
+    video.write_text("video", encoding="utf-8")
+    source.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+
+    def fake_fix(video_path, subtitle_path, output_path, **kwargs):
+        output_path.write_bytes(subtitle_path.read_bytes())
+        return module.TimelineFixResult(
+            enabled=True,
+            applied=False,
+            reason="timeline alignment rejected",
+            base="audio:rms",
+            offset_seconds=-30.0,
+            scale_factor=1.0,
+            score=0.2,
+            confidence="low",
+            score_margin=0.0,
+            risk_flags=["rms_low_precision"],
+        )
+
+    module.fix_subtitle_timeline = fake_fix
+
+    results, _, _ = plugin.services.writer().write_operations_to_disk(
+        session_dir=session_dir,
+        operations=[
+            {
+                "upload_info": {"upload_id": "u1", "source_name": "subtitle.srt", "archive_name": ""},
+                "target_entry": {"id": "t1", "path": str(video), "basename": "Movie", "storage": "local"},
+                "video_path": video,
+                "source_path": source,
+                "language_suffix": "chi",
+                "destination_name": destination.name,
+                "destination_path": destination,
+            }
+        ],
+        fix_timeline=True,
+        force_low_confidence=True,
+    )
+
+    assert destination.exists()
+    assert results[0]["timeline"]["confidence"] == "low"
+    assert plugin.services.timeline_tasks().task_for_target_id("t1")["status"] == "completed"
 
 
 def test_low_confidence_timeline_result_blocks_auto_write():
@@ -3664,6 +3716,57 @@ def test_auto_transfer_queue_enqueues_tv_season_tasks_without_starting_immediate
     assert len({task["group_key"] for task in snapshot["tasks"]}) == 1
 
 
+def test_auto_transfer_queue_retry_force_and_clear_history_boundaries(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    service = plugin._auto_transfer_service()
+    worker_calls = []
+    service._queue._ensure_worker = lambda: worker_calls.append(True)
+    entries = [
+        make_auto_entry(tmp_path, filename="Movie-A.mkv", id="a"),
+        make_auto_entry(tmp_path, filename="Movie-B.mkv", id="b"),
+    ]
+
+    queued, skipped = service.enqueue_transfer_auto_entries(entries)
+    snapshot = service.auto_transfer_queue_snapshot()
+    failed_id = snapshot["tasks"][0]["id"]
+    active_id = snapshot["tasks"][1]["id"]
+    service.update_auto_transfer_task(failed_id, status="failed", message="智能调轴低可信，已拒绝写入")
+
+    failed_task = next(task for task in service.auto_transfer_queue_snapshot()["tasks"] if task["id"] == failed_id)
+    assert queued == 2
+    assert skipped == 0
+    assert failed_task["next_run_at"] == ""
+    assert failed_task["can_retry"] is True
+    assert failed_task["can_force_low_confidence"] is True
+    assert service.retry_auto_transfer_task(active_id) is False
+    assert service.retry_auto_transfer_task(failed_id, force_low_confidence=True) is True
+
+    retried = plugin._auto_transfer_tasks[failed_id]
+    assert retried["entry"]["_force_timeline_write"] is True
+    assert retried["group_key"] == retried["entry_key"]
+    assert retried["retry_count"] == 1
+    assert worker_calls
+
+    service.update_auto_transfer_task(failed_id, status="completed", message="强制入库完成")
+    assert service.clear_auto_transfer_history() == 1
+    remaining_ids = {task["id"] for task in service.auto_transfer_queue_snapshot()["tasks"]}
+    assert remaining_ids == {active_id}
+
+
+def test_auto_transfer_queue_rejects_force_for_non_low_confidence_failure(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    service = plugin._auto_transfer_service()
+    service._queue._ensure_worker = lambda: None
+    service.enqueue_transfer_auto_entries([make_auto_entry(tmp_path, filename="Movie.mkv")])
+    task_id = service.auto_transfer_queue_snapshot()["tasks"][0]["id"]
+    service.update_auto_transfer_task(task_id, status="failed", message="网络下载失败")
+
+    assert service.retry_auto_transfer_task(task_id, force_low_confidence=True) is False
+    assert plugin._auto_transfer_tasks[task_id]["status"] == "failed"
+
+
 def test_stop_service_uses_auto_transfer_service_directly():
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
@@ -3776,6 +3879,40 @@ def test_api_auto_transfer_queue_uses_auto_transfer_service_directly():
     assert response["success"] is True
     assert captured["limit"] == 200
     assert response["data"]["summary"]["total"] == 0
+
+
+def test_api_auto_transfer_queue_mutations_use_service_and_return_snapshot():
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    captured = {}
+
+    class FakeAutoTransferService:
+        def retry_auto_transfer_task(self, task_id, *, force_low_confidence=False):
+            captured["retry"] = (task_id, force_low_confidence)
+            return True
+
+        def clear_auto_transfer_history(self):
+            captured["cleared"] = True
+            return 2
+
+        def auto_transfer_queue_snapshot(self, limit=100):
+            captured.setdefault("limits", []).append(limit)
+            return {"summary": {"total": 1}, "tasks": [{"id": "task-1"}]}
+
+    override_services(plugin, auto_transfer=FakeAutoTransferService())
+    retry_endpoint = api_endpoint(plugin, "/auto_transfer_queue/retry")
+    clear_endpoint = api_endpoint(plugin, "/auto_transfer_queue/clear_history")
+
+    retry_response = asyncio.run(
+        retry_endpoint(FakeRequest({"task_id": "task-1", "force_low_confidence": True}))
+    )
+    clear_response = asyncio.run(clear_endpoint(FakeRequest({})))
+
+    assert captured["retry"] == ("task-1", True)
+    assert captured["cleared"] is True
+    assert captured["limits"] == [200, 200]
+    assert retry_response["data"]["tasks"][0]["id"] == "task-1"
+    assert clear_response["data"]["cleared"] == 2
 
 
 def test_auto_transfer_group_prefers_season_package_then_single_episode(tmp_path):
@@ -4924,6 +5061,33 @@ def test_auto_search_write_chinese_subtitle_enables_timeline_fix(tmp_path):
     assert observed["fix_timeline"] is True
 
 
+def test_auto_write_passes_force_low_confidence_only_from_target_entry(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    entry = make_auto_entry(tmp_path, filename="Movie.mkv", _force_timeline_write=True)
+    subtitle = tmp_path / "Movie.chi.srt"
+    subtitle.write_text("1\n00:00:01,000 --> 00:00:02,000\n你好\n", encoding="utf-8")
+    observed = {}
+
+    def fake_write(**kwargs):
+        observed.update(kwargs)
+        return [{"output_name": "Movie.chi.srt"}], 0, 0
+
+    service = auto_transfer_service_with(plugin, _write_operations_to_disk=fake_write)
+    result = service.auto_write_prepared_uploads_for_entries(
+        target_entries=[entry],
+        prepared_uploads=[
+            {"upload_id": "u1", "source_name": subtitle.name, "stored_path": str(subtitle), "ext": ".srt"}
+        ],
+        session_dir=tmp_path,
+        selected_result={"provider": "opensubtitles", "title": "Movie Chinese"},
+    )
+
+    assert result["status"] == "written"
+    assert observed["fix_timeline"] is True
+    assert observed["force_low_confidence"] is True
+
+
 def test_auto_search_write_foreign_srt_submits_ai_without_writing(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
@@ -5177,6 +5341,40 @@ def test_online_ai_converts_foreign_ass_to_temporary_srt(tmp_path):
     assert overrides[entry["path"]]["subtitle_path"].endswith(".srt")
     assert fixed[0]["source_name"].endswith(".srt")
     assert fixed[0]["autosub_lang"] == "en"
+
+
+def test_online_ai_allows_explicit_low_confidence_override(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    entry = make_auto_entry(tmp_path, filename="Movie.mkv")
+    source = tmp_path / "Movie.eng.srt"
+    source.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+
+    def fake_timeline(video_path, subtitle_path, output_path, allow_risky_offset=False):
+        Path(output_path).write_bytes(Path(subtitle_path).read_bytes())
+        return module.TimelineFixResult(
+            enabled=True,
+            applied=False,
+            reason="timeline alignment rejected",
+            base="audio:rms",
+            offset_seconds=-30.0,
+            scale_factor=1.0,
+            score=0.2,
+            confidence="low",
+            score_margin=0.0,
+            risk_flags=["rms_low_precision"],
+        )
+
+    plugin._run_timeline_fix = fake_timeline
+    overrides, fixed = plugin.services.online_ai().prepare_online_ai_subtitle_overrides(
+        session_dir=tmp_path,
+        target_entries=[entry],
+        prepared_uploads=[{"upload_id": "u1", "source_name": source.name, "stored_path": str(source), "ext": ".srt"}],
+        force_low_confidence=True,
+    )
+
+    assert set(overrides) == {entry["path"]}
+    assert fixed[0]["timeline"]["confidence"] == "low"
 
 
 def test_auto_write_foreign_ai_skip_is_not_counted_as_completed(tmp_path):

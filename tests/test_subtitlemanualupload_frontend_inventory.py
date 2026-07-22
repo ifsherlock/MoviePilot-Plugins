@@ -14,6 +14,9 @@ MATCH_HISTORY_PANEL = APP_PAGE.parent / "MatchHistoryPanel.vue"
 MEDIA_SEARCH_PANEL = APP_PAGE.parent / "MediaSearchPanel.vue"
 AUTO_QUEUE_DIALOG = APP_PAGE.parent / "AutoTransferQueueDialog.vue"
 ONLINE_DIALOG = APP_PAGE.parent / "OnlineSubtitleDialog.vue"
+AI_TASKS_COMPOSABLE = APP_PAGE.parents[1] / "composables" / "useAiTasks.js"
+AUTO_QUEUE_COMPOSABLE = APP_PAGE.parents[1] / "composables" / "useAutoTransferQueue.js"
+SUBTITLE_API = APP_PAGE.parents[1] / "api" / "subtitleManualUploadApi.js"
 MOBILE_DETAIL = REPO_ROOT / "plugins.v2" / "subtitlemanualupload" / "src" / "mobile" / "MobileSubtitleDetail.vue"
 MOBILE_TARGET_CARD = REPO_ROOT / "plugins.v2" / "subtitlemanualupload" / "src" / "mobile" / "MobileTargetCard.vue"
 
@@ -127,3 +130,23 @@ def test_desktop_header_and_auto_queue_copy_have_single_owners():
     assert "入库自动字幕队列" not in search_source
     assert "入库自动字幕队列" not in queue_source
     assert "auto-queue-entry" not in history_source
+
+
+def test_ai_batch_dialog_and_auto_queue_actions_keep_single_frontend_owners():
+    app_source = APP_PAGE.read_text(encoding="utf-8")
+    ai_source = AI_TASKS_COMPOSABLE.read_text(encoding="utf-8")
+    queue_source = AUTO_QUEUE_DIALOG.read_text(encoding="utf-8")
+    queue_composable = AUTO_QUEUE_COMPOSABLE.read_text(encoding="utf-8")
+    api_source = SUBTITLE_API.read_text(encoding="utf-8")
+
+    assert "openAiTaskDialog(null, { targets: batchUploadTargets.value })" in ai_source
+    assert "openAiTaskDialog," in app_source
+    assert "aiDialogHasScopeTargets" in app_source
+    assert "VTooltip" in queue_source
+    assert "-webkit-line-clamp: 2" in queue_source
+    assert "强制入库" in queue_source
+    assert "清空历史" in queue_source
+    assert "retryAutoTransferTask" in queue_composable
+    assert "clearAutoTransferHistory" in queue_composable
+    assert "'/auto_transfer_queue/retry'" in api_source
+    assert "'/auto_transfer_queue/clear_history'" in api_source

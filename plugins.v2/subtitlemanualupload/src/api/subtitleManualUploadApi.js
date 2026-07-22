@@ -41,6 +41,12 @@ export function createSubtitleManualUploadApi(api, pluginBase) {
     autoTransferQueue() {
       return get('/auto_transfer_queue')
     },
+    retryAutoTransferTask(payload) {
+      return post('/auto_transfer_queue/retry', payload)
+    },
+    clearAutoTransferHistory(payload = {}) {
+      return post('/auto_transfer_queue/clear_history', payload)
+    },
     onlineStatus() {
       return get('/online_status')
     },

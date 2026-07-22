@@ -58,26 +58,65 @@ class SubHDProvider(BaseSubtitleProvider):
                 status,
             )
             return []
-        ids = _extract_unique_matches(r'href=["\']/d/(\d+)["\']', text)
+        detail_candidates = self._relevant_detail_candidates(text, keyword, targets)
         direct_count = len(re.findall(r'href=["\']/a/[A-Za-z0-9_-]+["\']', text or "", flags=re.I))
         logger.info(
-            "[SubtitleManualUpload] SubHD 标题搜索页面解析完成 keyword=%s status=%s detail_candidates=%s direct_candidates=%s final_host=%s",
+            "[SubtitleManualUpload] SubHD 标题搜索页面解析完成 keyword=%s status=%s detail_candidates=%s relevant_detail_candidates=%s direct_candidates=%s final_host=%s",
             keyword,
             status,
-            len(ids),
+            len(_extract_unique_matches(r'href=["\']/d/(\d+)["\']', text)),
+            len(detail_candidates),
             direct_count,
             _host(final_url),
         )
-        results: List[OnlineSubtitleResult] = []
-        for sid in ids[:4]:
-            results.extend(self._search_detail(sid, targets, f"SubHD 标题查询 · {keyword}"))
+        results = self._parse_subtitles(
+            text,
+            final_url,
+            targets,
+            f"SubHD 标题查询 · {keyword}",
+            match_keyword=keyword,
+        )
+        if results:
+            return _dedupe_results(results)[:30]
+        for sid in detail_candidates[:4]:
+            results.extend(
+                self._search_detail(
+                    sid,
+                    targets,
+                    f"SubHD 标题查询 · {keyword}",
+                    match_keyword=keyword,
+                )
+            )
             if results:
                 break
-        if not results and "/a/" in text:
-            results.extend(self._parse_subtitles(text, final_url, targets, f"SubHD 标题查询 · {keyword}"))
         return _dedupe_results(results)[:30]
 
-    def _search_detail(self, detail_id: str, targets: List[Dict[str, Any]], query_plan: str) -> List[OnlineSubtitleResult]:
+    @staticmethod
+    def _relevant_detail_candidates(text: str, keyword: str, targets: List[Dict[str, Any]]) -> List[str]:
+        candidates: List[str] = []
+        seen: set[str] = set()
+        pattern = r'<a[^>]+href=["\']/d/(\d+)["\'][^>]*>(.*?)</a>'
+        for match in re.finditer(pattern, text or "", flags=re.I | re.S):
+            detail_id, raw_label = match.groups()
+            label = _strip_tags(raw_label)
+            if not label:
+                alt_match = re.search(r'\balt=["\']([^"\']+)["\']', raw_label, flags=re.I)
+                label = html.unescape(alt_match.group(1)).strip() if alt_match else ""
+            assessment = _assess_result_match(title=label, keyword=keyword, targets=targets)
+            if detail_id in seen or assessment["identity_status"] == "failed":
+                continue
+            seen.add(detail_id)
+            candidates.append(detail_id)
+        return candidates
+
+    def _search_detail(
+        self,
+        detail_id: str,
+        targets: List[Dict[str, Any]],
+        query_plan: str,
+        *,
+        match_keyword: str = "",
+    ) -> List[OnlineSubtitleResult]:
         detail_id = str(detail_id or "").strip()
         if not detail_id:
             return []
@@ -90,7 +129,13 @@ class SubHDProvider(BaseSubtitleProvider):
                 status,
             )
             return []
-        results = self._parse_subtitles(text, final_url or page_url, targets, query_plan)
+        results = self._parse_subtitles(
+            text,
+            final_url or page_url,
+            targets,
+            query_plan,
+            match_keyword=match_keyword,
+        )
         logger.info(
             "[SubtitleManualUpload] SubHD 详情页解析完成 detail_id=%s results=%s query_plan=%s",
             detail_id,
@@ -99,7 +144,15 @@ class SubHDProvider(BaseSubtitleProvider):
         )
         return results
 
-    def _parse_subtitles(self, text: str, page_url: str, targets: List[Dict[str, Any]], query_plan: str) -> List[OnlineSubtitleResult]:
+    def _parse_subtitles(
+        self,
+        text: str,
+        page_url: str,
+        targets: List[Dict[str, Any]],
+        query_plan: str,
+        *,
+        match_keyword: str = "",
+    ) -> List[OnlineSubtitleResult]:
         results: List[OnlineSubtitleResult] = []
         target_episode = _target_episode_from_targets(targets)
         for match in re.finditer(r'<a[^>]+href=["\'](/a/([A-Za-z0-9_-]+))["\'][^>]*>(.*?)</a>', text or "", flags=re.I | re.S):
@@ -110,7 +163,7 @@ class SubHDProvider(BaseSubtitleProvider):
                 if not include:
                     continue
             season, episode = _episode_from_text(title) or (0, 0)
-            assessment = _assess_result_match(title=title, keyword=title, targets=targets)
+            assessment = _assess_result_match(title=title, keyword=match_keyword, targets=targets)
             if assessment["identity_status"] == "failed" and targets:
                 continue
             window_start = max(0, match.start() - 700)
@@ -233,9 +286,21 @@ class SubHDProvider(BaseSubtitleProvider):
         if status >= 400 or not text:
             raise ValueError("SubHD 下载页面不可访问")
         down_match = re.search(r'href=["\']([^"\']*/down/[A-Za-z0-9_-]+[^"\']*)["\']', text, re.I)
-        if not down_match:
-            raise ValueError("SubHD 未找到下载按钮")
-        down_url = urljoin(self.root_url, html.unescape(down_match.group(1)))
+        if down_match:
+            down_url = urljoin(self.root_url, html.unescape(down_match.group(1)))
+        else:
+            sid_match = re.search(r'\bdata-sid=["\']([A-Za-z0-9_-]+)["\']', text, re.I)
+            if not sid_match:
+                raise ValueError("SubHD 未找到下载按钮")
+            prepare_data = self.fetcher.post_json(
+                f"{self.root_url}/api/sub/prepare-download",
+                {"sid": sid_match.group(1)},
+                referer=page_url,
+            )
+            prepared_url = self._extract_api_download_url(prepare_data)
+            if not prepare_data.get("success") or "/down/" not in prepared_url:
+                raise ValueError("SubHD 下载按钮准备失败")
+            down_url = urljoin(self.root_url, prepared_url)
         sid = Path(urlparse(down_url).path).name
         if not sid:
             raise ValueError("SubHD 下载按钮缺少 sid")

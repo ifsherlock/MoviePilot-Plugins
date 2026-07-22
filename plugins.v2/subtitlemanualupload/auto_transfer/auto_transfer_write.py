@@ -122,6 +122,7 @@ class AutoTransferWriteStrategy:
         owner = self._owner
         targets = [self._collaborators.target_from_entry(entry) for entry in target_entries]
         target_entry_map = {owner._normalize_text(entry.get("id")): entry for entry in target_entries}
+        force_low_confidence = any(bool(entry.get("_force_timeline_write")) for entry in target_entries)
         upload_map = {item["upload_id"]: item for item in prepared_uploads if item.get("upload_id")}
         chosen_items = [
             item
@@ -154,6 +155,7 @@ class AutoTransferWriteStrategy:
                 session_dir=session_dir,
                 operations=operations,
                 fix_timeline=True,
+                force_low_confidence=force_low_confidence,
             )
 
         ai_submit_result: Optional[Dict[str, Any]] = None
@@ -167,6 +169,7 @@ class AutoTransferWriteStrategy:
                 session_dir=session_dir,
                 target_entries=foreign_entries,
                 prepared_uploads=foreign_uploads,
+                force_low_confidence=force_low_confidence,
             )
             ai_submit_result = self._collaborators.submit_autosub_for_entries(
                 foreign_entries,
