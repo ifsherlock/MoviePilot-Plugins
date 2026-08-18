@@ -1,4 +1,5 @@
 import os
+import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 from uuid import uuid4
@@ -12,6 +13,33 @@ from ..core.models import (
     TaskStatus,
     TriggerType,
 )
+
+
+_EPISODE_TOKEN_RE = re.compile(
+    r"(?i)(?<![A-Z0-9])S(?P<season>\d{1,2})(?:[\s._-]*E(?P<episode>\d{1,3}))?(?!\d)"
+)
+
+
+def _episode_hint(path: str) -> Optional[tuple[int, int]]:
+    matches = list(_EPISODE_TOKEN_RE.finditer(os.path.basename(path or "")))
+    if not matches:
+        return None
+    match = matches[-1]
+    return int(match.group("season")), int(match.group("episode") or 0)
+
+
+def _source_episode_mismatch(video_file: str, subtitle_path: str) -> str:
+    video_hint = _episode_hint(video_file)
+    subtitle_hint = _episode_hint(subtitle_path)
+    if not video_hint or not subtitle_hint:
+        return ""
+    video_season, video_episode = video_hint
+    subtitle_season, subtitle_episode = subtitle_hint
+    if video_season != subtitle_season:
+        return f"视频为 S{video_season:02d}，外挂字幕为 S{subtitle_season:02d}"
+    if video_episode and subtitle_episode and video_episode != subtitle_episode:
+        return f"视频为 S{video_season:02d}E{video_episode:02d}，外挂字幕为 S{subtitle_season:02d}E{subtitle_episode:02d}"
+    return ""
 
 
 class TaskService:
@@ -174,6 +202,10 @@ class TaskService:
                     continue
                 if os.path.splitext(source_subtitle_path)[-1].lower() != ".srt":
                     failed.append({"path": video_file, "reason": "指定 AI 翻译字幕必须是 SRT 格式"})
+                    continue
+                episode_mismatch = _source_episode_mismatch(video_file, source_subtitle_path)
+                if episode_mismatch:
+                    failed.append({"path": video_file, "reason": f"指定外挂字幕与视频季集号不一致：{episode_mismatch}"})
                     continue
             force_generate = task_source == TaskSource.SUBTITLE_MANUAL_UPLOAD
             if self.add_task(

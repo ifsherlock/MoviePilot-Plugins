@@ -286,6 +286,26 @@ def test_submit_tasks_accepts_source_subtitle_override(tmp_path):
     assert payload["tasks"][0]["source_asset_name"] == "online.fixed.srt"
 
 
+def test_submit_tasks_rejects_mismatched_episode_source(tmp_path):
+    module = load_plugin_module()
+    plugin = make_plugin(module)
+    video = tmp_path / "My.Adventures.with.Superman.S03E09.mkv"
+    subtitle = tmp_path / "My.Adventures.with.Superman.S03E04.en.srt"
+    video.write_bytes(b"video")
+    subtitle.write_text("1\n00:00:01,000 --> 00:00:02,000\nHello\n", encoding="utf-8")
+
+    result = plugin.submit_tasks(
+        [str(video)],
+        source=module.TaskSource.SUBTITLE_MANUAL_UPLOAD.value,
+        subtitle_overrides={str(video): {"subtitle_path": str(subtitle), "lang": "en"}},
+    )
+
+    assert result["added"] == []
+    assert "S03E09" in result["failed"][0]["reason"]
+    assert "S03E04" in result["failed"][0]["reason"]
+    assert not plugin._tasks
+
+
 def test_generate_subtitle_uses_source_subtitle_override(tmp_path):
     module = load_plugin_module()
     plugin = make_plugin(module)
@@ -1549,7 +1569,7 @@ def test_autosub_release_metadata_versions_match():
     readme = (root / "plugins.v2" / "autosubv3" / "README.md").read_text(encoding="utf-8")
     version = module.AutoSubv3.plugin_version
 
-    assert version == "3.5.59"
+    assert version == "3.5.60"
     assert package["AutoSubv3"]["version"] == version
     assert package_v2["AutoSubv3"]["version"] == version
     assert plugin_package["version"] == version
