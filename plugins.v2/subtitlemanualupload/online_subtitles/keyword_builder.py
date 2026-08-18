@@ -463,6 +463,8 @@ def _clean_keyword(value: Any) -> str:
 
 
 def _clean_title_alias(value: Any) -> str:
+    if _is_initialism_alias(value):
+        return ""
     alias = _clean_keyword(value)
     if not alias or _is_generic_language_alias(alias):
         return ""
@@ -479,6 +481,20 @@ def _clean_title_alias(value: Any) -> str:
         if len(words) == 1 and len(words[0]) < 2:
             return ""
     return alias
+
+
+def _is_initialism_alias(value: Any) -> bool:
+    """Reject standalone English initialisms from title search aliases."""
+    raw = str(value or "").strip()
+    if not raw:
+        return False
+    compact = re.sub(r"[\s._-]+", "", raw)
+    if not re.fullmatch(r"[A-Za-z]{2,12}", compact):
+        return False
+    if compact.isupper():
+        return True
+    parts = [part for part in re.split(r"[\s._-]+", raw) if part]
+    return len(parts) >= 2 and all(len(part) == 1 and part.isalpha() for part in parts)
 
 
 def _is_generic_language_alias(value: Any) -> bool:

@@ -167,11 +167,18 @@ class SubHDProvider(BaseSubtitleProvider):
         page_url = f"{self.root_url}/d/{quote(detail_id)}"
         status, text, final_url = self.fetcher.get_text(page_url, referer=self.root_url)
         if status >= 400 or not text:
-            logger.warning(
-                "[SubtitleManualUpload] SubHD 详情页不可用 detail_id=%s status=%s",
-                detail_id,
-                status,
-            )
+            if status == 404:
+                logger.info(
+                    "[SubtitleManualUpload] SubHD 未找到豆瓣 ID 对应详情页，跳过 detail_id=%s status=%s",
+                    detail_id,
+                    status,
+                )
+            else:
+                logger.warning(
+                    "[SubtitleManualUpload] SubHD 详情页不可用 detail_id=%s status=%s",
+                    detail_id,
+                    status,
+                )
             return []
         results = self._parse_subtitles(
             text,

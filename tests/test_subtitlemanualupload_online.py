@@ -508,6 +508,32 @@ def test_subhd_search_all_continues_after_keyword_timeout():
     assert len(fetcher.requested) == 2
 
 
+def test_subhd_search_uses_canonical_alias_when_cache_target_has_only_acronym():
+    module = load_online_module()
+    search_html = """
+    <a class="link-dark" href="/a/UKFmNL">
+      My.Adventures.with.Superman.S03E09.Vae.Victis.1080p.AMZN.WEB-DL
+    </a>
+    """
+    fetcher = FakeWebFetcher({"/search/": search_html})
+    provider = module.SubHDProvider(fetcher)
+    targets = [
+        {
+            "media_type": "tv",
+            "title": "我与超人的冒险",
+            "en_title": "MAWS",
+            "tmdb_aliases": ["My Adventures with Superman"],
+            "season": 3,
+            "episode": 9,
+            "year": 2023,
+        }
+    ]
+
+    results = provider.search("My Adventures with Superman S03E09", targets, "episode")
+
+    assert [item.result_id for item in results] == ["UKFmNL"]
+
+
 def test_subhd_episode_search_prefers_exact_result_before_stale_douban_detail():
     module = load_online_module()
     search_html = """
@@ -1901,6 +1927,24 @@ def test_build_search_keywords_prioritizes_explicit_english_title_over_latin_tra
     assert keywords.index("The Lord of the Rings: The Return of the King 2003") < keywords.index(
         "Der Herr der Ringe - Die Rueckkehr des Koenigs 2003"
     )
+
+
+def test_build_search_keywords_never_emits_standalone_initialism_alias():
+    module = load_online_module()
+    media = {
+        "media_type": "tv",
+        "title": "我与超人的冒险",
+        "original_title": "My Adventures with Superman",
+        "en_title": "MAWS",
+        "tmdb_aliases": ["MAWS", "My Adventures with Superman"],
+    }
+    target = {**media, "season": 3, "episode": 9}
+
+    keywords = module.build_search_keywords(media, [target], "episode")
+
+    assert all(not keyword.lower().startswith("maws ") for keyword in keywords)
+    assert "My Adventures with Superman S03E09" in keywords
+    assert module._is_initialism_alias("M.A.W.S.") is True
 
 
 def test_opensubtitles_rejects_generic_english_query_match():

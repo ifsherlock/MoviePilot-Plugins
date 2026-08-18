@@ -79,3 +79,47 @@ def online_keywords(
     if manual_keyword:
         keywords = [manual_keyword, *[item for item in keywords if item != manual_keyword]]
     return keywords[:8]
+
+
+def enrich_targets_with_media(targets: List[Dict[str, Any]], media: Any) -> List[Dict[str, Any]]:
+    """Carry canonical title metadata into ID-resolved targets used by online search."""
+    if not isinstance(media, dict):
+        return targets
+    title_fields = (
+        "original_title",
+        "original_name",
+        "en_title",
+        "title_en",
+        "name_en",
+        "english_title",
+    )
+    metadata_fields = (
+        "original_language",
+        "origin_country",
+        "production_countries",
+    )
+    enriched: List[Dict[str, Any]] = []
+    for target in targets or []:
+        if not isinstance(target, dict):
+            continue
+        item = dict(target)
+        for field in (*title_fields, *metadata_fields):
+            if not item.get(field) and media.get(field):
+                item[field] = media[field]
+
+        aliases: List[Any] = []
+        existing_aliases = item.get("tmdb_aliases")
+        if isinstance(existing_aliases, list):
+            aliases.extend(existing_aliases)
+        elif existing_aliases:
+            aliases.append(existing_aliases)
+        for field in title_fields + ("tmdb_aliases", "aliases", "alternative_titles", "translations"):
+            value = media.get(field)
+            if isinstance(value, list):
+                aliases.extend(value)
+            elif value:
+                aliases.append(value)
+        if aliases:
+            item["tmdb_aliases"] = aliases
+        enriched.append(item)
+    return enriched

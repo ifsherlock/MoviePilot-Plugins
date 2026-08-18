@@ -14,6 +14,7 @@ from ..config.config_schema import host_from_url, normalize_provider_ids
 from ..online.online_subtitle import CaptchaRequiredError, build_search_keywords
 from .request_helpers import (
     filter_unlocked_target_ids,
+    enrich_targets_with_media,
     locked_target_ids_from_body,
     online_keywords,
     results_from_body,
@@ -107,6 +108,7 @@ class OnlineApi:
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
         target_resolver = services.target_resolver()
         targets = [target_resolver.target_from_entry(item) for item in target_entries]
+        targets = enrich_targets_with_media(targets, body.get("media"))
         keywords = online_keywords(body, targets, owner._normalize_text, build_search_keywords)
         if not keywords:
             raise HTTPException(status_code=400, detail="没有可用搜索关键词，请手动输入关键词")
@@ -137,6 +139,7 @@ class OnlineApi:
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
         target_resolver = services.target_resolver()
         targets = [target_resolver.target_from_entry(item) for item in target_entries]
+        targets = enrich_targets_with_media(targets, body.get("media"))
         keywords = online_keywords(body, targets, owner._normalize_text, build_search_keywords)
         if not keywords:
             raise HTTPException(status_code=400, detail="没有可用搜索关键词，请手动输入关键词")
@@ -190,6 +193,7 @@ class OnlineApi:
             raise HTTPException(status_code=400, detail="目标视频已失效，请重新选择资源")
         target_resolver = services.target_resolver()
         targets = [target_resolver.target_from_entry(item) for item in target_entries]
+        targets = enrich_targets_with_media(targets, body.get("media"))
         keywords = online_keywords(body, targets, owner._normalize_text, build_search_keywords)
         if not keywords:
             raise HTTPException(status_code=400, detail="没有可用搜索关键词，请手动输入关键词")

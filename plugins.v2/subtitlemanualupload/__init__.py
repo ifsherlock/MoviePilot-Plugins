@@ -163,7 +163,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "海拉鲁字幕大师"
     plugin_desc = "脱胎自 ChineseSubFinder，支持字幕搜索、上传、匹配、改名与智能调轴。"
     plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/hyrule-subtitle-master.png"
-    plugin_version = "0.1.85"
+    plugin_version = "0.1.86"
     plugin_author = "ifsherlock"
     author_url = "https://github.com/ifsherlock"
     plugin_config_prefix = "subtitlemanualupload_"

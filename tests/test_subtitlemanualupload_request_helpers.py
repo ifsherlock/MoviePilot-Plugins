@@ -57,3 +57,20 @@ def test_online_keywords_keeps_manual_keyword_first_and_deduplicated():
     )
 
     assert keywords == ["Manual", "The Million Pound Note", "百万英镑"]
+
+
+def test_enrich_targets_with_media_restores_canonical_title_aliases():
+    helpers = load_helpers_module()
+    targets = [{"title": "我与超人的冒险", "en_title": "MAWS", "season": 3, "episode": 9}]
+    media = {
+        "original_title": "My Adventures with Superman",
+        "en_title": "My Adventures with Superman",
+        "tmdb_aliases": ["My Adventures with Superman", "MAWS"],
+    }
+
+    enriched = helpers.enrich_targets_with_media(targets, media)
+
+    assert enriched[0]["original_title"] == "My Adventures with Superman"
+    assert "My Adventures with Superman" in enriched[0]["tmdb_aliases"]
+    assert enriched[0]["season"] == 3
+    assert targets[0].get("original_title") is None
