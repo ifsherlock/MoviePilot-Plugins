@@ -332,10 +332,27 @@ def suggest_target(
 ) -> Optional[str]:
     if not targets:
         return None
-    if len(targets) == 1:
-        return targets[0]["id"]
 
     hint = extract_episode_hint(subtitle_info.get("source_name"))
+    if len(targets) == 1:
+        target = targets[0]
+        if hint:
+            hint_season = _default_safe_int(hint.get("season"), 0)
+            hint_episode = _default_safe_int(hint.get("episode"), 0)
+            target_season = _default_safe_int(target.get("season"), 0)
+            target_episode = _default_safe_int(target.get("episode"), 0)
+            if (
+                hint_season
+                and target_season
+                and hint_season != target_season
+            ) or (
+                hint_episode
+                and target_episode
+                and hint_episode != target_episode
+            ):
+                return None
+        return target["id"]
+
     if not hint:
         return None
 
@@ -361,7 +378,15 @@ def auto_fill_missing_targets(
     *,
     extract_episode_hint: EpisodeHint,
 ) -> None:
-    unresolved = [item for item in preview_items if not item.get("target_id")]
+    # An explicit episode hint is evidence that the item belongs to a specific
+    # episode. Never assign it by positional fallback when that episode was not
+    # resolved above; doing so can send an old cached subtitle to a new episode.
+    unresolved = [
+        item
+        for item in preview_items
+        if not item.get("target_id")
+        and not extract_episode_hint(item.get("source_name") or "")
+    ]
     if not unresolved:
         return
     used_target_ids = {item.get("target_id") for item in preview_items if item.get("target_id")}

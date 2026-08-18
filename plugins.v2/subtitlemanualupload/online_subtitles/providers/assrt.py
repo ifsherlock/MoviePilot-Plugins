@@ -12,6 +12,9 @@ class AssrtProvider(BaseSubtitleProvider):
     provider_id = "assrt"
     display_name = "射手网(伪)"
     default_root_url = DEFAULT_PROVIDER_ROOTS["assrt"]
+    _api_timeout_seconds = 10
+    _api_attempts = 2
+    _download_timeout_seconds = 12
 
     def __init__(
         self,
@@ -152,7 +155,16 @@ class AssrtProvider(BaseSubtitleProvider):
                     break
         if not download_url:
             raise ValueError("射手网(伪) API 未返回可下载链接")
-        name, content, final_url = OnlineDirectDownloader(use_proxy=self.fetcher.use_proxy).get_bytes(download_url)
+        name, content, final_url = OnlineDirectDownloader(
+            use_proxy=self.fetcher.use_proxy,
+            timeout=self._download_timeout_seconds,
+            attempts=1,
+        ).get_bytes(download_url)
+        if _looks_like_html_bytes(content, name or final_url):
+            body = _decode_bytes(content[:2000], None)
+            if _looks_like_captcha_page(body):
+                raise ValueError("射手网(伪) 下载地址返回了验证页面，请打开手动链接完成下载后上传")
+            raise ValueError("射手网(伪) 下载地址返回了网页而不是字幕文件，请换一个结果或手动下载")
         logger.info(
             "[SubtitleManualUpload] 射手网(伪) API 字幕下载完成 host=%s size=%s",
             _host(final_url),
@@ -173,17 +185,31 @@ class AssrtProvider(BaseSubtitleProvider):
         if proxies:
             handlers.append(urllib.request.ProxyHandler(proxies))
         opener = urllib.request.build_opener(*handlers)
-        try:
-            request = urllib.request.Request(url, headers=headers)
-            with opener.open(request, timeout=40) as response:
-                raw = response.read()
-        except urllib.error.HTTPError as exc:
-            detail = _decode_bytes(exc.read()[:500], exc.headers.get_content_charset())
-            raise ValueError(f"射手网(伪) API 请求失败 HTTP {exc.code}: {_compact_error_message(detail)}") from exc
-        except urllib.error.URLError as exc:
-            raise ValueError(_format_network_error(self.api_url, exc)) from exc
-        except OSError as exc:
-            raise ValueError(_format_network_error(self.api_url, exc)) from exc
+        raw = b""
+        last_error: Optional[Exception] = None
+        for attempt in range(self._api_attempts):
+            try:
+                request = urllib.request.Request(url, headers=headers)
+                with opener.open(request, timeout=self._api_timeout_seconds) as response:
+                    raw = response.read()
+                break
+            except urllib.error.HTTPError as exc:
+                detail = _decode_bytes(exc.read()[:500], exc.headers.get_content_charset())
+                raise ValueError(f"射手网(伪) API 请求失败 HTTP {exc.code}: {_compact_error_message(detail)}") from exc
+            except (urllib.error.URLError, OSError, ssl.SSLError) as exc:
+                last_error = exc
+                if attempt < self._api_attempts - 1 and _is_retryable_network_error(exc):
+                    logger.info(
+                        "[SubtitleManualUpload] ASSRT API 网络抖动，准备重试 path=%s attempt=%s/%s",
+                        path,
+                        attempt + 1,
+                        self._api_attempts,
+                    )
+                    time.sleep(0.5 * (2**attempt))
+                    continue
+                break
+        if not raw and last_error:
+            raise ValueError(_format_network_error(self.api_url, last_error)) from last_error
         try:
             payload = json.loads(_decode_bytes(raw, None) or "{}")
         except Exception as exc:

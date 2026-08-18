@@ -85,11 +85,12 @@ def _target_year_from_targets(targets: List[Dict[str, Any]]) -> int:
 
 
 def _target_episode_from_targets(targets: List[Dict[str, Any]]) -> int:
-    for target in targets or []:
-        episode = _safe_int(target.get("episode"), 0)
-        if episode:
-            return episode
-    return 0
+    episodes = {
+        _safe_int(target.get("episode"), 0)
+        for target in targets or []
+        if _safe_int(target.get("episode"), 0)
+    }
+    return next(iter(episodes)) if len(episodes) == 1 else 0
 
 
 def _first_target_value(targets: List[Dict[str, Any]], field: str) -> str:

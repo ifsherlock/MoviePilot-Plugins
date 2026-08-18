@@ -24,6 +24,7 @@ USER_AGENT = (
 DEFAULT_ENGINE = "cloakbrowser"
 MP_BROWSER_ENGINE = "mp_browser"
 ONLINE_ENGINES = {DEFAULT_ENGINE, MP_BROWSER_ENGINE}
+ONLINE_PAGE_TIMEOUT_SECONDS = 10
 
 
 def normalize_online_engine(value: Any) -> str:
@@ -164,8 +165,16 @@ class OnlinePageClient:
 
 
 class OnlineDirectDownloader:
-    def __init__(self, *, use_proxy: bool = False, cookies: str = "", timeout: int = 40):
-        self.timeout = timeout
+    def __init__(
+        self,
+        *,
+        use_proxy: bool = False,
+        cookies: str = "",
+        timeout: int = 40,
+        attempts: int = 3,
+    ):
+        self.timeout = max(1, int(timeout))
+        self.attempts = max(1, int(attempts))
         self.cookies = cookies
         handlers = []
         proxies = getattr(settings, "PROXY", None) if use_proxy else None
@@ -185,7 +194,7 @@ class OnlineDirectDownloader:
             headers["Cookie"] = self.cookies
         request = urllib.request.Request(url, headers=headers)
         last_error: Optional[Exception] = None
-        for attempt in range(3):
+        for attempt in range(self.attempts):
             try:
                 with self.opener.open(request, timeout=self.timeout) as response:
                     content = response.read()
@@ -204,7 +213,7 @@ class OnlineDirectDownloader:
                 raise ValueError(f"下载失败 HTTP {exc.code}: {detail}") from exc
             except (urllib.error.URLError, OSError, ssl.SSLError) as exc:
                 last_error = exc
-                if attempt < 2 and _is_retryable_network_error(exc):
+                if attempt < self.attempts - 1 and _is_retryable_network_error(exc):
                     time.sleep(0.5 * (2**attempt))
                     continue
                 break

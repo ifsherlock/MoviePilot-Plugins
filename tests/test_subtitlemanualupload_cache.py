@@ -181,6 +181,41 @@ def test_target_normalizers_are_reexported_from_target_resolver(tmp_path):
     assert target_resolver.entry_matches_keyword(entry, "example s01e02") == target_normalizers.entry_matches_keyword(entry, "example s01e02")
 
 
+def test_suggest_target_rejects_single_target_episode_mismatch():
+    module, _, _ = load_plugin_module()
+    target_resolver = plugin_submodule(module, "catalog.target_resolver")
+    targets = [{"id": "s03e09", "season": 3, "episode": 9}]
+
+    assert target_resolver.suggest_target(
+        {"source_name": "My.Adventures.with.Superman.S03E04.en.srt"},
+        targets,
+        extract_episode_hint=target_resolver.extract_episode_hint,
+    ) is None
+    assert target_resolver.suggest_target(
+        {"source_name": "My.Adventures.with.Superman.S03E09.en.srt"},
+        targets,
+        extract_episode_hint=target_resolver.extract_episode_hint,
+    ) == "s03e09"
+
+
+def test_auto_fill_does_not_positional_match_explicit_episode_mismatch():
+    module, _, _ = load_plugin_module()
+    target_resolver = plugin_submodule(module, "catalog.target_resolver")
+    preview_items = [{
+        "source_name": "My.Adventures.with.Superman.S03E04.en.srt",
+        "target_id": None,
+    }]
+    targets = [{"id": "s03e09", "season": 3, "episode": 9}]
+
+    target_resolver.auto_fill_missing_targets(
+        preview_items,
+        targets,
+        extract_episode_hint=target_resolver.extract_episode_hint,
+    )
+
+    assert preview_items[0]["target_id"] is None
+
+
 def test_media_metadata_helpers_are_reexported_from_target_resolver():
     module, _, _ = load_plugin_module()
     target_resolver = plugin_submodule(module, "catalog.target_resolver")

@@ -19,7 +19,7 @@ from app.core.config import settings
 from app.log import logger
 
 from .clients import OnlinePageClient
-from .keyword_builder import _unique_keywords
+from .keyword_builder import _normalize_title_for_match, _strong_title_matches, _unique_keywords
 from .matcher import _extract_years, _normalize_imdb_tt
 from .models import HtmlLink, OnlineSubtitleResult
 
@@ -138,7 +138,62 @@ def _extract_download_hrefs(text: str) -> List[str]:
     return _unique_keywords(hrefs)
 
 
-def _search_douban_subject(keyword: str, year: int, fetcher: OnlinePageClient) -> Dict[str, str]:
+def _douban_seasons_from_text(value: Any) -> List[int]:
+    text = str(value or "")
+    seasons: List[int] = []
+    for pattern in (
+        r"(?i)\bS0?(\d{1,2})(?:[\s._-]*E\d{1,3})?\b",
+        r"(?i)\bSeason\s*0?(\d{1,2})\b",
+        r"第\s*(\d{1,2})\s*季",
+    ):
+        seasons.extend(int(match.group(1)) for match in re.finditer(pattern, text))
+    return sorted(set(seasons))
+
+
+def _douban_target_title_aliases(targets: List[Dict[str, Any]]) -> List[str]:
+    values: List[str] = []
+    for target in targets or []:
+        if not isinstance(target, dict):
+            continue
+        for field in (
+            "title",
+            "original_title",
+            "original_name",
+            "en_title",
+            "title_en",
+            "name_en",
+            "english_title",
+        ):
+            value = str(target.get(field) or "").strip()
+            if value:
+                values.append(value)
+    aliases = _unique_keywords(values)
+    if not aliases:
+        return []
+
+    # Prefer full titles over short/acronym aliases such as "MAWS".
+    rich_aliases = []
+    for alias in aliases:
+        normalized = _normalize_title_for_match(alias)
+        words = [part for part in normalized.split() if len(part) >= 3]
+        if len(words) >= 2 or re.search(r"[\u3400-\u9fff\u3040-\u30ff\uac00-\ud7af]", normalized):
+            rich_aliases.append(alias)
+    return rich_aliases or aliases
+
+
+def _douban_candidate_matches_targets(title: str, targets: List[Dict[str, Any]]) -> bool:
+    aliases = _douban_target_title_aliases(targets)
+    if not aliases:
+        return True
+    return any(_strong_title_matches(alias, title) for alias in aliases)
+
+
+def _search_douban_subject(
+    keyword: str,
+    year: int,
+    fetcher: OnlinePageClient,
+    targets: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, str]:
     query = re.sub(r"\bS\d{1,2}(?:E\d{1,3})?\b", "", keyword or "", flags=re.I).strip()
     if not query:
         return {}
@@ -169,11 +224,35 @@ def _search_douban_subject(keyword: str, year: int, fetcher: OnlinePageClient) -
     if not candidates:
         for sid in _extract_unique_matches(r"movie\.douban\.com/subject/(\d+)", text):
             candidates.append({"douban_id": sid, "title": "", "year": ""})
+    query_seasons = set(_douban_seasons_from_text(keyword))
+    relevant: List[Dict[str, str]] = []
+    for candidate in candidates:
+        title = str(candidate.get("title") or "")
+        if targets and not _douban_candidate_matches_targets(title, targets):
+            continue
+        candidate_seasons = set(_douban_seasons_from_text(title))
+        if query_seasons and candidate_seasons and not query_seasons.intersection(candidate_seasons):
+            continue
+        relevant.append(candidate)
+
+    if targets and not relevant:
+        logger.info(
+            "[SubtitleManualUpload] 豆瓣兜底候选被身份校验拒绝 keyword=%s candidates=%s",
+            query,
+            len(candidates),
+        )
+        return {}
+
+    pool = relevant or candidates
     if year:
-        for candidate in candidates:
+        for candidate in pool:
             if str(year) == str(candidate.get("year") or ""):
                 return candidate
-    return candidates[0] if candidates else {}
+    if query_seasons:
+        for candidate in pool:
+            if query_seasons.intersection(_douban_seasons_from_text(candidate.get("title"))):
+                return candidate
+    return pool[0] if pool else {}
 
 
 def _fetch_douban_imdb_id(douban_id: str, fetcher: OnlinePageClient) -> str:

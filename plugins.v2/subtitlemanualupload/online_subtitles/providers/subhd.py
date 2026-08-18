@@ -25,26 +25,62 @@ class SubHDProvider(BaseSubtitleProvider):
         return self._search_keyword(keyword, targets)
 
     def search_all(self, keywords: List[str], targets: List[Dict[str, Any]], scope: str) -> List[OnlineSubtitleResult]:
+        errors: List[str] = []
+
+        def attempt(label: str, callback):
+            try:
+                return callback()
+            except Exception as exc:
+                message = _compact_error_message(str(exc))
+                if message not in errors:
+                    errors.append(message)
+                logger.warning(
+                    "[SubtitleManualUpload] SubHD 搜索步骤失败，继续后续候选 step=%s error=%s",
+                    label,
+                    message,
+                )
+                return []
+
+        def search_keywords() -> List[OnlineSubtitleResult]:
+            for keyword in keywords:
+                found = attempt(f"keyword:{keyword}", lambda keyword=keyword: self._search_keyword(keyword, targets))
+                if found:
+                    return found
+            return []
+
+        found = search_keywords()
+        if found:
+            return found
+
         douban_id = _first_target_value(targets, "douban_id")
         if douban_id:
-            found = self._search_detail(str(douban_id), targets, "SubHD 豆瓣 ID 查询")
-            if found:
-                return found
-        for keyword in keywords:
-            found = self._search_keyword(keyword, targets)
+            found = attempt(
+                "douban-detail",
+                lambda: self._search_detail(str(douban_id), targets, "SubHD 豆瓣 ID 查询"),
+            )
             if found:
                 return found
         fallback = self._fallback_ids_from_douban(keywords, targets)
         fallback_douban = fallback.get("douban_id")
         if fallback_douban and fallback_douban != douban_id:
-            found = self._search_detail(fallback_douban, targets, "SubHD 豆瓣搜索兜底")
+            found = attempt(
+                "douban-fallback",
+                lambda: self._search_detail(fallback_douban, targets, "SubHD 豆瓣搜索兜底"),
+            )
             if found:
                 return found
         fallback_imdb = fallback.get("imdb_id") or _first_target_value(targets, "imdb_id")
         if fallback_imdb:
-            resolved = self._resolve_imdb(fallback_imdb)
+            resolved = attempt("imdb-resolve", lambda: self._resolve_imdb(fallback_imdb))
             if resolved:
-                return self._search_detail(resolved, targets, "SubHD IMDb 兜底查询")
+                found = attempt(
+                    "imdb-detail",
+                    lambda: self._search_detail(resolved, targets, "SubHD IMDb 兜底查询"),
+                )
+                if found:
+                    return found
+        if errors:
+            raise ValueError(_provider_error_summary(errors, len(keywords)))
         return []
 
     def _search_keyword(self, keyword: str, targets: List[Dict[str, Any]]) -> List[OnlineSubtitleResult]:
@@ -79,14 +115,22 @@ class SubHDProvider(BaseSubtitleProvider):
         if results:
             return _dedupe_results(results)[:30]
         for sid in detail_candidates[:4]:
-            results.extend(
-                self._search_detail(
-                    sid,
-                    targets,
-                    f"SubHD 标题查询 · {keyword}",
-                    match_keyword=keyword,
+            try:
+                results.extend(
+                    self._search_detail(
+                        sid,
+                        targets,
+                        f"SubHD 标题查询 · {keyword}",
+                        match_keyword=keyword,
+                    )
                 )
-            )
+            except Exception as exc:
+                logger.warning(
+                    "[SubtitleManualUpload] SubHD 详情候选失败，继续下一个 detail_id=%s error=%s",
+                    sid,
+                    _compact_error_message(str(exc)),
+                )
+                continue
             if results:
                 break
         return _dedupe_results(results)[:30]
@@ -206,10 +250,22 @@ class SubHDProvider(BaseSubtitleProvider):
 
     def _fallback_ids_from_douban(self, keywords: List[str], targets: List[Dict[str, Any]]) -> Dict[str, str]:
         for keyword in keywords[:2]:
-            candidate = _search_douban_subject(keyword, _target_year_from_targets(targets), self.fetcher)
+            candidate = _search_douban_subject(
+                keyword,
+                _target_year_from_targets(targets),
+                self.fetcher,
+                targets,
+            )
             if candidate.get("douban_id"):
                 if not candidate.get("imdb_id"):
                     candidate["imdb_id"] = _fetch_douban_imdb_id(candidate["douban_id"], self.fetcher)
+                logger.info(
+                    "[SubtitleManualUpload] 豆瓣兜底候选通过身份校验 keyword=%s douban_id=%s title=%s year=%s",
+                    keyword,
+                    candidate.get("douban_id"),
+                    candidate.get("title"),
+                    candidate.get("year"),
+                )
                 return candidate
         return {}
 

@@ -452,7 +452,7 @@ export function useOnlineSubtitles({
           results: selectedOnlineResults.value,
         }),
         ONLINE_DOWNLOAD_TIMEOUT_MS,
-        '在线字幕下载仍在源站验证中，已停止等待；可换一个结果重试，或打开手动链接下载后上传。',
+        '在线字幕源响应超时，已停止等待；可换一个结果重试，或打开手动链接下载后上传。',
       )
       if (downloadSeq !== onlineDownloadSeq) return
       const data = unwrapResponse(response) || {}

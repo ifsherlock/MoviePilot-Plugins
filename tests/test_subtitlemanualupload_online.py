@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 import types
 from pathlib import Path
@@ -194,6 +195,7 @@ def test_online_clients_are_reexported_from_common():
 
     assert module.normalize_online_engine("mp") == "mp_browser"
     assert module.OnlinePageClient().status()["engine"] == "api"
+    assert module.OnlineSubtitleSearchService().fetcher.timeout == module.ONLINE_PAGE_TIMEOUT_SECONDS == 10
     assert clients_module._decode_bytes("字幕".encode("gb18030"), None) == "字幕"
 
     class ResetError(Exception):
@@ -280,6 +282,8 @@ def test_matcher_helpers_are_reexported_from_common():
         assert getattr(common_module, name) is getattr(matcher_module, name)
 
     targets = [{"media_type": "tv", "title": "Example Show", "season": 1, "episode": 2, "year": "2025"}]
+    assert module._target_episode_from_targets(targets) == 2
+    assert module._target_episode_from_targets([*targets, {**targets[0], "episode": 3}]) == 0
     assessment = module._assess_result_match(title="Example Show S01E02 简英双语", keyword="Example Show S01E02", targets=targets)
 
     assert assessment["identity_status"] == "strong"
@@ -399,7 +403,7 @@ def test_opensubtitles_search_all_uses_imdb_last():
     assert [item.result_id for item in results] == ["55"]
 
 
-def test_subhd_prefers_douban_id_and_parses_subtitle_rows():
+def test_subhd_episode_search_uses_douban_id_after_keyword_misses():
     module = load_online_module()
     html = """
     <div class="row">
@@ -416,7 +420,8 @@ def test_subhd_prefers_douban_id_and_parses_subtitle_rows():
         "episode",
     )
 
-    assert fetcher.requested[0] == "https://subhd.tv/d/1292052"
+    assert "/search/" in fetcher.requested[0]
+    assert fetcher.requested[1] == "https://subhd.tv/d/1292052"
     assert len(results) == 1
     assert results[0].provider == "subhd"
     assert results[0].result_id == "bqsyNZ"
@@ -461,6 +466,272 @@ def test_subhd_keyword_search_prefers_direct_subtitle_rows():
 
     assert [item.result_id for item in results] == ["vlSDLm"]
     assert len(fetcher.requested) == 1
+
+
+def test_subhd_search_all_continues_after_keyword_timeout():
+    module = load_online_module()
+    search_html = """
+    <a class="link-dark" href="/a/UKFmNL">
+      My.Adventures.with.Superman.S03E09.Vae.Victis.1080p.AMZN.WEB-DL
+    </a>
+    """
+
+    class FlakyKeywordFetcher(FakeWebFetcher):
+        def get_text(self, url, *, referer=""):
+            self.requested.append(url)
+            if "first-query" in url:
+                raise ValueError("subhd.tv 连接超时，请稍后重试")
+            if "/search/" in url:
+                return 200, search_html, url
+            return 404, "", url
+
+    fetcher = FlakyKeywordFetcher()
+    provider = module.SubHDProvider(fetcher)
+    targets = [
+        {
+            "media_type": "tv",
+            "title": "我与超人的冒险",
+            "original_title": "My Adventures with Superman",
+            "season": 3,
+            "episode": 9,
+            "year": 2023,
+        }
+    ]
+
+    results = provider.search_all(
+        ["first-query", "My Adventures with Superman S03E09"],
+        targets,
+        "episode",
+    )
+
+    assert [item.result_id for item in results] == ["UKFmNL"]
+    assert len(fetcher.requested) == 2
+
+
+def test_subhd_episode_search_prefers_exact_result_before_stale_douban_detail():
+    module = load_online_module()
+    search_html = """
+    <a class="link-dark align-middle" href="/a/UKFmNL">我与超人的冒险 第三季</a>
+    <a href="/a/UKFmNL" class="link-dark">
+      My.Adventures.with.Superman.S03E09.Vae.Victis.1080p.AMZN.WEB-DL.DDP5.1.H.264-NTb
+    </a>
+    """
+    fetcher = FakeWebFetcher({"/search/": search_html})
+    provider = module.SubHDProvider(fetcher)
+    targets = [
+        {
+            "media_type": "tv",
+            "title": "我与超人的冒险",
+            "original_title": "My Adventures with Superman",
+            "douban_id": "38461416",
+            "season": 3,
+            "episode": 9,
+            "year": 2023,
+        }
+    ]
+
+    results = provider.search_all(
+        ["My Adventures with Superman S03E09", "我与超人的冒险 S03E09"],
+        targets,
+        "episode",
+    )
+
+    assert [item.result_id for item in results] == ["UKFmNL"]
+    assert results[0].title.startswith("My.Adventures.with.Superman.S03E09")
+    assert len(fetcher.requested) == 1
+    assert not any("/d/38461416" in url for url in fetcher.requested)
+
+
+def test_subhd_auto_scope_also_prefers_keyword_before_stale_douban_detail():
+    module = load_online_module()
+    search_html = """
+    <a href="/a/UKFmNL" class="link-dark">
+      My.Adventures.with.Superman.S03E09.Vae.Victis.1080p.AMZN.WEB-DL
+    </a>
+    """
+    fetcher = FakeWebFetcher({"/search/": search_html})
+    provider = module.SubHDProvider(fetcher)
+    targets = [
+        {
+            "media_type": "tv",
+            "title": "我与超人的冒险",
+            "original_title": "My Adventures with Superman",
+            "douban_id": "38461416",
+            "season": 3,
+            "episode": 9,
+            "year": 2023,
+        }
+    ]
+
+    results = provider.search_all(
+        ["My Adventures with Superman S03E09"],
+        targets,
+        "auto",
+    )
+
+    assert [item.result_id for item in results] == ["UKFmNL"]
+    assert len(fetcher.requested) == 1
+    assert not any("/d/38461416" in url for url in fetcher.requested)
+
+
+def test_douban_fallback_rejects_unrelated_acronym_result():
+    module = load_online_module()
+    payload = {
+        "items": [
+            {
+                "id": 38461416,
+                "title": "Maws (2028)",
+                "abstract": "United States / Horror",
+                "abstract_2": "",
+                "tpl_name": "search_subject",
+            }
+        ]
+    }
+    fetcher = FakeWebFetcher(
+        {"search.douban.com": f"<script>window.__DATA__ = {json.dumps(payload)};</script>"}
+    )
+    targets = [
+        {
+            "media_type": "tv",
+            "title": "我与超人的冒险",
+            "original_title": "My Adventures with Superman",
+            "en_title": "MAWS",
+            "season": 1,
+            "episode": 1,
+            "year": 2023,
+        }
+    ]
+
+    candidate = module._search_douban_subject("MAWS S01", 2023, fetcher, targets)
+
+    assert candidate == {}
+
+
+def test_douban_fallback_prefers_matching_season_over_series_start_year():
+    module = load_online_module()
+    payload = {
+        "items": [
+            {
+                "id": 36937450,
+                "title": "我与超人的冒险 第三季 My Adventures with Superman Season 3 (2026)",
+                "abstract": "United States / Animation",
+                "abstract_2": "",
+                "tpl_name": "search_subject",
+            },
+            {
+                "id": 35467046,
+                "title": "我与超人的冒险 第一季 My Adventures with Superman Season 1 (2023)",
+                "abstract": "United States / Animation",
+                "abstract_2": "",
+                "tpl_name": "search_subject",
+            },
+            {
+                "id": 36860839,
+                "title": "我与超人的冒险 第二季 My Adventures with Superman Season 2 (2024)",
+                "abstract": "United States / Animation",
+                "abstract_2": "",
+                "tpl_name": "search_subject",
+            },
+        ]
+    }
+    fetcher = FakeWebFetcher(
+        {"search.douban.com": f"<script>window.__DATA__ = {json.dumps(payload)};</script>"}
+    )
+    targets = [
+        {
+            "media_type": "tv",
+            "title": "我与超人的冒险",
+            "original_title": "My Adventures with Superman",
+            "season": 3,
+            "episode": 9,
+            "year": 2023,
+        }
+    ]
+
+    candidate = module._search_douban_subject(
+        "My Adventures with Superman S03E09",
+        2023,
+        fetcher,
+        targets,
+    )
+
+    assert candidate["douban_id"] == "36937450"
+
+
+def test_subhd_season_search_keeps_all_requested_episode_matches():
+    module = load_online_module()
+    search_html = """
+    <a class="link-dark" href="/a/EP01">My.Adventures.with.Superman.S03E01.1080p.WEB-DL</a>
+    <a class="link-dark" href="/a/EP09">My.Adventures.with.Superman.S03E09.1080p.WEB-DL</a>
+    """
+    fetcher = FakeWebFetcher({"/search/": search_html})
+    provider = module.SubHDProvider(fetcher)
+    targets = [
+        {
+            "media_type": "tv",
+            "title": "我与超人的冒险",
+            "original_title": "My Adventures with Superman",
+            "season": 3,
+            "episode": 1,
+            "year": 2023,
+        },
+        {
+            "media_type": "tv",
+            "title": "我与超人的冒险",
+            "original_title": "My Adventures with Superman",
+            "season": 3,
+            "episode": 9,
+            "year": 2023,
+        },
+    ]
+
+    results = provider.search_all(["My Adventures with Superman S03"], targets, "season")
+
+    assert [item.result_id for item in results] == ["EP01", "EP09"]
+    assert len(fetcher.requested) == 1
+
+
+def test_subhd_keyword_search_continues_after_detail_timeout():
+    module = load_online_module()
+    search_html = """
+    <a href="/d/111">My Adventures with Superman S03E09</a>
+    <a href="/d/222">My Adventures with Superman S03E09</a>
+    """
+    detail_html = """
+    <a class="link-dark" href="/a/UKFmNL">
+      My.Adventures.with.Superman.S03E09.Vae.Victis.1080p.AMZN.WEB-DL
+    </a>
+    """
+
+    class FlakyDetailFetcher(FakeWebFetcher):
+        def get_text(self, url, *, referer=""):
+            self.requested.append(url)
+            if "/search/" in url:
+                return 200, search_html, url
+            if "/d/111" in url:
+                raise ValueError("subhd.tv 连接超时，请稍后重试")
+            if "/d/222" in url:
+                return 200, detail_html, url
+            return 404, "", url
+
+    fetcher = FlakyDetailFetcher()
+    provider = module.SubHDProvider(fetcher)
+    targets = [
+        {
+            "media_type": "tv",
+            "title": "我与超人的冒险",
+            "original_title": "My Adventures with Superman",
+            "season": 3,
+            "episode": 9,
+            "year": 2023,
+        }
+    ]
+
+    results = provider.search("My Adventures with Superman S03E09", targets, "episode")
+
+    assert [item.result_id for item in results] == ["UKFmNL"]
+    assert any("/d/111" in url for url in fetcher.requested)
+    assert any("/d/222" in url for url in fetcher.requested)
 
 
 def test_subhd_download_uses_api_html_url_fallback():
@@ -784,6 +1055,86 @@ def test_assrt_provider_discards_mojibake_results():
 
     assert [item.result_id for item in results] == ["652401"]
     assert results[0].title == "指环王III：王者归来 中文字幕"
+
+
+def test_assrt_api_retries_transient_timeout_within_frontend_budget(monkeypatch):
+    module = load_online_module()
+    provider = module.AssrtProvider(FakeFetcher(), api_key="test-key")
+    provider_module = sys.modules[provider.__class__.__module__]
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return b'{"status": 0, "sub": {"subs": []}}'
+
+    class FlakyOpener:
+        def __init__(self):
+            self.calls = 0
+
+        def open(self, request, timeout):
+            self.calls += 1
+            assert timeout == provider._api_timeout_seconds
+            if self.calls == 1:
+                raise provider_module.urllib.error.URLError(TimeoutError("timed out"))
+            return FakeResponse()
+
+    opener = FlakyOpener()
+    monkeypatch.setattr(provider_module.urllib.request, "build_opener", lambda *handlers: opener)
+    monkeypatch.setattr(provider_module.time, "sleep", lambda seconds: None)
+
+    payload = provider._api_json("/v1/sub/search", {"q": "Example S03E09"})
+
+    assert payload["status"] == 0
+    assert opener.calls == 2
+    assert provider._api_timeout_seconds * provider._api_attempts + 1 < 25
+    assert (
+        provider._api_timeout_seconds * provider._api_attempts
+        + provider._download_timeout_seconds
+        + 1
+        < 35
+    )
+
+
+def test_assrt_download_rejects_verification_html_and_uses_short_timeout():
+    module = load_online_module()
+    provider = module.AssrtProvider(FakeFetcher(), api_key="test-key")
+    provider_module = sys.modules[provider.__class__.__module__]
+    original_downloader = provider_module.OnlineDirectDownloader
+    instances = []
+
+    class VerificationDownloader:
+        def __init__(self, **kwargs):
+            self.kwargs = kwargs
+            instances.append(self)
+
+        def get_bytes(self, url, *, referer=""):
+            return "verify.html", b"<html><body>captcha verification</body></html>", url
+
+    provider._api_json = lambda path, params: {
+        "status": 0,
+        "sub": {"subs": [{"id": 800631, "url": "https://download.example/verify"}]},
+    }
+    provider_module.OnlineDirectDownloader = VerificationDownloader
+
+    try:
+        provider.download({"result_id": "800631", "download_url": "assrt-api:800631"})
+    except ValueError as exc:
+        assert "验证页面" in str(exc)
+    else:
+        raise AssertionError("ASSRT verification HTML should be rejected")
+    finally:
+        provider_module.OnlineDirectDownloader = original_downloader
+
+    assert instances[0].kwargs == {
+        "use_proxy": False,
+        "timeout": provider._download_timeout_seconds,
+        "attempts": 1,
+    }
 
 
 def test_opensubtitles_search_returns_multilingual_api_results():

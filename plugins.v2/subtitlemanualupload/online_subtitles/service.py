@@ -22,7 +22,11 @@ class OnlineSubtitleSearchService:
         opensubtitles_username: str = "",
         opensubtitles_password: str = "",
     ):
-        self.fetcher = OnlinePageClient(engine=engine, use_proxy=use_proxy)
+        self.fetcher = OnlinePageClient(
+            engine=engine,
+            use_proxy=use_proxy,
+            timeout=ONLINE_PAGE_TIMEOUT_SECONDS,
+        )
         roots = normalize_provider_roots(provider_roots)
         self.providers: Dict[str, BaseSubtitleProvider] = {
             "subhd": SubHDProvider(self.fetcher, root_url=roots["subhd"]),
