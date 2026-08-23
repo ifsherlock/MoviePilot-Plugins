@@ -141,6 +141,7 @@ class MediaTargetResolver:
 
         return {
             "id": entry_id,
+            "origin": "transfer_history",
             "media_key": media_key,
             "media_type": media_type,
             "title": title,

@@ -63,9 +63,6 @@ class SubtitleInventory:
     ) -> Dict[str, List[Dict[str, Any]]]:
         entries = [entry for entry in target_entries if isinstance(entry, dict)]
         result = {key: [] for key in (self._target_key(entry) for entry in entries) if key}
-        if self._trust_transfer_history_paths:
-            return result
-
         entries_by_directory: Dict[Path, List[Dict[str, Any]]] = {}
         for entry in entries:
             storage = self._normalize_text(entry.get("storage")) or "local"
@@ -103,7 +100,10 @@ class SubtitleInventory:
                     for item in subtitle_files
                     if item.stem == stem or item.name.startswith(f"{stem}.")
                 ]
-                if not matched_files or not video_path.is_file():
+                if not matched_files or (
+                    not self._trust_transfer_history_paths
+                    and not video_path.is_file()
+                ):
                     continue
                 subtitles = []
                 for sub_file in matched_files:

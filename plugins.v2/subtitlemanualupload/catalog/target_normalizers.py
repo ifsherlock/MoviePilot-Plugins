@@ -117,7 +117,8 @@ def is_local_video_path(
     allowed_exts.update(stream_exts)
     if suffix and allowed_exts and suffix not in allowed_exts:
         return False
-    if trust_transfer_history_paths:
+    origin = normalize_text(entry.get("origin")) or "transfer_history"
+    if trust_transfer_history_paths and origin == "transfer_history":
         return True
     try:
         return Path(path).is_file()
