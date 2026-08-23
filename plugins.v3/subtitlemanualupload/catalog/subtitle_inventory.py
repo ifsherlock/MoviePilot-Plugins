@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
@@ -26,6 +27,9 @@ class SubtitleInventory:
         embedded_probe_cache: "OrderedDict[str, List[Dict[str, Any]]]",
         embedded_probe_cache_max_size: int,
         trust_transfer_history_paths: bool,
+        subtitle_directory_cache: Optional["OrderedDict[str, Dict[str, Any]]"] = None,
+        subtitle_directory_cache_max_size: int = 1000,
+        subtitle_directory_cache_ttl_seconds: int = 900,
         normalize_text: NormalizeText,
         normalize_language_suffix: NormalizeLanguageSuffix,
         detect_language_profile: DetectLanguageProfile,
@@ -42,6 +46,9 @@ class SubtitleInventory:
         self._embedded_probe_cache = embedded_probe_cache
         self._embedded_probe_cache_max_size = embedded_probe_cache_max_size
         self._trust_transfer_history_paths = trust_transfer_history_paths
+        self._subtitle_directory_cache = subtitle_directory_cache if subtitle_directory_cache is not None else OrderedDict()
+        self._subtitle_directory_cache_max_size = max(1, subtitle_directory_cache_max_size)
+        self._subtitle_directory_cache_ttl_seconds = max(0, subtitle_directory_cache_ttl_seconds)
         self._normalize_text = normalize_text
         self._normalize_language_suffix = normalize_language_suffix
         self._detect_language_profile = detect_language_profile
@@ -63,9 +70,6 @@ class SubtitleInventory:
     ) -> Dict[str, List[Dict[str, Any]]]:
         entries = [entry for entry in target_entries if isinstance(entry, dict)]
         result = {key: [] for key in (self._target_key(entry) for entry in entries) if key}
-        if self._trust_transfer_history_paths:
-            return result
-
         entries_by_directory: Dict[Path, List[Dict[str, Any]]] = {}
         for entry in entries:
             storage = self._normalize_text(entry.get("storage")) or "local"
@@ -76,21 +80,10 @@ class SubtitleInventory:
             entries_by_directory.setdefault(video_path.parent, []).append(entry)
 
         for media_dir, directory_entries in entries_by_directory.items():
-            try:
-                subtitle_files = [
-                    item
-                    for item in media_dir.iterdir()
-                    if item.suffix.lower() in self._subtitle_exts and item.is_file()
-                ]
-            except Exception as exc:
-                self._logger_warning(
-                    "[SubtitleManualUpload] 读取外挂字幕目录失败 directory=%s error=%s",
-                    media_dir,
-                    exc,
-                )
+            subtitle_files = self._subtitle_files_in_directory(media_dir)
+            if subtitle_files is None:
                 continue
 
-            metadata_by_path: Dict[Path, Optional[Dict[str, Any]]] = {}
             for entry in directory_entries:
                 target_key = self._target_key(entry)
                 path_text = self._normalize_text(entry.get("path"))
@@ -103,18 +96,69 @@ class SubtitleInventory:
                     for item in subtitle_files
                     if item.stem == stem or item.name.startswith(f"{stem}.")
                 ]
-                if not matched_files or not video_path.is_file():
+                # 信任整理历史路径只跳过视频文件的远程 stat，不应同时隐藏目录内
+                # 已存在的外挂字幕。目录扫描仍在后台/显式目标读取时按需发生。
+                if not matched_files or (
+                    not self._trust_transfer_history_paths and not video_path.is_file()
+                ):
                     continue
                 subtitles = []
                 for sub_file in matched_files:
-                    if sub_file not in metadata_by_path:
-                        metadata_by_path[sub_file] = self._subtitle_file_metadata(sub_file)
-                    metadata = metadata_by_path[sub_file]
+                    metadata = self._subtitle_file_metadata_cached(media_dir, sub_file)
                     if metadata:
                         subtitles.append(dict(metadata))
                 subtitles.sort(key=lambda item: item.get("name", ""))
                 result[target_key] = subtitles
         return result
+
+    def _subtitle_files_in_directory(self, media_dir: Path) -> Optional[List[Path]]:
+        cache_key = str(media_dir)
+        now = time.monotonic()
+        cached = self._subtitle_directory_cache.get(cache_key)
+        current_signature = self._directory_signature(media_dir)
+        cached_signature = self._normalize_text(cached.get("signature")) if isinstance(cached, dict) else ""
+        signature_matches = bool(current_signature and cached_signature and current_signature == cached_signature)
+        if cached and (signature_matches or not current_signature) and now - float(cached.get("loaded_at") or 0) < self._subtitle_directory_cache_ttl_seconds:
+            self._subtitle_directory_cache.move_to_end(cache_key)
+            return [Path(path) for path in cached.get("paths") or []]
+
+        try:
+            subtitle_files = [
+                item
+                for item in media_dir.iterdir()
+                if item.suffix.lower() in self._subtitle_exts and item.is_file()
+            ]
+        except Exception as exc:
+            self._logger_warning(
+                "[SubtitleManualUpload] 读取外挂字幕目录失败 directory=%s error=%s",
+                media_dir,
+                exc,
+            )
+            return None
+
+        self._subtitle_directory_cache[cache_key] = {
+            "loaded_at": now,
+            "signature": current_signature,
+            "paths": [str(item) for item in subtitle_files],
+            "metadata": {},
+        }
+        self._subtitle_directory_cache.move_to_end(cache_key)
+        while len(self._subtitle_directory_cache) > self._subtitle_directory_cache_max_size:
+            self._subtitle_directory_cache.popitem(last=False)
+        return subtitle_files
+
+    def clear_subtitle_directory_cache(self) -> None:
+        self._subtitle_directory_cache.clear()
+
+    def invalidate_directory(self, media_dir: Path) -> None:
+        self._subtitle_directory_cache.pop(str(media_dir), None)
+
+    @staticmethod
+    def _directory_signature(media_dir: Path) -> str:
+        try:
+            return str(media_dir.stat().st_mtime_ns)
+        except OSError:
+            return ""
 
     def _target_key(self, target_entry: Dict[str, Any]) -> str:
         return self._normalize_text(target_entry.get("id") or target_entry.get("path"))
@@ -141,8 +185,30 @@ class SubtitleInventory:
             "backup_path": str(backup_path) if backup_available else "",
             "backup_available": backup_available,
             "size": stat.st_size,
+            "mtime_ns": stat.st_mtime_ns,
             "modified_at": datetime.fromtimestamp(stat.st_mtime).isoformat(timespec="seconds"),
         }
+
+    def _subtitle_file_metadata_cached(self, media_dir: Path, sub_file: Path) -> Optional[Dict[str, Any]]:
+        cache = self._subtitle_directory_cache.get(str(media_dir))
+        if not isinstance(cache, dict):
+            return self._subtitle_file_metadata(sub_file)
+        metadata = cache.setdefault("metadata", {})
+        key = str(sub_file)
+        cached_value = metadata.get(key)
+        try:
+            stat = sub_file.stat()
+            unchanged = (
+                isinstance(cached_value, dict)
+                and int(cached_value.get("size") or -1) == int(stat.st_size)
+                and int(cached_value.get("mtime_ns") or -1) == int(stat.st_mtime_ns)
+            )
+        except OSError:
+            unchanged = False
+        if not unchanged:
+            metadata[key] = self._subtitle_file_metadata(sub_file)
+        value = metadata.get(key)
+        return dict(value) if isinstance(value, dict) else None
 
     def embedded_subtitle_tracks_for_target(self, target_entry: Dict[str, Any]) -> List[Dict[str, Any]]:
         storage = self._normalize_text(target_entry.get("storage")) or "local"
@@ -340,6 +406,7 @@ class SubtitleInventory:
             if target.exists():
                 target.unlink()
             sub_file.rename(target)
+        self.invalidate_directory(video_path.parent)
 
     def _is_stream_path(self, path: Any) -> bool:
         return is_stream_path(path, normalize_text=self._normalize_text, stream_exts=self._stream_exts)

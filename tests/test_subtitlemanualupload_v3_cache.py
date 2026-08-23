@@ -101,13 +101,20 @@ def test_v3_subtitle_directory_listing_is_shared_by_targets(tmp_path, monkeypatc
 
     inventory = make_inventory()
     original_iterdir = Path.iterdir
+    original_read_bytes = Path.read_bytes
     calls = {"count": 0}
+    reads = {"count": 0}
 
     def counting_iterdir(path):
         calls["count"] += 1
         return original_iterdir(path)
 
+    def counting_read_bytes(path):
+        reads["count"] += 1
+        return original_read_bytes(path)
+
     monkeypatch.setattr(Path, "iterdir", counting_iterdir)
+    monkeypatch.setattr(Path, "read_bytes", counting_read_bytes)
     entries = [
         {"id": "entry-1", "path": str(first_video), "storage": "local"},
         {"id": "entry-2", "path": str(second_video), "storage": "local"},
@@ -119,8 +126,24 @@ def test_v3_subtitle_directory_listing_is_shared_by_targets(tmp_path, monkeypatc
 
     assert first_call_count == 1
     assert calls["count"] == first_call_count
+    assert reads["count"] == 2
     assert len(result["entry-1"]) == 1
     assert len(cached_result["entry-2"]) == 1
+
+
+def test_v3_directory_signature_refreshes_when_subtitle_is_added(tmp_path, monkeypatch):
+    media_dir = tmp_path / "Season 1"
+    media_dir.mkdir()
+    video = media_dir / "S01E01.mkv"
+    video.touch()
+    inventory = make_inventory()
+    entries = [{"id": "entry-1", "path": str(video), "storage": "local"}]
+    inventory.subtitle_files_for_targets(entries)
+    (media_dir / "S01E01.chi.ass").write_text("new", encoding="utf-8")
+
+    result = inventory.subtitle_files_for_targets(entries)
+
+    assert [item["name"] for item in result["entry-1"]] == ["S01E01.chi.ass"]
 
 
 def test_v3_manual_strm_persisted_entry_respects_current_config(tmp_path):

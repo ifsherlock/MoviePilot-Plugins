@@ -124,3 +124,45 @@ def test_v2_trust_history_paths_keeps_external_subtitles(tmp_path):
     )
 
     assert [item["name"] for item in result["entry-1"]] == ["S01E01.chi.ass"]
+
+
+def test_v2_subtitle_inventory_directory_cache_reuses_metadata(tmp_path, monkeypatch):
+    root = tmp_path / "Season 1"
+    root.mkdir()
+    video = root / "S01E01.mkv"
+    video.touch()
+    subtitle = root / "S01E01.chi.ass"
+    subtitle.write_text("subtitle", encoding="utf-8")
+    inventory = load_v2_subtitle_inventory()(
+        subtitle_exts={".ass", ".srt"},
+        stream_exts={".strm"},
+        embedded_text_codecs=set(),
+        embedded_image_codecs=set(),
+        embedded_probe_cache=OrderedDict(),
+        embedded_probe_cache_max_size=10,
+        trust_transfer_history_paths=False,
+        subtitle_directory_cache=OrderedDict(),
+        subtitle_directory_cache_max_size=10,
+        subtitle_directory_cache_ttl_seconds=900,
+        normalize_text=lambda value: str(value or "").strip(),
+        normalize_language_suffix=lambda value: str(value or "").strip(),
+        detect_language_profile=lambda name, raw: {"suffix": "chi", "category": "chinese"},
+        is_chinese_language_suffix=lambda value: value == "chi",
+        safe_int=lambda value, default=0: int(value) if str(value or "").isdigit() else default,
+        subtitle_backup_path=lambda path: path.with_suffix(path.suffix + ".bak"),
+        subprocess_module=types.SimpleNamespace(),
+        logger_warning=lambda *args, **kwargs: None,
+    )
+    original_read_bytes = Path.read_bytes
+    reads = {"count": 0}
+
+    def counting_read_bytes(path):
+        reads["count"] += 1
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", counting_read_bytes)
+    entries = [{"id": "entry-1", "path": str(video), "storage": "local"}]
+    inventory.subtitle_files_for_targets(entries)
+    inventory.subtitle_files_for_targets(entries)
+
+    assert reads["count"] == 1

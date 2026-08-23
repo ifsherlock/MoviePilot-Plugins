@@ -219,6 +219,9 @@ class SubtitleManualUpload(_PluginBase):
     _cache_max_entries = 5000
     _entry_map_max_size = 2000
     _media_index_cache_max_keys = 20
+    _subtitle_directory_cache = OrderedDict()
+    _subtitle_directory_cache_max_size = 1000
+    _subtitle_directory_cache_ttl_seconds = 900
     _match_history_cache_ttl_seconds = 86400
     _match_history_validation_interval_seconds = 300
     _timeline_task_ttl_seconds = 86400

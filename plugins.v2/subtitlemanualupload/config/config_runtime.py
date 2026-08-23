@@ -72,6 +72,7 @@ def sync_class_runtime_config(owner_cls: type, owner: Any) -> None:
 def reset_runtime_state(owner: Any) -> None:
     owner._entry_map = OrderedDict()
     owner._media_index_cache = OrderedDict()
+    owner._subtitle_directory_cache = OrderedDict()
     owner._match_history_cache = {
         "loaded_at": None,
         "validated_at": None,
