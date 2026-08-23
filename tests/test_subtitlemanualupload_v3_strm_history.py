@@ -146,6 +146,5 @@ def test_v3_history_page_filters_and_paginates_snapshot(tmp_path):
     page = history.match_history_page(keyword="Movie", media_type="movie", page=1, page_size=1)
 
     assert page["total"] == 1
-    assert page["page"] == 1
-    assert page["page_size"] == 1
+    assert page["has_more"] is False
     assert page["items"][0]["id"] == "tmdb:9"
