@@ -20,8 +20,10 @@ jobs:
         include:
           - platform: linux/amd64
             artifact: webrtcvad-wheel-linux-amd64
+            machine: x86_64-linux-gnu.so
           - platform: linux/arm64
             artifact: webrtcvad-wheel-linux-arm64
+            machine: aarch64-linux-gnu.so
 
     steps:
       - name: Checkout
@@ -38,6 +40,7 @@ jobs:
       - name: Build wheel
         env:
           TARGET_PLATFORM: ${{ matrix.platform }}
+          TARGET_MACHINE: ${{ matrix.machine }}
         run: |
           set -euo pipefail
           mkdir -p wheel-output
@@ -54,9 +57,25 @@ jobs:
 
           wheel = next(Path('wheel-output').glob('webrtcvad_wheels-*.whl'))
           with ZipFile(wheel) as archive:
-              assert 'webrtcvad.py' in archive.namelist(), wheel
+              names = archive.namelist()
+              assert 'webrtcvad.py' in names, wheel
+              assert any(name.endswith(__import__('os').environ['TARGET_MACHINE']) for name in names), names
           print(wheel.name)
           PY
+
+      - name: Import wheel in target Python
+        env:
+          TARGET_PLATFORM: ${{ matrix.platform }}
+        run: |
+          set -euo pipefail
+          docker run --rm --platform "$TARGET_PLATFORM" \
+            -v "$PWD/wheel-output:/wheels:ro" \
+            python:3.14-slim-trixie \
+            python -m pip install --no-index --find-links /wheels webrtcvad-wheels==2.0.14
+          docker run --rm --platform "$TARGET_PLATFORM" \
+            -v "$PWD/wheel-output:/wheels:ro" \
+            python:3.14-slim-trixie \
+            sh -c 'python -m pip install --no-index --find-links /wheels webrtcvad-wheels==2.0.14 >/dev/null && python -c "import webrtcvad; print(webrtcvad.__file__)"'
 
       - name: Upload wheel
         uses: actions/upload-artifact@v6

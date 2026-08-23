@@ -2,6 +2,12 @@
 
 MoviePilot V3 专用字幕管理插件，脱胎自 [ChineseSubFinder](https://github.com/ChineseSubFinder/ChineseSubFinder)，提供在线搜索、手动上传、自动匹配、规范改名与智能调轴能力。V2 版本保留在 `plugins.v2/subtitlemanualupload`。
 
+## v1.1.0 更新
+
+- 内置 `webrtcvad-wheels 2.0.14` 的 Python 3.14 Linux amd64/arm64 预编译 wheel。
+- MoviePilot V3 安装器会按 Python 和 CPU 架构自动选择匹配 wheel，无需在运行容器内安装 `gcc`。
+- 音频智能调轴恢复优先使用 WebRTC VAD；模块不可用时仍保留 RMS VAD 回退。
+
 ## v1.0.1 更新
 
 - 迁移 MoviePilot V3 稳定 SDK 导入。
@@ -188,7 +194,7 @@ MoviePilot V3 专用字幕管理插件，脱胎自 [ChineseSubFinder](https://gi
 - `rarfile` 是最轻量的 Python RAR 封装层，但不是纯 Python 解压器；RAR5/压缩内容默认交给 `unar` 处理。
 - 临时测试可在插件设置中选择“加载插件时尝试容器内安装”，或进入 MoviePilot 容器安装 `unar`；容器重建后可能失效。
 - 长期建议直接使用 MoviePilot 容器内置的 `/usr/bin/unar`；如果容器没有内置，可把宿主机 `unar` 映射到容器内 `/usr/bin/unar`，并确保同目录或 PATH 中可找到 `lsar`。
-- 智能调轴依赖容器内 `ffmpeg`、`ffprobe`、`numpy`、`pysubs2`；插件会通过 `requirements.txt` 声明 `pysubs2`，缺失时页面会禁用调轴开关。
+- 智能调轴依赖容器内 `ffmpeg`、`ffprobe`、`numpy`、`pysubs2`；V3 的 Python 3.14 Linux amd64/arm64 wheel 随插件提供 WebRTC VAD，其他环境缺少该模块时自动使用 RMS 回退。
 - 当前版本会去掉同目录里已有字幕文件名中的 `.default` / `.forced` 标记，但不会自动新增这些标记。
 
 如果需要宿主机映射，按实际路径给 MoviePilot 服务增加映射，例如：

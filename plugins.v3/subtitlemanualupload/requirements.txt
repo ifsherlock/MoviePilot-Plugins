@@ -1,3 +1,6 @@
 rarfile>=4.2
 numpy>=2.4.6
 pysubs2>=1.8.0
+webrtcvad-wheels==2.0.14; python_version < "3.14"
+webrtcvad-wheels==2.0.14; python_version == "3.14" and platform_system == "Linux" and platform_machine == "x86_64"
+webrtcvad-wheels==2.0.14; python_version == "3.14" and platform_system == "Linux" and platform_machine == "aarch64"
