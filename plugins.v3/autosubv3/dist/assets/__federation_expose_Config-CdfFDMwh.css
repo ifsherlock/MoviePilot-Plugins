@@ -1,0 +1,110 @@
+
+.api-endpoint-settings[data-v-5e720711] {
+  display: grid;
+  gap: 14px;
+}
+.api-toolbar[data-v-5e720711],
+.api-toolbar-actions[data-v-5e720711],
+.endpoint-header[data-v-5e720711],
+.endpoint-identity[data-v-5e720711],
+.endpoint-header-actions[data-v-5e720711],
+.endpoint-footer[data-v-5e720711],
+.endpoint-options[data-v-5e720711],
+.endpoint-test-actions[data-v-5e720711] {
+  display: flex;
+  align-items: center;
+}
+.api-toolbar[data-v-5e720711],
+.endpoint-header[data-v-5e720711],
+.endpoint-footer[data-v-5e720711] {
+  justify-content: space-between;
+  gap: 14px;
+}
+.api-toolbar p[data-v-5e720711] {
+  margin: 3px 0 0;
+  color: rgba(var(--v-theme-on-surface), 0.62);
+  font-size: 12px;
+}
+.api-toolbar-actions[data-v-5e720711],
+.endpoint-header-actions[data-v-5e720711],
+.endpoint-options[data-v-5e720711],
+.endpoint-test-actions[data-v-5e720711] {
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.endpoint-list[data-v-5e720711] {
+  display: grid;
+  gap: 10px;
+}
+.endpoint-item[data-v-5e720711] {
+  border: 1px solid rgba(var(--v-border-color), 0.22);
+  border-radius: 8px;
+  padding: 14px;
+  background: rgb(var(--v-theme-surface));
+}
+.endpoint-item.primary[data-v-5e720711] {
+  border-color: rgba(var(--v-theme-warning), 0.58);
+}
+.endpoint-item.disabled[data-v-5e720711] {
+  opacity: 0.66;
+}
+.endpoint-header[data-v-5e720711] {
+  margin-bottom: 12px;
+}
+.endpoint-identity[data-v-5e720711] {
+  gap: 10px;
+  min-width: 0;
+}
+.endpoint-identity div[data-v-5e720711] {
+  display: grid;
+  min-width: 0;
+}
+.endpoint-identity span[data-v-5e720711] {
+  color: rgba(var(--v-theme-on-surface), 0.58);
+  font-size: 12px;
+}
+.endpoint-footer[data-v-5e720711] {
+  margin-top: 8px;
+}
+.endpoint-feedback[data-v-5e720711] {
+  margin-top: 10px;
+}
+@media (max-width: 760px) {
+.api-toolbar[data-v-5e720711],
+  .endpoint-header[data-v-5e720711],
+  .endpoint-footer[data-v-5e720711] {
+    align-items: flex-start;
+    flex-direction: column;
+}
+.api-toolbar-actions[data-v-5e720711],
+  .endpoint-header-actions[data-v-5e720711],
+  .endpoint-test-actions[data-v-5e720711] {
+    width: 100%;
+}
+}
+
+.autosub-config[data-v-3c75bf43] {
+  background: rgb(var(--v-theme-background));
+}
+.config-shell[data-v-3c75bf43] {
+  padding: 18px;
+}
+.config-tabs[data-v-3c75bf43] {
+  padding-inline: 10px;
+}
+.config-section[data-v-3c75bf43] {
+  margin-bottom: 20px;
+}
+.section-title[data-v-3c75bf43] {
+  color: rgba(var(--v-theme-on-surface), 0.68);
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.config-footer[data-v-3c75bf43] {
+  align-items: center;
+  border-top: 1px solid rgba(var(--v-theme-on-surface), 0.12);
+  display: flex;
+  gap: 10px;
+  padding-top: 16px;
+}

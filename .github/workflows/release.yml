@@ -7,8 +7,10 @@ on:
     paths:
       - package.json
       - package.v2.json
+      - package.v3.json
       - plugins/**
       - plugins.v2/**
+      - plugins.v3/**
       - .github/scripts/check_plugin_versions.py
       - .github/workflows/release.yml
   workflow_dispatch:
@@ -46,7 +48,7 @@ jobs:
           sudo apt-get install -y jq zip
 
       - name: Check plugin versions
-        run: python .github/scripts/check_plugin_versions.py package.json package.v2.json
+        run: python .github/scripts/check_plugin_versions.py package.json package.v2.json package.v3.json
 
       - name: Build and release plugins
         env:
@@ -65,6 +67,8 @@ jobs:
             local dirs=("plugins.v2/${plugin_id_lc}" "plugins/${plugin_id_lc}")
             if [ "$pkg_file" = "package.json" ]; then
               dirs=("plugins/${plugin_id_lc}" "plugins.v2/${plugin_id_lc}")
+            elif [ "$pkg_file" = "package.v3.json" ]; then
+              dirs=("plugins.v3/${plugin_id_lc}" "plugins.v2/${plugin_id_lc}" "plugins/${plugin_id_lc}")
             fi
             for candidate in "${dirs[@]}"; do
               if [ -d "$candidate" ]; then
@@ -102,7 +106,7 @@ jobs:
 
               plugin_dir="$(plugin_dir_for "$pkg_file" "$plugin_id_lc" || true)"
               if [ -z "$plugin_dir" ]; then
-                echo "WARN: directory for $plugin_id not found under plugins/ or plugins.v2/, skip."
+                echo "WARN: directory for $plugin_id not found under plugins/, plugins.v2/ or plugins.v3/, skip."
                 continue
               fi
 
@@ -152,3 +156,4 @@ jobs:
 
           process_package package.json
           process_package package.v2.json
+          process_package package.v3.json

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Validate release plugin versions before packaging.
 
-The release workflow builds tags and assets from package.json/package.v2.json.
+The release workflow builds tags and assets from package.json/package.v2.json/package.v3.json.
 This check prevents publishing an asset whose market index version differs
 from the plugin class-level plugin_version.
 """
@@ -30,6 +30,8 @@ def _candidate_dirs(package_file: Path, plugin_id: str) -> list[Path]:
     roots = [Path("plugins.v2"), Path("plugins")]
     if package_file.name == "package.json":
         roots = [Path("plugins"), Path("plugins.v2")]
+    elif package_file.name == "package.v3.json":
+        roots = [Path("plugins.v3"), Path("plugins.v2"), Path("plugins")]
     return [package_file.parent / root / plugin_id_lc for root in roots]
 
 
@@ -41,7 +43,7 @@ def _plugin_dir(package_file: Path, plugin_id: str) -> Path | None:
 
 
 def _plugin_version(init_file: Path) -> str | None:
-    tree = ast.parse(init_file.read_text(encoding="utf-8"), filename=str(init_file))
+    tree = ast.parse(init_file.read_text(encoding="utf-8-sig"), filename=str(init_file))
     for class_node in (node for node in tree.body if isinstance(node, ast.ClassDef)):
         for node in class_node.body:
             value_node = None
@@ -109,7 +111,11 @@ def check_package(path: Path) -> list[str]:
 
 
 def main() -> int:
-    package_files = [Path(arg) for arg in sys.argv[1:]] or [Path("package.json"), Path("package.v2.json")]
+    package_files = [Path(arg) for arg in sys.argv[1:]] or [
+        Path("package.json"),
+        Path("package.v2.json"),
+        Path("package.v3.json"),
+    ]
     errors: list[str] = []
     for package_file in package_files:
         errors.extend(check_package(package_file))

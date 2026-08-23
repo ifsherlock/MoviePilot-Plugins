@@ -1,0 +1,78 @@
+:root {
+  --smu-page-bg:
+    radial-gradient(circle at 12% 12%, rgba(var(--v-theme-primary), 0.08), transparent 28%),
+    radial-gradient(circle at 88% 0%, rgba(var(--v-theme-secondary), 0.06), transparent 32%),
+    rgb(var(--v-theme-background));
+  --smu-dialog-bg:
+    radial-gradient(circle at 12% 0%, rgba(var(--v-theme-primary), 0.08), transparent 30%),
+    rgba(var(--v-theme-surface), 0.96);
+  --smu-dialog-bar-bg: rgba(var(--v-theme-surface), 0.92);
+  --smu-card-bg: rgba(var(--v-theme-surface), 0.82);
+  --smu-card-bg-strong: rgba(var(--v-theme-surface), 0.94);
+  --smu-card-bg-soft: rgba(var(--v-theme-surface-variant), 0.22);
+  --smu-card-bg-hover: rgba(var(--v-theme-primary), 0.08);
+  --smu-card-bg-active: rgba(var(--v-theme-primary), 0.14);
+  --smu-card-bg-disabled: rgba(var(--v-theme-surface-variant), 0.32);
+  --smu-border: rgba(var(--v-theme-on-surface), 0.12);
+  --smu-border-strong: rgba(var(--v-theme-on-surface), 0.18);
+  --smu-border-active: rgba(var(--v-theme-primary), 0.46);
+  --smu-text: rgba(var(--v-theme-on-surface), var(--v-high-emphasis-opacity, 0.87));
+  --smu-text-muted: rgba(var(--v-theme-on-surface), var(--v-medium-emphasis-opacity, 0.62));
+  --smu-text-soft: rgba(var(--v-theme-on-surface), 0.48);
+  --smu-accent: rgb(var(--v-theme-primary));
+  --smu-accent-soft: rgba(var(--v-theme-primary), 0.12);
+  --smu-accent-text: rgb(var(--v-theme-on-primary));
+  --smu-success-soft: rgba(var(--v-theme-success), 0.14);
+  --smu-success-text: rgb(var(--v-theme-success));
+  --smu-warning-soft: rgba(var(--v-theme-warning), 0.14);
+  --smu-warning-text: rgb(var(--v-theme-warning));
+  --smu-error-soft: rgba(var(--v-theme-error), 0.14);
+  --smu-error-text: rgb(var(--v-theme-error));
+  --smu-shadow: 0 18px 48px rgba(0, 0, 0, 0.10);
+  --smu-poster-bg: rgba(var(--v-theme-primary), 0.18);
+}
+
+html[data-theme='dark'],
+html[data-theme='purple'],
+html[data-theme='transparent'],
+body[data-theme='dark'],
+body[data-theme='purple'],
+body[data-theme='transparent'] {
+  --smu-page-bg:
+    radial-gradient(circle at 12% 12%, rgba(var(--v-theme-primary), 0.14), transparent 28%),
+    radial-gradient(circle at 88% 0%, rgba(var(--v-theme-secondary), 0.10), transparent 32%),
+    rgb(var(--v-theme-background));
+  --smu-dialog-bg:
+    radial-gradient(circle at 12% 0%, rgba(var(--v-theme-primary), 0.10), transparent 30%),
+    rgba(var(--v-theme-surface), 0.92);
+  --smu-dialog-bar-bg: rgba(var(--v-theme-surface), 0.78);
+  --smu-card-bg: rgba(var(--v-theme-surface), 0.68);
+  --smu-card-bg-strong: rgba(var(--v-theme-surface), 0.86);
+  --smu-card-bg-soft: rgba(var(--v-theme-surface-variant), 0.18);
+  --smu-card-bg-hover: rgba(var(--v-theme-primary), 0.12);
+  --smu-card-bg-active: rgba(var(--v-theme-primary), 0.18);
+  --smu-card-bg-disabled: rgba(var(--v-theme-surface-variant), 0.22);
+  --smu-border: rgba(var(--v-theme-on-surface), 0.14);
+  --smu-border-strong: rgba(var(--v-theme-on-surface), 0.22);
+  --smu-shadow: 0 22px 58px rgba(0, 0, 0, 0.28);
+}
+
+html[data-theme='transparent'],
+body[data-theme='transparent'],
+html[data-theme='purple'],
+body[data-theme='purple'] {
+  color-scheme: dark;
+}
+
+html[data-theme='transparent'],
+body[data-theme='transparent'] {
+  --smu-page-bg: transparent;
+  --smu-dialog-bg:
+    radial-gradient(circle at 12% 0%, rgba(var(--v-theme-primary), 0.12), transparent 30%),
+    rgba(var(--v-theme-surface), var(--transparent-opacity-heavy, 0.62));
+  --smu-dialog-bar-bg: rgba(var(--v-theme-surface), var(--transparent-opacity-light, 0.22));
+  --smu-card-bg: rgba(var(--v-theme-surface), var(--transparent-opacity-light, 0.24));
+  --smu-card-bg-strong: rgba(var(--v-theme-surface), var(--transparent-opacity-heavy, 0.58));
+  --smu-card-bg-soft: rgba(var(--v-theme-surface), var(--transparent-opacity-light, 0.18));
+  --smu-card-bg-disabled: rgba(var(--v-theme-surface), var(--transparent-opacity-light, 0.16));
+}
