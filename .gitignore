@@ -30,6 +30,10 @@ wheels/
 share/python-wheels/
 *.egg-info/
 .installed.cfg
+
+# MoviePilot V3 ships selected Python 3.14 wheels with the plugin package.
+!plugins.v3/*/wheels/
+!plugins.v3/*/wheels/**
 *.egg
 MANIFEST
 
