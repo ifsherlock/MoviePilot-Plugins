@@ -70,6 +70,40 @@ def test_v3_source_uses_sdk_and_unified_media_identity():
     assert "_execute_sync_query" not in history_reader
 
 
+def test_subtitlemanualupload_v2_v3_runtime_boundaries_are_explicit():
+    v2_root = ROOT / "plugins.v2/subtitlemanualupload"
+    v3_root = ROOT / "plugins.v3/subtitlemanualupload"
+    v2_factory = (v2_root / "runtime/service_factories.py").read_text(encoding="utf-8-sig")
+    v3_factory = (v3_root / "runtime/service_factories.py").read_text(encoding="utf-8-sig")
+    v2_resolver = (v2_root / "catalog/media_target_resolver.py").read_text(encoding="utf-8-sig")
+    v3_resolver = (v3_root / "catalog/media_target_resolver.py").read_text(encoding="utf-8-sig")
+    v2_catalog = (v2_root / "catalog/local_media_catalog.py").read_text(encoding="utf-8-sig")
+    v3_catalog = (v3_root / "catalog/local_media_catalog.py").read_text(encoding="utf-8-sig")
+
+    assert "from app.core.config import settings" in v2_factory
+    assert "from app.core.metainfo import MetaInfoPath" in v2_factory
+    assert "from app.db.models.transferhistory import TransferHistory" in v2_factory
+    assert "transfer_history=TransferHistory" in v2_factory
+    assert "db=None" in v2_catalog
+    assert "app.sdk" not in v2_factory
+    assert "resolve_media_identity" not in v2_resolver
+    assert "build_media_key" not in v2_resolver
+
+    assert "from app.sdk.config import settings" in v3_factory
+    assert "from app.sdk.media import MetaInfoPath" in v3_factory
+    assert "transfer_history=TransferHistoryReader()" in v3_factory
+    assert "MetaInfoPath(path, force_video=True)" in v3_factory
+    assert "db=None" not in v3_catalog
+    assert "resolve_media_identity" in v3_resolver
+    assert "build_media_key" in v3_resolver
+
+    manual_strm = v3_root / "catalog/manual_strm.py"
+    if manual_strm.exists():
+        manual_strm_source = manual_strm.read_text(encoding="utf-8-sig")
+        assert "from app.sdk" not in manual_strm_source
+        assert "from app.core" not in manual_strm_source
+
+
 def test_v3_autosub_handles_transfer_event_separately_from_watchdog_startup():
     source = (ROOT / "plugins.v3/autosubv3/__init__.py").read_text(encoding="utf-8-sig")
     assert "def listen_transfer_complete(self, event):" in source
