@@ -16,13 +16,13 @@ class TransferHistoryReader(TransferHistoryOper):
         count: int = 30,
         status: Optional[bool] = None,
     ) -> List[Any]:
-        return self._execute_sync_query(
-            lambda session: TransferHistory.list_by_page(
-                session,
-                page=page,
-                count=count,
-                status=status,
-            )
+        # V3 的 DbOper 只保留同步写事务执行器；模型的 db_query 装饰器会在
+        # 未传入会话时创建并释放独立同步会话，适合本地资源后台刷新线程。
+        return TransferHistory.list_by_page(
+            self._db,
+            page=page,
+            count=count,
+            status=status,
         )
 
 

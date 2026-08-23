@@ -19,7 +19,7 @@
 | --- | --- | --- | --- |
 | 海拉鲁字幕大师 | `plugins.v2/subtitlemanualupload` | 0.1.86 | 字幕搜索、下载、上传、匹配、改名、调轴、入库自动处理 |
 | AI字幕生成(联动版) | `plugins.v2/autosubv3` | 3.5.60 | 音轨识别、字幕提取、AI 翻译、任务队列、联动字幕匹配 |
-| 海拉鲁字幕大师 V3 | `plugins.v3/subtitlemanualupload` | 1.1.0 | V3 SDK、统一媒体身份、字幕搜索与匹配 |
+| 海拉鲁字幕大师 V3 | `plugins.v3/subtitlemanualupload` | 1.1.1 | V3 SDK、统一媒体身份、字幕搜索与匹配 |
 | AI字幕生成(联动版) V3 | `plugins.v3/autosubv3` | 4.0.1 | V3 SDK、入库事件任务、AI 字幕生成与联动 |
 | Emby媒体库封面生成 | `plugins.v2/mediacovergenerator` | 0.9.10 | 生成 Emby/Jellyfin 媒体库静态或动态封面 |
 

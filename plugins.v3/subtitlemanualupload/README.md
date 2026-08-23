@@ -2,6 +2,10 @@
 
 MoviePilot V3 专用字幕管理插件，脱胎自 [ChineseSubFinder](https://github.com/ChineseSubFinder/ChineseSubFinder)，提供在线搜索、手动上传、自动匹配、规范改名与智能调轴能力。V2 版本保留在 `plugins.v2/subtitlemanualupload`。
 
+## v1.1.1 更新
+
+- 修复 V3 读取本地整理记录时调用已移除的 `_execute_sync_query`，改用当前 MoviePilot `TransferHistory` 模型查询接口。
+
 ## v1.1.0 更新
 
 - 内置 `webrtcvad-wheels 2.0.14` 的 Python 3.14 Linux amd64/arm64 预编译 wheel。
