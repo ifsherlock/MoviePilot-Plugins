@@ -3,7 +3,7 @@
     "name": "海拉鲁字幕大师",
     "description": "支持字幕搜索、上传、匹配、改名、智能调轴与自动入库的字幕管理插件。",
     "labels": "字幕,ChineseSubFinder,媒体库,整理",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "icon": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/hyrule-subtitle-master.png",
     "author": "ifsherlock",
     "author_url": "https://github.com/ifsherlock",
@@ -11,6 +11,7 @@
     "system_version": ">=3.0.0",
     "release": true,
     "history": {
+      "v1.0.1": "修复 Python 3.14 环境依赖安装：移除可选 WebRTC VAD 的硬依赖，缺少该模块时自动回退 RMS VAD。",
       "v1.0.0": "新增 MoviePilot V3 专用实现：迁移稳定 SDK 导入与统一媒体身份合同，保留 V2 插件配置、数据、API 路径和字幕联动兼容。"
     }
   },
@@ -18,7 +19,7 @@
     "name": "AI字幕生成(联动版)",
     "description": "自动生成字幕并翻译成中文，支持 faster-whisper 识别、字幕提取、大模型并发翻译与字幕匹配联动。",
     "labels": "字幕,AI,翻译",
-    "version": "4.0.0",
+    "version": "4.0.1",
     "icon": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/autosubtitles.jpeg",
     "author": "ifsherlock",
     "author_url": "https://github.com/ifsherlock",
@@ -26,6 +27,7 @@
     "system_version": ">=3.0.0",
     "release": true,
     "history": {
+      "v4.0.1": "修复 V3 依赖清单 UTF-8 BOM 导致 iso639 解析失败，保留 TransferComplete 事件任务提交与 V2 配置、任务数据兼容。",
       "v4.0.0": "新增 MoviePilot V3 专用实现：迁移稳定 SDK 导入并适配 TransferComplete 事件任务提交，保留 V2 配置、任务数据和字幕匹配联动兼容。"
     }
   }

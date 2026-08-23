@@ -2,11 +2,13 @@
 
 MoviePilot V3 专用插件，用于从视频音轨、内嵌字幕或外挂字幕中生成字幕，并可调用大模型翻译为中文。V2 版本保留在 `plugins.v2/autosubv3`。
 
-## v4.0.0 更新
+## v4.0.1 更新
 
 - 迁移 MoviePilot V3 稳定 SDK 导入。
 - 适配 `TransferComplete` 事件载荷，将整理完成的视频加入字幕任务队列。
 - 保留 `AutoSubv3` 插件 ID、配置前缀、任务数据和字幕匹配联动路径。
+
+`requirements.txt` 已去除 UTF-8 BOM，避免 MoviePilot V3 依赖解析器误判首个依赖。
 
 ## v3.5.60 更新
 

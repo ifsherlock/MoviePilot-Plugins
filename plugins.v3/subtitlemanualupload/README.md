@@ -2,11 +2,12 @@
 
 MoviePilot V3 专用字幕管理插件，脱胎自 [ChineseSubFinder](https://github.com/ChineseSubFinder/ChineseSubFinder)，提供在线搜索、手动上传、自动匹配、规范改名与智能调轴能力。V2 版本保留在 `plugins.v2/subtitlemanualupload`。
 
-## v1.0.0 更新
+## v1.0.1 更新
 
 - 迁移 MoviePilot V3 稳定 SDK 导入。
 - 本地媒体与整理历史使用 `media_source/media_id` 作为统一媒体身份，并保留旧请求字段兼容。
 - 保留 `SubtitleManualUpload` 插件 ID、配置前缀、API 路径和 AI 字幕联动路径。
+- 移除 Python 3.14 环境无法直接安装的 `webrtcvad-wheels` 硬依赖；缺少 WebRTC VAD 时智能调轴自动回退 RMS VAD。
 
 ## v0.1.86 更新
 
