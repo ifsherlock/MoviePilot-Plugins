@@ -26,3 +26,17 @@ def test_v3_manual_strm_config_and_manifest_are_consistent():
     assert package["version"] == "1.2.0"
     assert index["SubtitleManualUpload"]["version"] == package["version"]
     assert "manual_strm_enabled" in owner
+
+
+def test_v2_v3_use_batch_subtitle_resolution_and_precise_invalidation():
+    for version in ("plugins.v2", "plugins.v3"):
+        root = ROOT / version / "subtitlemanualupload"
+        factory = (root / "runtime/service_factories.py").read_text(encoding="utf-8-sig")
+        resolver = (root / "catalog/media_target_resolver.py").read_text(encoding="utf-8-sig")
+        writer = (root / "matching/subtitle_writer.py").read_text(encoding="utf-8-sig")
+        inventory = (root / "catalog/subtitle_inventory.py").read_text(encoding="utf-8-sig")
+
+        assert "subtitle_files_batch_provider" in resolver
+        assert "subtitle_files_batch_provider=owner.services.subtitle_inventory().subtitle_files_for_targets" in factory
+        assert "invalidate_directory" in writer
+        assert "def invalidate_directory" in inventory

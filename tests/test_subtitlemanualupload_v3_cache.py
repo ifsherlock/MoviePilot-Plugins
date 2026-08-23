@@ -146,6 +146,29 @@ def test_v3_directory_signature_refreshes_when_subtitle_is_added(tmp_path, monke
     assert [item["name"] for item in result["entry-1"]] == ["S01E01.chi.ass"]
 
 
+def test_v3_invalidate_directory_forces_metadata_reload(tmp_path, monkeypatch):
+    media_dir = tmp_path / "Season 1"
+    media_dir.mkdir()
+    video = media_dir / "S01E01.mkv"
+    video.touch()
+    (media_dir / "S01E01.chi.ass").write_text("subtitle", encoding="utf-8")
+    inventory = make_inventory()
+    entries = [{"id": "entry-1", "path": str(video), "storage": "local"}]
+    original_read_bytes = Path.read_bytes
+    reads = {"count": 0}
+
+    def counting_read_bytes(path):
+        reads["count"] += 1
+        return original_read_bytes(path)
+
+    monkeypatch.setattr(Path, "read_bytes", counting_read_bytes)
+    inventory.subtitle_files_for_targets(entries)
+    inventory.invalidate_directory(media_dir)
+    inventory.subtitle_files_for_targets(entries)
+
+    assert reads["count"] == 2
+
+
 def test_v3_manual_strm_persisted_entry_respects_current_config(tmp_path):
     root = tmp_path / "strm"
     other_root = tmp_path / "other"

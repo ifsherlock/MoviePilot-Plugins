@@ -213,6 +213,7 @@ def target_resolver(owner) -> MediaTargetResolver:
         hash_text=owner._hash_text,
         extract_episode_hint=owner._extract_episode_hint,
         subtitle_files_provider=owner.services.subtitle_inventory().subtitle_files_for_target,
+        subtitle_files_batch_provider=owner.services.subtitle_inventory().subtitle_files_for_targets,
         load_local_entries=owner.services.local_media_catalog().load_local_entries,
         group_entries_as_media=owner.services.local_media_catalog().group_entries_as_media,
         tmdb_detail_for_media=owner._tmdb_detail_for_media,

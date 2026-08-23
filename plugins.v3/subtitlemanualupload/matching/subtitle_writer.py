@@ -348,6 +348,9 @@ class SubtitleWriter:
         }
         for video_path in touched_videos.values():
             owner._remove_ext_marks(video_path)
+            inventory = owner.services.subtitle_inventory()
+            if hasattr(inventory, "invalidate_directory"):
+                inventory.invalidate_directory(video_path.parent)
 
         fixed_count = len(
             [
@@ -516,6 +519,9 @@ class SubtitleWriter:
                 visited_paths.add(path_key)
                 try:
                     subtitle_path.unlink()
+                    inventory = owner.services.subtitle_inventory()
+                    if hasattr(inventory, "invalidate_directory"):
+                        inventory.invalidate_directory(subtitle_path.parent)
                     deleted.append(
                         {
                             "target_id": clean_target_id,
@@ -571,6 +577,9 @@ class SubtitleWriter:
             raise self._http_exception(status_code=500, detail=f"删除字幕失败: {exc}") from exc
 
         owner._invalidate_match_history_cache()
+        inventory = owner.services.subtitle_inventory()
+        if hasattr(inventory, "invalidate_directory"):
+            inventory.invalidate_directory(target_path.parent)
         return (
             {
                 "deleted": {
@@ -618,6 +627,9 @@ class SubtitleWriter:
             raise self._http_exception(status_code=500, detail=f"恢复字幕备份失败: {exc}") from exc
 
         owner._invalidate_match_history_cache()
+        inventory = owner.services.subtitle_inventory()
+        if hasattr(inventory, "invalidate_directory"):
+            inventory.invalidate_directory(target_path.parent)
         return (
             {
                 "restored": {

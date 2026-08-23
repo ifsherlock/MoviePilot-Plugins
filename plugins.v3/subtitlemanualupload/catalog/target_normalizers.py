@@ -155,7 +155,8 @@ def entry_path_is_valid(
     path = normalize_text(entry.get("path"))
     if not path:
         return False
-    if trust_transfer_history_paths:
+    origin = normalize_text(entry.get("origin")) or "transfer_history"
+    if trust_transfer_history_paths and origin == "transfer_history":
         return True
     try:
         return Path(path).is_file()

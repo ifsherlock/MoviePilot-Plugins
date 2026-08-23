@@ -248,6 +248,9 @@ class LocalMediaCatalog:
         owner = self._owner
         self._target_entry_cache.clear()
         self.reset_media_index_cache()
+        subtitle_inventory = owner.services.subtitle_inventory()
+        if hasattr(subtitle_inventory, "clear_subtitle_directory_cache"):
+            subtitle_inventory.clear_subtitle_directory_cache()
         owner._invalidate_match_history_cache()
         owner._local_entries_cache = {"loaded_at": None, "entries": [], "media_count": 0, "persisted": False}
         return self.load_local_entries(force=True)
