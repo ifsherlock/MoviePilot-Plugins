@@ -3036,6 +3036,29 @@ def test_subtitle_history_service_persists_and_restores_cache(tmp_path):
     assert plugin._entry_map["m1"]["path"] == str(video)
 
 
+def test_subtitle_history_rejects_legacy_cache_version(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    history = plugin.services.history()
+    cache_file = history.match_history_cache_file()
+    cache_file.parent.mkdir(parents=True, exist_ok=True)
+    cache_file.write_text(
+        json.dumps(
+            {
+                "version": 2,
+                "loaded_at": module.datetime.now().isoformat(timespec="seconds"),
+                "validated_at": module.datetime.now().isoformat(timespec="seconds"),
+                "signature": "legacy",
+                "entry_count": 0,
+                "items": [],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    assert history.restore_persisted_match_history_cache() is False
+
+
 def test_api_match_history_builds_targets_with_media_target_resolver(tmp_path):
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
@@ -4772,6 +4795,7 @@ def test_auto_subtitle_preference_config_normalizes_legacy_strings(tmp_path):
     assert plugin._entry_map == {}
     assert plugin._media_index_cache == {}
     assert plugin._match_history_cache == {
+        "version": 3,
         "loaded_at": None,
         "validated_at": None,
         "signature": "",

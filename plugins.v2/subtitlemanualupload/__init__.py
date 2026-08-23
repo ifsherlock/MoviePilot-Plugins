@@ -244,6 +244,7 @@ class SubtitleManualUpload(_PluginBase):
         "persisted": False,
     }
     _match_history_cache: Dict[str, Any] = {
+        "version": 3,
         "loaded_at": None,
         "validated_at": None,
         "signature": "",

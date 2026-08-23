@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-MATCH_HISTORY_CACHE_VERSION = 2
+MATCH_HISTORY_CACHE_VERSION = 3
 
 
 class SubtitleHistory:
@@ -44,12 +44,20 @@ class SubtitleHistory:
         for entry in entries:
             entry_parts = [
                 owner._normalize_text(entry.get("id")),
+                owner._normalize_text(entry.get("origin")),
+                owner._normalize_text(entry.get("media_key")),
                 owner._normalize_text(entry.get("path")),
                 owner._normalize_text(entry.get("date")),
             ]
-            if include_filesystem:
-                entry_parts.append(owner._entry_filesystem_signature(entry))
             parts.append("|".join(entry_parts))
+        if include_filesystem:
+            inventory = self._subtitle_inventory or owner.services.subtitle_inventory()
+            if hasattr(inventory, "directory_signatures_for_entries"):
+                directory_signatures = inventory.directory_signatures_for_entries(entries)
+                parts.extend(
+                    f"directory|{directory}|{signature}"
+                    for directory, signature in sorted(directory_signatures.items())
+                )
         return owner._hash_text("\n".join(parts))
 
     def persist_match_history_cache(self) -> None:

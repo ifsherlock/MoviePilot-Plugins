@@ -37,6 +37,13 @@ def test_v2_v3_use_batch_subtitle_resolution_and_precise_invalidation():
         inventory = (root / "catalog/subtitle_inventory.py").read_text(encoding="utf-8-sig")
 
         assert "subtitle_files_batch_provider" in resolver
-        assert "subtitle_files_batch_provider=owner.services.subtitle_inventory().subtitle_files_for_targets" in factory
+        assert "subtitle_files_batch_provider=getattr(subtitle_inventory_service, \"subtitle_files_for_targets\", None)" in factory
         assert "invalidate_directory" in writer
         assert "def invalidate_directory" in inventory
+
+
+def test_v2_v3_match_history_cache_version_is_three():
+    for version in ("plugins.v2", "plugins.v3"):
+        source = (ROOT / version / "subtitlemanualupload/matching/subtitle_history.py").read_text(encoding="utf-8-sig")
+        assert "MATCH_HISTORY_CACHE_VERSION = 3" in source
+        assert '"version": MATCH_HISTORY_CACHE_VERSION' in source

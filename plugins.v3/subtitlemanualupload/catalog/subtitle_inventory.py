@@ -153,6 +153,21 @@ class SubtitleInventory:
     def invalidate_directory(self, media_dir: Path) -> None:
         self._subtitle_directory_cache.pop(str(media_dir), None)
 
+    def directory_signatures_for_entries(self, entries: Iterable[Dict[str, Any]]) -> Dict[str, str]:
+        directories = {
+            Path(path_text).parent
+            for entry in entries
+            if isinstance(entry, dict)
+            and (entry.get("storage") in {None, "", "local"})
+            and (path_text := self._normalize_text(entry.get("path")))
+        }
+        ttl = max(self._subtitle_directory_cache_ttl_seconds, 1)
+        ttl_bucket = int(time.monotonic() // ttl)
+        return {
+            str(directory): self._directory_signature(directory) or f"ttl:{ttl_bucket}"
+            for directory in directories
+        }
+
     @staticmethod
     def _directory_signature(media_dir: Path) -> str:
         try:
@@ -208,7 +223,11 @@ class SubtitleInventory:
         if not unchanged:
             metadata[key] = self._subtitle_file_metadata(sub_file)
         value = metadata.get(key)
-        return dict(value) if isinstance(value, dict) else None
+        if not isinstance(value, dict):
+            return None
+        result = dict(value)
+        result.pop("mtime_ns", None)
+        return result
 
     def embedded_subtitle_tracks_for_target(self, target_entry: Dict[str, Any]) -> List[Dict[str, Any]]:
         storage = self._normalize_text(target_entry.get("storage")) or "local"

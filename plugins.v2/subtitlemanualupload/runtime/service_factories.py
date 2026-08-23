@@ -203,6 +203,7 @@ def auto_transfer_service(owner) -> AutoTransferService:
 
 
 def target_resolver(owner) -> MediaTargetResolver:
+    subtitle_inventory_service = owner.services.subtitle_inventory()
     return MediaTargetResolver(
         settings_obj=settings,
         meta_info_path=MetaInfoPath,
@@ -212,8 +213,8 @@ def target_resolver(owner) -> MediaTargetResolver:
         safe_int=owner._safe_int,
         hash_text=owner._hash_text,
         extract_episode_hint=owner._extract_episode_hint,
-        subtitle_files_provider=owner.services.subtitle_inventory().subtitle_files_for_target,
-        subtitle_files_batch_provider=owner.services.subtitle_inventory().subtitle_files_for_targets,
+        subtitle_files_provider=subtitle_inventory_service.subtitle_files_for_target,
+        subtitle_files_batch_provider=getattr(subtitle_inventory_service, "subtitle_files_for_targets", None),
         load_local_entries=owner.services.local_media_catalog().load_local_entries,
         group_entries_as_media=owner.services.local_media_catalog().group_entries_as_media,
         tmdb_detail_for_media=owner._tmdb_detail_for_media,

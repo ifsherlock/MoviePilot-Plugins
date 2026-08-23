@@ -7,6 +7,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+MATCH_HISTORY_CACHE_VERSION = 3
+
 
 class SubtitleHistory:
     def __init__(
@@ -42,12 +44,20 @@ class SubtitleHistory:
         for entry in entries:
             entry_parts = [
                 owner._normalize_text(entry.get("id")),
+                owner._normalize_text(entry.get("origin")),
+                owner._normalize_text(entry.get("media_key")),
                 owner._normalize_text(entry.get("path")),
                 owner._normalize_text(entry.get("date")),
             ]
-            if include_filesystem:
-                entry_parts.append(owner._entry_filesystem_signature(entry))
             parts.append("|".join(entry_parts))
+        if include_filesystem:
+            inventory = self._subtitle_inventory or owner.services.subtitle_inventory()
+            if hasattr(inventory, "directory_signatures_for_entries"):
+                directory_signatures = inventory.directory_signatures_for_entries(entries)
+                parts.extend(
+                    f"directory|{directory}|{signature}"
+                    for directory, signature in sorted(directory_signatures.items())
+                )
         return owner._hash_text("\n".join(parts))
 
     def persist_match_history_cache(self) -> None:
@@ -56,6 +66,7 @@ class SubtitleHistory:
         loaded_at = owner._cache_loaded_at(cache.get("loaded_at"))
         validated_at = owner._cache_loaded_at(cache.get("validated_at"))
         payload = {
+            "version": MATCH_HISTORY_CACHE_VERSION,
             "loaded_at": loaded_at.isoformat(timespec="seconds") if loaded_at else "",
             "validated_at": validated_at.isoformat(timespec="seconds") if validated_at else "",
             "signature": owner._normalize_text(cache.get("signature")),
@@ -81,12 +92,15 @@ class SubtitleHistory:
             return False
         if not isinstance(payload, dict):
             return False
+        if int(payload.get("version") or 0) != MATCH_HISTORY_CACHE_VERSION:
+            return False
         loaded_at = owner._cache_loaded_at(payload.get("loaded_at"))
         validated_at = owner._cache_loaded_at(payload.get("validated_at")) or loaded_at
         items = payload.get("items")
         if not loaded_at or not isinstance(items, list):
             return False
         owner._match_history_cache = {
+            "version": MATCH_HISTORY_CACHE_VERSION,
             "loaded_at": loaded_at,
             "validated_at": validated_at,
             "signature": owner._normalize_text(payload.get("signature")),
@@ -106,6 +120,7 @@ class SubtitleHistory:
         owner = self._owner
         owner._match_history_generation = int(getattr(owner, "_match_history_generation", 0)) + 1
         owner._match_history_cache = {
+            "version": MATCH_HISTORY_CACHE_VERSION,
             "loaded_at": None,
             "validated_at": None,
             "signature": "",
@@ -295,6 +310,7 @@ class SubtitleHistory:
 
             now = datetime.now()
             owner._match_history_cache = {
+                "version": MATCH_HISTORY_CACHE_VERSION,
                 "loaded_at": now,
                 "validated_at": now,
                 "signature": signature,
