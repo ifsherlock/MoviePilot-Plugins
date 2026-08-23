@@ -45,6 +45,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "auto_skip_chinese_media_on_transfer": True,
     "auto_transfer_subtitle_strategy": "online_then_ai_source",
     "trust_transfer_history_paths": False,
+    "manual_strm_enabled": False,
+    "manual_strm_paths": [],
     "auto_multi_subtitle_mode": "best",
     "auto_subtitle_language_priority": list(DEFAULT_AUTO_LANGUAGE_PRIORITY),
     "auto_subtitle_format_priority": list(DEFAULT_AUTO_FORMAT_PRIORITY),
@@ -258,6 +260,8 @@ def normalize_plugin_config(
             raw_config.get("auto_transfer_subtitle_strategy")
         ),
         "trust_transfer_history_paths": bool(raw_config.get("trust_transfer_history_paths", False)),
+        "manual_strm_enabled": bool(raw_config.get("manual_strm_enabled", False)),
+        "manual_strm_paths": normalize_manual_strm_paths(raw_config.get("manual_strm_paths")),
         "auto_multi_subtitle_mode": normalize_auto_multi_subtitle_mode(raw_config.get("auto_multi_subtitle_mode")),
         "auto_subtitle_language_priority": normalize_auto_language_priority(
             raw_config.get("auto_subtitle_language_priority"),
@@ -274,6 +278,25 @@ def normalize_plugin_config(
         "timeline_vad_mode": normalize_timeline_vad_mode(raw_config.get("timeline_vad_mode")),
         "timeline_allow_risky_offset": bool(raw_config.get("timeline_allow_risky_offset", False)),
     }
+
+
+def normalize_manual_strm_paths(value: Any) -> List[str]:
+    """规范化本地 STRM 根目录，多行保存并去除父子重复目录。"""
+    raw_items = value if isinstance(value, list) else str(value or "").splitlines()
+    paths: List[str] = []
+    for item in raw_items:
+        text = normalize_text(item).strip().rstrip("/\\")
+        if not text or not re.match(r"^[A-Za-z]:[\\/]", text) and not text.startswith("/"):
+            continue
+        if text not in paths:
+            paths.append(text)
+    result: List[str] = []
+    for path in sorted(paths, key=lambda item: (len(item), item.lower())):
+        normalized = path.replace("\\", "/").rstrip("/")
+        if any(normalized == parent or normalized.startswith(parent + "/") for parent in result):
+            continue
+        result.append(path)
+    return result
 
 
 def _field(component: str, props: Dict[str, Any]) -> Dict[str, Any]:

@@ -46,6 +46,7 @@ from ..catalog.target_resolver import (
     SubtitleInventory,
     TargetEntryCache,
 )
+from ..catalog.manual_strm import ManualStrmCatalog
 from ..timeline.timeline_fixer import TimelineFixResult, check_timeline_fixer_dependencies, fix_subtitle_timeline
 from ..timeline.timeline_tasks import TimelineTaskStore
 from ..matching.tongwen import convert_subtitle_file_to_simplified
@@ -224,6 +225,14 @@ def local_media_catalog(owner) -> LocalMediaCatalog:
         http_exception=HTTPException,
         logger=logger,
         target_entry_cache=target_entry_cache(owner),
+        manual_strm_catalog=ManualStrmCatalog(
+            normalize_text=owner._normalize_text,
+            safe_int=owner._safe_int,
+            hash_text=owner._hash_text,
+            extract_episode_hint=owner._extract_episode_hint,
+            meta_info_path=MetaInfoPath,
+            logger_warning=logger.warning,
+        ),
         threading_module=owner._host_module_value("threading", threading),
     )
 
