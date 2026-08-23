@@ -2,6 +2,12 @@
 
 MoviePilot V3 专用字幕管理插件，脱胎自 [ChineseSubFinder](https://github.com/ChineseSubFinder/ChineseSubFinder)，提供在线搜索、手动上传、自动匹配、规范改名与智能调轴能力。V2 版本保留在 `plugins.v2/subtitlemanualupload`。
 
+## v1.2.0 更新
+
+- 新增手动配置本地 STRM 根目录，支持电影、剧集、季集和 NFO/标准命名识别。
+- 修复开启“信任整理历史路径”后外挂字幕被错误隐藏的问题；该选项只跳过远程视频存在性检查。
+- 同一父目录的字幕扫描改为批量复用，减少 CD2、SMB 和网盘挂载上的重复元数据访问。
+
 ## v1.1.1 更新
 
 - 修复 V3 读取本地整理记录时调用已移除的 `_execute_sync_query`，改用当前 MoviePilot `TransferHistory` 模型查询接口。
