@@ -19,6 +19,7 @@ class ManualStrmCatalog:
         hash_text: Callable[[str], str],
         extract_episode_hint: Callable[[str], Optional[Dict[str, int]]],
         meta_info_path: Optional[Callable[[Path], Any]],
+        build_media_key: Optional[Callable[[Any, Any], str]] = None,
         logger_warning: Callable[..., None],
     ) -> None:
         self._normalize_text = normalize_text
@@ -26,6 +27,7 @@ class ManualStrmCatalog:
         self._hash_text = hash_text
         self._extract_episode_hint = extract_episode_hint
         self._meta_info_path = meta_info_path
+        self._build_media_key = build_media_key
         self._logger_warning = logger_warning
 
     def scan(self, roots: Iterable[str], *, max_entries: int = 5000) -> List[Dict[str, Any]]:
@@ -107,7 +109,11 @@ class ManualStrmCatalog:
             source, media_id = "douban", douban_id
         identity_confidence = "nfo" if media_id else ("path" if title else "unresolved")
         identity_key = f"{source}:{media_id}" if source and media_id else f"{media_type}|{title}|{year}"
-        media_key = identity_key if source and media_id else self._hash_text(identity_key)
+        media_key = (
+            self._build_media_key(source, media_id)
+            if self._build_media_key and source and media_id
+            else ""
+        ) or self._hash_text(identity_key)
         filename = path.name
         basename = path.stem
         prefix = f"S{season:02d}E{episode:02d}" if media_type == "tv" and season and episode else basename
@@ -213,7 +219,7 @@ class ManualStrmCatalog:
                 "episode": values.get("episode") or values.get("episodenumber"),
                 "tmdb_id": values.get("tmdbid") or unique_ids.get("tmdb") or unique_ids.get("themoviedb"),
                 "douban_id": values.get("doubanid") or unique_ids.get("douban"),
-                "media_source": values.get("mediasource") or values.get("source"),
+                "media_source": values.get("mediasource") or values.get("media_source") or values.get("source"),
                 "media_id": values.get("mediaid") or values.get("media_id"),
             }
         except (OSError, ET.ParseError):

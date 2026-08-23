@@ -29,6 +29,24 @@ def load_subtitle_inventory():
     return module.SubtitleInventory
 
 
+def load_local_media_catalog():
+    package_name = "subtitlemanualupload_v3_catalog_testpkg"
+    for name in list(sys.modules):
+        if name == package_name or name.startswith(f"{package_name}."):
+            sys.modules.pop(name, None)
+    package = types.ModuleType(package_name)
+    package.__path__ = [str(V3_CATALOG)]
+    sys.modules[package_name] = package
+    spec = importlib.util.spec_from_file_location(
+        f"{package_name}.local_media_catalog",
+        V3_CATALOG / "local_media_catalog.py",
+    )
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module.LocalMediaCatalog
+
+
 def make_inventory(*, trust=False):
     cls = load_subtitle_inventory()
     return cls(
@@ -103,3 +121,31 @@ def test_v3_subtitle_directory_listing_is_shared_by_targets(tmp_path, monkeypatc
     assert calls["count"] == first_call_count
     assert len(result["entry-1"]) == 1
     assert len(cached_result["entry-2"]) == 1
+
+
+def test_v3_manual_strm_persisted_entry_respects_current_config(tmp_path):
+    root = tmp_path / "strm"
+    other_root = tmp_path / "other"
+    root.mkdir()
+    other_root.mkdir()
+    strm = root / "Movie.strm"
+    strm.write_text("remote", encoding="utf-8")
+    owner = types.SimpleNamespace(
+        _manual_strm_enabled=False,
+        _manual_strm_paths=[str(root)],
+        _normalize_text=lambda value: str(value or "").strip(),
+    )
+    cache = load_local_media_catalog()(
+        owner,
+        transfer_history=None,
+        http_exception=RuntimeError,
+        logger=types.SimpleNamespace(info=lambda *args: None, warning=lambda *args: None),
+        target_entry_cache=types.SimpleNamespace(),
+    )
+    entry = {"origin": "manual_strm", "path": str(strm)}
+
+    assert cache._entry_source_is_enabled(entry) is False
+    owner._manual_strm_enabled = True
+    assert cache._entry_source_is_enabled(entry) is True
+    owner._manual_strm_paths = [str(other_root)]
+    assert cache._entry_source_is_enabled(entry) is False

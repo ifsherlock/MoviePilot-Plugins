@@ -16,6 +16,7 @@ class LocalMediaCatalog:
         http_exception: Any,
         logger: Any,
         target_entry_cache: TargetEntryCache,
+        manual_strm_catalog: Any = None,
         threading_module: Any = None,
     ) -> None:
         self._owner = owner
@@ -23,15 +24,41 @@ class LocalMediaCatalog:
         self._http_exception = http_exception
         self._logger = logger
         self._target_entry_cache = target_entry_cache
+        self._manual_strm_catalog = manual_strm_catalog
         self._threading = threading_module
 
     def filter_existing_local_entries(self, entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         owner = self._owner
-        filtered = [entry for entry in entries if isinstance(entry, dict) and owner._entry_path_is_valid(entry)]
+        filtered = [
+            entry
+            for entry in entries
+            if isinstance(entry, dict)
+            and self._entry_source_is_enabled(entry)
+            and owner._entry_path_is_valid(entry)
+        ]
         dropped = len(entries or []) - len(filtered)
         if dropped:
             self._logger.info("[SubtitleManualUpload] 已剔除失效本地视频目标 count=%s", dropped)
         return filtered
+
+    def _entry_source_is_enabled(self, entry: Dict[str, Any]) -> bool:
+        owner = self._owner
+        if owner._normalize_text(entry.get("origin")) != "manual_strm":
+            return True
+        if not getattr(owner, "_manual_strm_enabled", False):
+            return False
+        path_text = owner._normalize_text(entry.get("path"))
+        if not path_text:
+            return False
+        try:
+            path = Path(path_text).resolve(strict=False)
+            for root_text in getattr(owner, "_manual_strm_paths", []):
+                root = Path(owner._normalize_text(root_text)).resolve(strict=False)
+                if path == root or path.is_relative_to(root):
+                    return True
+        except Exception:
+            return False
+        return False
 
     def prune_local_entries_cache(self) -> None:
         owner = self._owner
@@ -176,6 +203,31 @@ class LocalMediaCatalog:
             if len(entries) >= owner._cache_max_entries:
                 break
 
+        manual_entries: List[Dict[str, Any]] = []
+        if getattr(owner, "_manual_strm_enabled", False) and self._manual_strm_catalog:
+            manual_entries = self._manual_strm_catalog.scan(
+                getattr(owner, "_manual_strm_paths", []),
+                max_entries=owner._cache_max_entries,
+            )
+            # 用户明确配置的本地 STRM 优先保留；与整理历史同路径时只保留一条。
+            merged_by_path = {
+                owner._normalize_text(item.get("path")): item
+                for item in entries
+                if owner._normalize_text(item.get("path"))
+            }
+            for item in manual_entries:
+                path = owner._normalize_text(item.get("path"))
+                if path:
+                    merged_by_path[path] = item
+            entries = list(manual_entries)
+            manual_paths = {owner._normalize_text(item.get("path")) for item in manual_entries}
+            entries.extend(
+                item
+                for path, item in merged_by_path.items()
+                if path not in manual_paths
+            )
+            entries = entries[: owner._cache_max_entries]
+
         media_count = len({entry.get("media_key") for entry in entries if entry.get("media_key")})
         owner._local_entries_cache = {
             "loaded_at": now,
@@ -188,9 +240,10 @@ class LocalMediaCatalog:
         owner._invalidate_match_history_cache()
         self.persist_local_cache()
         self._logger.info(
-            "[SubtitleManualUpload] 本地资源缓存已刷新 entries=%s medias=%s",
+            "[SubtitleManualUpload] 本地资源缓存已刷新 entries=%s medias=%s manual_strm=%s",
             len(entries),
             media_count,
+            len(manual_entries),
         )
         return list(entries)
 
@@ -247,6 +300,11 @@ class LocalMediaCatalog:
             "refresh_completed_at": owner._cache_refresh_completed_at,
             "refresh_error": owner._cache_refresh_error,
             "trust_transfer_history_paths": bool(owner._trust_transfer_history_paths),
+            "manual_strm_enabled": bool(getattr(owner, "_manual_strm_enabled", False)),
+            "manual_strm_paths": list(getattr(owner, "_manual_strm_paths", [])),
+            "manual_strm_count": len(
+                [item for item in cache.get("entries") or [] if item.get("origin") == "manual_strm"]
+            ),
             "ttl_seconds": owner._cache_ttl_seconds,
             "expires_in": expires_in,
             "updated_at": loaded_at.isoformat(timespec="seconds") if loaded_at else "",

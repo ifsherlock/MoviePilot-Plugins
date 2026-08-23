@@ -209,7 +209,7 @@ class SubtitleManualUpload(_PluginBase):
     _auto_search_min_score = 20
     _trust_transfer_history_paths = False
     _manual_strm_enabled = False
-    _manual_strm_paths = ""
+    _manual_strm_paths = []
     _timeline_max_offset_seconds = 120
     _timeline_min_offset_seconds = 0.2
     _timeline_vad_mode = "webrtc"

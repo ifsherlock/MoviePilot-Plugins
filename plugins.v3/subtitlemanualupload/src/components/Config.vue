@@ -21,6 +21,8 @@ const localConfig = ref({
   auto_skip_chinese_media_on_transfer: true,
   auto_transfer_subtitle_strategy: 'online_then_ai_source',
   trust_transfer_history_paths: false,
+  manual_strm_enabled: false,
+  manual_strm_paths: '',
   auto_multi_subtitle_mode: 'best',
   auto_subtitle_language_priority: ['bilingual', 'chi', 'cht', 'eng'],
   auto_subtitle_format_priority: ['.ass', '.srt', '.ssa', '.vtt'],
@@ -142,6 +144,17 @@ function normalizeList(value, allowed, fallback) {
   return result
 }
 
+function normalizeMultilinePaths(value) {
+  const raw = Array.isArray(value) ? value : String(value || '').split(/\r?\n/)
+  const paths = []
+  raw.forEach(item => {
+    const path = String(item || '').trim().replace(/[\\/]+$/, '')
+    if (!path || paths.includes(path)) return
+    paths.push(path)
+  })
+  return paths.join('\n')
+}
+
 function normalizeConfig(input) {
   const assrtApiKey = String(input?.assrt_api_key || '').trim()
   const opensubtitlesApiKey = String(input?.opensubtitles_api_key || '').trim()
@@ -166,6 +179,8 @@ function normalizeConfig(input) {
     auto_skip_chinese_media_on_transfer: input?.auto_skip_chinese_media_on_transfer !== false,
     auto_transfer_subtitle_strategy: autoStrategy,
     trust_transfer_history_paths: Boolean(input?.trust_transfer_history_paths),
+    manual_strm_enabled: Boolean(input?.manual_strm_enabled),
+    manual_strm_paths: normalizeMultilinePaths(input?.manual_strm_paths),
     auto_multi_subtitle_mode: autoMultiSubtitleModes.some(item => item.value === input?.auto_multi_subtitle_mode)
       ? input.auto_multi_subtitle_mode
       : 'best',
@@ -284,6 +299,25 @@ onMounted(() => {
               color="warning"
               hint="CD2、网盘挂载、SMB 等慢路径可开启，刷新资源清单时不逐条访问文件。"
               persistent-hint
+            />
+            <VSwitch
+              v-model="localConfig.manual_strm_enabled"
+              label="扫描额外 STRM 目录"
+              color="info"
+              hint="独立于整理历史，只扫描本地硬盘上的 .strm 文件。"
+              persistent-hint
+            />
+            <VTextarea
+              v-model="localConfig.manual_strm_paths"
+              label="额外 STRM 本地目录"
+              placeholder="/vol2/1000/raid/2/links2\n/vol1/1000/media-strm"
+              rows="3"
+              auto-grow
+              hint="每行一个 MoviePilot 容器内可见的绝对路径；不读取 .strm 内容。"
+              persistent-hint
+              variant="outlined"
+              density="comfortable"
+              class="config-grid-wide"
             />
             <VSelect
               v-model="localConfig.auto_transfer_subtitle_strategy"

@@ -28,7 +28,13 @@ def load_manual_strm_catalog(catalog_root=V3_CATALOG, package_name="subtitlemanu
     return module.ManualStrmCatalog
 
 
-def make_catalog(meta_info_path=None, *, catalog_root=V3_CATALOG, package_name="subtitlemanualupload_v3_strm_testpkg"):
+def make_catalog(
+    meta_info_path=None,
+    *,
+    catalog_root=V3_CATALOG,
+    package_name="subtitlemanualupload_v3_strm_testpkg",
+    build_media_key=None,
+):
     cls = load_manual_strm_catalog(catalog_root, package_name)
     return cls(
         normalize_text=lambda value: str(value or "").strip(),
@@ -40,6 +46,7 @@ def make_catalog(meta_info_path=None, *, catalog_root=V3_CATALOG, package_name="
             else None
         ),
         meta_info_path=meta_info_path,
+        build_media_key=build_media_key,
         logger_warning=lambda *args, **kwargs: None,
     )
 
@@ -67,6 +74,26 @@ def test_v3_manual_strm_movie_uses_nfo_identity(tmp_path):
     assert entry["media_id"] == "12345"
     assert entry["tmdb_id"] == 12345
     assert entry["writable"] is True
+
+
+def test_v3_manual_strm_uses_injected_media_key_builder(tmp_path):
+    strm = tmp_path / "Movie.strm"
+    strm.write_text("remote", encoding="utf-8")
+    strm.with_suffix(".nfo").write_text(
+        "<movie><title>Movie</title><media_source>themoviedb</media_source>"
+        "<media_id>2468</media_id></movie>",
+        encoding="utf-8",
+    )
+
+    entry = make_catalog(
+        build_media_key=lambda source, media_id: "tmdb:" + str(media_id)
+        if source == "themoviedb"
+        else "",
+    ).scan([str(tmp_path)])[0]
+
+    assert entry["media_source"] == "themoviedb"
+    assert entry["media_id"] == "2468"
+    assert entry["media_key"] == "tmdb:2468"
 
 
 def test_v3_manual_strm_tv_uses_show_and_season_nfo(tmp_path):
