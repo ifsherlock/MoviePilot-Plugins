@@ -2805,7 +2805,56 @@ def test_match_history_cache_reuses_scanned_items_until_invalidated(tmp_path):
     third = history.match_history_items()
 
     assert first == second == third
-    assert calls["count"] == 2
+    assert calls["count"] == 1
+
+
+def test_match_history_rebuilds_only_changed_subtitle_directory(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    first_dir = tmp_path / "first"
+    second_dir = tmp_path / "second"
+    first_dir.mkdir()
+    second_dir.mkdir()
+    first_video = first_dir / "First.mkv"
+    second_video = second_dir / "Second.mkv"
+    first_video.write_text("video", encoding="utf-8")
+    second_video.write_text("video", encoding="utf-8")
+    (first_dir / "First.chi.srt").write_text("subtitle", encoding="utf-8")
+    (second_dir / "Second.chi.srt").write_text("subtitle", encoding="utf-8")
+    entries = [
+        {"id": "first", "media_key": "first", "media_type": "movie", "title": "First", "path": str(first_video), "basename": "First", "target_label": "First", "storage": "local"},
+        {"id": "second", "media_key": "second", "media_type": "movie", "title": "Second", "path": str(second_video), "basename": "Second", "target_label": "Second", "storage": "local"},
+    ]
+    scans = []
+
+    class Inventory:
+        def directory_signatures_for_entries(self, values):
+            return {
+                str(Path(entry["path"]).parent): str(Path(entry["path"]).parent.stat().st_mtime_ns)
+                for entry in values
+            }
+
+        def subtitle_files_for_targets(self, values):
+            scans.append(sorted(str(Path(entry["path"]).parent) for entry in values))
+            return {
+                entry["id"]: [{"name": Path(entry["path"]).stem + ".chi.srt", "modified_at": "2026-01-01T00:00:00"}]
+                for entry in values
+            }
+
+    class Resolver:
+        def target_from_entry(self, entry, *, subtitles):
+            return {"id": entry["id"], "basename": entry["basename"], "subtitles": subtitles, "season": 0, "episode": 0}
+
+    override_services(plugin, subtitle_inventory=Inventory(), target_resolver=Resolver())
+    history = plugin.services.history()
+    history.rebuild_match_history_cache(entries=entries)
+    history.rebuild_match_history_cache(entries=entries)
+    (second_dir / "new.ass").write_text("new", encoding="utf-8")
+    history.rebuild_match_history_cache(entries=entries)
+
+    assert len(scans) == 3
+    assert sorted(item[0] for item in scans[:2]) == sorted([str(first_dir), str(second_dir)])
+    assert scans[2] == [str(second_dir)]
 
 
 def test_match_history_page_uses_current_snapshot_without_filesystem_scan():

@@ -117,6 +117,7 @@ def test_backend_inventory_cli_outputs_valid_json_for_big_modules():
             assert target_packages[name]["python_files"] == [
                 "__init__.py",
                 "local_media_catalog.py",
+                "manual_strm.py",
                 "media_metadata.py",
                 "media_target_resolver.py",
                 "subtitle_inventory.py",

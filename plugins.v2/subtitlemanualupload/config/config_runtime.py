@@ -73,6 +73,7 @@ def reset_runtime_state(owner: Any) -> None:
     owner._entry_map = OrderedDict()
     owner._media_index_cache = OrderedDict()
     owner._subtitle_directory_cache = OrderedDict()
+    owner._match_history_directory_cache = {}
     owner._match_history_cache = {
         "version": 3,
         "loaded_at": None,
