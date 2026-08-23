@@ -1,6 +1,6 @@
 # MoviePilot-Plugins
 
-同时维护 MoviePilot V2 与 V3 的个人插件仓库，目前主要维护字幕匹配、AI 字幕生成和 Emby 媒体库封面生成。
+同时维护 MoviePilot V2 与 V3 的个人插件仓库，目前主要维护字幕匹配和 AI 字幕生成。
 
 ## 展示图
 
@@ -15,13 +15,10 @@
 
 ## 插件列表
 
-| 插件 | 目录 | 版本 | 主要功能 |
+| 插件 | V2 版本 | V3 版本 | 主要功能 |
 | --- | --- | --- | --- |
-| 海拉鲁字幕大师 | `plugins.v2/subtitlemanualupload` | 0.1.87 | 字幕搜索、下载、上传、匹配、改名、调轴、入库自动处理 |
-| AI字幕生成(联动版) | `plugins.v2/autosubv3` | 3.5.60 | 音轨识别、字幕提取、AI 翻译、任务队列、联动字幕匹配 |
-| 海拉鲁字幕大师 V3 | `plugins.v3/subtitlemanualupload` | 1.2.1 | V3 SDK、统一媒体身份、STRM 目录与字幕匹配优化 |
-| AI字幕生成(联动版) V3 | `plugins.v3/autosubv3` | 4.0.1 | V3 SDK、入库事件任务、AI 字幕生成与联动 |
-| Emby媒体库封面生成 | `plugins.v2/mediacovergenerator` | 0.9.10 | 生成 Emby/Jellyfin 媒体库静态或动态封面 |
+| 海拉鲁字幕大师 | 0.1.87 | 1.2.1 | 字幕搜索、下载、上传、匹配、改名、调轴、入库自动处理 |
+| AI字幕生成(联动版) | 3.5.60 | 4.0.1 | 音轨识别、字幕提取、AI 翻译、任务队列、联动字幕匹配 |
 
 ## 字幕匹配
 
@@ -50,18 +47,6 @@
 - 支持双语字幕或纯中文字幕输出。
 - 支持批量任务、任务状态查看、取消和重新生成。
 - 支持与“字幕匹配”互相联动。
-
-## Emby媒体库封面生成
-
-用于给 Emby/Jellyfin 媒体库生成统一风格的入口封面。
-
-主要功能：
-
-- 支持静态封面和动态封面。
-- 支持多种封面风格、字体、分辨率和颜色策略。
-- 支持从媒体库海报/背景图提取视觉元素。
-- 支持媒体数量角标。
-- 支持历史封面保存，方便回滚或复用。
 
 ## 安装方式
 
@@ -93,8 +78,6 @@ https://github.com/ifsherlock/MoviePilot-Plugins
 - [MoviePilot-Plugins](https://github.com/jxxghp/MoviePilot-Plugins)
 - [ChineseSubFinder](https://github.com/ChineseSubFinder/ChineseSubFinder)
 - [allanpk716/chinesesubfinder](https://github.com/allanpk716/chinesesubfinder)
-- [HappyQuQu/jellyfin-library-poster](https://github.com/HappyQuQu/jellyfin-library-poster)
-- Emby媒体库封面生成插件原库：[justzerock/MoviePilot-Plugins](https://github.com/justzerock/MoviePilot-Plugins)
 
 主要依赖库：
 
