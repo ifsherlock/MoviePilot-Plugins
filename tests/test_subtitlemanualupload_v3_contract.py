@@ -23,7 +23,7 @@ def test_v3_manual_strm_config_and_manifest_are_consistent():
     assert "MetaInfoPath(path, force_video=True)" in factory
     assert "build_media_key=build_media_key" in factory
     assert '"origin": "manual_strm"' in (ROOT / "plugins.v3/subtitlemanualupload/catalog/manual_strm.py").read_text(encoding="utf-8-sig")
-    assert package["version"] == "1.2.0"
+    assert package["version"] == "1.2.1"
     assert index["SubtitleManualUpload"]["version"] == package["version"]
     assert "manual_strm_enabled" in owner
 
@@ -47,3 +47,11 @@ def test_v2_v3_match_history_cache_version_is_three():
         source = (ROOT / version / "subtitlemanualupload/matching/subtitle_history.py").read_text(encoding="utf-8-sig")
         assert "MATCH_HISTORY_CACHE_VERSION = 3" in source
         assert '"version": MATCH_HISTORY_CACHE_VERSION' in source
+
+
+def test_v2_v3_strm_placeholder_uses_real_newline_binding():
+    for version in ("plugins.v2", "plugins.v3"):
+        source = (ROOT / version / "subtitlemanualupload/src/components/Config.vue").read_text(encoding="utf-8-sig")
+        assert "const manualStrmPathPlaceholder = `/vol2/1000/raid/2/links2\n/vol1/1000/media-strm`" in source
+        assert ':placeholder="manualStrmPathPlaceholder"' in source
+        assert 'placeholder="/vol2/1000/raid/2/links2\\n/vol1/1000/media-strm"' not in source

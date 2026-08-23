@@ -2,6 +2,10 @@
 
 MoviePilot V2 字幕管理插件，脱胎自 [ChineseSubFinder](https://github.com/ChineseSubFinder/ChineseSubFinder)，提供在线搜索、手动上传、自动匹配、规范改名与智能调轴能力。
 
+## v0.1.87 更新
+
+- 修复额外 STRM 本地目录示例中的 `\\n` 被直接显示为文本的问题，改为真实多行占位示例。
+
 ## v0.1.86 更新
 
 - 修复在线搜索通过目标 ID 重新读取本地条目时丢失 TMDB 完整标题别名的问题；SubHD 搜索页已存在 `S03E09` 字幕时不再被二次身份校验错误过滤。

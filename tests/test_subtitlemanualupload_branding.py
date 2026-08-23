@@ -6,7 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PLUGIN_DIR = ROOT / "plugins.v2" / "subtitlemanualupload"
 BRAND_NAME = "海拉鲁字幕大师"
-VERSION = "0.1.86"
+VERSION = "0.1.87"
 ICON_URL = (
     "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/"
     "main/icons/hyrule-subtitle-master.png"

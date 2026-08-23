@@ -11,6 +11,8 @@ const props = defineProps({
 
 const emit = defineEmits(['save', 'close'])
 const configError = ref('')
+const manualStrmPathPlaceholder = `/vol2/1000/raid/2/links2
+/vol1/1000/media-strm`
 const localConfig = ref({
   enabled: false,
   show_sidebar_nav: true,
@@ -310,7 +312,7 @@ onMounted(() => {
             <VTextarea
               v-model="localConfig.manual_strm_paths"
               label="额外 STRM 本地目录"
-              placeholder="/vol2/1000/raid/2/links2\n/vol1/1000/media-strm"
+              :placeholder="manualStrmPathPlaceholder"
               rows="3"
               auto-grow
               hint="每行一个 MoviePilot 容器内可见的绝对路径；不读取 .strm 内容。"

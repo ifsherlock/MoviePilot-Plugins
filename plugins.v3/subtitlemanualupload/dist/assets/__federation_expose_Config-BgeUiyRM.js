@@ -13,6 +13,8 @@ const _hoisted_6 = { class: "config-grid" };
 
 const {onMounted,ref} = await importShared('vue');
 
+const manualStrmPathPlaceholder = `/vol2/1000/raid/2/links2
+/vol1/1000/media-strm`;
 
 const _sfc_main = {
   __name: 'Config',
@@ -370,7 +372,7 @@ return (_ctx, _cache) => {
                   modelValue: localConfig.value.manual_strm_paths,
                   "onUpdate:modelValue": _cache[9] || (_cache[9] = $event => ((localConfig.value.manual_strm_paths) = $event)),
                   label: "额外 STRM 本地目录",
-                  placeholder: "/vol2/1000/raid/2/links2\\n/vol1/1000/media-strm",
+                  placeholder: manualStrmPathPlaceholder,
                   rows: "3",
                   "auto-grow": "",
                   hint: "每行一个 MoviePilot 容器内可见的绝对路径；不读取 .strm 内容。",
@@ -669,6 +671,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-ffa05d84"]]);
+const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-da4bb88a"]]);
 
 export { Config as default };
