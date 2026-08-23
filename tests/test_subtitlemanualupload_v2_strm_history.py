@@ -40,6 +40,29 @@ def test_v2_local_media_catalog_merges_manual_strm_entries(tmp_path):
     assert entries[0]["path"].endswith("Example.Movie.strm")
 
 
+def test_v2_manual_strm_reads_generic_media_identity_nfo(tmp_path):
+    module, histories, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    root = tmp_path / "strm"
+    root.mkdir()
+    strm = root / "Example.Movie.strm"
+    strm.write_text("remote", encoding="utf-8")
+    strm.with_suffix(".nfo").write_text(
+        "<movie><title>示例电影</title><media_source>themoviedb</media_source>"
+        "<media_id>1234</media_id></movie>",
+        encoding="utf-8",
+    )
+    plugin._manual_strm_enabled = True
+    plugin._manual_strm_paths = [str(root)]
+    histories.data = []
+
+    entry = plugin._local_media_catalog().load_local_entries(force=True)[0]
+
+    assert entry["media_source"] == "themoviedb"
+    assert entry["media_id"] == "1234"
+    assert entry["tmdb_id"] == 1234
+
+
 def test_v2_service_factory_uses_core_metainfo_for_manual_strm():
     module, _, _ = load_plugin_module()
     source = Path(module.__file__).parent / "runtime/service_factories.py"
