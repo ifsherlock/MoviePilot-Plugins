@@ -8,19 +8,19 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 V3_CATALOG = ROOT / "plugins.v3/subtitlemanualupload/catalog"
+V2_CATALOG = ROOT / "plugins.v2/subtitlemanualupload/catalog"
 
 
-def load_manual_strm_catalog():
-    package_name = "subtitlemanualupload_v3_strm_testpkg"
+def load_manual_strm_catalog(catalog_root=V3_CATALOG, package_name="subtitlemanualupload_v3_strm_testpkg"):
     for name in list(sys.modules):
         if name == package_name or name.startswith(f"{package_name}."):
             sys.modules.pop(name, None)
     package = types.ModuleType(package_name)
-    package.__path__ = [str(V3_CATALOG)]
+    package.__path__ = [str(catalog_root)]
     sys.modules[package_name] = package
     spec = importlib.util.spec_from_file_location(
         f"{package_name}.manual_strm",
-        V3_CATALOG / "manual_strm.py",
+        catalog_root / "manual_strm.py",
     )
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
@@ -28,8 +28,8 @@ def load_manual_strm_catalog():
     return module.ManualStrmCatalog
 
 
-def make_catalog(meta_info_path=None):
-    cls = load_manual_strm_catalog()
+def make_catalog(meta_info_path=None, *, catalog_root=V3_CATALOG, package_name="subtitlemanualupload_v3_strm_testpkg"):
+    cls = load_manual_strm_catalog(catalog_root, package_name)
     return cls(
         normalize_text=lambda value: str(value or "").strip(),
         safe_int=lambda value, default=0: int(value) if str(value or "").isdigit() else default,
@@ -131,3 +131,27 @@ def test_v3_manual_strm_scan_deduplicates_overlapping_roots(tmp_path):
     entries = make_catalog().scan([str(root), str(nested)])
 
     assert len(entries) == 1
+
+
+def test_v3_manual_strm_date_is_iso_sortable(tmp_path):
+    strm = tmp_path / "Movie.strm"
+    strm.write_text("remote", encoding="utf-8")
+
+    entry = make_catalog().scan([str(tmp_path)])[0]
+
+    assert entry["date"]
+    assert "T" in entry["date"]
+
+
+def test_v2_manual_strm_scanner_has_no_v3_runtime_dependency(tmp_path):
+    strm = tmp_path / "V2.Movie.strm"
+    strm.write_text("remote", encoding="utf-8")
+
+    entries = make_catalog(
+        catalog_root=V2_CATALOG,
+        package_name="subtitlemanualupload_v2_strm_testpkg",
+    ).scan([str(tmp_path)])
+
+    assert len(entries) == 1
+    assert entries[0]["origin"] == "manual_strm"
+    assert entries[0]["date"]
