@@ -23,7 +23,7 @@ def test_v3_manual_strm_config_and_manifest_are_consistent():
     assert "MetaInfoPath(path, force_video=True)" in factory
     assert "build_media_key=build_media_key" in factory
     assert '"origin": "manual_strm"' in (ROOT / "plugins.v3/subtitlemanualupload/catalog/manual_strm.py").read_text(encoding="utf-8-sig")
-    assert package["version"] == "1.2.6"
+    assert package["version"] == "1.2.7"
     assert index["SubtitleManualUpload"]["version"] == package["version"]
     assert "manual_strm_enabled" in owner
 

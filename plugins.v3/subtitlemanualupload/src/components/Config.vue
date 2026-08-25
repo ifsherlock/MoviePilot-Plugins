@@ -241,6 +241,17 @@ onMounted(() => {
     <VToolbar density="comfortable" color="transparent">
       <div class="text-h6 ms-3">海拉鲁字幕大师配置</div>
       <VSpacer />
+      <VBtn
+        href="https://github.com/ifsherlock/MoviePilot-Plugins/blob/main/docs/SubtitleManualUpload%E5%8A%9F%E8%83%BD%E4%BD%BF%E7%94%A8%E6%95%99%E5%AD%A6.md"
+        target="_blank"
+        rel="noopener noreferrer"
+        prepend-icon="mdi-book-open-page-variant"
+        variant="text"
+        color="primary"
+        class="me-2"
+      >
+        使用教程
+      </VBtn>
       <VBtn icon="mdi-content-save" variant="text" color="primary" @click="saveConfig" />
       <VBtn icon="mdi-close" variant="text" @click="emit('close')" />
     </VToolbar>

@@ -1,7 +1,7 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
 import { _ as _export_sfc } from './_plugin-vue_export-helper-CAfCMqyq.js';
 
-const {createElementVNode:_createElementVNode,resolveComponent:_resolveComponent,createVNode:_createVNode,withCtx:_withCtx,openBlock:_openBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,createTextVNode:_createTextVNode,createElementBlock:_createElementBlock} = await importShared('vue');
+const {createElementVNode:_createElementVNode,resolveComponent:_resolveComponent,createVNode:_createVNode,createTextVNode:_createTextVNode,withCtx:_withCtx,openBlock:_openBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,createElementBlock:_createElementBlock} = await importShared('vue');
 
 
 const _hoisted_1 = { class: "subtitlemanualupload-config" };
@@ -272,8 +272,22 @@ return (_ctx, _cache) => {
       color: "transparent"
     }, {
       default: _withCtx(() => [
-        _cache[34] || (_cache[34] = _createElementVNode("div", { class: "text-h6 ms-3" }, "海拉鲁字幕大师配置", -1)),
+        _cache[35] || (_cache[35] = _createElementVNode("div", { class: "text-h6 ms-3" }, "海拉鲁字幕大师配置", -1)),
         _createVNode(_component_VSpacer),
+        _createVNode(_component_VBtn, {
+          href: "https://github.com/ifsherlock/MoviePilot-Plugins/blob/main/docs/SubtitleManualUpload%E5%8A%9F%E8%83%BD%E4%BD%BF%E7%94%A8%E6%95%99%E5%AD%A6.md",
+          target: "_blank",
+          rel: "noopener noreferrer",
+          "prepend-icon": "mdi-book-open-page-variant",
+          variant: "text",
+          color: "primary",
+          class: "me-2"
+        }, {
+          default: _withCtx(() => [...(_cache[34] || (_cache[34] = [
+            _createTextVNode(" 使用教程 ", -1)
+          ]))]),
+          _: 1
+        }),
         _createVNode(_component_VBtn, {
           icon: "mdi-content-save",
           variant: "text",
@@ -308,7 +322,7 @@ return (_ctx, _cache) => {
                     text: configError.value
                   }, null, 8, ["text"]))
                 : _createCommentVNode("", true),
-              _cache[35] || (_cache[35] = _createElementVNode("div", { class: "config-section" }, [
+              _cache[36] || (_cache[36] = _createElementVNode("div", { class: "config-section" }, [
                 _createElementVNode("div", { class: "config-section-title" }, "基础设置")
               ], -1)),
               _createElementVNode("div", _hoisted_3, [
@@ -448,7 +462,7 @@ return (_ctx, _cache) => {
                 }, null, 8, ["modelValue"])
               ]),
               _createVNode(_component_VDivider, { class: "my-5" }),
-              _cache[36] || (_cache[36] = _createElementVNode("div", { class: "config-section" }, [
+              _cache[37] || (_cache[37] = _createElementVNode("div", { class: "config-section" }, [
                 _createElementVNode("div", null, [
                   _createElementVNode("div", { class: "config-section-title" }, "在线字幕搜索"),
                   _createElementVNode("p", null, "自动搜索支持 SubHD、Zimuku、射手网(伪) 和 OpenSubtitles；站点波动时仍可使用右侧手动搜索跳转。")
@@ -585,7 +599,7 @@ return (_ctx, _cache) => {
                 text: "OpenSubtitles 搜索需要 API Key；下载由插件使用用户名和密码后台登录换取 token。英文字幕结果可下载后提交给 AI 字幕生成翻译。"
               }),
               _createVNode(_component_VDivider, { class: "my-5" }),
-              _cache[37] || (_cache[37] = _createElementVNode("div", { class: "config-section" }, [
+              _cache[38] || (_cache[38] = _createElementVNode("div", { class: "config-section" }, [
                 _createElementVNode("div", null, [
                   _createElementVNode("div", { class: "config-section-title" }, "智能调轴"),
                   _createElementVNode("p", null, "控制写入前可接受的全局偏移范围；超过 120 秒通常意味着错集、错版本或整季包映射错误。")
@@ -639,7 +653,7 @@ return (_ctx, _cache) => {
                 }, null, 8, ["modelValue"])
               ]),
               _createVNode(_component_VDivider, { class: "my-5" }),
-              _cache[38] || (_cache[38] = _createElementVNode("div", { class: "config-section" }, [
+              _cache[39] || (_cache[39] = _createElementVNode("div", { class: "config-section" }, [
                 _createElementVNode("div", null, [
                   _createElementVNode("div", { class: "config-section-title" }, "RAR / 7Z 解压器"),
                   _createElementVNode("p", null, [
@@ -687,6 +701,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-6691dee7"]]);
+const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-45bab805"]]);
 
 export { Config as default };
