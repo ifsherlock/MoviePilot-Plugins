@@ -2,11 +2,15 @@
 
 MoviePilot V2 字幕管理插件，脱胎自 [ChineseSubFinder](https://github.com/ChineseSubFinder/ChineseSubFinder)，提供在线搜索、手动上传、自动匹配、规范改名与智能调轴能力。
 
+## v0.1.90 更新
+
+- 自动字幕源不再误排除 SubHD/Zimuku；无需 API Key 也可以参与额外 STRM 自动搜索。
+
 ## v0.1.89 更新
 
 - 额外 STRM 开关开启后启动实时目录监控，支持新增、修改、删除和移动事件的增量索引。
 - 无媒体 ID 的 STRM 复用 MoviePilot 媒体匹配和缓存补全 TMDB 身份与海报。
-- 新增变化后自动搜索字幕开关，仅对变更 STRM 使用在线 API 源，去重后写回 STRM 同目录。
+- 新增变化后自动搜索字幕开关，仅对变更 STRM 使用已启用在线源，去重后写回 STRM 同目录。
 
 ## v0.1.88 更新
 

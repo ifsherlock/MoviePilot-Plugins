@@ -1616,7 +1616,7 @@ function useOnlineSubtitles({
   const onlineKeyword = ref$b('');
   const onlineTargets = ref$b([]);
   const onlineStatus = ref$b({ providers: [], capabilities: {} });
-  const onlineSelectedProviders = ref$b(['assrt', 'opensubtitles']);
+  const onlineSelectedProviders = ref$b(['subhd', 'zimuku']);
   const onlineResults = ref$b([]);
   const onlineLanguageFilter = ref$b('all');
   const onlineProviderFilter = ref$b('all');

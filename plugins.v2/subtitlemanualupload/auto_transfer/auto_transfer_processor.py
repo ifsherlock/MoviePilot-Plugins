@@ -60,7 +60,7 @@ class AutoTransferProcessor:
         target = target or self._collaborators.target_from_entry(entry)
         providers = self._collaborators.search_providers()
         if not providers:
-            return {"status": "skipped", "reason": "未配置可用 API 字幕源", "target": target.get("label")}
+            return {"status": "skipped", "reason": "未配置可用在线字幕源", "target": target.get("label")}
         keywords = self._collaborators.search_keywords_for_entry(entry, target)
         if not keywords:
             return {"status": "skipped", "reason": "没有可用搜索关键词", "target": target.get("label")}

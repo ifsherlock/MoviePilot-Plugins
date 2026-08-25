@@ -159,7 +159,7 @@ class AutoTransferSeasonCache:
             return {"status": "skipped", "reason": "没有待处理目标", "written_by_target": {}}
         providers = self._collaborators.search_providers()
         if not providers:
-            return {"status": "skipped", "reason": "未配置可用 API 字幕源", "written_by_target": {}}
+            return {"status": "skipped", "reason": "未配置可用在线字幕源", "written_by_target": {}}
         targets = [self._collaborators.target_from_entry(entry) for entry in entries]
         media = self._collaborators.media_for_transfer_entry(entries[0])
         owner._apply_tmdb_detail(targets[0], media)

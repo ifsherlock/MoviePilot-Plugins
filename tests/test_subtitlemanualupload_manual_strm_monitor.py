@@ -33,7 +33,7 @@ class FakeQueue:
         return len(entries), 0
 
     def auto_search_providers(self):
-        return ["assrt"]
+        return ["subhd"]
 
 
 def make_owner(tmp_path: Path, strm: Path):

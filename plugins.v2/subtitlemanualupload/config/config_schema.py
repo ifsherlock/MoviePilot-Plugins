@@ -20,7 +20,7 @@ from ..matching.subtitle_language import (
 
 
 DEFAULT_RAR_TOOL_PATH = "/usr/bin/unar"
-DEFAULT_ONLINE_PROVIDER_IDS = ["assrt", "opensubtitles"]
+DEFAULT_ONLINE_PROVIDER_IDS = ["subhd", "zimuku"]
 AVAILABLE_ONLINE_PROVIDER_IDS = ["subhd", "zimuku", "assrt", "opensubtitles"]
 MANUAL_ONLINE_PROVIDER_IDS = ["subhd", "zimuku", "assrt", "opensubtitles"]
 
@@ -497,7 +497,7 @@ def build_config_form(
                         "VSelect",
                         {
                             "model": "online_providers",
-                            "label": "自动字幕源（API）",
+                            "label": "自动字幕源",
                             "multiple": True,
                             "chips": True,
                             "items": [

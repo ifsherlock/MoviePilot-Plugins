@@ -382,7 +382,7 @@ class AutoTransferService:
 
     def auto_search_providers(self) -> List[str]:
         owner = self._owner
-        return [item for item in (owner._online_provider_ids or []) if item in {"assrt", "opensubtitles"}]
+        return [item for item in (owner._online_provider_ids or []) if item in {"subhd", "zimuku", "assrt", "opensubtitles"}]
 
 
     def auto_search_write_subtitle(

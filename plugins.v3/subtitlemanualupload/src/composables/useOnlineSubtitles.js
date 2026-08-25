@@ -52,7 +52,7 @@ export function useOnlineSubtitles({
   const onlineKeyword = ref('')
   const onlineTargets = ref([])
   const onlineStatus = ref({ providers: [], capabilities: {} })
-  const onlineSelectedProviders = ref(['assrt', 'opensubtitles'])
+  const onlineSelectedProviders = ref(['subhd', 'zimuku'])
   const onlineResults = ref([])
   const onlineLanguageFilter = ref('all')
   const onlineProviderFilter = ref('all')

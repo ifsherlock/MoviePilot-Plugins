@@ -215,7 +215,7 @@ class ManualStrmMonitor:
         auto_transfer = self._owner.services.auto_transfer()
         if not auto_transfer.auto_search_providers():
             self._logger.info(
-                "[SubtitleManualUpload] 额外 STRM 自动搜索等待配置 ASSRT/OpenSubtitles API 源 count=%s",
+                "[SubtitleManualUpload] 额外 STRM 自动搜索等待启用在线字幕源 count=%s",
                 len(candidates),
             )
             return

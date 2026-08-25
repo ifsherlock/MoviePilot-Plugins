@@ -34,7 +34,7 @@ const configError = ref('');
 const localConfig = ref({
   enabled: false,
   show_sidebar_nav: true,
-  online_providers: ['assrt', 'opensubtitles'],
+  online_providers: ['subhd', 'zimuku'],
   online_use_proxy: false,
   traditional_to_simplified: false,
   auto_search_on_transfer: false,
@@ -119,7 +119,7 @@ const timelineVadItems = [
 function normalizeProviders(value) {
   const allowed = ['subhd', 'zimuku', 'assrt', 'opensubtitles'];
   const providers = Array.isArray(value) ? value.filter(item => allowed.includes(item)) : [];
-  return providers.length ? Array.from(new Set(providers)) : ['assrt', 'opensubtitles']
+  return providers.length ? Array.from(new Set(providers)) : ['subhd', 'zimuku']
 }
 
 function normalizeRootUrl(value, fallback) {
@@ -356,9 +356,9 @@ return (_ctx, _cache) => {
                 _createVNode(_component_VSwitch, {
                   modelValue: localConfig.value.manual_strm_enabled,
                   "onUpdate:modelValue": _cache[8] || (_cache[8] = $event => ((localConfig.value.manual_strm_enabled) = $event)),
-                  label: "扫描额外 STRM 目录",
+                  label: "监控额外 STRM 目录",
                   color: "info",
-                  hint: "独立于整理历史，只扫描本地硬盘上的 .strm 文件。",
+                  hint: "开启后展开目录配置，并实时监控 .strm、NFO 和同目录字幕变化。",
                   "persistent-hint": ""
                 }, null, 8, ["modelValue"]),
                 (localConfig.value.manual_strm_enabled)
@@ -678,6 +678,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-7e35d606"]]);
+const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-f449c036"]]);
 
 export { Config as default };

@@ -34,7 +34,7 @@ const configError = ref('');
 const localConfig = ref({
   enabled: false,
   show_sidebar_nav: true,
-  online_providers: ['assrt', 'opensubtitles'],
+  online_providers: ['subhd', 'zimuku'],
   online_use_proxy: false,
   traditional_to_simplified: false,
   auto_search_on_transfer: false,
@@ -119,7 +119,7 @@ const timelineVadItems = [
 function normalizeProviders(value) {
   const allowed = ['subhd', 'zimuku', 'assrt', 'opensubtitles'];
   const providers = Array.isArray(value) ? value.filter(item => allowed.includes(item)) : [];
-  return providers.length ? Array.from(new Set(providers)) : ['assrt', 'opensubtitles']
+  return providers.length ? Array.from(new Set(providers)) : ['subhd', 'zimuku']
 }
 
 function normalizeRootUrl(value, fallback) {
@@ -687,6 +687,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-9cdcfcb5"]]);
+const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-6691dee7"]]);
 
 export { Config as default };

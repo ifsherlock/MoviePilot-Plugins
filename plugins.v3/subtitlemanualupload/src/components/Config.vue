@@ -16,7 +16,7 @@ const manualStrmPathPlaceholder = `/vol2/1000/raid/2/links2
 const localConfig = ref({
   enabled: false,
   show_sidebar_nav: true,
-  online_providers: ['assrt', 'opensubtitles'],
+  online_providers: ['subhd', 'zimuku'],
   online_use_proxy: false,
   traditional_to_simplified: false,
   auto_search_on_transfer: false,
@@ -101,7 +101,7 @@ const timelineVadItems = [
 function normalizeProviders(value) {
   const allowed = ['subhd', 'zimuku', 'assrt', 'opensubtitles']
   const providers = Array.isArray(value) ? value.filter(item => allowed.includes(item)) : []
-  return providers.length ? Array.from(new Set(providers)) : ['assrt', 'opensubtitles']
+  return providers.length ? Array.from(new Set(providers)) : ['subhd', 'zimuku']
 }
 
 function normalizeRootUrl(value, fallback) {

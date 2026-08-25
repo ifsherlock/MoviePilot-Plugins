@@ -41,7 +41,7 @@
         "name": "海拉鲁字幕大师",
         "description": "海拉鲁字幕大师，脱胎自 ChineseSubFinder；支持手动上传字幕、ZIP/RAR/7Z，选择本地电影/剧集后自动匹配并按媒体文件名落盘；网盘挂载暂不保证完整可用性。",
         "labels": "字幕,ChineseSubFinder,媒体库,整理",
-        "version": "0.1.89",
+        "version": "0.1.90",
         "icon": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/hyrule-subtitle-master.png",
         "author": "ifsherlock",
         "author_url": "https://github.com/ifsherlock",
@@ -50,6 +50,7 @@
         "v3": false,
         "release": true,
         "history": {
+            "v0.1.90": "修复自动字幕源误排除 SubHD/Zimuku；无 API Key 也可用于额外 STRM 自动搜索",
             "v0.1.89": "新增额外 STRM 实时监控、MoviePilot 媒体匹配海报补全和变化后在线字幕队列",
             "v0.1.88": "修复无媒体 ID 的详情页 500；STRM 路径支持 {tmdbid=...} 和 [tmdb-...] 身份标签",
             "v0.1.87": "修复额外 STRM 本地目录示例中的\\n被直接显示为文本的问题，改为真实多行占位示例",

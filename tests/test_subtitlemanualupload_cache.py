@@ -4916,7 +4916,7 @@ def test_config_schema_default_config_covers_config_vue_bound_fields():
     for field in bound_fields:
         assert default_config[field] == config_schema.DEFAULT_CONFIG[field]
 
-    assert "online_providers: ['assrt', 'opensubtitles']" in vue_text
+    assert "online_providers: ['subhd', 'zimuku']" in vue_text
     assert "auto_subtitle_language_priority: ['bilingual', 'chi', 'cht', 'eng']" in vue_text
     assert "auto_subtitle_format_priority: ['.ass', '.srt', '.ssa', '.vtt']" in vue_text
     assert "timeline_max_offset_seconds: 120" in vue_text
@@ -5596,12 +5596,12 @@ def test_online_ai_falls_back_to_srt_when_foreign_ass_conversion_fails(tmp_path)
     assert fixed[0]["source_name"] == "Movie.eng.srt"
 
 
-def test_auto_search_providers_use_only_unattended_api_sources():
+def test_auto_search_providers_use_all_enabled_sources():
     module, _, _ = load_plugin_module()
     plugin = make_plugin(module)
     plugin._online_provider_ids = ["subhd", "zimuku", "assrt", "opensubtitles"]
 
-    assert plugin._auto_search_providers() == ["assrt", "opensubtitles"]
+    assert plugin._auto_search_providers() == ["subhd", "zimuku", "assrt", "opensubtitles"]
 
 
 def test_transfer_auto_claim_dedupes_same_video_path(tmp_path):
