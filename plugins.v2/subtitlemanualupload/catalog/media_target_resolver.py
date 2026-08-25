@@ -335,9 +335,11 @@ class MediaTargetResolver:
             "local_count": 0,
             "season_count": 0,
         }
-        tmdb_detail = self._tmdb_detail_for_media(media)
-        if tmdb_detail:
-            self._apply_tmdb_detail(media, tmdb_detail)
+        tmdb_detail: Dict[str, Any] = {}
+        if self._safe_int(media.get("tmdb_id"), 0):
+            tmdb_detail = self._tmdb_detail_for_media(media)
+            if tmdb_detail:
+                self._apply_tmdb_detail(media, tmdb_detail)
         seasons = self.merge_seasons(entries) if media.get("media_type") == "tv" else []
 
         season_value = self._normalize_text(season)

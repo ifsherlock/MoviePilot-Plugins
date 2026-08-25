@@ -2,6 +2,10 @@
 
 MoviePilot V3 专用字幕管理插件，脱胎自 [ChineseSubFinder](https://github.com/ChineseSubFinder/ChineseSubFinder)，提供在线搜索、手动上传、自动匹配、规范改名与智能调轴能力。V2 版本保留在 `plugins.v2/subtitlemanualupload`。
 
+## v1.2.2 更新
+
+- 修复无媒体 ID 的详情页 500；STRM 路径支持 `{tmdbid=...}` 和 `[tmdb-...]` 身份标签。
+
 ## v1.2.1 更新
 
 - 修复额外 STRM 本地目录示例中的 `\\n` 被直接显示为文本的问题，改为真实多行占位示例。

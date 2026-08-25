@@ -149,6 +149,55 @@ def test_v3_manual_strm_without_nfo_uses_injected_path_parser(tmp_path):
     assert entry["episode"] == 3
 
 
+def test_v3_manual_strm_keeps_identity_from_injected_path_parser(tmp_path):
+    root = tmp_path / "library"
+    root.mkdir()
+    strm = root / "Parsed.Movie.strm"
+    strm.write_text("remote", encoding="utf-8")
+
+    def fake_meta_info(path):
+        return types.SimpleNamespace(
+            type=types.SimpleNamespace(value="电影"),
+            name="路径识别电影",
+            year="2024",
+            media_source="themoviedb",
+            media_id="4567",
+            tmdbid=4567,
+        )
+
+    entry = make_catalog(fake_meta_info).scan([str(root)])[0]
+
+    assert entry["media_source"] == "themoviedb"
+    assert entry["media_id"] == "4567"
+    assert entry["tmdb_id"] == 4567
+
+
+def test_manual_strm_parses_common_tmdb_path_tags_in_v2_and_v3(tmp_path):
+    cases = [
+        ("无职转生 (2021) [tmdb-94664]", "无职转生", "94664"),
+        ("凡人修仙传（2020）{tmdbid=106449}", "凡人修仙传", "106449"),
+    ]
+    for catalog_root, package_prefix in (
+        (V2_CATALOG, "subtitlemanualupload_v2_path_tag_testpkg"),
+        (V3_CATALOG, "subtitlemanualupload_v3_path_tag_testpkg"),
+    ):
+        for index, (dirname, expected_title, expected_id) in enumerate(cases):
+            media_dir = tmp_path / f"{package_prefix}-{index}" / dirname
+            media_dir.mkdir(parents=True)
+            (media_dir / "S01E02.strm").write_text("remote", encoding="utf-8")
+            entry = make_catalog(
+                catalog_root=catalog_root,
+                package_name=f"{package_prefix}_{index}",
+                build_media_key=lambda source, media_id: f"tmdb:{media_id}" if source == "themoviedb" else "",
+            ).scan([str(media_dir.parent)])[0]
+
+            assert entry["title"] == expected_title
+            assert entry["media_source"] == "themoviedb"
+            assert entry["media_id"] == expected_id
+            assert entry["tmdb_id"] == int(expected_id)
+            assert entry["media_key"] == f"tmdb:{expected_id}"
+
+
 def test_v3_manual_strm_scan_deduplicates_overlapping_roots(tmp_path):
     root = tmp_path / "library"
     nested = root / "nested"

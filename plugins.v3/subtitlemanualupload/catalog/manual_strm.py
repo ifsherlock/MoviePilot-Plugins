@@ -85,6 +85,7 @@ class ManualStrmCatalog:
     def _entry_from_path(self, root: Path, path: Path) -> Optional[Dict[str, Any]]:
         nfo = self._read_nfo(root, path)
         meta = self._path_meta(path)
+        path_identity = self._path_identity(root, path)
         hint = self._extract_episode_hint(path.name) or {}
         root_tag = self._normalize_text(nfo.get("root_tag")).lower()
         media_type = "tv" if root_tag in {"tvshow", "episodedetails", "season"} else ""
@@ -93,16 +94,25 @@ class ManualStrmCatalog:
         title = self._normalize_text(nfo.get("title") or nfo.get("showtitle"))
         title = title or self._normalize_text(meta.get("title"))
         title = title or self._title_from_path(path, media_type)
+        title = self._clean_path_title(title)
         year = self._normalize_text(nfo.get("year") or meta.get("year"))
         season = self._safe_int(nfo.get("season"), 0) or self._safe_int(meta.get("season"), 0) or self._safe_int(hint.get("season"), 0)
         episode = self._safe_int(nfo.get("episode"), 0) or self._safe_int(meta.get("episode"), 0) or self._safe_int(hint.get("episode"), 0)
         if media_type == "tv" and episode and not season:
             season = 1
 
-        source = self._normalize_text(nfo.get("media_source")).lower()
-        media_id = self._normalize_text(nfo.get("media_id"))
-        tmdb_id = self._normalize_text(nfo.get("tmdb_id"))
-        douban_id = self._normalize_text(nfo.get("douban_id"))
+        source = self._normalize_media_source(
+            nfo.get("media_source") or meta.get("media_source") or path_identity.get("media_source")
+        )
+        media_id = self._normalize_text(
+            nfo.get("media_id") or meta.get("media_id") or path_identity.get("media_id")
+        )
+        tmdb_id = self._normalize_text(
+            nfo.get("tmdb_id") or meta.get("tmdb_id") or path_identity.get("tmdb_id")
+        )
+        douban_id = self._normalize_text(
+            nfo.get("douban_id") or meta.get("douban_id") or path_identity.get("douban_id")
+        )
         if not source and tmdb_id:
             source, media_id = "themoviedb", tmdb_id
         elif not source and douban_id:
@@ -158,12 +168,24 @@ class ManualStrmCatalog:
         try:
             meta = self._meta_info_path(path)
             type_value = self._normalize_text(getattr(getattr(meta, "type", None), "value", getattr(meta, "type", "")))
+            media_source = self._normalize_media_source(getattr(meta, "media_source", ""))
+            media_id = self._normalize_text(getattr(meta, "media_id", ""))
+            tmdb_id = self._normalize_text(getattr(meta, "tmdbid", None) or getattr(meta, "tmdb_id", None))
+            douban_id = self._normalize_text(getattr(meta, "doubanid", None) or getattr(meta, "douban_id", None))
+            if not media_source and tmdb_id:
+                media_source, media_id = "themoviedb", tmdb_id
+            elif not media_source and douban_id:
+                media_source, media_id = "douban", douban_id
             return {
                 "title": self._normalize_text(getattr(meta, "name", "")) or self._normalize_text(getattr(meta, "title", "")),
                 "year": self._normalize_text(getattr(meta, "year", "")),
                 "season": self._safe_int(getattr(meta, "begin_season", None) or getattr(meta, "season", None), 0),
                 "episode": self._safe_int(getattr(meta, "begin_episode", None) or getattr(meta, "episode", None), 0),
                 "is_tv": type_value.lower() in {"tv", "电视剧", "series"},
+                "media_source": media_source,
+                "media_id": media_id,
+                "tmdb_id": tmdb_id,
+                "douban_id": douban_id,
             }
         except Exception:
             return {}
@@ -225,10 +247,51 @@ class ManualStrmCatalog:
         except (OSError, ET.ParseError):
             return {}
 
+    def _path_identity(self, root: Path, path: Path) -> Dict[str, str]:
+        current = path
+        while True:
+            text = current.name
+            generic = re.search(
+                r"(?i)media_source\s*=\s*([a-z][a-z0-9._-]*)[^\]}]*media_id\s*=\s*([^;\]}\s]+)",
+                text,
+            )
+            if generic:
+                source = self._normalize_media_source(generic.group(1))
+                media_id = self._normalize_text(generic.group(2))
+                if source and media_id:
+                    return {"media_source": source, "media_id": media_id}
+            for source, key, pattern in (
+                ("themoviedb", "tmdb_id", r"(?i)tmdb(?:id)?\s*[=:_-]\s*(\d+)"),
+                ("douban", "douban_id", r"(?i)douban(?:id)?\s*[=:_-]\s*(\d+)"),
+            ):
+                match = re.search(pattern, text)
+                if match:
+                    media_id = match.group(1)
+                    return {"media_source": source, "media_id": media_id, key: media_id}
+            if current == root or current.parent == current:
+                break
+            current = current.parent
+        return {}
+
+    @staticmethod
+    def _normalize_media_source(value: Any) -> str:
+        raw = str(getattr(value, "value", value) or "").strip().lower()
+        return {"tmdb": "themoviedb", "themoviedb": "themoviedb", "douban": "douban"}.get(raw, raw)
+
+    @staticmethod
+    def _clean_path_title(value: str) -> str:
+        text = re.sub(
+            r"(?i)\s*[\[{（]?\s*(?:tmdb|tmdbid|douban|doubanid)\s*[=:_-]\s*\d+\s*[\]}）]?",
+            "",
+            value,
+        ).strip()
+        text = re.sub(r"(?i)\s*\{\s*media_source\s*=.*?media_id\s*=.*?\}\s*", "", text).strip()
+        return re.sub(r"\s*[（(]\d{4}[）)]\s*$", "", text).strip()
+
     def _title_from_path(self, path: Path, media_type: str) -> str:
         candidates = [path.parent.name, path.parent.parent.name]
         for value in candidates:
-            text = re.sub(r"\s*\([^)]{4}\)\s*$", "", value).strip()
+            text = self._clean_path_title(value)
             if text and text.lower().startswith("season "):
                 continue
             if text:

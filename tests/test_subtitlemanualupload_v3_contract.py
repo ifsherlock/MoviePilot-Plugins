@@ -23,7 +23,7 @@ def test_v3_manual_strm_config_and_manifest_are_consistent():
     assert "MetaInfoPath(path, force_video=True)" in factory
     assert "build_media_key=build_media_key" in factory
     assert '"origin": "manual_strm"' in (ROOT / "plugins.v3/subtitlemanualupload/catalog/manual_strm.py").read_text(encoding="utf-8-sig")
-    assert package["version"] == "1.2.1"
+    assert package["version"] == "1.2.2"
     assert index["SubtitleManualUpload"]["version"] == package["version"]
     assert "manual_strm_enabled" in owner
 
@@ -55,3 +55,12 @@ def test_v2_v3_strm_placeholder_uses_real_newline_binding():
         assert "const manualStrmPathPlaceholder = `/vol2/1000/raid/2/links2\n/vol1/1000/media-strm`" in source
         assert ':placeholder="manualStrmPathPlaceholder"' in source
         assert 'placeholder="/vol2/1000/raid/2/links2\\n/vol1/1000/media-strm"' not in source
+
+
+def test_v2_v3_targets_initialize_tmdb_detail_before_optional_lookup():
+    for version in ("plugins.v2", "plugins.v3"):
+        source = (ROOT / version / "subtitlemanualupload/catalog/media_target_resolver.py").read_text(encoding="utf-8-sig")
+        function = source.split("def targets_for_media", 1)[1].split("def is_stream_path", 1)[0]
+        initialization = function.index("tmdb_detail: Dict[str, Any] = {}")
+        final_use = function.rindex("if tmdb_detail:")
+        assert initialization < final_use

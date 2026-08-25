@@ -381,6 +381,7 @@ class MediaTargetResolver:
             "local_count": 0,
             "season_count": 0,
         }
+        tmdb_detail: Dict[str, Any] = {}
         if media.get("media_source") == MediaSource.TMDB.value:
             tmdb_detail = self._tmdb_detail_for_media(media)
             if tmdb_detail:
