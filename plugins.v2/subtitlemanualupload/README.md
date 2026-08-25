@@ -1,5 +1,9 @@
 # 海拉鲁字幕大师
 
+## 📘 [立即查看：完整功能使用教学](https://github.com/ifsherlock/MoviePilot-Plugins/blob/main/docs/SubtitleManualUpload%E5%8A%9F%E8%83%BD%E4%BD%BF%E7%94%A8%E6%95%99%E5%AD%A6.md)
+
+> V2 安装、配置、额外 STRM 监控、字幕重命名和自动搜索的手把手说明。
+
 MoviePilot V2 字幕管理插件，脱胎自 [ChineseSubFinder](https://github.com/ChineseSubFinder/ChineseSubFinder)，提供在线搜索、手动上传、自动匹配、规范改名与智能调轴能力。
 
 详细配置、额外 STRM 实时监控和字幕写入说明见：[功能使用教学](../../docs/SubtitleManualUpload功能使用教学.md)。

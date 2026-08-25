@@ -1,5 +1,9 @@
 # MoviePilot-Plugins
 
+## 📘 [立即查看：海拉鲁字幕大师功能使用教学](https://github.com/ifsherlock/MoviePilot-Plugins/blob/main/docs/SubtitleManualUpload%E5%8A%9F%E8%83%BD%E4%BD%BF%E7%94%A8%E6%95%99%E5%AD%A6.md)
+
+> 从安装、配置到额外 STRM 实时监控、封面补全、字幕搜索和自动写回，按步骤完成全部设置。
+
 同时维护 MoviePilot V2 与 V3 的个人插件仓库，目前主要维护字幕匹配和 AI 字幕生成。
 
 ## 展示图
