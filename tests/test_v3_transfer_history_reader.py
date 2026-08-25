@@ -72,7 +72,55 @@ def test_reader_uses_v3_model_query_without_removed_execute_sync_query():
             return [{"id": 1}]
 
     module = _load_reader(FakeTransferHistory)
-    reader = module.TransferHistoryReader()
+    previous_uow = sys.modules.get("app.db.uow")
+    try:
+        sys.modules["app.db.uow"] = types.SimpleNamespace(
+            run_sync_transaction=lambda operation: operation("uow-session")
+        )
+        reader = module.TransferHistoryReader()
 
-    assert reader.list_by_page(page=2, count=17, status=True) == [{"id": 1}]
-    assert calls == [(None, 2, 17, True)]
+        assert reader.list_by_page(page=2, count=17, status=True) == [{"id": 1}]
+        assert calls == [("uow-session", 2, 17, True)]
+    finally:
+        if previous_uow is None:
+            sys.modules.pop("app.db.uow", None)
+        else:
+            sys.modules["app.db.uow"] = previous_uow
+
+
+def test_reader_falls_back_to_legacy_scoped_session():
+    calls = []
+
+    class FakeSession:
+        closed = False
+
+        def close(self):
+            self.closed = True
+
+    session = FakeSession()
+
+    class FakeTransferHistory:
+        @classmethod
+        def list_by_page(cls, db, *, page, count, status):
+            calls.append((db, page, count, status))
+            return []
+
+    module = _load_reader(FakeTransferHistory)
+    previous_uow = sys.modules.pop("app.db.uow", None)
+    previous_session = sys.modules.get("app.db.session")
+    try:
+        sys.modules["app.db.session"] = types.SimpleNamespace(
+            ScopedSession=lambda: session
+        )
+        reader = module.TransferHistoryReader()
+
+        assert reader.list_by_page(page=1, count=30, status=True) == []
+        assert calls == [(session, 1, 30, True)]
+        assert session.closed is True
+    finally:
+        if previous_uow is not None:
+            sys.modules["app.db.uow"] = previous_uow
+        if previous_session is None:
+            sys.modules.pop("app.db.session", None)
+        else:
+            sys.modules["app.db.session"] = previous_session

@@ -16,14 +16,36 @@ class TransferHistoryReader(TransferHistoryOper):
         count: int = 30,
         status: Optional[bool] = None,
     ) -> List[Any]:
-        # V3 的 DbOper 只保留同步写事务执行器；模型的 db_query 装饰器会在
-        # 未传入会话时创建并释放独立同步会话，适合本地资源后台刷新线程。
-        return TransferHistory.list_by_page(
-            self._db,
-            page=page,
-            count=count,
-            status=status,
-        )
+        def query(session: Any) -> List[Any]:
+            return TransferHistory.list_by_page(
+                session,
+                page=page,
+                count=count,
+                status=status,
+            )
+
+        if self._db is not None:
+            return query(self._db)
+
+        # 最新 V3 通过组合根登记无会话事务执行器；不能把 None 传给模型，
+        # 否则 TransferHistory.list_by_page 会在 db.execute 处崩溃。
+        try:
+            from app.db.uow import run_sync_transaction
+        except ImportError:
+            run_sync_transaction = None
+        if run_sync_transaction is not None:
+            return run_sync_transaction(query)
+
+        # 兼容尚未提供 uow 执行器的早期 V3：显式创建并释放一个只读会话。
+        try:
+            from app.db.session import ScopedSession
+        except ImportError as exc:
+            raise RuntimeError("MoviePilot V3 未提供可用的同步数据库会话入口") from exc
+        session = ScopedSession()
+        try:
+            return query(session)
+        finally:
+            session.close()
 
 
 __all__ = ["TransferHistoryReader"]
