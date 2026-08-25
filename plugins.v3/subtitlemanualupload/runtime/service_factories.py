@@ -55,6 +55,7 @@ from ..upload.upload_session import (
     UploadSessionService,
 )
 from .transfer_history_reader import TransferHistoryReader
+from .manual_strm_monitor import ManualStrmMonitor
 
 
 def archive_dependency_service(owner_cls, status_setter=None) -> ArchiveDependencyService:
@@ -284,3 +285,7 @@ def online_service(owner) -> OnlineSubtitleSearchService:
         opensubtitles_username=owner._opensubtitles_username,
         opensubtitles_password=owner._opensubtitles_password,
     )
+
+
+def manual_strm_monitor(owner) -> ManualStrmMonitor:
+    return ManualStrmMonitor(owner, logger=logger)

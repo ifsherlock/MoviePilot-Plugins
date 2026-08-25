@@ -28,6 +28,7 @@ RUNTIME_CONFIG_FIELDS = (
     ("_trust_transfer_history_paths", "trust_transfer_history_paths"),
     ("_manual_strm_enabled", "manual_strm_enabled"),
     ("_manual_strm_paths", "manual_strm_paths"),
+    ("_auto_search_on_manual_strm", "auto_search_on_manual_strm"),
     ("_auto_multi_subtitle_mode", "auto_multi_subtitle_mode"),
     ("_auto_subtitle_language_priority", "auto_subtitle_language_priority"),
     ("_auto_subtitle_format_priority", "auto_subtitle_format_priority"),
@@ -48,6 +49,7 @@ CLASS_RUNTIME_CONFIG_FIELDS = (
     "_trust_transfer_history_paths",
     "_manual_strm_enabled",
     "_manual_strm_paths",
+    "_auto_search_on_manual_strm",
     "_auto_multi_subtitle_mode",
     "_auto_subtitle_language_priority",
     "_auto_subtitle_format_priority",
@@ -70,6 +72,10 @@ def sync_class_runtime_config(owner_cls: type, owner: Any) -> None:
 
 
 def reset_runtime_state(owner: Any) -> None:
+    previous_monitor = getattr(owner, "_manual_strm_monitor", None)
+    if previous_monitor is not None:
+        previous_monitor.stop()
+    owner._manual_strm_monitor = None
     owner._entry_map = OrderedDict()
     owner._media_index_cache = OrderedDict()
     owner._subtitle_directory_cache = OrderedDict()
@@ -117,6 +123,7 @@ def build_save_config_payload(owner: Any) -> dict[str, Any]:
         "trust_transfer_history_paths": owner._trust_transfer_history_paths,
         "manual_strm_enabled": owner._manual_strm_enabled,
         "manual_strm_paths": owner._manual_strm_paths,
+        "auto_search_on_manual_strm": owner._auto_search_on_manual_strm,
         "timeline_max_offset_seconds": owner._timeline_max_offset_seconds,
         "timeline_min_offset_seconds": owner._timeline_min_offset_seconds,
         "timeline_vad_mode": owner._timeline_vad_mode,

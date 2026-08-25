@@ -209,6 +209,19 @@ class LocalMediaCatalog:
                 getattr(owner, "_manual_strm_paths", []),
                 max_entries=owner._cache_max_entries,
             )
+            previous_by_path = {
+                owner._normalize_text(item.get("path")): item
+                for item in cache.get("entries") or []
+                if isinstance(item, dict) and item.get("origin") == "manual_strm"
+            }
+            for item in manual_entries:
+                previous = previous_by_path.get(owner._normalize_text(item.get("path"))) or {}
+                for key in (
+                    "media_source", "media_id", "tmdb_id", "douban_id", "poster_url", "poster_thumb_url",
+                    "backdrop_url", "overview", "vote_average", "original_language", "original_title", "en_title",
+                ):
+                    if not item.get(key) and previous.get(key):
+                        item[key] = previous[key]
             # 用户明确配置的本地 STRM 优先保留；与整理历史同路径时只保留一条。
             merged_by_path = {
                 owner._normalize_text(item.get("path")): item
@@ -283,6 +296,94 @@ class LocalMediaCatalog:
         owner._invalidate_match_history_cache()
         owner._local_entries_cache = {"loaded_at": None, "entries": [], "media_count": 0, "persisted": False}
         return self.load_local_entries(force=True)
+
+    def apply_manual_strm_changes(self, paths: Iterable[str]) -> Dict[str, Any]:
+        """增量应用 STRM/字幕文件变化，不重扫用户配置的全部目录。"""
+        owner = self._owner
+        cache = owner._local_entries_cache or {}
+        entries = [dict(item) for item in cache.get("entries") or [] if isinstance(item, dict)]
+        changed_paths = {owner._normalize_text(path) for path in paths if owner._normalize_text(path)}
+        affected_strm: set[str] = set()
+        affected_dirs: set[Path] = set()
+        removed_prefixes: set[str] = set()
+        for raw_path in changed_paths:
+            path = Path(raw_path)
+            if path.is_dir():
+                try:
+                    affected_strm.update(str(item) for item in path.rglob("*.strm") if item.is_file())
+                except OSError:
+                    continue
+                affected_dirs.add(path)
+            elif path.suffix.lower() == ".strm":
+                affected_strm.add(str(path))
+                affected_dirs.add(path.parent)
+            elif path.suffix.lower() in owner._subtitle_exts:
+                affected_dirs.add(path.parent)
+            elif path.suffix.lower() == ".nfo":
+                affected_dirs.add(path.parent)
+                try:
+                    affected_strm.update(str(item) for item in path.parent.rglob("*.strm") if item.is_file())
+                except OSError:
+                    continue
+            elif not path.exists() and not path.suffix:
+                removed_prefixes.add(raw_path.rstrip("/\\"))
+
+        if removed_prefixes:
+            retained = []
+            for item in entries:
+                item_path = owner._normalize_text(item.get("path")).replace("\\", "/")
+                if item.get("origin") == "manual_strm" and any(
+                    item_path == prefix.replace("\\", "/")
+                    or item_path.startswith(prefix.replace("\\", "/") + "/")
+                    for prefix in removed_prefixes
+                ):
+                    continue
+                retained.append(item)
+            entries = retained
+
+        if not affected_strm and not affected_dirs and not removed_prefixes:
+            return {"changed_entries": [], "removed": [], "changed_paths": sorted(changed_paths)}
+
+        changed_entries: List[Dict[str, Any]] = []
+        removed: List[str] = []
+        if self._manual_strm_catalog:
+            roots = getattr(owner, "_manual_strm_paths", [])
+            for strm_path in sorted(affected_strm):
+                entries = [item for item in entries if owner._normalize_text(item.get("path")) != strm_path]
+                path_obj = Path(strm_path)
+                if not path_obj.exists() or path_obj.suffix.lower() != ".strm":
+                    removed.append(strm_path)
+                    continue
+                scanned = self._manual_strm_catalog.scan([str(path_obj.parent)], max_entries=200)
+                match = next((item for item in scanned if owner._normalize_text(item.get("path")) == strm_path), None)
+                if match and self._entry_source_is_enabled(match):
+                    entries.append(match)
+                    changed_entries.append(match)
+
+        for directory in affected_dirs:
+            self.services_subtitle_inventory_invalidate(directory)
+        entries = self.filter_existing_local_entries(entries)
+        owner._local_entries_cache = {
+            "loaded_at": datetime.now(),
+            "entries": entries[: owner._cache_max_entries],
+            "media_count": len({entry.get("media_key") for entry in entries if entry.get("media_key")}),
+            "persisted": False,
+        }
+        self._target_entry_cache.clear()
+        self._target_entry_cache.remember(entries)
+        self.reset_media_index_cache()
+        owner._invalidate_match_history_cache()
+        self.persist_local_cache()
+        return {
+            "changed_entries": changed_entries,
+            "removed": [*removed, *sorted(removed_prefixes)],
+            "changed_paths": sorted(changed_paths),
+        }
+
+    def services_subtitle_inventory_invalidate(self, directory: Path) -> None:
+        inventory = self._owner.services.subtitle_inventory()
+        if hasattr(inventory, "invalidate_directory"):
+            inventory.invalidate_directory(directory)
 
     def cache_status(self) -> Dict[str, Any]:
         owner = self._owner
@@ -378,8 +479,43 @@ class LocalMediaCatalog:
             all_candidates = self.group_entries_as_media(entries, 0)
             self.media_index_cache_set(cache_key, all_entries, all_candidates)
         total = len(all_candidates)
-        candidates = all_candidates[offset: offset + limit]
+        candidates = [self.enrich_media_candidate(item) for item in all_candidates[offset: offset + limit]]
         return candidates, total
+
+    def enrich_media_candidate(self, media: Dict[str, Any]) -> Dict[str, Any]:
+        owner = self._owner
+        if owner._normalize_text(media.get("origin")) != "manual_strm":
+            return dict(media)
+        enriched = owner.services.media_metadata().enrich_media(media)
+        if enriched.get("poster_url"):
+            enriched["poster_url"] = owner._poster_url(enriched["poster_url"])
+            enriched["poster_thumb_url"] = owner._poster_url(enriched["poster_url"], "w185")
+        self.remember_media_enrichment(media, enriched)
+        return enriched
+
+    def remember_media_enrichment(self, media: Dict[str, Any], enriched: Dict[str, Any]) -> None:
+        owner = self._owner
+        media_key = owner._normalize_text(media.get("id"))
+        if not media_key or not enriched.get("tmdb_id"):
+            return
+        changed: List[Dict[str, Any]] = []
+        for entry in (owner._local_entries_cache or {}).get("entries") or []:
+            if not isinstance(entry, dict) or owner._normalize_text(entry.get("media_key")) != media_key:
+                continue
+            entry_changed = False
+            for key in (
+                "media_source", "media_id", "tmdb_id", "poster_url", "poster_thumb_url",
+                "backdrop_url", "overview", "vote_average", "original_language", "original_title", "en_title",
+            ):
+                value = enriched.get(key)
+                if value not in (None, "", [], {}) and entry.get(key) != value:
+                    entry[key] = value
+                    entry_changed = True
+            if entry_changed:
+                changed.append(entry)
+        if changed:
+            self._target_entry_cache.remember(changed)
+            self.persist_local_cache()
 
     def group_entries_as_media(self, entries: List[Dict[str, Any]], limit: int) -> List[Dict[str, Any]]:
         owner = self._owner
@@ -393,6 +529,7 @@ class LocalMediaCatalog:
                     "media_id": entry.get("media_id") or key,
                     "media_source": entry.get("media_source", ""),
                     "media_type": entry.get("media_type"),
+                    "origin": entry.get("origin", ""),
                     "title": entry.get("title"),
                     "en_title": "",
                     "year": entry.get("year"),
@@ -425,7 +562,8 @@ class LocalMediaCatalog:
             group["season_count"] = len(seasons)
             result.append(group)
         result.sort(key=lambda item: (item.get("latest_at", ""), item.get("title", "")), reverse=True)
-        return result[:limit] if limit else result
+        selected = result[:limit] if limit else result
+        return [self.enrich_media_candidate(item) for item in selected] if limit else selected
 
     def resolve_targets(self, target_ids: Iterable[str]) -> Dict[str, Dict[str, Any]]:
         owner = self._owner

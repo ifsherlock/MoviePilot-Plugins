@@ -47,6 +47,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "trust_transfer_history_paths": False,
     "manual_strm_enabled": False,
     "manual_strm_paths": [],
+    "auto_search_on_manual_strm": False,
     "auto_multi_subtitle_mode": "best",
     "auto_subtitle_language_priority": list(DEFAULT_AUTO_LANGUAGE_PRIORITY),
     "auto_subtitle_format_priority": list(DEFAULT_AUTO_FORMAT_PRIORITY),
@@ -262,6 +263,7 @@ def normalize_plugin_config(
         "trust_transfer_history_paths": bool(raw_config.get("trust_transfer_history_paths", False)),
         "manual_strm_enabled": bool(raw_config.get("manual_strm_enabled", False)),
         "manual_strm_paths": normalize_manual_strm_paths(raw_config.get("manual_strm_paths")),
+        "auto_search_on_manual_strm": bool(raw_config.get("auto_search_on_manual_strm", False)),
         "auto_multi_subtitle_mode": normalize_auto_multi_subtitle_mode(raw_config.get("auto_multi_subtitle_mode")),
         "auto_subtitle_language_priority": normalize_auto_language_priority(
             raw_config.get("auto_subtitle_language_priority"),
@@ -391,6 +393,39 @@ def build_config_form(
                     _col(
                         "VSwitch",
                         {"model": "auto_skip_chinese_media_on_transfer", "label": "入库自动处理跳过中文资源"},
+                        md=6,
+                    ),
+                    _col(
+                        "VSwitch",
+                        {
+                            "model": "manual_strm_enabled",
+                            "label": "监控额外 STRM 目录",
+                            "hint": "开启后配置容器内目录，并实时监控 .strm 和同目录字幕变化。",
+                            "persistentHint": True,
+                        },
+                        md=6,
+                    ),
+                    _col(
+                        "VTextarea",
+                        {
+                            "model": "manual_strm_paths",
+                            "label": "额外 STRM 本地目录",
+                            "placeholder": "/vol2/1000/raid/2/links2\n/vol1/1000/media-strm",
+                            "rows": 3,
+                            "autoGrow": True,
+                            "hint": "每行一个 MoviePilot 容器内可见的绝对路径；不读取 .strm 内容。",
+                            "persistentHint": True,
+                        },
+                        md=12,
+                    ),
+                    _col(
+                        "VSwitch",
+                        {
+                            "model": "auto_search_on_manual_strm",
+                            "label": "额外 STRM 实时变化后自动搜索字幕",
+                            "hint": "只处理新增或变更的 STRM，已处理且未变化的文件不会重复搜索。",
+                            "persistentHint": True,
+                        },
                         md=6,
                     ),
                     _col(

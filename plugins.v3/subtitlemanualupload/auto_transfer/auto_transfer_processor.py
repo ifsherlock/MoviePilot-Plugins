@@ -289,6 +289,8 @@ class AutoTransferProcessor:
         owner = self._owner
         target = self._collaborators.target_from_entry(entry)
         strategy = owner._normalize_auto_transfer_subtitle_strategy(owner._auto_transfer_subtitle_strategy)
+        if target.get("is_stream"):
+            strategy = "online_source_only"
         base = {"strategy": strategy, "target": target.get("label")}
 
         if self._collaborators.auto_target_has_chinese_subtitle(entry, target):
@@ -321,5 +323,7 @@ class AutoTransferProcessor:
         if strategy == "online_source_only" or search_result.get("status") == "written":
             return {**base, **search_result}
 
+        if target.get("is_stream"):
+            return {**base, **search_result}
         ai_result = self._collaborators.submit_ai_for_entry(entry, target, "搜索无单一高置信结果后兜底")
         return {**base, **ai_result, "search": search_result}

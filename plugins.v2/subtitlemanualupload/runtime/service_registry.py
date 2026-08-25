@@ -51,3 +51,10 @@ class SubtitleManualUploadServices:
 
     def online_subtitles(self):
         return service_factories.online_service(self._owner)
+
+    def manual_strm_monitor(self):
+        monitor = getattr(self._owner, "_manual_strm_monitor", None)
+        if monitor is None:
+            monitor = service_factories.manual_strm_monitor(self._owner)
+            self._owner._manual_strm_monitor = monitor
+        return monitor

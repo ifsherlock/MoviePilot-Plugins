@@ -25,6 +25,7 @@ const localConfig = ref({
   trust_transfer_history_paths: false,
   manual_strm_enabled: false,
   manual_strm_paths: '',
+  auto_search_on_manual_strm: false,
   auto_multi_subtitle_mode: 'best',
   auto_subtitle_language_priority: ['bilingual', 'chi', 'cht', 'eng'],
   auto_subtitle_format_priority: ['.ass', '.srt', '.ssa', '.vtt'],
@@ -183,6 +184,7 @@ function normalizeConfig(input) {
     trust_transfer_history_paths: Boolean(input?.trust_transfer_history_paths),
     manual_strm_enabled: Boolean(input?.manual_strm_enabled),
     manual_strm_paths: normalizeMultilinePaths(input?.manual_strm_paths),
+    auto_search_on_manual_strm: Boolean(input?.auto_search_on_manual_strm),
     auto_multi_subtitle_mode: autoMultiSubtitleModes.some(item => item.value === input?.auto_multi_subtitle_mode)
       ? input.auto_multi_subtitle_mode
       : 'best',
@@ -304,12 +306,13 @@ onMounted(() => {
             />
             <VSwitch
               v-model="localConfig.manual_strm_enabled"
-              label="扫描额外 STRM 目录"
+              label="监控额外 STRM 目录"
               color="info"
-              hint="独立于整理历史，只扫描本地硬盘上的 .strm 文件。"
+              hint="开启后展开目录配置，并实时监控 .strm、NFO 和同目录字幕变化。"
               persistent-hint
             />
             <VTextarea
+              v-if="localConfig.manual_strm_enabled"
               v-model="localConfig.manual_strm_paths"
               label="额外 STRM 本地目录"
               :placeholder="manualStrmPathPlaceholder"
@@ -320,6 +323,14 @@ onMounted(() => {
               variant="outlined"
               density="comfortable"
               class="config-grid-wide"
+            />
+            <VSwitch
+              v-if="localConfig.manual_strm_enabled"
+              v-model="localConfig.auto_search_on_manual_strm"
+              label="额外 STRM 实时变化后自动搜索字幕"
+              color="success"
+              hint="只处理新增或变更的 STRM，已处理且未变化的文件不会重复搜索。"
+              persistent-hint
             />
             <VSelect
               v-model="localConfig.auto_transfer_subtitle_strategy"

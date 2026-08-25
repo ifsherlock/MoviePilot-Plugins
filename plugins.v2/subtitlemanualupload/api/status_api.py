@@ -27,10 +27,12 @@ class StatusApi:
                 "enabled": owner.get_state(),
                 "auto_search_on_transfer": bool(owner._auto_search_on_transfer),
                 "auto_skip_chinese_media_on_transfer": bool(owner._auto_skip_chinese_media_on_transfer),
+                "auto_search_on_manual_strm": bool(owner._auto_search_on_manual_strm),
                 "auto_transfer_subtitle_strategy": owner._auto_transfer_subtitle_strategy,
                 "traditional_to_simplified": bool(owner._traditional_to_simplified),
-                "source": "MoviePilot 本地整理记录",
+                "source": "MoviePilot 本地整理记录 + 额外 STRM 实时监控",
                 "index": local_media_catalog.cache_status(),
+                "manual_strm_monitor": services.manual_strm_monitor().status(),
                 "archive_support": {
                     "zip": True,
                     "rar": bool(rar_tool),

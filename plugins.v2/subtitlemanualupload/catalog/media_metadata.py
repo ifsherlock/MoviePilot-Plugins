@@ -111,6 +111,13 @@ def tmdb_detail_payload(
         extract_title_aliases_func=extract_title_aliases_func,
     )
     return {
+        "media_source": normalize_text(value("media_source", "source")),
+        "media_id": normalize_text(value("media_id", "tmdb_id", "tmdbid", "id")),
+        "tmdb_id": normalize_text(value("tmdb_id", "tmdbid", "media_id", "id")),
+        "poster_url": normalize_text(value("poster_path", "poster_url", "image")),
+        "backdrop_url": normalize_text(value("backdrop_path", "backdrop_url")),
+        "overview": normalize_text(value("overview")),
+        "vote_average": value("vote_average"),
         "original_language": value("original_language") or "",
         "origin_country": value("origin_country") or [],
         "production_countries": value("production_countries") or [],
@@ -126,9 +133,13 @@ def tmdb_detail_payload(
 
 
 def apply_tmdb_detail(target: Dict[str, Any], detail: Dict[str, Any]) -> None:
-    for key in ["original_language", "origin_country", "production_countries", "original_title", "tmdb_aliases"]:
+    for key in [
+        "media_source", "media_id", "tmdb_id", "poster_url", "backdrop_url", "overview",
+        "vote_average", "original_language", "origin_country", "production_countries",
+        "original_title", "tmdb_aliases",
+    ]:
         value = detail.get(key)
-        if value and not target.get(key):
+        if value not in (None, "", [], {}) and not target.get(key):
             target[key] = value
     if detail.get("en_title") and not target.get("en_title"):
         target["en_title"] = detail["en_title"]
@@ -350,6 +361,53 @@ class MediaMetadataService:
         payload = self.tmdb_detail_payload(detail)
         self._tmdb_detail_cache[cache_key] = payload
         return dict(payload)
+
+    def enrich_media(self, media: Dict[str, Any]) -> Dict[str, Any]:
+        """补全无媒体 ID 的本地条目，复用 MoviePilot 的 TMDB Chain 和缓存。"""
+        result = dict(media or {})
+        title = self._normalize_text(result.get("title"))
+        media_type = self._media_type_text(result.get("media_type"))
+        year = self._normalize_text(result.get("year"))
+        if not title or media_type not in {"movie", "tv"}:
+            result["metadata_resolution"] = "unresolved"
+            return result
+        if not self._safe_int(result.get("tmdb_id"), 0) and self._tmdb_chain_factory is not None:
+            cache_key = f"match:{media_type}:{title.casefold()}:{year}"
+            cached = self._tmdb_detail_cache.get(cache_key)
+            if cached is None:
+                try:
+                    mp_type = self._media_type_tv if media_type == "tv" else self._media_type_movie
+                    matched = self._tmdb_chain_factory().match_tmdbinfo(
+                        name=title,
+                        mtype=mp_type,
+                        year=year or None,
+                        season=self._safe_int(result.get("season"), 0) or None,
+                    )
+                    cached = self.tmdb_detail_payload(matched) if matched else {}
+                    if cached and not cached.get("tmdb_id"):
+                        matched_id = matched.get("tmdb_id") if isinstance(matched, dict) else getattr(matched, "tmdb_id", None)
+                        if matched_id:
+                            cached["tmdb_id"] = self._normalize_text(matched_id)
+                            cached["media_id"] = cached["tmdb_id"]
+                    if cached.get("tmdb_id"):
+                        cached["media_source"] = "themoviedb"
+                        cached["media_id"] = self._normalize_text(cached["tmdb_id"])
+                except Exception:
+                    cached = {}
+                self._tmdb_detail_cache[cache_key] = cached
+            if cached:
+                apply_tmdb_detail(result, cached)
+        if self._safe_int(result.get("tmdb_id"), 0) and not result.get("poster_url"):
+            detail = self.tmdb_detail_for_media(result)
+            if detail:
+                apply_tmdb_detail(result, detail)
+        tmdb_id = self._safe_int(result.get("tmdb_id"), 0)
+        if tmdb_id:
+            result["media_source"] = "themoviedb"
+            result["media_id"] = str(tmdb_id)
+            result["tmdb_id"] = tmdb_id
+        result["metadata_resolution"] = "resolved" if tmdb_id else "unresolved"
+        return result
 
     def tmdb_detail_payload(self, detail: Any) -> Dict[str, Any]:
         return tmdb_detail_payload(

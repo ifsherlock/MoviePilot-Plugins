@@ -4780,6 +4780,32 @@ def test_auto_transfer_legacy_ai_first_maps_to_ai_source_only(tmp_path):
     assert result["strategy"] == "ai_source_only"
 
 
+def test_manual_strm_auto_processing_forces_online_only_and_never_submits_ai(tmp_path):
+    module, _, _ = load_plugin_module()
+    plugin = make_plugin(module)
+    plugin._auto_skip_chinese_media_on_transfer = False
+    plugin._auto_transfer_subtitle_strategy = "ai_source_only"
+    entry = make_auto_entry(tmp_path, filename="Movie.strm", origin="manual_strm")
+    calls = []
+    service = auto_transfer_service_with(
+        plugin,
+        auto_search_write_subtitle=lambda item, target, **kwargs: calls.append("online") or {
+            "status": "skipped",
+            "reason": "没有高置信在线字幕",
+            "target": target.get("label"),
+        },
+        auto_submit_ai_for_entry=lambda *args, **kwargs: (_ for _ in ()).throw(
+            AssertionError("STRM must not submit AI audio generation")
+        ),
+    )
+
+    result = service.auto_process_transfer_entry(entry)
+
+    assert calls == ["online"]
+    assert result["strategy"] == "online_source_only"
+    assert result["status"] == "skipped"
+
+
 def test_auto_transfer_legacy_strategy_aliases_are_migrated():
     module, _, _ = load_plugin_module()
     config_schema = plugin_submodule(module, "config.config_schema")

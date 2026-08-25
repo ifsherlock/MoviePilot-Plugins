@@ -47,6 +47,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "trust_transfer_history_paths": False,
     "manual_strm_enabled": False,
     "manual_strm_paths": [],
+    "auto_search_on_manual_strm": False,
     "auto_multi_subtitle_mode": "best",
     "auto_subtitle_language_priority": list(DEFAULT_AUTO_LANGUAGE_PRIORITY),
     "auto_subtitle_format_priority": list(DEFAULT_AUTO_FORMAT_PRIORITY),
@@ -262,6 +263,7 @@ def normalize_plugin_config(
         "trust_transfer_history_paths": bool(raw_config.get("trust_transfer_history_paths", False)),
         "manual_strm_enabled": bool(raw_config.get("manual_strm_enabled", False)),
         "manual_strm_paths": normalize_manual_strm_paths(raw_config.get("manual_strm_paths")),
+        "auto_search_on_manual_strm": bool(raw_config.get("auto_search_on_manual_strm", False)),
         "auto_multi_subtitle_mode": normalize_auto_multi_subtitle_mode(raw_config.get("auto_multi_subtitle_mode")),
         "auto_subtitle_language_priority": normalize_auto_language_priority(
             raw_config.get("auto_subtitle_language_priority"),
@@ -397,8 +399,8 @@ def build_config_form(
                         "VSwitch",
                         {
                             "model": "manual_strm_enabled",
-                            "label": "扫描额外 STRM 目录",
-                            "hint": "独立于 MoviePilot 整理历史，只扫描本地硬盘上的 .strm 文件。",
+                            "label": "监控额外 STRM 目录",
+                            "hint": "开启后展开目录配置，并实时监控本地硬盘上的 .strm 和同目录字幕变化。",
                             "persistentHint": True,
                         },
                         md=6,
@@ -415,6 +417,16 @@ def build_config_form(
                             "persistentHint": True,
                         },
                         md=12,
+                    ),
+                    _col(
+                        "VSwitch",
+                        {
+                            "model": "auto_search_on_manual_strm",
+                            "label": "额外 STRM 实时变化后自动搜索字幕",
+                            "hint": "只处理新增或变更的 STRM，已处理且未变化的文件不会重复搜索。",
+                            "persistentHint": True,
+                        },
+                        md=6,
                     ),
                     _col(
                         "VSelect",

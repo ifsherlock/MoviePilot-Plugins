@@ -195,3 +195,85 @@ def test_v3_manual_strm_persisted_entry_respects_current_config(tmp_path):
     assert cache._entry_source_is_enabled(entry) is True
     owner._manual_strm_paths = [str(other_root)]
     assert cache._entry_source_is_enabled(entry) is False
+
+
+def test_manual_strm_incremental_changes_add_remove_and_invalidate_subtitles(tmp_path):
+    for version_root, package_name in (
+        (ROOT / "plugins.v2/subtitlemanualupload/catalog", "subtitlemanualupload_v2_incremental_testpkg"),
+        (V3_CATALOG, "subtitlemanualupload_v3_incremental_testpkg"),
+    ):
+        root = tmp_path / package_name
+        root.mkdir()
+        strm = root / "Movie.strm"
+        subtitle = root / "Movie.chi.srt"
+        invalidated = []
+        target_cache = types.SimpleNamespace(
+            clear=lambda: None,
+            remember=lambda entries: None,
+            prune=lambda predicate: None,
+        )
+
+        class FakeManualCatalog:
+            def scan(self, roots, max_entries=5000):
+                if not strm.exists():
+                    return []
+                return [{
+                    "id": "movie-target",
+                    "origin": "manual_strm",
+                    "media_key": "movie-key",
+                    "media_type": "movie",
+                    "title": "Movie",
+                    "path": str(strm),
+                    "basename": "Movie",
+                    "filename": strm.name,
+                    "target_label": strm.name,
+                    "storage": "local",
+                }]
+
+        package = types.ModuleType(package_name)
+        package.__path__ = [str(version_root)]
+        sys.modules[package_name] = package
+        spec = importlib.util.spec_from_file_location(
+            f"{package_name}.local_media_catalog",
+            version_root / "local_media_catalog.py",
+        )
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
+        owner = types.SimpleNamespace(
+            _manual_strm_enabled=True,
+            _manual_strm_paths=[str(root)],
+            _subtitle_exts={".srt", ".ass"},
+            _cache_max_entries=100,
+            _local_entries_cache={"loaded_at": None, "entries": [], "media_count": 0, "persisted": False},
+            _normalize_text=lambda value: str(value or "").strip(),
+            _entry_path_is_valid=lambda entry: Path(entry["path"]).is_file(),
+            _cache_loaded_at=lambda value: value,
+            _invalidate_match_history_cache=lambda: None,
+            get_data_path=lambda: tmp_path / f"data-{package_name}",
+        )
+        inventory = types.SimpleNamespace(invalidate_directory=lambda path: invalidated.append(path))
+        owner.services = types.SimpleNamespace(subtitle_inventory=lambda: inventory)
+        catalog = module.LocalMediaCatalog(
+            owner,
+            transfer_history=None,
+            http_exception=RuntimeError,
+            logger=types.SimpleNamespace(info=lambda *args: None, warning=lambda *args: None),
+            target_entry_cache=target_cache,
+            manual_strm_catalog=FakeManualCatalog(),
+        )
+
+        strm.write_text("remote", encoding="utf-8")
+        added = catalog.apply_manual_strm_changes([str(strm)])
+        assert [item["path"] for item in added["changed_entries"]] == [str(strm)]
+        assert len(owner._local_entries_cache["entries"]) == 1
+
+        subtitle.write_text("subtitle", encoding="utf-8")
+        subtitle_change = catalog.apply_manual_strm_changes([str(subtitle)])
+        assert subtitle_change["changed_entries"] == []
+        assert root in invalidated
+
+        strm.unlink()
+        removed = catalog.apply_manual_strm_changes([str(strm)])
+        assert str(strm) in removed["removed"]
+        assert owner._local_entries_cache["entries"] == []

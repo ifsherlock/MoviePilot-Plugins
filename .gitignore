@@ -172,6 +172,9 @@ cython_debug/
 
 .idea/
 .vscode/
+node_modules/
+plugins.v3/*/pnpm-lock.yaml
+plugins.v3/*/pnpm-workspace.yaml
 .DS_Store
 plugins.v2/.DS_Store
 

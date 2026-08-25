@@ -5,8 +5,8 @@ const currentImports = {};
       dynamicLoadingCss(["__federation_expose_Page-CasoUOtj.css","_plugin-vue_export-helper-D8Rle5SF.css","__federation_expose_AppPage-ClmS_l54.css"], false, './Page');
       return __federation_import('./__federation_expose_Page-Cln1bsHe.js').then(module =>Object.keys(module).every(item => exportSet.has(item)) ? () => module.default : () => module)},
 "./Config":()=>{
-      dynamicLoadingCss(["__federation_expose_Config-DceJ4364.css","_plugin-vue_export-helper-D8Rle5SF.css"], false, './Config');
-      return __federation_import('./__federation_expose_Config-BgeUiyRM.js').then(module =>Object.keys(module).every(item => exportSet.has(item)) ? () => module.default : () => module)},
+      dynamicLoadingCss(["__federation_expose_Config-CNe3-tZU.css","_plugin-vue_export-helper-D8Rle5SF.css"], false, './Config');
+      return __federation_import('./__federation_expose_Config-Dk0_hoca.js').then(module =>Object.keys(module).every(item => exportSet.has(item)) ? () => module.default : () => module)},
 "./AppPage":()=>{
       dynamicLoadingCss(["__federation_expose_AppPage-ClmS_l54.css","_plugin-vue_export-helper-D8Rle5SF.css"], false, './AppPage');
       return __federation_import('./__federation_expose_AppPage-C70oAIg3.js').then(module =>Object.keys(module).every(item => exportSet.has(item)) ? () => module.default : () => module)},};
