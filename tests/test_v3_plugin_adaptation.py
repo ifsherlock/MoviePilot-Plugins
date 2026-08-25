@@ -25,14 +25,14 @@ def test_v3_plugins_keep_stable_identity_and_versions():
     assert _class_name_and_version(ROOT / "plugins.v3/autosubv3/__init__.py") == ("AutoSubv3", "4.0.1")
     assert _class_name_and_version(ROOT / "plugins.v3/subtitlemanualupload/__init__.py") == (
         "SubtitleManualUpload",
-        "1.2.3",
+        "1.2.4",
     )
 
 
 def test_v3_index_and_v2_opt_out_are_consistent():
     package_v3 = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
     package_v2 = json.loads((ROOT / "package.v2.json").read_text(encoding="utf-8"))
-    for plugin_id, version in (("AutoSubv3", "4.0.1"), ("SubtitleManualUpload", "1.2.3")):
+    for plugin_id, version in (("AutoSubv3", "4.0.1"), ("SubtitleManualUpload", "1.2.4")):
         assert package_v3[plugin_id]["version"] == version
         assert package_v3[plugin_id]["system_version"] == ">=3.0.0"
         assert f"v{version}" in package_v3[plugin_id]["history"]
@@ -67,8 +67,7 @@ def test_v3_source_uses_sdk_and_unified_media_identity():
     ).read_text(encoding="utf-8")
     assert "TransferHistoryOper" in history_reader
     assert "TransferHistory.list_by_page" in history_reader
-    assert "run_sync_transaction" in history_reader
-    assert "ScopedSession" in history_reader
+    assert "SessionFactory" in history_reader
 
 
 def test_subtitlemanualupload_v2_v3_runtime_boundaries_are_explicit():

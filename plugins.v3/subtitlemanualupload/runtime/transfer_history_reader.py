@@ -27,21 +27,13 @@ class TransferHistoryReader(TransferHistoryOper):
         if self._db is not None:
             return query(self._db)
 
-        # 最新 V3 通过组合根登记无会话事务执行器；不能把 None 传给模型，
-        # 否则 TransferHistory.list_by_page 会在 db.execute 处崩溃。
+        # 后台刷新线程没有请求级 Session，必须显式创建并释放只读会话；
+        # 不能依赖全局事务 runner，也不能把 None 传给模型。
         try:
-            from app.db.uow import run_sync_transaction
-        except ImportError:
-            run_sync_transaction = None
-        if run_sync_transaction is not None:
-            return run_sync_transaction(query)
-
-        # 兼容尚未提供 uow 执行器的早期 V3：显式创建并释放一个只读会话。
-        try:
-            from app.db.session import ScopedSession
+            from app.db.session import SessionFactory
         except ImportError as exc:
             raise RuntimeError("MoviePilot V3 未提供可用的同步数据库会话入口") from exc
-        session = ScopedSession()
+        session = SessionFactory()
         try:
             return query(session)
         finally:

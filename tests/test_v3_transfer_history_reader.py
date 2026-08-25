@@ -72,23 +72,24 @@ def test_reader_uses_v3_model_query_without_removed_execute_sync_query():
             return [{"id": 1}]
 
     module = _load_reader(FakeTransferHistory)
-    previous_uow = sys.modules.get("app.db.uow")
+    previous_session = sys.modules.get("app.db.session")
     try:
-        sys.modules["app.db.uow"] = types.SimpleNamespace(
-            run_sync_transaction=lambda operation: operation("uow-session")
+        sys.modules["app.db.session"] = types.SimpleNamespace(
+            SessionFactory=lambda: types.SimpleNamespace(close=lambda: None)
         )
         reader = module.TransferHistoryReader()
 
         assert reader.list_by_page(page=2, count=17, status=True) == [{"id": 1}]
-        assert calls == [("uow-session", 2, 17, True)]
+        assert calls[0][1:] == (2, 17, True)
+        assert calls[0][0] is not None
     finally:
-        if previous_uow is None:
-            sys.modules.pop("app.db.uow", None)
+        if previous_session is None:
+            sys.modules.pop("app.db.session", None)
         else:
-            sys.modules["app.db.uow"] = previous_uow
+            sys.modules["app.db.session"] = previous_session
 
 
-def test_reader_falls_back_to_legacy_scoped_session():
+def test_reader_closes_explicit_session_after_query():
     calls = []
 
     class FakeSession:
@@ -106,11 +107,10 @@ def test_reader_falls_back_to_legacy_scoped_session():
             return []
 
     module = _load_reader(FakeTransferHistory)
-    previous_uow = sys.modules.pop("app.db.uow", None)
     previous_session = sys.modules.get("app.db.session")
     try:
         sys.modules["app.db.session"] = types.SimpleNamespace(
-            ScopedSession=lambda: session
+            SessionFactory=lambda: session
         )
         reader = module.TransferHistoryReader()
 
@@ -118,8 +118,6 @@ def test_reader_falls_back_to_legacy_scoped_session():
         assert calls == [(session, 1, 30, True)]
         assert session.closed is True
     finally:
-        if previous_uow is not None:
-            sys.modules["app.db.uow"] = previous_uow
         if previous_session is None:
             sys.modules.pop("app.db.session", None)
         else:

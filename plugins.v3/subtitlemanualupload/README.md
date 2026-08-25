@@ -2,6 +2,10 @@
 
 MoviePilot V3 专用字幕管理插件，脱胎自 [ChineseSubFinder](https://github.com/ChineseSubFinder/ChineseSubFinder)，提供在线搜索、手动上传、自动匹配、规范改名与智能调轴能力。V2 版本保留在 `plugins.v2/subtitlemanualupload`。
 
+## v1.2.4 更新
+
+- 修复 V3 后台刷新线程的数据库会话创建，避免空整理历史时把 `None` 传给模型查询。
+
 ## v1.2.3 更新
 
 - 修复全新 V3 数据库没有整理历史时刷新本地资源清单失败的问题，兼容宿主事务执行器和早期 V3 会话入口。
