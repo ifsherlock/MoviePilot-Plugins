@@ -140,7 +140,7 @@
         "name": "AI字幕生成(联动版)",
         "description": "自动生成字幕并翻译成中文，支持 faster-whisper 识别、字幕提取和大模型并发翻译，可联动字幕匹配功能。",
         "labels": "字幕,AI,翻译",
-        "version": "3.5.60",
+        "version": "3.5.61",
         "icon": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/autosubtitles.jpeg",
         "author": "ifsherlock",
         "author_url": "https://github.com/ifsherlock",
@@ -149,6 +149,7 @@
         "v2": true,
         "v3": false,
         "history": {
+            "v3.5.61": "修复 V2 依赖清单 UTF-8 BOM 导致 iso639 无法识别，并增加 V2/V3 依赖清单编码回归检查",
             "v3.5.60": "修复联动任务提交时外挂字幕与视频季集号不一致仍进入 AI 翻译的问题，避免 S03E04 字幕误用于 S03E09；保留外挂字幕优先、内嵌字幕兜底和音轨 ASR 兜底顺序",
             "v3.5.59": "修复模型下拉将选项对象保存为模型名称的问题，自动修复已保存的对象值，恢复模型测试和字幕生成调用",
             "v3.5.58": "AI API 配置升级为独立标签页，支持多端点、主线路切换、模型拉取、连通性测试和自动故障切换；任务失败保留具体错误并补充脱敏日志",
