@@ -392,7 +392,7 @@ class SubtitleHistory:
 
     def match_history_items(self, *, keyword: str = "", media_type: str = "all") -> List[Dict[str, Any]]:
         owner = self._owner
-        entries = owner.services.local_media_catalog().load_local_entries(allow_stale=True)
+        entries = owner.services.local_media_catalog().load_local_entries()
         signature = self.match_history_signature(entries, include_filesystem=True)
         cache = owner._match_history_cache or {}
         loaded_at = owner._cache_loaded_at(cache.get("loaded_at"))

@@ -49,6 +49,32 @@ class ArchiveResourceLimitError(ValueError):
     """Raised when uploaded content or extracted archive data exceeds policy limits."""
 
 
+class SubtitleContentError(ValueError):
+    """Raised when subtitle bytes are empty or differ from archive metadata."""
+
+
+@dataclass(frozen=True)
+class ArchiveMember:
+    name: str
+    index: int
+    size: Optional[int] = None
+
+
+def validate_subtitle_content(
+    source_name: str,
+    raw_bytes: bytes,
+    *,
+    expected_size: Optional[int] = None,
+) -> None:
+    if not raw_bytes:
+        raise SubtitleContentError(f"字幕文件为空: {source_name}")
+    if expected_size is not None and len(raw_bytes) != expected_size:
+        raise SubtitleContentError(
+            f"字幕解压大小不一致: {source_name} "
+            f"实际 {_size_label(len(raw_bytes))}, 预期 {_size_label(expected_size)}"
+        )
+
+
 def _default_normalize_text(value: Any) -> str:
     return str(value or "").strip()
 
@@ -336,7 +362,7 @@ apt-get install -y --no-install-recommends unar
     def run_archive_command(self, args: List[str], timeout: int = 120) -> bytes:
         return run_archive_command(args, decode_preview_bytes=self._decode_preview_bytes, timeout=timeout)
 
-    def list_rar_members(self, archive_path: Path, tool_path: str) -> List[str]:
+    def list_rar_members(self, archive_path: Path, tool_path: str) -> List[ArchiveMember]:
         return list_rar_members(
             archive_path,
             tool_path,
@@ -344,7 +370,7 @@ apt-get install -y --no-install-recommends unar
             run_command=self.run_archive_command,
         )
 
-    def read_rar_member(self, archive_path: Path, member: str, tool_path: str) -> bytes:
+    def read_rar_member(self, archive_path: Path, member: ArchiveMember, tool_path: str) -> bytes:
         return read_rar_member(
             archive_path,
             member,
@@ -400,39 +426,58 @@ def list_rar_members(
     *,
     decode_preview_bytes: DecodePreviewBytes,
     run_command: Callable[..., bytes],
-) -> List[str]:
+) -> List[ArchiveMember]:
     tool_name = Path(tool_path).name.lower()
     if tool_name == "unar":
         lsar_path = find_lsar_tool(tool_path)
         if not lsar_path:
             raise ValueError("当前容器缺少 lsar，无法列出 RAR 压缩包内容")
-        output = run_command([lsar_path, "-json", str(archive_path)])
+        output = run_command([lsar_path, "-json", "-no-recursion", str(archive_path)])
         try:
             payload = json.loads(decode_preview_bytes(output))
-        except Exception as exc:
+        except (TypeError, ValueError) as exc:
             raise ValueError("lsar 输出无法解析") from exc
-        contents = payload.get("lsarContents") if isinstance(payload, dict) else []
+        contents = payload.get("lsarContents") if isinstance(payload, dict) else None
+        if not isinstance(contents, list):
+            raise ValueError("lsar 输出缺少有效成员列表")
         members = []
-        for item in contents or []:
-            if not isinstance(item, dict) or item.get("XADIsDirectory"):
+        indexes = set()
+        for item in contents:
+            if not isinstance(item, dict):
+                raise ValueError("lsar 压缩包成员信息无效")
+            index = item.get("XADIndex")
+            if type(index) is not int or index < 0 or index in indexes:
+                raise ValueError("lsar 压缩包成员编号缺失或重复")
+            indexes.add(index)
+            if item.get("XADIsDirectory"):
                 continue
-            member = str(item.get("XADFileName") or "").strip()
-            if member:
-                members.append(member)
+            name = item.get("XADFileName")
+            if not isinstance(name, str) or not name:
+                raise ValueError("lsar 压缩包成员名称无效")
+            size = item.get("XADFileSize")
+            if size is not None and (type(size) is not int or size < 0):
+                raise ValueError(f"lsar 压缩包成员大小无效: {name}")
+            members.append(ArchiveMember(name=name, index=index, size=size))
         return members
-    return []
+    raise ValueError("当前容器缺少可用的 unar 解压工具")
 
 
 def read_rar_member(
     archive_path: Path,
-    member: str,
+    member: ArchiveMember,
     tool_path: str,
     *,
     run_command: Callable[..., bytes],
 ) -> bytes:
     tool_name = Path(tool_path).name.lower()
     if tool_name == "unar":
-        return run_command([tool_path, "-quiet", "-no-directory", "-output-directory", "-", str(archive_path), member])
+        # lsar indexes avoid filename wildcard expansion and distinguish duplicate names.
+        return run_command(
+            [
+                tool_path, "-quiet", "-no-directory", "-no-recursion", "-indexes",
+                "-output-directory", "-", str(archive_path), str(member.index),
+            ]
+        )
     raise ValueError("当前容器缺少可用的 unar 解压工具")
 
 
@@ -456,7 +501,7 @@ def extract_rar_subtitle_files_with_rarfile(
     guard = ArchiveResourceGuard(source_name, resource_limits)
     try:
         with rarfile.RarFile(str(archive_path)) as archive:
-            for member in archive.infolist():
+            for member_index, member in enumerate(archive.infolist()):
                 guard.count_member(member.filename)
                 if member.isdir():
                     continue
@@ -466,13 +511,14 @@ def extract_rar_subtitle_files_with_rarfile(
                 member_ext = Path(member_name).suffix.lower()
                 if member_ext not in subtitle_ext_set:
                     continue
-                member_size = int(getattr(member, "file_size", 0) or 0)
-                if member_size:
+                member_size = getattr(member, "file_size", None)
+                if member_size is not None:
                     guard.check_member_size(member_name, member_size)
                 member_bytes = archive.read(member)
+                validate_subtitle_content(member.filename, member_bytes, expected_size=member_size)
                 guard.accept_subtitle(member_name, len(member_bytes), raw_bytes=member_bytes)
                 upload_id = hash_text(
-                    f"{source_name}|{member.filename}|{len(member_bytes)}|{datetime.now().timestamp()}"
+                    f"{source_name}|{member_index}|{member.filename}|{len(member_bytes)}|{datetime.now().timestamp()}"
                 )
                 stored_path = session_dir / f"{upload_id}{member_ext}"
                 stored_path.write_bytes(member_bytes)
@@ -486,7 +532,7 @@ def extract_rar_subtitle_files_with_rarfile(
                         "ext": member_ext,
                     }
                 )
-    except ArchiveResourceLimitError:
+    except (ArchiveResourceLimitError, SubtitleContentError):
         raise
     except Exception as exc:
         raise ValueError(str(exc)) from exc
@@ -524,7 +570,7 @@ def extract_rar_subtitle_files(
                 session_dir,
                 resource_limits=resource_limits,
             )
-        except ArchiveResourceLimitError:
+        except (ArchiveResourceLimitError, SubtitleContentError):
             raise
         except ValueError as exc:
             if logger_warning:
@@ -576,8 +622,8 @@ def extract_command_archive_subtitle_files(
     *,
     subtitle_exts: Iterable[str],
     hash_text: HashText,
-    list_members: Callable[[Path, str], List[str]],
-    read_member: Callable[[Path, str, str], bytes],
+    list_members: Callable[[Path, str], List[ArchiveMember]],
+    read_member: Callable[[Path, ArchiveMember, str], bytes],
     resource_limits: ArchiveResourceLimits = DEFAULT_ARCHIVE_RESOURCE_LIMITS,
 ) -> List[Dict[str, Any]]:
     prepared: List[Dict[str, Any]] = []
@@ -585,16 +631,19 @@ def extract_command_archive_subtitle_files(
     guard = ArchiveResourceGuard(source_name, resource_limits)
     members = list_members(archive_path, tool_path)
     for member in members:
-        guard.count_member(member)
-        member_name = re.split(r"[\\/]", member)[-1]
+        guard.count_member(member.name)
+        member_name = re.split(r"[\\/]", member.name)[-1]
         if not member_name or member_name.startswith("."):
             continue
         member_ext = Path(member_name).suffix.lower()
         if member_ext not in subtitle_ext_set:
             continue
+        if member.size is not None:
+            guard.check_member_size(member_name, member.size)
         member_bytes = read_member(archive_path, member, tool_path)
+        validate_subtitle_content(member.name, member_bytes, expected_size=member.size)
         guard.accept_subtitle(member_name, len(member_bytes), raw_bytes=member_bytes)
-        upload_id = hash_text(f"{source_name}|{member}|{len(member_bytes)}|{datetime.now().timestamp()}")
+        upload_id = hash_text(f"{source_name}|{member.index}|{member.name}|{len(member_bytes)}|{datetime.now().timestamp()}")
         stored_path = session_dir / f"{upload_id}{member_ext}"
         stored_path.write_bytes(member_bytes)
         prepared.append(
@@ -602,7 +651,7 @@ def extract_command_archive_subtitle_files(
                 "upload_id": upload_id,
                 "source_name": member_name,
                 "archive_name": source_name,
-                "archive_member": member,
+                "archive_member": member.name,
                 "stored_path": str(stored_path),
                 "ext": member_ext,
             }
@@ -810,6 +859,7 @@ class UploadSessionService:
         validate_upload_content_size(source_name, len(raw_bytes), self._resource_limits)
 
         if ext in self._subtitle_exts:
+            validate_subtitle_content(source_name, raw_bytes)
             upload_id = self._hash_text(f"{source_name}|{len(raw_bytes)}|{datetime.now().timestamp()}")
             stored_path = session_dir / f"{upload_id}{ext}"
             stored_path.write_bytes(raw_bytes)
@@ -847,7 +897,7 @@ class UploadSessionService:
         try:
             with zipfile.ZipFile(archive_path) as archive:
                 guard = ArchiveResourceGuard(source_name, self._resource_limits)
-                for member in archive.infolist():
+                for member_index, member in enumerate(archive.infolist()):
                     guard.count_member(member.filename)
                     if member.is_dir():
                         continue
@@ -859,9 +909,10 @@ class UploadSessionService:
                         continue
                     guard.check_member_size(member_name, int(member.file_size or 0))
                     member_bytes = archive.read(member)
+                    validate_subtitle_content(member.filename, member_bytes, expected_size=member.file_size)
                     guard.accept_subtitle(member_name, len(member_bytes), raw_bytes=member_bytes)
                     upload_id = self._hash_text(
-                        f"{source_name}|{member.filename}|{len(member_bytes)}|{datetime.now().timestamp()}"
+                        f"{source_name}|{member_index}|{member.filename}|{len(member_bytes)}|{datetime.now().timestamp()}"
                     )
                     stored_path = session_dir / f"{upload_id}{member_ext}"
                     stored_path.write_bytes(member_bytes)

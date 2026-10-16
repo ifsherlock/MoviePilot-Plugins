@@ -30,7 +30,7 @@ class ManualStrmCatalog:
         self._build_media_key = build_media_key
         self._logger_warning = logger_warning
 
-    def scan(self, roots: Iterable[str], *, max_entries: int = 5000) -> List[Dict[str, Any]]:
+    def scan(self, roots: Iterable[str], *, max_entries: Optional[int] = None) -> List[Dict[str, Any]]:
         entries: List[Dict[str, Any]] = []
         seen_paths: set[str] = set()
         for root_text in roots:
@@ -45,9 +45,19 @@ class ManualStrmCatalog:
                 entry = self._entry_from_path(root, path)
                 if entry:
                     entries.append(entry)
-                    if len(entries) >= max_entries:
+                    if max_entries is not None and len(entries) >= max_entries:
                         return entries
         return entries
+
+    def entry_for_path(self, path: Path, roots: Iterable[str]) -> Optional[Dict[str, Any]]:
+        path = path.resolve()
+        if path.suffix.lower() != ".strm" or not path.is_file():
+            return None
+        for root_text in roots:
+            root = self._resolve_root(root_text)
+            if root and path.is_relative_to(root):
+                return self._entry_from_path(root, path)
+        return None
 
     def _resolve_root(self, value: Any) -> Optional[Path]:
         raw = self._normalize_text(value)

@@ -85,6 +85,7 @@ def extract_episode_hint(
         re.compile(r"(?i)\b(?P<season>\d{1,2})x(?P<episode>\d{1,3})\b"),
         re.compile(r"第\s*(?P<season>\d{1,2})\s*季.*?第\s*(?P<episode>\d{1,3})\s*[集话話]"),
         re.compile(r"第\s*(?P<episode>\d{1,3})\s*[集话話]"),
+        re.compile(r"(?i)(?<![A-Za-z0-9])(?:E|EP|Episode)[\s._-]*(?P<episode>\d{1,3})(?![A-Za-z0-9])"),
     ]
     for pattern in patterns:
         match = pattern.search(cleaned)

@@ -1,10 +1,16 @@
 from __future__ import annotations
 
 import json
+import threading
 from collections import OrderedDict
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
+
+
+LOCAL_CACHE_VERSION = 2
+HISTORY_PAGE_SIZE = 1000
+_LOCAL_CACHE_LOCK = threading.RLock()
 
 
 class LocalMediaCatalog:
@@ -26,6 +32,62 @@ class LocalMediaCatalog:
         self._target_entry_cache = target_entry_cache
         self._manual_strm_catalog = manual_strm_catalog
         self._threading = threading_module
+
+    def _cache_snapshot(self) -> List[Dict[str, Any]]:
+        with _LOCAL_CACHE_LOCK:
+            return [dict(item) for item in (self._owner._local_entries_cache or {}).get("entries") or []]
+
+    def _store_entries(
+        self,
+        entries: List[Dict[str, Any]],
+        *,
+        snapshot: Optional[List[Dict[str, Any]]] = None,
+        complete: Optional[bool] = None,
+    ) -> List[Dict[str, Any]]:
+        owner = self._owner
+        with _LOCAL_CACHE_LOCK:
+            cache = owner._local_entries_cache or {}
+            by_path = {entry["path"]: entry for entry in entries if entry.get("path")}
+            if snapshot is not None:
+                before = {entry["path"]: entry for entry in snapshot if entry.get("path")}
+                current = {entry["path"]: entry for entry in cache.get("entries") or [] if entry.get("path")}
+                # Keep events applied while a slow background scan was in progress.
+                for path in before.keys() - current.keys():
+                    by_path.pop(path, None)
+                for path, entry in current.items():
+                    if path not in before or entry != before[path]:
+                        by_path[path] = entry
+            stored = list(by_path.values())
+            owner._local_entries_cache = {
+                "version": LOCAL_CACHE_VERSION,
+                "complete": bool(cache.get("complete", bool(cache.get("loaded_at")))) if complete is None else complete,
+                "loaded_at": datetime.now(),
+                "entries": stored,
+                "media_count": len({entry.get("media_key") for entry in stored if entry.get("media_key")}),
+                "persisted": False,
+            }
+            self._target_entry_cache.clear()
+            self._target_entry_cache.remember(stored)
+            self.reset_media_index_cache()
+            owner._invalidate_match_history_cache()
+            self.persist_local_cache()
+            return list(stored)
+
+    def _history_pages(self):
+        previous = None
+        page = 1
+        while True:
+            histories = self._transfer_history.list_by_page(page=page, count=HISTORY_PAGE_SIZE, status=True) or []
+            if not histories:
+                return
+            signature = tuple(str(item.get("id", item)) if isinstance(item, dict) else str(getattr(item, "id", item)) for item in histories)
+            if signature == previous:
+                raise RuntimeError("MoviePilot 整理历史分页未前进，已停止刷新并保留现有索引")
+            yield histories
+            if len(histories) < HISTORY_PAGE_SIZE:
+                return
+            previous = signature
+            page += 1
 
     def filter_existing_local_entries(self, entries: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         owner = self._owner
@@ -61,6 +123,10 @@ class LocalMediaCatalog:
         return False
 
     def prune_local_entries_cache(self) -> None:
+        with _LOCAL_CACHE_LOCK:
+            self._prune_local_entries_cache()
+
+    def _prune_local_entries_cache(self) -> None:
         owner = self._owner
         cache = owner._local_entries_cache or {}
         entries = [entry for entry in cache.get("entries") or [] if isinstance(entry, dict)]
@@ -88,28 +154,10 @@ class LocalMediaCatalog:
         entries = self.filter_existing_local_entries(entries)
         if not entries:
             return
-        cache = owner._local_entries_cache or {}
-        existing = self.filter_existing_local_entries(
-            [item for item in cache.get("entries") or [] if isinstance(item, dict)]
-        )
-        by_path = {entry.get("path"): entry for entry in entries if entry.get("path")}
-        merged = list(entries)
-        for entry in existing:
-            if entry.get("path") not in by_path:
-                merged.append(entry)
-            if len(merged) >= owner._cache_max_entries:
-                break
-        media_count = len({entry.get("media_key") for entry in merged if entry.get("media_key")})
-        owner._local_entries_cache = {
-            "loaded_at": datetime.now(),
-            "entries": merged[: owner._cache_max_entries],
-            "media_count": media_count,
-            "persisted": False,
-        }
-        self._target_entry_cache.remember(entries)
-        self.reset_media_index_cache()
-        owner._invalidate_match_history_cache()
-        self.persist_local_cache()
+        with _LOCAL_CACHE_LOCK:
+            existing = self._cache_snapshot()
+            paths = {entry.get("path") for entry in entries}
+            self._store_entries([*entries, *(entry for entry in existing if entry.get("path") not in paths)])
 
     def local_cache_file(self) -> Path:
         return self._owner.get_data_path() / "local_entries_cache.json"
@@ -119,6 +167,8 @@ class LocalMediaCatalog:
         cache = owner._local_entries_cache or {}
         loaded_at = owner._cache_loaded_at(cache.get("loaded_at"))
         payload = {
+            "version": LOCAL_CACHE_VERSION,
+            "complete": bool(cache.get("complete", bool(loaded_at))),
             "loaded_at": loaded_at.isoformat(timespec="seconds") if loaded_at else "",
             "entries": cache.get("entries") or [],
             "media_count": int(cache.get("media_count") or 0),
@@ -131,7 +181,13 @@ class LocalMediaCatalog:
             self._logger.warning("[SubtitleManualUpload] 写入本地资源持久化缓存失败: %s", exc)
 
     def restore_persisted_local_cache(self) -> bool:
+        with _LOCAL_CACHE_LOCK:
+            return self._restore_persisted_local_cache()
+
+    def _restore_persisted_local_cache(self) -> bool:
         owner = self._owner
+        if (owner._local_entries_cache or {}).get("loaded_at"):
+            return False
         try:
             cache_file = self.local_cache_file()
             if not cache_file.exists():
@@ -147,6 +203,8 @@ class LocalMediaCatalog:
         valid_entries = self.filter_existing_local_entries([entry for entry in entries if isinstance(entry, dict)])
         media_count = len({entry.get("media_key") for entry in valid_entries if entry.get("media_key")})
         owner._local_entries_cache = {
+            "version": LOCAL_CACHE_VERSION,
+            "complete": payload.get("version") == LOCAL_CACHE_VERSION and payload.get("complete") is True,
             "loaded_at": loaded_at,
             "entries": valid_entries,
             "media_count": media_count,
@@ -163,51 +221,43 @@ class LocalMediaCatalog:
 
     def load_local_entries(self, *, force: bool = False, allow_stale: bool = False) -> List[Dict[str, Any]]:
         owner = self._owner
-        self.prune_local_entries_cache()
+        if not force and not allow_stale:
+            self.prune_local_entries_cache()
         cache = owner._local_entries_cache or {}
         loaded_at = owner._cache_loaded_at(cache.get("loaded_at"))
         now = datetime.now()
-        if not force and loaded_at and (now - loaded_at).total_seconds() < owner._cache_ttl_seconds:
+        if not force and cache.get("complete", True) and loaded_at and (now - loaded_at).total_seconds() < owner._cache_ttl_seconds:
             return list(cache.get("entries") or [])
         if not force and not loaded_at and self.restore_persisted_local_cache():
             cache = owner._local_entries_cache or {}
             loaded_at = owner._cache_loaded_at(cache.get("loaded_at"))
-            if loaded_at and (now - loaded_at).total_seconds() < owner._cache_ttl_seconds:
+            if cache.get("complete", False) and loaded_at and (now - loaded_at).total_seconds() < owner._cache_ttl_seconds:
                 return list(cache.get("entries") or [])
         if not force and allow_stale and cache.get("entries"):
             self.start_background_cache_refresh()
             return list(cache.get("entries") or [])
 
-        try:
-            histories = self._transfer_history.list_by_page(
-                page=1,
-                count=owner._cache_max_entries,
-                status=True,
-            ) or []
-        except Exception as exc:
-            raise self._http_exception(status_code=500, detail=f"读取 MoviePilot 本地整理记录失败: {exc}") from exc
-
+        snapshot = self._cache_snapshot()
         entries: List[Dict[str, Any]] = []
         seen_paths = set()
-        for history in histories:
-            entry = owner._build_entry_from_history(history)
-            if not entry:
-                continue
-            if not owner._entry_path_is_valid(entry):
-                continue
-            path = entry.get("path")
-            if path in seen_paths:
-                continue
-            seen_paths.add(path)
-            entries.append(entry)
-            if len(entries) >= owner._cache_max_entries:
-                break
+        try:
+            for histories in self._history_pages():
+                for history in histories:
+                    entry = owner._build_entry_from_history(history)
+                    if not entry or not owner._entry_path_is_valid(entry):
+                        continue
+                    path = entry.get("path")
+                    if not path or path in seen_paths:
+                        continue
+                    seen_paths.add(path)
+                    entries.append(entry)
+        except Exception as exc:
+            raise self._http_exception(status_code=500, detail=f"读取 MoviePilot 本地整理记录失败: {exc}") from exc
 
         manual_entries: List[Dict[str, Any]] = []
         if getattr(owner, "_manual_strm_enabled", False) and self._manual_strm_catalog:
             manual_entries = self._manual_strm_catalog.scan(
                 getattr(owner, "_manual_strm_paths", []),
-                max_entries=owner._cache_max_entries,
             )
             previous_by_path = {
                 owner._normalize_text(item.get("path")): item
@@ -239,19 +289,8 @@ class LocalMediaCatalog:
                 for path, item in merged_by_path.items()
                 if path not in manual_paths
             )
-            entries = entries[: owner._cache_max_entries]
-
+        entries = self._store_entries(entries, snapshot=snapshot, complete=True)
         media_count = len({entry.get("media_key") for entry in entries if entry.get("media_key")})
-        owner._local_entries_cache = {
-            "loaded_at": now,
-            "entries": entries,
-            "media_count": media_count,
-            "persisted": False,
-        }
-        self._target_entry_cache.remember(entries)
-        self.reset_media_index_cache()
-        owner._invalidate_match_history_cache()
-        self.persist_local_cache()
         self._logger.info(
             "[SubtitleManualUpload] 本地资源缓存已刷新 entries=%s medias=%s manual_strm=%s",
             len(entries),
@@ -294,14 +333,13 @@ class LocalMediaCatalog:
         if hasattr(subtitle_inventory, "clear_subtitle_directory_cache"):
             subtitle_inventory.clear_subtitle_directory_cache()
         owner._invalidate_match_history_cache()
-        owner._local_entries_cache = {"loaded_at": None, "entries": [], "media_count": 0, "persisted": False}
         return self.load_local_entries(force=True)
 
     def apply_manual_strm_changes(self, paths: Iterable[str]) -> Dict[str, Any]:
         """增量应用 STRM/字幕文件变化，不重扫用户配置的全部目录。"""
         owner = self._owner
-        cache = owner._local_entries_cache or {}
-        entries = [dict(item) for item in cache.get("entries") or [] if isinstance(item, dict)]
+        snapshot = self._cache_snapshot()
+        entries = list(snapshot)
         changed_paths = {owner._normalize_text(path) for path in paths if owner._normalize_text(path)}
         affected_strm: set[str] = set()
         affected_dirs: set[Path] = set()
@@ -354,26 +392,14 @@ class LocalMediaCatalog:
                 if not path_obj.exists() or path_obj.suffix.lower() != ".strm":
                     removed.append(strm_path)
                     continue
-                scanned = self._manual_strm_catalog.scan([str(path_obj.parent)], max_entries=200)
-                match = next((item for item in scanned if owner._normalize_text(item.get("path")) == strm_path), None)
+                match = self._manual_strm_catalog.entry_for_path(path_obj, roots)
                 if match and self._entry_source_is_enabled(match):
                     entries.append(match)
                     changed_entries.append(match)
 
         for directory in affected_dirs:
             self.services_subtitle_inventory_invalidate(directory)
-        entries = self.filter_existing_local_entries(entries)
-        owner._local_entries_cache = {
-            "loaded_at": datetime.now(),
-            "entries": entries[: owner._cache_max_entries],
-            "media_count": len({entry.get("media_key") for entry in entries if entry.get("media_key")}),
-            "persisted": False,
-        }
-        self._target_entry_cache.clear()
-        self._target_entry_cache.remember(entries)
-        self.reset_media_index_cache()
-        owner._invalidate_match_history_cache()
-        self.persist_local_cache()
+        self._store_entries(entries, snapshot=snapshot)
         return {
             "changed_entries": changed_entries,
             "removed": [*removed, *sorted(removed_prefixes)],
@@ -416,7 +442,9 @@ class LocalMediaCatalog:
             "media_count": int(cache.get("media_count") or 0),
             "media_index_count": len(owner._media_index_cache or {}),
             "target_cache_count": self._target_entry_cache.count(),
-            "max_entries": owner._cache_max_entries,
+            "max_entries": None,
+            "history_page_size": HISTORY_PAGE_SIZE,
+            "complete": bool(cache.get("complete", False)),
         }
 
     def reset_media_index_cache(self) -> None:
@@ -590,6 +618,8 @@ class LocalMediaCatalog:
             for entry in source_entries:
                 target_id = owner._normalize_text(entry.get("id"))
                 if target_id not in missing_ids:
+                    continue
+                if not owner._entry_path_is_valid(entry):
                     continue
                 self._target_entry_cache.remember([entry])
                 result[target_id] = entry

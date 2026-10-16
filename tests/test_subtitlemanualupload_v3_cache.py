@@ -214,6 +214,9 @@ def test_manual_strm_incremental_changes_add_remove_and_invalidate_subtitles(tmp
         )
 
         class FakeManualCatalog:
+            def entry_for_path(self, path, roots):
+                return next((entry for entry in self.scan(roots) if entry["path"] == str(path)), None)
+
             def scan(self, roots, max_entries=5000):
                 if not strm.exists():
                     return []

@@ -5,7 +5,8 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .subtitle_language import is_chinese_language_suffix
-from .subtitle_formats import is_bitmap_subtitle
+from .subtitle_formats import is_bitmap_subtitle, is_text_subtitle
+from .subtitle_encoding import normalize_subtitle_encoding
 
 
 NormalizeText = Callable[[Any], str]
@@ -112,6 +113,8 @@ def build_write_operations(
         source_path = Path(upload_info["stored_path"])
         if not source_path.exists():
             raise http_exception(status_code=400, detail=f"上传缓存文件不存在: {upload_info.get('source_name')}")
+        if not source_path.is_file() or source_path.stat().st_size == 0:
+            raise http_exception(status_code=400, detail=f"上传字幕内容为空或不是文件: {upload_info.get('source_name')}")
 
         item_ext = normalize_text(item.get("ext")) or upload_info.get("ext") or ".srt"
         if is_bitmap_subtitle(source_path):
@@ -288,8 +291,13 @@ class SubtitleWriter:
         owner = self._owner
         fixed_dir = session_dir / "timeline_fixed"
         simplified_dir = session_dir / "simplified"
+        encoded_dir = session_dir / "utf8"
         for operation in operations:
             operation["write_source_path"] = operation["source_path"]
+            if is_text_subtitle(operation["source_path"]):
+                encoded_path = encoded_dir / f"{operation['upload_info'].get('upload_id')}{operation['source_path'].suffix}"
+                normalize_subtitle_encoding(operation["source_path"], encoded_path)
+                operation["write_source_path"] = encoded_path
             operation["timeline_result"] = None
             operation["simplified_result"] = {"enabled": False, "converted": False}
             if fix_timeline and is_bitmap_subtitle(operation["source_path"]):
@@ -314,7 +322,7 @@ class SubtitleWriter:
                 fixed_dir.mkdir(parents=True, exist_ok=True)
                 fixed_source_path = fixed_dir / f"{operation['upload_info'].get('upload_id')}{operation['source_path'].suffix}"
                 if operation["video_path"].suffix.lower() in owner._stream_exts:
-                    shutil.copyfile(operation["source_path"], fixed_source_path)
+                    shutil.copyfile(operation["write_source_path"], fixed_source_path)
                     operation["write_source_path"] = fixed_source_path
                     operation["timeline_result"] = self._timeline_result_type(
                         enabled=True,
@@ -342,7 +350,7 @@ class SubtitleWriter:
                     owner._set_timeline_task(operation, status="in_progress", message="智能调轴处理中")
                     timeline_result = owner._run_timeline_fix(
                         video_path=operation["video_path"],
-                        subtitle_path=operation["source_path"],
+                        subtitle_path=operation["write_source_path"],
                         output_path=fixed_source_path,
                         allow_risky_offset=allow_risky_offset,
                     )

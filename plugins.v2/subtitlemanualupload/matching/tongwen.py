@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from .subtitle_formats import is_bitmap_subtitle, pysubs2_format
+from .subtitle_encoding import decode_subtitle_bytes
 
 
 RESOURCE_DIR = Path(__file__).resolve().parents[1] / "resources" / "tongwen"
@@ -38,15 +39,6 @@ def traditional_to_simplified(text: str) -> str:
         if source in converted:
             converted = converted.replace(source, target)
     return converted.translate(char_table)
-
-
-def decode_subtitle_bytes(raw_bytes: bytes) -> Tuple[str, str]:
-    for encoding in ("utf-8-sig", "utf-16", "gb18030", "big5"):
-        try:
-            return raw_bytes.decode(encoding), encoding
-        except UnicodeDecodeError:
-            continue
-    return raw_bytes.decode("utf-8", errors="replace"), "utf-8"
 
 
 def convert_subtitle_file_to_simplified(source_path: Path, output_path: Path) -> bool:

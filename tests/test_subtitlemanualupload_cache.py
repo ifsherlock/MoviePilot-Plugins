@@ -1068,10 +1068,13 @@ def test_archive_subtitle_extractor_uses_dependency_service_for_7z(tmp_path):
 
         def list_rar_members(self, archive_path, tool_path):
             calls.append(("list", Path(archive_path).name, tool_path))
-            return ["nested/Movie.zh.ass", "notes.txt"]
+            return [
+                upload_session.ArchiveMember("nested/Movie.zh.ass", 0, 8),
+                upload_session.ArchiveMember("notes.txt", 1),
+            ]
 
         def read_rar_member(self, archive_path, member, tool_path):
-            calls.append(("read", member, tool_path))
+            calls.append(("read", member.name, tool_path))
             return b"subtitle"
 
     extractor = upload_session.ArchiveSubtitleExtractor(
@@ -1121,9 +1124,9 @@ def test_unar_archive_commands_use_lsar_json_and_stdout_extract(tmp_path):
             return json.dumps(
                 {
                     "lsarContents": [
-                        {"XADFileName": "nested/Movie.zh.ass"},
-                        {"XADFileName": "nested", "XADIsDirectory": True},
-                        {"XADFileName": "notes.txt"},
+                        {"XADFileName": "nested/Movie.zh.ass", "XADIndex": 0, "XADFileSize": 8},
+                        {"XADFileName": "nested", "XADIsDirectory": True, "XADIndex": 1},
+                        {"XADFileName": "notes.txt", "XADIndex": 2},
                     ]
                 }
             ).encode("utf-8")
@@ -1137,16 +1140,19 @@ def test_unar_archive_commands_use_lsar_json_and_stdout_extract(tmp_path):
     )
     member_bytes = upload_session.read_rar_member(
         archive_path,
-        "nested/Movie.zh.ass",
+        members[0],
         str(unar_path),
         run_command=run_command,
     )
 
-    assert members == ["nested/Movie.zh.ass", "notes.txt"]
+    assert members == [
+        upload_session.ArchiveMember("nested/Movie.zh.ass", 0, 8),
+        upload_session.ArchiveMember("notes.txt", 2),
+    ]
     assert member_bytes == b"subtitle"
     assert calls == [
-        (str(lsar_path), "-json", str(archive_path)),
-        (str(unar_path), "-quiet", "-no-directory", "-output-directory", "-", str(archive_path), "nested/Movie.zh.ass"),
+        (str(lsar_path), "-json", "-no-recursion", str(archive_path)),
+        (str(unar_path), "-quiet", "-no-directory", "-no-recursion", "-indexes", "-output-directory", "-", str(archive_path), "0"),
     ]
 
 
@@ -1480,9 +1486,9 @@ def test_7z_archive_extraction_with_unar_tool(tmp_path):
             output = json.dumps(
                 {
                     "lsarContents": [
-                        {"XADFileName": "说明.txt"},
-                        {"XADFileName": "Jack.Reacher.2012.chs&eng.ass"},
-                        {"XADFileName": "Jack.Reacher.2012.eng.ass"},
+                        {"XADFileName": "说明.txt", "XADIndex": 0},
+                        {"XADFileName": "Jack.Reacher.2012.chs&eng.ass", "XADIndex": 1},
+                        {"XADFileName": "Jack.Reacher.2012.eng.ass", "XADIndex": 2},
                     ]
                 }
             ).encode()
