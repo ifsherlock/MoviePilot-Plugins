@@ -25,7 +25,7 @@ from .core.models import (
     UserInterruptException,
 )
 from .ffmpeg import Ffmpeg
-from .monitoring.monitor_service import MonitorService
+from .monitoring.monitor_service import MonitorService, transfer_video_paths
 from .pipeline.asr_service import AsrService
 from .pipeline.generation_pipeline import GenerationPipeline
 from .pipeline.subtitle_output import SubtitleOutputService
@@ -57,7 +57,7 @@ class AutoSubv3(AutoSubv3CompatMixin, _PluginBase):
     # 主题色
     plugin_color = "#2C4F7E"
     # 插件版本
-    plugin_version = "3.5.61"
+    plugin_version = "3.5.62"
     # 插件作者
     plugin_author = "ifsherlock"
     # 作者主页
@@ -133,6 +133,7 @@ class AutoSubv3(AutoSubv3CompatMixin, _PluginBase):
                     pass
         self._tasks = self.load_tasks()
         self._enabled = config.get('enabled', False)
+        self._listen_transfer_event = config.get('listen_transfer_event', True)
         self._clear_history = config.get('clear_history', False)
         self._generation_mode = self._normalize_generation_mode(config.get("generation_mode"))
         # 监控路径配置
@@ -323,10 +324,18 @@ class AutoSubv3(AutoSubv3CompatMixin, _PluginBase):
             )
         return self._monitor_service
 
-    # 监听媒体入库事件，每个事件触发一次自动字幕任务
-    @eventmanager.register(EventType.TransferComplete)
     def _start_file_monitor(self):
         return self._get_monitor_service().start_file_monitor()
+
+    @eventmanager.register(EventType.TransferComplete)
+    def listen_transfer_complete(self, event):
+        if not self._enabled or not self._listen_transfer_event:
+            return
+        if self._generation_mode == GenerationMode.FALLBACK.value or self._subtitlemanualupload_auto_transfer_enabled():
+            return
+        for file_path in transfer_video_paths(event, settings.RMT_MEDIAEXT):
+            with self._lock:
+                self.add_task(file_path, TaskSource.EVENT, trigger=TriggerType.EVENT.value)
 
     @staticmethod
     def _subtitlemanualupload_auto_transfer_enabled() -> bool:

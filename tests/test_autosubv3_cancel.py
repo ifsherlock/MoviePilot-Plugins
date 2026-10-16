@@ -22,9 +22,9 @@ def isolate_plugin_module_stubs(monkeypatch):
     monkeypatch.setattr(sys.modules[__name__], "load_plugin_module", lambda: loader(monkeypatch))
 
 
-def load_plugin_module(monkeypatch):
+def load_plugin_module(monkeypatch, variant="v2"):
     root = Path(__file__).resolve().parents[1]
-    package_dir = root / "plugins.v2" / "autosubv3"
+    package_dir = root / f"plugins.{variant}" / "autosubv3"
 
     class HTTPException(Exception):
         def __init__(self, status_code=500, detail=""):
@@ -40,9 +40,12 @@ def load_plugin_module(monkeypatch):
             self._data[key] = value
 
     class FakeEventManager:
+        registered = []
+
         @staticmethod
         def register(_event_type):
             def decorator(func):
+                FakeEventManager.registered.append(func.__name__)
                 return func
 
             return decorator
@@ -54,7 +57,7 @@ def load_plugin_module(monkeypatch):
         debug=lambda *args, **kwargs: None,
     )
 
-    package_name = "autosubv3_cancel_testpkg"
+    package_name = f"autosubv3_cancel_{variant}_testpkg"
     translate_package = types.ModuleType(f"{package_name}.translate")
     translate_package.__path__ = [str(package_dir / "translate")]
     modules = {
@@ -73,6 +76,13 @@ def load_plugin_module(monkeypatch):
         "app.core.context": types.SimpleNamespace(MediaInfo=object),
         "app.core.event": types.SimpleNamespace(eventmanager=FakeEventManager(), Event=object),
         "app.core.plugin": types.SimpleNamespace(PluginManager=lambda: types.SimpleNamespace(running_plugins={})),
+        "app.sdk": types.ModuleType("app.sdk"),
+        "app.sdk.config": types.SimpleNamespace(settings=types.SimpleNamespace(RMT_MEDIAEXT={".mkv", ".mp4"})),
+        "app.sdk.events": types.SimpleNamespace(eventmanager=FakeEventManager()),
+        "app.sdk.logging": types.SimpleNamespace(logger=logger),
+        "app.sdk.media": types.SimpleNamespace(MediaInfo=object),
+        "app.sdk.plugins": types.SimpleNamespace(PluginManager=lambda: types.SimpleNamespace(running_plugins={})),
+        "app.sdk.utilities": types.SimpleNamespace(SystemUtils=object),
         "app.schemas": types.SimpleNamespace(TransferInfo=object),
         "app.schemas.types": types.SimpleNamespace(
             NotificationType=types.SimpleNamespace(Manual="Manual"),
@@ -424,7 +434,7 @@ def test_monitor_service_adds_new_media_task(tmp_path):
     assert len(plugin._tasks) == 1
     assert task.video_file == str(video)
     assert task.source == module.TaskSource.EVENT
-    assert task.trigger == module.TriggerType.MANUAL.value
+    assert task.trigger == module.TriggerType.EVENT.value
 
 
 def test_monitor_service_skips_new_media_when_subtitlemanualupload_takes_over(tmp_path):
@@ -1577,7 +1587,7 @@ def test_autosub_release_metadata_versions_match():
     readme = (root / "plugins.v2" / "autosubv3" / "README.md").read_text(encoding="utf-8")
     version = module.AutoSubv3.plugin_version
 
-    assert version == "3.5.61"
+    assert version == "3.5.62"
     assert package["AutoSubv3"]["version"] == version
     assert package_v2["AutoSubv3"]["version"] == version
     assert plugin_package["version"] == version

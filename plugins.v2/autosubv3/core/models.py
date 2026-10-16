@@ -37,6 +37,7 @@ class GenerationMode(Enum):
 
 class TriggerType(Enum):
     MANUAL = "manual"
+    EVENT = "event"
     SUBTITLE_FALLBACK = "subtitle_fallback"
 
 

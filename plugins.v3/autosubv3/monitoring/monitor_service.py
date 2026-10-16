@@ -8,6 +8,29 @@ from watchdog.observers import Observer
 from ..core.models import GenerationMode, OverwritePolicy, SourcePolicy, TaskSource, TriggerType
 
 
+def transfer_video_paths(event: Any, media_extensions: List[str]) -> List[str]:
+    event_data = getattr(event, "event_data", None)
+    transferinfo = event_data.get("transferinfo") if isinstance(event_data, dict) else getattr(event_data, "transferinfo", None)
+    paths = transferinfo.get("file_list_new") if isinstance(transferinfo, dict) else getattr(transferinfo, "file_list_new", None)
+    if not isinstance(paths, (list, tuple, set)):
+        return []
+    allowed = {str(extension).lower() for extension in media_extensions}
+    result = []
+    seen = set()
+    for path in paths:
+        if not isinstance(path, (str, os.PathLike)):
+            continue
+        path = str(path).strip()
+        if not path or os.path.splitext(path)[1].lower() not in allowed or not os.path.isfile(path):
+            continue
+        path = os.path.normpath(path)
+        key = os.path.normcase(path)
+        if key not in seen:
+            seen.add(key)
+            result.append(path)
+    return result
+
+
 class FileMonitorHandler(FileSystemEventHandler):
     """Watchdog handler that submits newly created media files to AutoSubv3."""
 
@@ -105,7 +128,7 @@ class MonitorService:
             self._plugin.add_task(
                 file_path,
                 TaskSource.EVENT,
-                trigger=TriggerType.MANUAL.value,
+                trigger=TriggerType.EVENT.value,
                 source_policy=SourcePolicy.AUTO.value,
                 overwrite_policy=OverwritePolicy.SKIP.value,
             )

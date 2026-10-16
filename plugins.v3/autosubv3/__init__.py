@@ -25,7 +25,7 @@ from .core.models import (
     UserInterruptException,
 )
 from .ffmpeg import Ffmpeg
-from .monitoring.monitor_service import MonitorService
+from .monitoring.monitor_service import MonitorService, transfer_video_paths
 from .pipeline.asr_service import AsrService
 from .pipeline.generation_pipeline import GenerationPipeline
 from .pipeline.subtitle_output import SubtitleOutputService
@@ -57,7 +57,7 @@ class AutoSubv3(AutoSubv3CompatMixin, _PluginBase):
     # 主题色
     plugin_color = "#2C4F7E"
     # 插件版本
-    plugin_version = "4.0.1"
+    plugin_version = "4.0.2"
     # 插件作者
     plugin_author = "ifsherlock"
     # 作者主页
@@ -329,22 +329,13 @@ class AutoSubv3(AutoSubv3CompatMixin, _PluginBase):
 
     @eventmanager.register(EventType.TransferComplete)
     def listen_transfer_complete(self, event):
-        if not self._listen_transfer_event or self._subtitlemanualupload_auto_transfer_enabled():
+        if not self._enabled or not self._listen_transfer_event:
             return
-        event_data = getattr(event, "event_data", None) or {}
-        transferinfo = (
-            event_data.get("transferinfo")
-            if isinstance(event_data, dict)
-            else getattr(event_data, "transferinfo", None)
-        )
-        file_list = getattr(transferinfo, "file_list_new", None)
-        if isinstance(transferinfo, dict):
-            file_list = transferinfo.get("file_list_new", file_list)
-        for file_path in file_list or []:
-            file_path = str(file_path or "").strip()
-            if os.path.splitext(file_path)[1].lower() not in settings.RMT_MEDIAEXT:
-                continue
-            self.add_task(file_path, TaskSource.EVENT, trigger=TriggerType.EVENT.value)
+        if self._generation_mode == GenerationMode.FALLBACK.value or self._subtitlemanualupload_auto_transfer_enabled():
+            return
+        for file_path in transfer_video_paths(event, settings.RMT_MEDIAEXT):
+            with self._lock:
+                self.add_task(file_path, TaskSource.EVENT, trigger=TriggerType.EVENT.value)
 
     @staticmethod
     def _subtitlemanualupload_auto_transfer_enabled() -> bool:

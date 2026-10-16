@@ -8,10 +8,10 @@ def normalize_text(value: Any) -> str:
 
 
 def enum_value(enum_cls: Any, value: Any, default: str) -> str:
-    text = str(value or "").strip()
+    text = str(getattr(value, "value", value) or "").strip()
     try:
         return enum_cls(text).value
-    except Exception:
+    except ValueError:
         return default
 
 
