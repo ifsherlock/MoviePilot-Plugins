@@ -1,5 +1,12 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { _ as _export_sfc } from './_plugin-vue_export-helper-BZVPKICR.js';
+
+const _export_sfc = (sfc, props) => {
+  const target = sfc.__vccOpts || sfc;
+  for (const [key, val] of props) {
+    target[key] = val;
+  }
+  return target;
+};
 
 const {createElementVNode:_createElementVNode,resolveComponent:_resolveComponent,createVNode:_createVNode,createTextVNode:_createTextVNode,withCtx:_withCtx,openBlock:_openBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,createElementBlock:_createElementBlock} = await importShared('vue');
 
@@ -23,6 +30,7 @@ const _sfc_main = {
     type: Object,
     default: () => ({}),
   },
+  saving: { type: Boolean, default: false },
 },
   emits: ['save', 'close'],
   setup(__props, { emit: __emit }) {
@@ -171,17 +179,6 @@ function normalizeList(value, allowed, fallback) {
   return result
 }
 
-function normalizeMultilinePaths(value) {
-  const raw = Array.isArray(value) ? value : String(value || '').split(/\r?\n/);
-  const paths = [];
-  raw.forEach(item => {
-    const path = String(item || '').trim().replace(/[\\/]+$/, '');
-    if (!path || paths.includes(path)) return
-    paths.push(path);
-  });
-  return paths.join('\n')
-}
-
 function normalizeConfig(input) {
   const assrtApiKey = String(input?.assrt_api_key || '').trim();
   const opensubtitlesApiKey = String(input?.opensubtitles_api_key || '').trim();
@@ -207,7 +204,9 @@ function normalizeConfig(input) {
     auto_transfer_subtitle_strategy: autoStrategy,
     trust_transfer_history_paths: Boolean(input?.trust_transfer_history_paths),
     manual_strm_enabled: Boolean(input?.manual_strm_enabled),
-    manual_strm_paths: normalizeMultilinePaths(input?.manual_strm_paths),
+    manual_strm_paths: Array.isArray(input?.manual_strm_paths)
+      ? input.manual_strm_paths.join('\n')
+      : String(input?.manual_strm_paths || ''),
     auto_search_on_manual_strm: Boolean(input?.auto_search_on_manual_strm),
     auto_multi_subtitle_mode: autoMultiSubtitleModes.some(item => item.value === input?.auto_multi_subtitle_mode)
       ? input.auto_multi_subtitle_mode
@@ -278,7 +277,10 @@ return (_ctx, _cache) => {
       color: "transparent"
     }, {
       default: _withCtx(() => [
-        _cache[35] || (_cache[35] = _createElementVNode("div", { class: "text-h6 ms-3" }, "海拉鲁字幕大师配置", -1)),
+        _cache[35] || (_cache[35] = _createElementVNode("div", {
+          class: "text-subtitle-1 ms-3 config-toolbar-title",
+          title: "海拉鲁字幕大师配置"
+        }, "海拉鲁字幕大师配置", -1)),
         _createVNode(_component_VSpacer),
         _createVNode(_component_VBtn, {
           href: "https://github.com/ifsherlock/MoviePilot-Plugins/blob/main/docs/SubtitleManualUpload%E5%8A%9F%E8%83%BD%E4%BD%BF%E7%94%A8%E6%95%99%E5%AD%A6.md",
@@ -298,13 +300,17 @@ return (_ctx, _cache) => {
           icon: "mdi-content-save",
           variant: "text",
           color: "primary",
+          loading: props.saving,
+          "aria-label": "保存配置",
           onClick: saveConfig
-        }),
+        }, null, 8, ["loading"]),
         _createVNode(_component_VBtn, {
           icon: "mdi-close",
           variant: "text",
+          disabled: props.saving,
+          "aria-label": "关闭配置",
           onClick: _cache[0] || (_cache[0] = $event => (emit('close')))
-        })
+        }, null, 8, ["disabled"])
       ]),
       _: 1
     }),
@@ -707,6 +713,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-aca92036"]]);
+const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-1a3886b3"]]);
 
-export { Config as default };
+export { _export_sfc as _, Config as default };

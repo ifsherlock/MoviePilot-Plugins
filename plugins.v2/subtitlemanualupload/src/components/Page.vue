@@ -16,9 +16,13 @@ const props = defineProps({
     type: String,
     default: 'main',
   },
+  show_switch: {
+    type: Boolean,
+    default: true,
+  },
 })
 
-const emit = defineEmits(['close'])
+const emit = defineEmits(['close', 'switch'])
 const pageRef = ref(null)
 </script>
 
@@ -27,6 +31,17 @@ const pageRef = ref(null)
     <VToolbar density="comfortable" class="sticky-toolbar">
       <div class="text-h6 ms-3">海拉鲁字幕大师</div>
       <VSpacer />
+      <VTooltip v-if="props.show_switch" text="插件设置" location="bottom">
+        <template #activator="{ props: tooltipProps }">
+          <VBtn
+            v-bind="tooltipProps"
+            icon="mdi-cog-outline"
+            variant="text"
+            aria-label="插件设置"
+            @click="emit('switch')"
+          />
+        </template>
+      </VTooltip>
       <VBtn
         icon="mdi-refresh"
         variant="text"

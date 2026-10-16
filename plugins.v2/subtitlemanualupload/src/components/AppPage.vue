@@ -17,6 +17,7 @@ import MediaGrid from './MediaGrid.vue'
 import MatchHistoryPanel from './MatchHistoryPanel.vue'
 import MediaSearchPanel from './MediaSearchPanel.vue'
 import OnlineSubtitleDialog from './OnlineSubtitleDialog.vue'
+import SettingsDialog from './SettingsDialog.vue'
 import TargetDetailPanel from './TargetDetailPanel.vue'
 import UploadDialog from './UploadDialog.vue'
 import MobileSubtitlePage from '../mobile/MobileSubtitlePage.vue'
@@ -75,6 +76,12 @@ const pluginApi = computed(() => createSubtitleManualUploadApi(props.api, plugin
 const clearing = ref(false)
 const message = ref('')
 const error = ref('')
+const settingsOpen = ref(false)
+
+function handleSettingsSaved() {
+  settingsOpen.value = false
+  loadStatus()
+}
 
 const {
   resolving,
@@ -861,6 +868,29 @@ defineExpose({
 </script>
 
 <template>
+  <VToolbar v-if="!props.hideTitle" density="comfortable" color="transparent">
+    <div class="text-subtitle-1 ms-3">海拉鲁字幕大师</div>
+    <VSpacer />
+    <VTooltip text="插件设置" location="bottom">
+      <template #activator="{ props: tooltipProps }">
+        <VBtn
+          v-bind="tooltipProps"
+          icon="mdi-cog-outline"
+          variant="text"
+          aria-label="插件设置"
+          @click="settingsOpen = true"
+        />
+      </template>
+    </VTooltip>
+  </VToolbar>
+  <SettingsDialog
+    v-if="settingsOpen"
+    :api="props.api"
+    :plugin-id="props.pluginId"
+    @close="settingsOpen = false"
+    @saved="handleSettingsSaved"
+  />
+
   <MobileSubtitlePage
     v-if="isMobileViewport"
     :view="mobileView"

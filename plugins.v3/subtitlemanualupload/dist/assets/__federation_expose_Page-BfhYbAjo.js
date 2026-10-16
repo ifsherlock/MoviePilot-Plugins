@@ -1,8 +1,8 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { _ as _export_sfc } from './_plugin-vue_export-helper-BZVPKICR.js';
-import AppPage from './__federation_expose_AppPage-tGikW5BQ.js';
+import { _ as _export_sfc } from './__federation_expose_Config-DAkMhfiB.js';
+import AppPage from './__federation_expose_AppPage-CX9h5S68.js';
 
-const {createElementVNode:_createElementVNode,resolveComponent:_resolveComponent,createVNode:_createVNode,withCtx:_withCtx,openBlock:_openBlock,createElementBlock:_createElementBlock} = await importShared('vue');
+const {createElementVNode:_createElementVNode,resolveComponent:_resolveComponent,createVNode:_createVNode,mergeProps:_mergeProps,withCtx:_withCtx,openBlock:_openBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,createElementBlock:_createElementBlock} = await importShared('vue');
 
 
 const _hoisted_1 = { class: "subtitlemanualupload-page-wrapper" };
@@ -25,8 +25,12 @@ const _sfc_main = {
     type: String,
     default: 'main',
   },
+  show_switch: {
+    type: Boolean,
+    default: true,
+  },
 },
-  emits: ['close'],
+  emits: ['close', 'switch'],
   setup(__props, { emit: __emit }) {
 
 const props = __props;
@@ -37,6 +41,7 @@ const pageRef = ref(null);
 return (_ctx, _cache) => {
   const _component_VSpacer = _resolveComponent("VSpacer");
   const _component_VBtn = _resolveComponent("VBtn");
+  const _component_VTooltip = _resolveComponent("VTooltip");
   const _component_VToolbar = _resolveComponent("VToolbar");
   const _component_VDivider = _resolveComponent("VDivider");
 
@@ -46,18 +51,35 @@ return (_ctx, _cache) => {
       class: "sticky-toolbar"
     }, {
       default: _withCtx(() => [
-        _cache[2] || (_cache[2] = _createElementVNode("div", { class: "text-h6 ms-3" }, "海拉鲁字幕大师", -1)),
+        _cache[3] || (_cache[3] = _createElementVNode("div", { class: "text-h6 ms-3" }, "海拉鲁字幕大师", -1)),
         _createVNode(_component_VSpacer),
+        (props.show_switch)
+          ? (_openBlock(), _createBlock(_component_VTooltip, {
+              key: 0,
+              text: "插件设置",
+              location: "bottom"
+            }, {
+              activator: _withCtx(({ props: tooltipProps }) => [
+                _createVNode(_component_VBtn, _mergeProps(tooltipProps, {
+                  icon: "mdi-cog-outline",
+                  variant: "text",
+                  "aria-label": "插件设置",
+                  onClick: _cache[0] || (_cache[0] = $event => (emit('switch')))
+                }), null, 16)
+              ]),
+              _: 1
+            }))
+          : _createCommentVNode("", true),
         _createVNode(_component_VBtn, {
           icon: "mdi-refresh",
           variant: "text",
           loading: pageRef.value?.loading || pageRef.value?.refreshing,
-          onClick: _cache[0] || (_cache[0] = $event => (pageRef.value?.loadStatus()))
+          onClick: _cache[1] || (_cache[1] = $event => (pageRef.value?.loadStatus()))
         }, null, 8, ["loading"]),
         _createVNode(_component_VBtn, {
           icon: "mdi-close",
           variant: "text",
-          onClick: _cache[1] || (_cache[1] = $event => (emit('close')))
+          onClick: _cache[2] || (_cache[2] = $event => (emit('close')))
         })
       ]),
       _: 1
@@ -76,6 +98,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-5514dc6d"]]);
+const Page = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-16b4ebf1"]]);
 
 export { Page as default };

@@ -25,14 +25,14 @@ def test_v3_plugins_keep_stable_identity_and_versions():
     assert _class_name_and_version(ROOT / "plugins.v3/autosubv3/__init__.py") == ("AutoSubv3", "4.0.2")
     assert _class_name_and_version(ROOT / "plugins.v3/subtitlemanualupload/__init__.py") == (
         "SubtitleManualUpload",
-        "1.2.10",
+        "1.2.11",
     )
 
 
 def test_v3_index_and_v2_opt_out_are_consistent():
     package_v3 = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
     package_v2 = json.loads((ROOT / "package.v2.json").read_text(encoding="utf-8"))
-    for plugin_id, version in (("AutoSubv3", "4.0.2"), ("SubtitleManualUpload", "1.2.10")):
+    for plugin_id, version in (("AutoSubv3", "4.0.2"), ("SubtitleManualUpload", "1.2.11")):
         assert package_v3[plugin_id]["version"] == version
         assert package_v3[plugin_id]["system_version"] == ">=3.0.0"
         assert f"v{version}" in package_v3[plugin_id]["history"]
