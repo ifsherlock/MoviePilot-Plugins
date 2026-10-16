@@ -6,6 +6,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ..config.config_schema import normalize_auto_multi_subtitle_mode
 from ..matching.subtitle_language import auto_subtitle_sort_key, is_chinese_language_suffix
+from ..matching.subtitle_formats import is_bitmap_subtitle
 from ..catalog.target_resolver import (
     auto_fill_missing_targets as fill_missing_target_ids,
     suggest_target as suggest_target_id,
@@ -143,14 +144,20 @@ class AutoTransferWriteStrategy:
             for target_id in target_entry_map
             if target_id not in used_targets
         ]
-        chinese_items = [item for item in chosen_items if is_chinese_language_suffix(item.get("language_suffix"))]
-        foreign_items = [item for item in chosen_items if not is_chinese_language_suffix(item.get("language_suffix"))]
+        direct_items = []
+        foreign_items = []
+        for item in chosen_items:
+            source_path = upload_map[item["upload_id"]]["stored_path"]
+            if is_chinese_language_suffix(item.get("language_suffix")) or is_bitmap_subtitle(source_path):
+                direct_items.append(item)
+            else:
+                foreign_items.append(item)
 
         written: List[Dict[str, Any]] = []
         simplified_count = 0
         operations: List[Dict[str, Any]] = []
-        if chinese_items:
-            operations = owner._subtitle_writer().build_write_operations(chinese_items, upload_map, target_entry_map)
+        if direct_items:
+            operations = owner._subtitle_writer().build_write_operations(direct_items, upload_map, target_entry_map)
             written, _, simplified_count = self._collaborators.write_operations_to_disk(
                 session_dir=session_dir,
                 operations=operations,

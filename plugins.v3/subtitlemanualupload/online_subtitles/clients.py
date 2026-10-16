@@ -317,7 +317,7 @@ def _decode_bytes(raw: bytes, charset: Optional[str]) -> str:
 
 
 def _looks_like_html_content(content: bytes, filename: str = "") -> bool:
-    if Path(filename or "").suffix.lower() in {".zip", ".rar", ".7z", ".srt", ".ass", ".ssa", ".vtt", ".sub"}:
+    if Path(filename or "").suffix.lower() in {".zip", ".rar", ".7z", ".srt", ".ass", ".ssa", ".vtt", ".sub", ".sup", ".idx", ".smi", ".sami", ".ttml", ".dfxp"}:
         return False
     head = _decode_bytes((content or b"")[:500], None).lstrip().lower()
     return head.startswith("<!doctype html") or head.startswith("<html") or "<body" in head

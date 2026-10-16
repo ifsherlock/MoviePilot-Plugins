@@ -3,6 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Callable
 
+from ..matching.subtitle_formats import pysubs2_format
+from ..matching.tongwen import rewrite_sami_subtitle
+
 
 def save_adjusted_subtitle(
     pysubs2: Any,
@@ -13,6 +16,14 @@ def save_adjusted_subtitle(
     *,
     load_subtitle_file: Callable[[Any, Path], Any],
 ) -> None:
+    if source_path.suffix.lower() in {".smi", ".sami"}:
+        offset_ms = int(round(offset_seconds * 1000))
+        rewrite_sami_subtitle(
+            source_path,
+            output_path,
+            time_transform=lambda value: max(0, int(round(value * scale_factor + offset_ms))),
+        )
+        return
     subtitles = load_subtitle_file(pysubs2, source_path)
     offset_ms = int(round(offset_seconds * 1000))
     for event in subtitles.events:
@@ -26,4 +37,7 @@ def save_adjusted_subtitle(
             new_end = new_start + scaled_duration
         event.start = new_start
         event.end = new_end
-    subtitles.save(str(output_path))
+    if output_path.suffix.lower() in {".dfxp", ".webvtt"}:
+        subtitles.save(str(output_path), format_=pysubs2_format(output_path))
+    else:
+        subtitles.save(str(output_path))

@@ -1,5 +1,5 @@
 import { importShared } from './__federation_fn_import-JrT3xvdd.js';
-import { _ as _export_sfc } from './_plugin-vue_export-helper-CAfCMqyq.js';
+import { _ as _export_sfc } from './_plugin-vue_export-helper-BZVPKICR.js';
 
 const {createElementVNode:_createElementVNode,resolveComponent:_resolveComponent,createVNode:_createVNode,createTextVNode:_createTextVNode,withCtx:_withCtx,openBlock:_openBlock,createBlock:_createBlock,createCommentVNode:_createCommentVNode,createElementBlock:_createElementBlock} = await importShared('vue');
 
@@ -109,6 +109,12 @@ const autoFormatItems = [
   { title: 'WebVTT', value: '.webvtt' },
   { title: 'SBV', value: '.sbv' },
   { title: 'SUB', value: '.sub' },
+  { title: 'SUP', value: '.sup' },
+  { title: 'VobSub (IDX)', value: '.idx' },
+  { title: 'SMI', value: '.smi' },
+  { title: 'SAMI', value: '.sami' },
+  { title: 'TTML', value: '.ttml' },
+  { title: 'DFXP', value: '.dfxp' },
 ];
 
 const timelineVadItems = [
@@ -701,6 +707,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-45bab805"]]);
+const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-aca92036"]]);
 
 export { Config as default };

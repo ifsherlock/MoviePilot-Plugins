@@ -109,6 +109,12 @@ const autoFormatItems = [
   { title: 'WebVTT', value: '.webvtt' },
   { title: 'SBV', value: '.sbv' },
   { title: 'SUB', value: '.sub' },
+  { title: 'SUP', value: '.sup' },
+  { title: 'VobSub (IDX)', value: '.idx' },
+  { title: 'SMI', value: '.smi' },
+  { title: 'SAMI', value: '.sami' },
+  { title: 'TTML', value: '.ttml' },
+  { title: 'DFXP', value: '.dfxp' },
 ];
 
 const timelineVadItems = [
@@ -692,6 +698,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-52b076cb"]]);
+const Config = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-63e71de6"]]);
 
 export { Config as default };

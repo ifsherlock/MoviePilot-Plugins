@@ -15,14 +15,14 @@ def load_timeline_module():
     package_dir = root / "plugins.v2" / "subtitlemanualupload" / "timeline"
     module_path = package_dir / "timeline_fixer.py"
     package_name = "subtitlemanualupload_timeline_fixer_testpkg"
-    module_name = f"{package_name}.timeline_fixer"
+    module_name = f"{package_name}.timeline.timeline_fixer"
     for name in list(sys.modules):
         if name == package_name or name.startswith(f"{package_name}."):
             sys.modules.pop(name, None)
     package = importlib.util.module_from_spec(
         importlib.util.spec_from_loader(package_name, loader=None, is_package=True)
     )
-    package.__path__ = [str(package_dir)]
+    package.__path__ = [str(package_dir.parent)]
     sys.modules[package_name] = package
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     module = importlib.util.module_from_spec(spec)

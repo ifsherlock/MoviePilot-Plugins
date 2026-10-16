@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
 import threading
+import types
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -13,7 +15,11 @@ HISTORY_PATH = ROOT / "plugins.v3/subtitlemanualupload/matching/subtitle_history
 
 
 def load_history_class():
-    spec = importlib.util.spec_from_file_location("subtitlemanualupload_v3_history_test", HISTORY_PATH)
+    package_name = "subtitlemanualupload_v3_history_test"
+    package = types.ModuleType(package_name)
+    package.__path__ = [str(HISTORY_PATH.parent)]
+    sys.modules[package_name] = package
+    spec = importlib.util.spec_from_file_location(f"{package_name}.subtitle_history", HISTORY_PATH)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module.SubtitleHistory, module.MATCH_HISTORY_CACHE_VERSION

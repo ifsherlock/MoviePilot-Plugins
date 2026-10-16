@@ -7,6 +7,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+from .subtitle_formats import is_bitmap_subtitle
+
 MATCH_HISTORY_CACHE_VERSION = 3
 
 
@@ -477,6 +479,9 @@ class SubtitleHistory:
                 seen.add(key)
                 if not subtitle_path.is_file():
                     skipped.append({"target_id": target_id, "subtitle_path": str(subtitle_path), "reason": "外挂字幕不存在"})
+                    continue
+                if is_bitmap_subtitle(subtitle_path):
+                    skipped.append({"target_id": target_id, "subtitle_path": str(subtitle_path), "reason": "图片字幕不支持文本调轴"})
                     continue
                 try:
                     raw_bytes = subtitle_path.read_bytes()

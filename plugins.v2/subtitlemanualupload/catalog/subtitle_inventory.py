@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from ..matching.subtitle_formats import is_bitmap_subtitle
+
 import json
 import re
 import time
@@ -192,6 +194,7 @@ class SubtitleInventory:
             "path": str(sub_file),
             "relative_path": str(sub_file).replace("\\", "/"),
             "ext": sub_file.suffix.lower(),
+            "is_bitmap": is_bitmap_subtitle(sub_file, raw_bytes),
             "language_suffix": language_profile.get("suffix", ""),
             "language_category": language_profile.get("category", ""),
             "backup_path": str(backup_path) if backup_available else "",

@@ -229,8 +229,8 @@ export function useUploadPreview({
     item.selected = Boolean(checked)
   }
 
-  function applyBatchLanguageSuffix() {
-    const suffix = batchLanguageSuffix.value.trim()
+  function applyBatchLanguageSuffix(value = batchLanguageSuffix.value) {
+    const suffix = String(value || '').trim()
     if (!suffix || !preview.value?.items?.length) return
     selectedPreviewItems.value.forEach(item => {
       item.language_suffix = suffix

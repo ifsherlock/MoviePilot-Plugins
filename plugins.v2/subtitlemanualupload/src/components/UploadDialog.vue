@@ -47,9 +47,21 @@ const emit = defineEmits([
 ])
 
 const fileInputRef = ref(null)
+const languageSuffixPresets = [
+  'chi', 'chs', 'cht', 'eng', 'jp', 'kr',
+  'chi&eng', 'chs&eng', 'cht&eng',
+  'chi&jp', 'chs&jp', 'cht&jp',
+  'chi&kr', 'cht&kr', 'eng&jp', 'und',
+]
 
 function openFileDialog() {
   fileInputRef.value?.click()
+}
+
+function updateBatchLanguageSuffix(value) {
+  const suffix = String(value || '').trim()
+  emit('update:batchLanguageSuffix', suffix)
+  if (suffix) emit('apply-batch-language-suffix', suffix)
 }
 
 function onPickFiles(event) {
@@ -130,7 +142,7 @@ function onPickFiles(event) {
           @dragover="$emit('dragover', $event)"
           @dragleave="$emit('dragleave', $event)"
         >
-          <div class="dropzone-icon">SRT / ASS / ZIP / RAR / 7Z</div>
+          <div class="dropzone-icon">SRT / ASS / SUP / ZIP / RAR / 7Z</div>
           <div class="dropzone-title">把字幕或压缩包拖到这里</div>
           <div class="dropzone-text">
             支持字幕文件、ZIP、RAR、7Z；RAR / 7Z 默认使用容器内 unar 解压。
@@ -149,7 +161,7 @@ function onPickFiles(event) {
             class="hidden-input"
             type="file"
             multiple
-            accept=".srt,.ass,.ssa,.sbv,.sub,.vtt,.webvtt,.zip,.rar,.7z"
+            accept=".srt,.ass,.ssa,.sbv,.sub,.sup,.idx,.vtt,.webvtt,.smi,.sami,.ttml,.dfxp,.zip,.rar,.7z"
             @change="onPickFiles"
           >
         </div>
@@ -182,14 +194,16 @@ function onPickFiles(event) {
               <h3>确认集数与输出文件名</h3>
             </div>
             <div class="batch-language">
-              <VTextField
+              <VCombobox
                 :model-value="batchLanguageSuffix"
+                :items="languageSuffixPresets"
+                :return-object="false"
                 label="批量语言后缀"
-                placeholder="chi / eng / jpn"
+                clearable
                 variant="outlined"
                 density="comfortable"
                 hide-details
-                @update:model-value="$emit('update:batchLanguageSuffix', $event)"
+                @update:model-value="updateBatchLanguageSuffix"
                 @keyup.enter="$emit('apply-batch-language-suffix')"
               />
               <VBtn

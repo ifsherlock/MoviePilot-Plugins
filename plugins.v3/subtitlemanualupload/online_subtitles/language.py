@@ -91,7 +91,7 @@ def _language_priority(item: Any) -> int:
 
 def _guess_subtitle_format(value: str) -> str:
     formats = []
-    for ext in [".ass", ".srt", ".ssa", ".vtt", ".sub", ".zip", ".rar"]:
+    for ext in [".ass", ".srt", ".ssa", ".vtt", ".sub", ".sup", ".idx", ".smi", ".sami", ".ttml", ".dfxp", ".zip", ".rar"]:
         if ext in (value or "").lower():
             formats.append(ext.removeprefix(".").upper())
     return " / ".join(formats)

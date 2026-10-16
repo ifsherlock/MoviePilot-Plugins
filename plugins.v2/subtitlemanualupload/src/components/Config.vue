@@ -91,6 +91,12 @@ const autoFormatItems = [
   { title: 'WebVTT', value: '.webvtt' },
   { title: 'SBV', value: '.sbv' },
   { title: 'SUB', value: '.sub' },
+  { title: 'SUP', value: '.sup' },
+  { title: 'VobSub (IDX)', value: '.idx' },
+  { title: 'SMI', value: '.smi' },
+  { title: 'SAMI', value: '.sami' },
+  { title: 'TTML', value: '.ttml' },
+  { title: 'DFXP', value: '.dfxp' },
 ]
 
 const timelineVadItems = [

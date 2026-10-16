@@ -332,6 +332,7 @@ def test_subtitle_inventory_is_reexported_from_target_resolver(tmp_path):
             "path": str(subtitle),
             "relative_path": str(subtitle).replace("\\", "/"),
             "ext": ".srt",
+            "is_bitmap": False,
             "language_suffix": "chi",
             "language_category": "chinese",
             "backup_path": str(backup),
@@ -1089,6 +1090,7 @@ def test_archive_subtitle_extractor_uses_dependency_service_for_7z(tmp_path):
             "upload_id": "archive-upload-id",
             "source_name": "Movie.zh.ass",
             "archive_name": "sample.7z",
+            "archive_member": "nested/Movie.zh.ass",
             "stored_path": str(tmp_path / "archive-upload-id.ass"),
             "ext": ".ass",
         }

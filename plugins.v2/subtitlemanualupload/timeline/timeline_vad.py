@@ -7,6 +7,9 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
+from ..matching.subtitle_formats import is_bitmap_subtitle, pysubs2_format
+from ..matching.tongwen import load_sami_subtitles, load_ttml_subtitles
+
 
 @dataclass(frozen=True)
 class TimelineVadConfig:
@@ -432,6 +435,15 @@ def load_subtitle_events(pysubs2: Any, subtitle_path: Path) -> List[Tuple[int, i
 
 
 def load_subtitle_file(pysubs2: Any, subtitle_path: Path) -> Any:
+    if is_bitmap_subtitle(subtitle_path):
+        raise ValueError("图片字幕不能作为文字字幕解析或调轴")
+    if subtitle_path.suffix.lower() in {".smi", ".sami"}:
+        return load_sami_subtitles(pysubs2, subtitle_path.read_bytes())
+    if subtitle_path.suffix.lower() in {".ttml", ".dfxp"}:
+        return load_ttml_subtitles(pysubs2, subtitle_path.read_bytes())
+    format_kwargs = {}
+    if subtitle_path.suffix.lower() == ".webvtt":
+        format_kwargs["format_"] = pysubs2_format(subtitle_path)
     errors: List[str] = []
     for kwargs in (
         {},
@@ -441,7 +453,7 @@ def load_subtitle_file(pysubs2: Any, subtitle_path: Path) -> Any:
         {"encoding": "big5"},
     ):
         try:
-            return pysubs2.load(str(subtitle_path), **kwargs)
+            return pysubs2.load(str(subtitle_path), **format_kwargs, **kwargs)
         except Exception as exc:
             errors.append(str(exc))
     raise RuntimeError(f"subtitle parse failed: {errors[-1] if errors else subtitle_path}")

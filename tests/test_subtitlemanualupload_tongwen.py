@@ -1,13 +1,19 @@
 from __future__ import annotations
 
 import importlib.util
+import sys
+import types
 from pathlib import Path
 
 
 def load_tongwen_module():
     root = Path(__file__).resolve().parents[1]
     module_path = root / "plugins.v2" / "subtitlemanualupload" / "matching" / "tongwen.py"
-    spec = importlib.util.spec_from_file_location("subtitlemanualupload_tongwen", module_path)
+    package_name = "subtitlemanualupload_tongwen_testpkg"
+    package = types.ModuleType(package_name)
+    package.__path__ = [str(module_path.parents[1])]
+    sys.modules[package_name] = package
+    spec = importlib.util.spec_from_file_location(f"{package_name}.matching.tongwen", module_path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module

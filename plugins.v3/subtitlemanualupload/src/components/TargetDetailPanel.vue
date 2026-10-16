@@ -344,7 +344,8 @@ defineExpose({
                       variant="tonal"
                       color="warning"
                       :loading="timelineFixing"
-                      :disabled="timelineFixing || !timelineAvailable || isTargetActionDisabled(target) || isStreamTarget(target)"
+                      :disabled="timelineFixing || !timelineAvailable || isTargetActionDisabled(target) || isStreamTarget(target) || subtitle.is_bitmap"
+                      :title="subtitle.is_bitmap ? '图片字幕不支持文本调轴' : '调轴'"
                       @click.stop="$emit('fix-history-subtitle-timeline', target, subtitle)"
                     >
                       调轴

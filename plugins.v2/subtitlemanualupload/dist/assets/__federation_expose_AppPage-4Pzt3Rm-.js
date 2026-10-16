@@ -2893,8 +2893,8 @@ function useUploadPreview({
     item.selected = Boolean(checked);
   }
 
-  function applyBatchLanguageSuffix() {
-    const suffix = batchLanguageSuffix.value.trim();
+  function applyBatchLanguageSuffix(value = batchLanguageSuffix.value) {
+    const suffix = String(value || '').trim();
     if (!suffix || !preview.value?.items?.length) return
     selectedPreviewItems.value.forEach(item => {
       item.language_suffix = suffix;
@@ -3264,7 +3264,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const AiTaskDialog = /*#__PURE__*/_export_sfc(_sfc_main$d, [['__scopeId',"data-v-1794d529"]]);
+const AiTaskDialog = /*#__PURE__*/_export_sfc(_sfc_main$d, [['__scopeId',"data-v-0baf10bc"]]);
 
 const {createElementVNode:_createElementVNode$c,toDisplayString:_toDisplayString$a,createTextVNode:_createTextVNode$9,resolveComponent:_resolveComponent$c,withCtx:_withCtx$9,openBlock:_openBlock$c,createBlock:_createBlock$c,createCommentVNode:_createCommentVNode$c,createVNode:_createVNode$b,renderList:_renderList$8,Fragment:_Fragment$a,createElementBlock:_createElementBlock$c,mergeProps:_mergeProps$4,normalizeClass:_normalizeClass$9} = await importShared('vue');
 
@@ -3458,7 +3458,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const AutoTransferQueueDialog = /*#__PURE__*/_export_sfc(_sfc_main$c, [['__scopeId',"data-v-919aa78a"]]);
+const AutoTransferQueueDialog = /*#__PURE__*/_export_sfc(_sfc_main$c, [['__scopeId',"data-v-774ea9a9"]]);
 
 const {renderList:_renderList$7,Fragment:_Fragment$9,openBlock:_openBlock$b,createElementBlock:_createElementBlock$b,createCommentVNode:_createCommentVNode$b,toDisplayString:_toDisplayString$9,createElementVNode:_createElementVNode$b,resolveComponent:_resolveComponent$b,createVNode:_createVNode$a,createTextVNode:_createTextVNode$8,withCtx:_withCtx$8,createBlock:_createBlock$b} = await importShared('vue');
 
@@ -4007,7 +4007,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const MatchHistoryPanel = /*#__PURE__*/_export_sfc(_sfc_main$a, [['__scopeId',"data-v-7c0ba8cd"]]);
+const MatchHistoryPanel = /*#__PURE__*/_export_sfc(_sfc_main$a, [['__scopeId',"data-v-8b334c83"]]);
 
 const {toDisplayString:_toDisplayString$7,createElementVNode:_createElementVNode$9,openBlock:_openBlock$9,createElementBlock:_createElementBlock$9,createCommentVNode:_createCommentVNode$9,createTextVNode:_createTextVNode$6,resolveComponent:_resolveComponent$9,withCtx:_withCtx$6,createBlock:_createBlock$9,createVNode:_createVNode$8,withKeys:_withKeys$2} = await importShared('vue');
 
@@ -4156,7 +4156,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const MediaSearchPanel = /*#__PURE__*/_export_sfc(_sfc_main$9, [['__scopeId',"data-v-929e8c55"]]);
+const MediaSearchPanel = /*#__PURE__*/_export_sfc(_sfc_main$9, [['__scopeId',"data-v-6d259495"]]);
 
 const {resolveComponent:_resolveComponent$8,openBlock:_openBlock$8,createBlock:_createBlock$8,createCommentVNode:_createCommentVNode$8,toDisplayString:_toDisplayString$6,createElementVNode:_createElementVNode$8,createTextVNode:_createTextVNode$5,withCtx:_withCtx$5,createVNode:_createVNode$7,normalizeClass:_normalizeClass$7,withKeys:_withKeys$1,renderList:_renderList$5,Fragment:_Fragment$7,createElementBlock:_createElementBlock$8} = await importShared('vue');
 
@@ -4682,7 +4682,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const OnlineSubtitleDialog = /*#__PURE__*/_export_sfc(_sfc_main$8, [['__scopeId',"data-v-962be9c1"]]);
+const OnlineSubtitleDialog = /*#__PURE__*/_export_sfc(_sfc_main$8, [['__scopeId',"data-v-638da690"]]);
 
 const {resolveComponent:_resolveComponent$7,openBlock:_openBlock$7,createBlock:_createBlock$7,createCommentVNode:_createCommentVNode$7,createElementVNode:_createElementVNode$7,toDisplayString:_toDisplayString$5,normalizeClass:_normalizeClass$6,createElementBlock:_createElementBlock$7} = await importShared('vue');
 
@@ -5247,14 +5247,15 @@ return (_ctx, _cache) => {
                                           variant: "tonal",
                                           color: "warning",
                                           loading: __props.timelineFixing,
-                                          disabled: __props.timelineFixing || !__props.timelineAvailable || __props.isTargetActionDisabled(target) || __props.isStreamTarget(target),
+                                          disabled: __props.timelineFixing || !__props.timelineAvailable || __props.isTargetActionDisabled(target) || __props.isStreamTarget(target) || subtitle.is_bitmap,
+                                          title: subtitle.is_bitmap ? '图片字幕不支持文本调轴' : '调轴',
                                           onClick: _withModifiers$1($event => (_ctx.$emit('fix-history-subtitle-timeline', target, subtitle)), ["stop"])
                                         }, {
                                           default: _withCtx$4(() => [...(_cache[19] || (_cache[19] = [
                                             _createTextVNode$4(" 调轴 ", -1)
                                           ]))]),
                                           _: 1
-                                        }, 8, ["loading", "disabled", "onClick"]),
+                                        }, 8, ["loading", "disabled", "title", "onClick"]),
                                         _createVNode$6(_component_VBtn, {
                                           size: "small",
                                           variant: "tonal",
@@ -5330,7 +5331,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const TargetDetailPanel = /*#__PURE__*/_export_sfc(_sfc_main$6, [['__scopeId',"data-v-9af698aa"]]);
+const TargetDetailPanel = /*#__PURE__*/_export_sfc(_sfc_main$6, [['__scopeId',"data-v-981f54b6"]]);
 
 const {toDisplayString:_toDisplayString$3,createElementVNode:_createElementVNode$5,resolveComponent:_resolveComponent$5,createVNode:_createVNode$5,withCtx:_withCtx$3,createTextVNode:_createTextVNode$3,openBlock:_openBlock$5,createBlock:_createBlock$5,createCommentVNode:_createCommentVNode$5,mergeProps:_mergeProps$2,normalizeClass:_normalizeClass$4,createElementBlock:_createElementBlock$5,renderList:_renderList$3,Fragment:_Fragment$5,withKeys:_withKeys} = await importShared('vue');
 
@@ -5408,9 +5409,21 @@ const _sfc_main$5 = {
 const emit = __emit;
 
 const fileInputRef = ref$4(null);
+const languageSuffixPresets = [
+  'chi', 'chs', 'cht', 'eng', 'jp', 'kr',
+  'chi&eng', 'chs&eng', 'cht&eng',
+  'chi&jp', 'chs&jp', 'cht&jp',
+  'chi&kr', 'cht&kr', 'eng&jp', 'und',
+];
 
 function openFileDialog() {
   fileInputRef.value?.click();
+}
+
+function updateBatchLanguageSuffix(value) {
+  const suffix = String(value || '').trim();
+  emit('update:batchLanguageSuffix', suffix);
+  if (suffix) emit('apply-batch-language-suffix', suffix);
 }
 
 function onPickFiles(event) {
@@ -5428,9 +5441,10 @@ return (_ctx, _cache) => {
   const _component_VSwitch = _resolveComponent$5("VSwitch");
   const _component_VTooltip = _resolveComponent$5("VTooltip");
   const _component_VCardActions = _resolveComponent$5("VCardActions");
-  const _component_VTextField = _resolveComponent$5("VTextField");
+  const _component_VCombobox = _resolveComponent$5("VCombobox");
   const _component_VCheckbox = _resolveComponent$5("VCheckbox");
   const _component_VSelect = _resolveComponent$5("VSelect");
+  const _component_VTextField = _resolveComponent$5("VTextField");
   const _component_VCardText = _resolveComponent$5("VCardText");
   const _component_VCard = _resolveComponent$5("VCard");
   const _component_VDialog = _resolveComponent$5("VDialog");
@@ -5440,7 +5454,7 @@ return (_ctx, _cache) => {
     fullscreen: __props.mobile,
     scrollable: __props.mobile,
     "max-width": "980",
-    "onUpdate:modelValue": _cache[11] || (_cache[11] = $event => (_ctx.$emit('update:modelValue', $event)))
+    "onUpdate:modelValue": _cache[10] || (_cache[10] = $event => (_ctx.$emit('update:modelValue', $event)))
   }, {
     default: _withCtx$3(() => [
       _createVNode$5(_component_VCard, {
@@ -5466,7 +5480,7 @@ return (_ctx, _cache) => {
                 variant: "text",
                 onClick: _cache[1] || (_cache[1] = $event => (_ctx.$emit('update:modelValue', false)))
               }, {
-                default: _withCtx$3(() => [...(_cache[12] || (_cache[12] = [
+                default: _withCtx$3(() => [...(_cache[11] || (_cache[11] = [
                   _createTextVNode$3("关闭", -1)
                 ]))]),
                 _: 1
@@ -5478,7 +5492,7 @@ return (_ctx, _cache) => {
                     variant: "tonal",
                     onClick: _cache[2] || (_cache[2] = $event => (_ctx.$emit('reset-upload-preview')))
                   }, {
-                    default: _withCtx$3(() => [...(_cache[13] || (_cache[13] = [
+                    default: _withCtx$3(() => [...(_cache[12] || (_cache[12] = [
                       _createTextVNode$3(" 重新选择文件 ", -1)
                     ]))]),
                     _: 1
@@ -5514,7 +5528,7 @@ return (_ctx, _cache) => {
                     loading: __props.applying,
                     onClick: _cache[4] || (_cache[4] = $event => (_ctx.$emit('apply-upload')))
                   }, {
-                    default: _withCtx$3(() => [...(_cache[14] || (_cache[14] = [
+                    default: _withCtx$3(() => [...(_cache[13] || (_cache[13] = [
                       _createTextVNode$3(" 写入字幕 ", -1)
                     ]))]),
                     _: 1
@@ -5534,9 +5548,9 @@ return (_ctx, _cache) => {
                     onDragover: _cache[6] || (_cache[6] = $event => (_ctx.$emit('dragover', $event))),
                     onDragleave: _cache[7] || (_cache[7] = $event => (_ctx.$emit('dragleave', $event)))
                   }, [
-                    _cache[16] || (_cache[16] = _createElementVNode$5("div", { class: "dropzone-icon" }, "SRT / ASS / ZIP / RAR / 7Z", -1)),
-                    _cache[17] || (_cache[17] = _createElementVNode$5("div", { class: "dropzone-title" }, "把字幕或压缩包拖到这里", -1)),
-                    _cache[18] || (_cache[18] = _createElementVNode$5("div", { class: "dropzone-text" }, " 支持字幕文件、ZIP、RAR、7Z；RAR / 7Z 默认使用容器内 unar 解压。 ", -1)),
+                    _cache[15] || (_cache[15] = _createElementVNode$5("div", { class: "dropzone-icon" }, "SRT / ASS / SUP / ZIP / RAR / 7Z", -1)),
+                    _cache[16] || (_cache[16] = _createElementVNode$5("div", { class: "dropzone-title" }, "把字幕或压缩包拖到这里", -1)),
+                    _cache[17] || (_cache[17] = _createElementVNode$5("div", { class: "dropzone-text" }, " 支持字幕文件、ZIP、RAR、7Z；RAR / 7Z 默认使用容器内 unar 解压。 ", -1)),
                     _createVNode$5(_component_VBtn, {
                       color: "primary",
                       variant: "flat",
@@ -5544,7 +5558,7 @@ return (_ctx, _cache) => {
                       loading: __props.preparing,
                       onClick: openFileDialog
                     }, {
-                      default: _withCtx$3(() => [...(_cache[15] || (_cache[15] = [
+                      default: _withCtx$3(() => [...(_cache[14] || (_cache[14] = [
                         _createTextVNode$3(" 选择文件 ", -1)
                       ]))]),
                       _: 1
@@ -5555,7 +5569,7 @@ return (_ctx, _cache) => {
                       class: "hidden-input",
                       type: "file",
                       multiple: "",
-                      accept: ".srt,.ass,.ssa,.sbv,.sub,.vtt,.webvtt,.zip,.rar,.7z",
+                      accept: ".srt,.ass,.ssa,.sbv,.sub,.sup,.idx,.vtt,.webvtt,.smi,.sami,.ttml,.dfxp,.zip,.rar,.7z",
                       onChange: onPickFiles
                     }, null, 544)
                   ], 34))
@@ -5593,7 +5607,7 @@ return (_ctx, _cache) => {
                           color: "error",
                           onClick: $event => (_ctx.$emit('remove-file', file))
                         }, {
-                          default: _withCtx$3(() => [...(_cache[19] || (_cache[19] = [
+                          default: _withCtx$3(() => [...(_cache[18] || (_cache[18] = [
                             _createTextVNode$3("移除", -1)
                           ]))]),
                           _: 1
@@ -5605,28 +5619,30 @@ return (_ctx, _cache) => {
               (__props.hasPreviewItems)
                 ? (_openBlock$5(), _createElementBlock$5("div", _hoisted_3$5, [
                     _createElementVNode$5("div", _hoisted_4$4, [
-                      _cache[21] || (_cache[21] = _createElementVNode$5("div", null, [
+                      _cache[20] || (_cache[20] = _createElementVNode$5("div", null, [
                         _createElementVNode$5("div", { class: "section-kicker" }, "海拉鲁字幕大师"),
                         _createElementVNode$5("h3", null, "确认集数与输出文件名")
                       ], -1)),
                       _createElementVNode$5("div", _hoisted_5$3, [
-                        _createVNode$5(_component_VTextField, {
+                        _createVNode$5(_component_VCombobox, {
                           "model-value": __props.batchLanguageSuffix,
+                          items: languageSuffixPresets,
+                          "return-object": false,
                           label: "批量语言后缀",
-                          placeholder: "chi / eng / jpn",
+                          clearable: "",
                           variant: "outlined",
                           density: "comfortable",
                           "hide-details": "",
-                          "onUpdate:modelValue": _cache[8] || (_cache[8] = $event => (_ctx.$emit('update:batchLanguageSuffix', $event))),
-                          onKeyup: _cache[9] || (_cache[9] = _withKeys($event => (_ctx.$emit('apply-batch-language-suffix')), ["enter"]))
+                          "onUpdate:modelValue": updateBatchLanguageSuffix,
+                          onKeyup: _cache[8] || (_cache[8] = _withKeys($event => (_ctx.$emit('apply-batch-language-suffix')), ["enter"]))
                         }, null, 8, ["model-value"]),
                         _createVNode$5(_component_VBtn, {
                           variant: "tonal",
                           color: "primary",
                           disabled: !__props.batchLanguageSuffix.trim(),
-                          onClick: _cache[10] || (_cache[10] = $event => (_ctx.$emit('apply-batch-language-suffix')))
+                          onClick: _cache[9] || (_cache[9] = $event => (_ctx.$emit('apply-batch-language-suffix')))
                         }, {
-                          default: _withCtx$3(() => [...(_cache[20] || (_cache[20] = [
+                          default: _withCtx$3(() => [...(_cache[19] || (_cache[19] = [
                             _createTextVNode$3(" 应用到全部 ", -1)
                           ]))]),
                           _: 1
@@ -5668,7 +5684,7 @@ return (_ctx, _cache) => {
                           "onUpdate:modelValue": value => _ctx.$emit('update-language-suffix', item.upload_id, value)
                         }, null, 8, ["model-value", "disabled", "onUpdate:modelValue"]),
                         _createElementVNode$5("div", _hoisted_7$3, [
-                          _cache[22] || (_cache[22] = _createElementVNode$5("span", null, "改名为", -1)),
+                          _cache[21] || (_cache[21] = _createElementVNode$5("span", null, "改名为", -1)),
                           _createElementVNode$5("strong", null, _toDisplayString$3(item.output_name || __props.buildOutputName(__props.uploadTargets.find(target => target.id === item.target_id), item) || '待选择目标'), 1)
                         ])
                       ], 2))
@@ -5688,7 +5704,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const UploadDialog = /*#__PURE__*/_export_sfc(_sfc_main$5, [['__scopeId',"data-v-0a743c1b"]]);
+const UploadDialog = /*#__PURE__*/_export_sfc(_sfc_main$5, [['__scopeId',"data-v-77fe3646"]]);
 
 const {resolveComponent:_resolveComponent$4,createVNode:_createVNode$4,toDisplayString:_toDisplayString$2,createElementVNode:_createElementVNode$4,openBlock:_openBlock$4,createElementBlock:_createElementBlock$4,createCommentVNode:_createCommentVNode$4,createTextVNode:_createTextVNode$2,withCtx:_withCtx$2,mergeProps:_mergeProps$1,createBlock:_createBlock$4,renderList:_renderList$2,Fragment:_Fragment$4,normalizeClass:_normalizeClass$3} = await importShared('vue');
 
@@ -5874,11 +5890,11 @@ return (_ctx, _cache) => {
                         size: "small",
                         variant: "text",
                         color: "warning",
-                        title: "调轴",
-                        disabled: __props.detail.timelineFixing || !__props.detail.timelineAvailable || disabled.value || __props.detail.isStreamTarget(__props.target),
+                        title: subtitle.is_bitmap ? '图片字幕不支持文本调轴' : '调轴',
+                        disabled: __props.detail.timelineFixing || !__props.detail.timelineAvailable || disabled.value || __props.detail.isStreamTarget(__props.target) || subtitle.is_bitmap,
                         loading: __props.detail.timelineFixing,
                         onClick: $event => (__props.actions.fixHistorySubtitleTimeline(__props.target, subtitle))
-                      }, null, 8, ["disabled", "loading", "onClick"]),
+                      }, null, 8, ["title", "disabled", "loading", "onClick"]),
                       _createVNode$4(_component_VBtn, {
                         icon: "mdi-restore",
                         size: "small",
@@ -5911,7 +5927,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const MobileTargetCard = /*#__PURE__*/_export_sfc(_sfc_main$4, [['__scopeId',"data-v-e4eb0f1a"]]);
+const MobileTargetCard = /*#__PURE__*/_export_sfc(_sfc_main$4, [['__scopeId',"data-v-edf4b304"]]);
 
 const {resolveComponent:_resolveComponent$3,createVNode:_createVNode$3,createElementVNode:_createElementVNode$3,openBlock:_openBlock$3,createElementBlock:_createElementBlock$3,createCommentVNode:_createCommentVNode$3,toDisplayString:_toDisplayString$1,renderList:_renderList$1,Fragment:_Fragment$3,normalizeClass:_normalizeClass$2,createTextVNode:_createTextVNode$1,withCtx:_withCtx$1,createBlock:_createBlock$3} = await importShared('vue');
 
@@ -6214,7 +6230,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const MobileSubtitleDetail = /*#__PURE__*/_export_sfc(_sfc_main$3, [['__scopeId',"data-v-7a097863"]]);
+const MobileSubtitleDetail = /*#__PURE__*/_export_sfc(_sfc_main$3, [['__scopeId',"data-v-8f7dede5"]]);
 
 const {createElementVNode:_createElementVNode$2,toDisplayString:_toDisplayString,normalizeClass:_normalizeClass$1,createTextVNode:_createTextVNode,openBlock:_openBlock$2,createElementBlock:_createElementBlock$2,createCommentVNode:_createCommentVNode$2,resolveComponent:_resolveComponent$2,createVNode:_createVNode$2,renderList:_renderList,Fragment:_Fragment$2,withCtx:_withCtx,createBlock:_createBlock$2,withModifiers:_withModifiers} = await importShared('vue');
 
@@ -6529,7 +6545,7 @@ return (_ctx, _cache) => {
 }
 
 };
-const MobileSubtitleHome = /*#__PURE__*/_export_sfc(_sfc_main$2, [['__scopeId',"data-v-fee81f0d"]]);
+const MobileSubtitleHome = /*#__PURE__*/_export_sfc(_sfc_main$2, [['__scopeId',"data-v-9ef98aee"]]);
 
 const {resolveComponent:_resolveComponent$1,openBlock:_openBlock$1,createBlock:_createBlock$1,createCommentVNode:_createCommentVNode$1,createVNode:_createVNode$1,createElementVNode:_createElementVNode$1,mergeProps:_mergeProps,createElementBlock:_createElementBlock$1,Fragment:_Fragment$1} = await importShared('vue');
 
@@ -7836,6 +7852,6 @@ return (_ctx, _cache) => {
 }
 
 };
-const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-4e7a375b"]]);
+const AppPage = /*#__PURE__*/_export_sfc(_sfc_main, [['__scopeId',"data-v-3729ffbb"]]);
 
 export { AppPage as default };

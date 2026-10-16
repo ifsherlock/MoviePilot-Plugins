@@ -7,6 +7,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from ..api.online_api import download_online_results_to_uploads
 from .online_subtitle import CaptchaRequiredError
 from ..matching.subtitle_language import auto_subtitle_sort_key, autosub_lang_from_suffix, is_chinese_language_suffix
+from ..matching.subtitle_formats import is_text_subtitle, pysubs2_format
+from ..timeline.timeline_vad import load_subtitle_file
 from ..catalog.target_resolver import (
     auto_fill_missing_targets as fill_missing_target_ids,
     suggest_target as suggest_target_id,
@@ -64,22 +66,10 @@ class OnlineAiService:
         try:
             import pysubs2
         except Exception as exc:
-            raise RuntimeError("pysubs2 未安装，无法转换 ASS/SSA 字幕") from exc
-        errors: List[str] = []
-        for kwargs in (
-            {},
-            {"encoding": "utf-8-sig"},
-            {"encoding": "utf-16"},
-            {"encoding": "gb18030"},
-            {"encoding": "big5"},
-        ):
-            try:
-                return pysubs2.load(str(path), **kwargs)
-            except Exception as exc:
-                errors.append(str(exc))
-        raise RuntimeError(errors[-1] if errors else f"字幕解析失败: {path.name}")
+            raise RuntimeError("pysubs2 未安装，无法转换文字字幕") from exc
+        return load_subtitle_file(pysubs2, path)
 
-    def convert_ass_to_ai_srt(
+    def convert_text_to_ai_srt(
         self,
         *,
         session_dir: Path,
@@ -87,15 +77,16 @@ class OnlineAiService:
     ) -> Optional[Dict[str, Any]]:
         owner = self._owner
         ext = owner._normalize_text(prepared.get("ext")).lower()
-        if ext not in {".ass", ".ssa"} or not getattr(owner, "_auto_ass_to_srt_for_ai", True):
+        if ext == ".srt":
+            return None
+        if ext in {".ass", ".ssa"} and not getattr(owner, "_auto_ass_to_srt_for_ai", True):
             return None
         source_path = Path(owner._normalize_text(prepared.get("stored_path")))
         if not source_path.is_file():
             return None
-        try:
-            raw_bytes = source_path.read_bytes()
-        except Exception:
-            raw_bytes = b""
+        raw_bytes = source_path.read_bytes()
+        if not is_text_subtitle(source_path, raw_bytes) or pysubs2_format(source_path) is None:
+            return None
         profile = owner._detect_language_profile(prepared.get("source_name", ""), raw_bytes)
         if is_chinese_language_suffix(profile.get("suffix")):
             return None
@@ -108,13 +99,15 @@ class OnlineAiService:
             subtitles.save(str(output_path), format_="srt")
         except Exception as exc:
             self._logger.warning(
-                "[SubtitleManualUpload] ASS/SSA 转 AI 临时 SRT 失败 source=%s error=%s",
+                "[SubtitleManualUpload] 文字字幕转 AI 临时 SRT 失败 source=%s error=%s",
                 prepared.get("source_name"),
                 exc,
             )
+            if ext not in {".ass", ".ssa"}:
+                raise RuntimeError(f"文字字幕转 AI 临时 SRT 失败: {source_path.name} - {exc}") from exc
             return None
         self._logger.info(
-            "[SubtitleManualUpload] ASS/SSA 已转为 AI 临时 SRT source=%s output=%s",
+            "[SubtitleManualUpload] 文字字幕已转为 AI 临时 SRT source=%s output=%s",
             prepared.get("source_name"),
             output_path.name,
         )
@@ -141,7 +134,7 @@ class OnlineAiService:
             if ext == ".srt":
                 ready.append(prepared)
                 continue
-            converted = self.convert_ass_to_ai_srt(session_dir=session_dir, prepared=prepared)
+            converted = self.convert_text_to_ai_srt(session_dir=session_dir, prepared=prepared)
             if converted:
                 ready.append(converted)
         return ready

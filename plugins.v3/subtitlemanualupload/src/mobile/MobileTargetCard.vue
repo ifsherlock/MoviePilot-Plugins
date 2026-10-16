@@ -108,8 +108,8 @@ function toggleSelection(value) {
               size="small"
               variant="text"
               color="warning"
-              title="调轴"
-              :disabled="detail.timelineFixing || !detail.timelineAvailable || disabled || detail.isStreamTarget(target)"
+              :title="subtitle.is_bitmap ? '图片字幕不支持文本调轴' : '调轴'"
+              :disabled="detail.timelineFixing || !detail.timelineAvailable || disabled || detail.isStreamTarget(target) || subtitle.is_bitmap"
               :loading="detail.timelineFixing"
               @click="actions.fixHistorySubtitleTimeline(target, subtitle)"
             />

@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .subtitle_language import is_chinese_language_suffix
+from .subtitle_formats import is_bitmap_subtitle
 
 
 NormalizeText = Callable[[Any], str]
@@ -29,6 +30,50 @@ def build_destination_name(
     return f"{basename}.{language_suffix}{ext.lower()}"
 
 
+def expand_vobsub_items(
+    items: List[Dict[str, Any]],
+    upload_map: Dict[str, Dict[str, Any]],
+    *,
+    normalize_language_suffix: NormalizeLanguageSuffix,
+    http_exception: Any,
+) -> List[Dict[str, Any]]:
+    def pair_key(upload: Dict[str, Any]) -> Tuple[str, str]:
+        member = upload.get("archive_member") or upload.get("source_name", "")
+        stem = Path(str(member).replace("\\", "/")).with_suffix("").as_posix().casefold()
+        return str(upload.get("archive_name", "")).casefold(), stem
+
+    expanded = [dict(item) for item in items]
+    for item in items:
+        upload = upload_map.get(item.get("upload_id"))
+        if not upload:
+            continue
+        path = Path(upload["stored_path"])
+        if not path.is_file() or path.suffix.lower() not in {".idx", ".sub"} or not is_bitmap_subtitle(path):
+            continue
+        extension = ".sub" if path.suffix.lower() == ".idx" else ".idx"
+        companions = [
+            candidate for candidate in upload_map.values()
+            if Path(candidate["stored_path"]).suffix.lower() == extension and pair_key(candidate) == pair_key(upload)
+        ]
+        if len(companions) != 1:
+            raise http_exception(status_code=400, detail=f"VobSub 图片字幕必须提供唯一的同名 IDX/SUB 配对: {upload.get('source_name')}")
+        companion = companions[0]
+        companion_path = Path(companion["stored_path"])
+        if not companion_path.is_file() or not is_bitmap_subtitle(companion_path):
+            raise http_exception(status_code=400, detail=f"VobSub 配对文件无效: {companion.get('source_name')}")
+        selected = [entry for entry in expanded if entry.get("upload_id") == companion["upload_id"]]
+        if selected:
+            if any(
+                entry.get("target_id") != item.get("target_id")
+                or normalize_language_suffix(entry.get("language_suffix")) != normalize_language_suffix(item.get("language_suffix"))
+                for entry in selected
+            ):
+                raise http_exception(status_code=400, detail="VobSub 的 IDX/SUB 必须匹配同一目标和语言")
+            continue
+        expanded.append({**item, "upload_id": companion["upload_id"], "ext": extension})
+    return expanded
+
+
 def build_write_operations(
     items: List[Dict[str, Any]],
     upload_map: Dict[str, Dict[str, Any]],
@@ -42,6 +87,9 @@ def build_write_operations(
     destination_keys = set()
     operations: List[Dict[str, Any]] = []
 
+    items = expand_vobsub_items(
+        items, upload_map, normalize_language_suffix=normalize_language_suffix, http_exception=http_exception
+    )
     for item in items:
         upload_id = normalize_text(item.get("upload_id"))
         target_id = normalize_text(item.get("target_id"))
@@ -66,6 +114,8 @@ def build_write_operations(
             raise http_exception(status_code=400, detail=f"上传缓存文件不存在: {upload_info.get('source_name')}")
 
         item_ext = normalize_text(item.get("ext")) or upload_info.get("ext") or ".srt"
+        if is_bitmap_subtitle(source_path):
+            item_ext = source_path.suffix.lower()
         item_suffix = normalize_language_suffix(item.get("language_suffix"))
         destination_name = build_destination_name_func(
             target_entry,
@@ -203,6 +253,9 @@ class SubtitleWriter:
         if not is_chinese_language_suffix(operation.get("language_suffix")):
             return
         source_path = Path(operation["write_source_path"])
+        if is_bitmap_subtitle(source_path):
+            operation["simplified_result"] = {"enabled": True, "converted": False, "reason": "bitmap subtitle skipped"}
+            return
         if source_path.suffix.lower() not in owner._subtitle_exts:
             return
         output_dir.mkdir(parents=True, exist_ok=True)
@@ -239,7 +292,24 @@ class SubtitleWriter:
             operation["write_source_path"] = operation["source_path"]
             operation["timeline_result"] = None
             operation["simplified_result"] = {"enabled": False, "converted": False}
-            if fix_timeline:
+            if fix_timeline and is_bitmap_subtitle(operation["source_path"]):
+                operation["timeline_result"] = self._timeline_result_type(
+                    enabled=True,
+                    applied=False,
+                    reason="bitmap subtitle skipped",
+                    base="bitmap",
+                    offset_seconds=0.0,
+                    scale_factor=1.0,
+                    score=0.0,
+                )
+                owner._set_timeline_task(
+                    operation,
+                    status="skipped",
+                    message="图片字幕跳过文本调轴，保留原始文件",
+                    timeline_result=operation["timeline_result"],
+                )
+                self._logger.info("[SubtitleManualUpload] 图片字幕保留原始文件，跳过文本调轴 source=%s", operation["upload_info"].get("source_name"))
+            elif fix_timeline:
                 owner._set_timeline_task(operation, status="pending", message="等待智能调轴")
                 fixed_dir.mkdir(parents=True, exist_ok=True)
                 fixed_source_path = fixed_dir / f"{operation['upload_info'].get('upload_id')}{operation['source_path'].suffix}"

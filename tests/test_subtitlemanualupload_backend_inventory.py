@@ -128,6 +128,7 @@ def test_backend_inventory_cli_outputs_valid_json_for_big_modules():
             assert target_packages[name]["contains_only_init"] is False
             assert target_packages[name]["python_files"] == [
                 "__init__.py",
+                "subtitle_formats.py",
                 "subtitle_history.py",
                 "subtitle_language.py",
                 "subtitle_writer.py",

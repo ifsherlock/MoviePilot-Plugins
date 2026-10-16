@@ -14,6 +14,8 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from fastapi import HTTPException
 
+from ..matching.subtitle_formats import BITMAP_SUBTITLE_EXTS, is_bitmap_subtitle
+
 
 HashText = Callable[[str], str]
 DecodePreviewBytes = Callable[[bytes], str]
@@ -37,6 +39,7 @@ class ArchiveResourceLimits:
     max_archive_member_bytes: int = MAX_ARCHIVE_MEMBER_BYTES
     max_archive_total_bytes: int = MAX_ARCHIVE_TOTAL_BYTES
     max_subtitle_files: int = MAX_SUBTITLE_FILES
+    max_bitmap_member_bytes: int = MAX_UPLOAD_CONTENT_BYTES
 
 
 DEFAULT_ARCHIVE_RESOURCE_LIMITS = ArchiveResourceLimits()
@@ -94,15 +97,20 @@ class ArchiveResourceGuard:
                 f"{self._member_count} > {self._limits.max_archive_members}"
             )
 
-    def check_member_size(self, member_name: str, member_size: int) -> None:
-        if member_size > self._limits.max_archive_member_bytes:
+    def check_member_size(self, member_name: str, member_size: int, *, raw_bytes: Optional[bytes] = None) -> None:
+        suffix = Path(member_name).suffix.lower()
+        bitmap = suffix in BITMAP_SUBTITLE_EXTS or (
+            suffix == ".sub" and (raw_bytes is None or is_bitmap_subtitle(member_name, raw_bytes))
+        )
+        limit = self._limits.max_bitmap_member_bytes if bitmap else self._limits.max_archive_member_bytes
+        if member_size > limit:
             raise ArchiveResourceLimitError(
                 f"压缩包单文件大小超过限制: {member_name or self._source_name} "
-                f"{_size_label(member_size)} > {_size_label(self._limits.max_archive_member_bytes)}"
+                f"{_size_label(member_size)} > {_size_label(limit)}"
             )
 
-    def accept_subtitle(self, member_name: str, member_size: int) -> None:
-        self.check_member_size(member_name, member_size)
+    def accept_subtitle(self, member_name: str, member_size: int, *, raw_bytes: Optional[bytes] = None) -> None:
+        self.check_member_size(member_name, member_size, raw_bytes=raw_bytes)
         self._subtitle_count += 1
         if self._subtitle_count > self._limits.max_subtitle_files:
             raise ArchiveResourceLimitError(
@@ -462,7 +470,7 @@ def extract_rar_subtitle_files_with_rarfile(
                 if member_size:
                     guard.check_member_size(member_name, member_size)
                 member_bytes = archive.read(member)
-                guard.accept_subtitle(member_name, len(member_bytes))
+                guard.accept_subtitle(member_name, len(member_bytes), raw_bytes=member_bytes)
                 upload_id = hash_text(
                     f"{source_name}|{member.filename}|{len(member_bytes)}|{datetime.now().timestamp()}"
                 )
@@ -473,6 +481,7 @@ def extract_rar_subtitle_files_with_rarfile(
                         "upload_id": upload_id,
                         "source_name": member_name,
                         "archive_name": source_name,
+                        "archive_member": member.filename,
                         "stored_path": str(stored_path),
                         "ext": member_ext,
                     }
@@ -584,7 +593,7 @@ def extract_command_archive_subtitle_files(
         if member_ext not in subtitle_ext_set:
             continue
         member_bytes = read_member(archive_path, member, tool_path)
-        guard.accept_subtitle(member_name, len(member_bytes))
+        guard.accept_subtitle(member_name, len(member_bytes), raw_bytes=member_bytes)
         upload_id = hash_text(f"{source_name}|{member}|{len(member_bytes)}|{datetime.now().timestamp()}")
         stored_path = session_dir / f"{upload_id}{member_ext}"
         stored_path.write_bytes(member_bytes)
@@ -593,6 +602,7 @@ def extract_command_archive_subtitle_files(
                 "upload_id": upload_id,
                 "source_name": member_name,
                 "archive_name": source_name,
+                "archive_member": member,
                 "stored_path": str(stored_path),
                 "ext": member_ext,
             }
@@ -711,6 +721,18 @@ def normalize_online_download_name(
         if not stem:
             stem = re.sub(r"[\\/:*?\"<>|]+", " ", normalize_text(result.get("title")) or "online-subtitle").strip()
         return f"{stem or 'online-subtitle'}{magic_suffix}"
+    bitmap_suffix = ""
+    if content.lstrip().startswith(b"# VobSub index file"):
+        bitmap_suffix = ".idx"
+    elif is_bitmap_subtitle("download.sub", content):
+        bitmap_suffix = ".sub"
+    elif len(content) >= 13 and content.startswith(b"PG") and content[10] in {0x14, 0x15, 0x16, 0x17, 0x80}:
+        bitmap_suffix = ".sup"
+    if bitmap_suffix:
+        stem = Path(safe_name).stem if safe_name else ""
+        if not stem:
+            stem = re.sub(r"[\\/:*?\"<>|]+", " ", normalize_text(result.get("title")) or "online-subtitle").strip()
+        return f"{stem or 'online-subtitle'}{bitmap_suffix}"
     if suffix in set(subtitle_exts) or suffix in set(archive_exts):
         return safe_name
     title = re.sub(r"[\\/:*?\"<>|]+", " ", normalize_text(result.get("title")) or "online-subtitle").strip()
@@ -837,7 +859,7 @@ class UploadSessionService:
                         continue
                     guard.check_member_size(member_name, int(member.file_size or 0))
                     member_bytes = archive.read(member)
-                    guard.accept_subtitle(member_name, len(member_bytes))
+                    guard.accept_subtitle(member_name, len(member_bytes), raw_bytes=member_bytes)
                     upload_id = self._hash_text(
                         f"{source_name}|{member.filename}|{len(member_bytes)}|{datetime.now().timestamp()}"
                     )
@@ -848,6 +870,7 @@ class UploadSessionService:
                             "upload_id": upload_id,
                             "source_name": member_name,
                             "archive_name": source_name,
+                            "archive_member": member.filename,
                             "stored_path": str(stored_path),
                             "ext": member_ext,
                         }

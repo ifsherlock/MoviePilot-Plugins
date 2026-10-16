@@ -4,6 +4,8 @@ import re
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
+from .subtitle_formats import is_bitmap_subtitle
+
 
 DEFAULT_AUTO_LANGUAGE_PRIORITY = ["bilingual", "chi", "cht", "eng"]
 DEFAULT_AUTO_FORMAT_PRIORITY = [".ass", ".srt", ".ssa", ".vtt"]
@@ -143,7 +145,7 @@ def detect_language_profile(file_name: str, raw_bytes: bytes, subtitle_exts: Ite
     if filename_suffix["suffix"] != "und":
         return filename_suffix
 
-    preview = decode_preview_bytes(raw_bytes[:16000])
+    preview = "" if is_bitmap_subtitle(file_name, raw_bytes) else decode_preview_bytes(raw_bytes[:16000])
     has_cjk = len(re.findall(r"[\u4e00-\u9fff]", preview)) >= 20
     has_kana = len(re.findall(r"[\u3040-\u30ff]", preview)) >= 20
     has_hangul = len(re.findall(r"[\uac00-\ud7af]", preview)) >= 20

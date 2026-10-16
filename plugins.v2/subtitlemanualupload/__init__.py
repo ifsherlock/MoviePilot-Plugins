@@ -60,6 +60,7 @@ except Exception:
     MPEvent = Any
     EventType = _NoopEventType
 
+from .matching.subtitle_formats import SUBTITLE_EXTS
 from .online.online_subtitle import (
     OnlineSubtitleSearchService,
     build_search_keywords,
@@ -163,7 +164,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "海拉鲁字幕大师"
     plugin_desc = "脱胎自 ChineseSubFinder，支持字幕搜索、上传、匹配、改名与智能调轴。"
     plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/hyrule-subtitle-master.png"
-    plugin_version = "0.1.91"
+    plugin_version = "0.1.93"
     plugin_author = "ifsherlock"
     author_url = "https://github.com/ifsherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -265,7 +266,7 @@ class SubtitleManualUpload(_PluginBase):
     _timeline_tasks: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
     _tmdb_detail_cache: Dict[str, Dict[str, Any]] = {}
 
-    _subtitle_exts = {".ass", ".srt", ".ssa", ".sbv", ".sub", ".vtt", ".webvtt"}
+    _subtitle_exts = SUBTITLE_EXTS
     _archive_exts = {".zip", ".rar", ".7z"}
     _rar_exts = {".rar"}
     _sevenzip_exts = {".7z"}

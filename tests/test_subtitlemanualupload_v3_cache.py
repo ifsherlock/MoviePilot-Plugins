@@ -17,10 +17,10 @@ def load_subtitle_inventory():
         if name == package_name or name.startswith(f"{package_name}."):
             sys.modules.pop(name, None)
     package = types.ModuleType(package_name)
-    package.__path__ = [str(V3_CATALOG)]
+    package.__path__ = [str(V3_CATALOG.parent)]
     sys.modules[package_name] = package
     spec = importlib.util.spec_from_file_location(
-        f"{package_name}.subtitle_inventory",
+        f"{package_name}.catalog.subtitle_inventory",
         V3_CATALOG / "subtitle_inventory.py",
     )
     module = importlib.util.module_from_spec(spec)

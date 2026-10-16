@@ -69,7 +69,7 @@ class LinkExtractor(HTMLParser):
 
 def _looks_like_html_bytes(content: bytes, filename: str = "") -> bool:
     suffix = Path(filename or "").suffix.lower()
-    if suffix in {".zip", ".rar", ".srt", ".ass", ".ssa", ".sub", ".vtt", ".webvtt", ".sbv"}:
+    if suffix in {".zip", ".rar", ".srt", ".ass", ".ssa", ".sub", ".sup", ".idx", ".vtt", ".webvtt", ".sbv", ".smi", ".sami", ".ttml", ".dfxp"}:
         return False
     head = (content or b"")[:300].lstrip().lower()
     return head.startswith(b"<!doctype html") or head.startswith(b"<html") or b"<title>" in head

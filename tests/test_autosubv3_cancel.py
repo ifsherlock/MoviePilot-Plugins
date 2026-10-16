@@ -13,8 +13,16 @@ import types
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import pytest
 
-def load_plugin_module():
+
+@pytest.fixture(autouse=True)
+def isolate_plugin_module_stubs(monkeypatch):
+    loader = load_plugin_module
+    monkeypatch.setattr(sys.modules[__name__], "load_plugin_module", lambda: loader(monkeypatch))
+
+
+def load_plugin_module(monkeypatch):
     root = Path(__file__).resolve().parents[1]
     package_dir = root / "plugins.v2" / "autosubv3"
 
@@ -79,14 +87,14 @@ def load_plugin_module():
         f"{package_name}.translate.openai_translate": types.SimpleNamespace(OpenAi=object),
     }
     for name, module in modules.items():
-        sys.modules[name] = module
+        monkeypatch.setitem(sys.modules, name, module)
 
     for name in list(sys.modules):
         if name == package_name or name.startswith(f"{package_name}."):
-            sys.modules.pop(name, None)
-    sys.modules[f"{package_name}.ffmpeg"] = modules[f"{package_name}.ffmpeg"]
-    sys.modules[f"{package_name}.translate"] = modules[f"{package_name}.translate"]
-    sys.modules[f"{package_name}.translate.openai_translate"] = modules[f"{package_name}.translate.openai_translate"]
+            monkeypatch.delitem(sys.modules, name)
+    monkeypatch.setitem(sys.modules, f"{package_name}.ffmpeg", modules[f"{package_name}.ffmpeg"])
+    monkeypatch.setitem(sys.modules, f"{package_name}.translate", modules[f"{package_name}.translate"])
+    monkeypatch.setitem(sys.modules, f"{package_name}.translate.openai_translate", modules[f"{package_name}.translate.openai_translate"])
 
     spec = importlib.util.spec_from_file_location(
         package_name,
@@ -94,7 +102,7 @@ def load_plugin_module():
         submodule_search_locations=[str(package_dir)],
     )
     module = importlib.util.module_from_spec(spec)
-    sys.modules[package_name] = module
+    monkeypatch.setitem(sys.modules, package_name, module)
     spec.loader.exec_module(module)
     return module
 
