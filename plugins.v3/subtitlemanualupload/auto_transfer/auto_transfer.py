@@ -79,6 +79,8 @@ class AutoTransferCollaborators:
                 target,
                 subtitle_inventory=owner._subtitle_inventory(),
                 is_chinese_language_suffix_func=is_chinese_language_suffix,
+                language_priority=getattr(owner, "_auto_subtitle_language_priority", None),
+                strict=bool(getattr(owner, "_auto_subtitle_language_strict", False)),
             ),
             check_online_rate_limit=owner._check_online_rate_limit,
             logger=logger,

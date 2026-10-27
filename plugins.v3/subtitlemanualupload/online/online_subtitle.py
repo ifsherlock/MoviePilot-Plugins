@@ -8,13 +8,14 @@ except ImportError:
     import sys
     from pathlib import Path
 
-    package_path = Path(__file__).resolve().parents[1] / "online_subtitles"
-    package_name = "_subtitlemanualupload_online_subtitles"
-    module_path = package_path / "core.py"
+    plugin_path = Path(__file__).resolve().parents[1]
+    package_name = f"_subtitlemanualupload_{plugin_path.parent.name.replace('.', '_')}"
     package = types.ModuleType(package_name)
-    package.__path__ = [str(package_path)]
+    package.__path__ = [str(plugin_path)]
     sys.modules.setdefault(package_name, package)
-    spec = importlib.util.spec_from_file_location(f"{package_name}.core", module_path)
+    spec = importlib.util.spec_from_file_location(
+        f"{package_name}.online_subtitles.core", plugin_path / "online_subtitles" / "core.py"
+    )
     if spec is None or spec.loader is None:
         raise
     module = importlib.util.module_from_spec(spec)

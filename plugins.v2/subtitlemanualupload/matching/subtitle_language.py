@@ -7,7 +7,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from .subtitle_formats import is_bitmap_subtitle
 
 
-DEFAULT_AUTO_LANGUAGE_PRIORITY = ["bilingual", "chi", "cht", "eng"]
+DEFAULT_AUTO_LANGUAGE_PRIORITY = ["chi&eng", "chi&jp", "chi&kr", "other_bilingual", "chi", "cht", "eng"]
 DEFAULT_AUTO_FORMAT_PRIORITY = [".ass", ".srt", ".ssa", ".vtt"]
 
 LANGUAGE_SUFFIX_ALIASES = {
@@ -54,6 +54,40 @@ LANGUAGE_LABELS = {
     "por": "葡文",
     "ita": "意文",
     "rus": "俄文",
+}
+
+LANGUAGE_PAIR_LABELS = {
+    "chi&eng": "中英双语",
+    "chi&jp": "中日双语",
+    "chi&kr": "中韩双语",
+    "cht&eng": "中英双语",
+}
+
+LEGACY_BILINGUAL_BUCKETS = ["chi&eng", "chi&jp", "chi&kr", "other_bilingual"]
+LANGUAGE_PAIR_ALIASES = {
+    "eng": "eng",
+    "en": "eng",
+    "english": "eng",
+    "jpn": "jp",
+    "jap": "jp",
+    "japanese": "jp",
+    "ja": "jp",
+    "jp": "jp",
+    "kor": "kr",
+    "korean": "kr",
+    "ko": "kr",
+    "kr": "kr",
+    "fre": "fre",
+    "fra": "fre",
+    "french": "fre",
+    "fr": "fre",
+    "spa": "spa",
+    "spanish": "spa",
+    "es": "spa",
+    "ger": "ger",
+    "deu": "ger",
+    "german": "ger",
+    "de": "ger",
 }
 
 
@@ -128,14 +162,7 @@ def language_suffix_from_filename(file_name: str, subtitle_exts: Iterable[str]) 
         return {"suffix": "und", "label": "未知"}
 
     suffix = normalize_language_suffix("&".join(reversed(found)))
-    if suffix == "chi&eng":
-        label = "中英双语"
-    elif suffix == "chi&jp":
-        label = "中日双语"
-    elif suffix == "chi&kr":
-        label = "中韩双语"
-    else:
-        label = LANGUAGE_LABELS.get(suffix, "未知")
+    label = LANGUAGE_PAIR_LABELS.get(suffix) or LANGUAGE_LABELS.get(suffix, "未知")
     return {"suffix": suffix, "label": label}
 
 
@@ -146,13 +173,28 @@ def detect_language_profile(file_name: str, raw_bytes: bytes, subtitle_exts: Ite
         return filename_suffix
 
     preview = "" if is_bitmap_subtitle(file_name, raw_bytes) else decode_preview_bytes(raw_bytes[:16000])
-    has_cjk = len(re.findall(r"[\u4e00-\u9fff]", preview)) >= 20
-    has_kana = len(re.findall(r"[\u3040-\u30ff]", preview)) >= 20
-    has_hangul = len(re.findall(r"[\uac00-\ud7af]", preview)) >= 20
-    has_ascii = len(re.findall(r"[A-Za-z]{3,}", preview)) >= 20
+    preview = _subtitle_dialogue_text(file_name, preview)
+    cjk_count = len(re.findall(r"[\u4e00-\u9fff]", preview))
+    kana_count = len(re.findall(r"[\u3040-\u30ff]", preview))
+    hangul_count = len(re.findall(r"[\uac00-\ud7af]", preview))
+    has_cjk = cjk_count >= 20
+    has_kana = kana_count >= 20
+    has_hangul = hangul_count >= 20
+    # Kanji density cannot distinguish Chinese from Japanese. Look for separate
+    # Chinese dialogue or particles that are not part of normal Japanese text.
+    chinese_lines = "\n".join(
+        line for line in preview.splitlines()
+        if not re.search(r"[\u3040-\u30ff\uac00-\ud7af]", line)
+    )
+    has_chinese_content = has_cjk and (
+        not has_kana
+        or len(re.findall(r"[\u4e00-\u9fff]", chinese_lines)) >= 20
+        or len(re.findall(r"[这這们們吗嗎呢]", preview)) >= 3
+    )
+    has_ascii = len(re.findall(r"\b[A-Za-z]{3,}\b", preview)) >= 20
     has_chinese_name = bool(
         re.search(r"(^|[\s._\-\[\]()])(?:zh|chi|chs|cht|zho|cmn)(?=$|[\s._\-\[\]()])", lowered)
-        or any(token in lowered for token in ("中英", "中日", "中韩", "中文", "中字", "双语", "bilingual"))
+        or any(token in lowered for token in ("中英", "中日", "中韩", "中文", "中字"))
     )
     has_english_name = bool(
         re.search(r"(^|[\s._\-\[\]()])(?:en|eng)(?=$|[\s._\-\[\]()])", lowered)
@@ -170,13 +212,13 @@ def detect_language_profile(file_name: str, raw_bytes: bytes, subtitle_exts: Ite
     suffix = "und"
     label = "未知"
 
-    if (has_chinese_name or has_cjk) and (has_japanese_name or has_kana):
+    if (has_chinese_name or has_chinese_content) and (has_japanese_name or has_kana):
         suffix = "chi&jp"
         label = "中日双语"
-    elif (has_chinese_name or has_cjk) and (has_korean_name or has_hangul):
+    elif (has_chinese_name or has_chinese_content) and (has_korean_name or has_hangul):
         suffix = "chi&kr"
         label = "中韩双语"
-    elif has_chinese_name and (has_english_name or has_ascii):
+    elif (has_chinese_name or (has_cjk and not has_kana and not has_hangul)) and (has_english_name or has_ascii):
         suffix = "chi&eng"
         label = "中英双语"
     elif any(token in lowered for token in ("zh-hant", "zh_tw", "zh-tw", "cht", "繁体", "繁中", "big5")) or re.search(
@@ -188,7 +230,7 @@ def detect_language_profile(file_name: str, raw_bytes: bytes, subtitle_exts: Ite
     elif any(token in lowered for token in ("zh-hans", "zh_cn", "zh-cn", "chs", "简体", "简中", "gb")):
         suffix = "chi"
         label = "简中"
-    elif any(token in lowered for token in ("zh", "chi", "zho", "cmn", "中文", "中字")) or (has_cjk and not has_kana):
+    elif any(token in lowered for token in ("zh", "chi", "zho", "cmn", "中文", "中字")) or (has_cjk and not has_kana and not has_hangul):
         suffix = "chi"
         label = "中文"
     elif any(token in lowered for token in ("jpn", "japanese", "日文", "日语", ".ja.")) or has_kana:
@@ -229,6 +271,39 @@ def detect_language_profile(file_name: str, raw_bytes: bytes, subtitle_exts: Ite
     }
 
 
+def _subtitle_dialogue_text(file_name: str, text: str) -> str:
+    """Remove common subtitle metadata so format headers cannot imply languages."""
+    if Path(file_name).suffix.lower() in {".ass", ".ssa"}:
+        in_events = False
+        dialogue = []
+        field_count = 10
+        text_index = 9
+        for line in text.splitlines():
+            stripped = line.strip()
+            if stripped.lower() == "[events]":
+                in_events = True
+                continue
+            if stripped.startswith("[") and stripped.endswith("]"):
+                in_events = False
+                continue
+            if in_events and stripped.lower().startswith("format:"):
+                fields = [field.strip().lower() for field in stripped.split(":", 1)[1].split(",")]
+                if "text" in fields:
+                    field_count = len(fields)
+                    text_index = fields.index("text")
+            elif in_events and stripped.lower().startswith("dialogue:"):
+                payload = stripped.split(":", 1)[1]
+                fields = payload.split(",", field_count - 1)
+                if len(fields) == field_count:
+                    dialogue.append(fields[text_index])
+        text = "\n".join(dialogue)
+        text = re.sub(r"\\[Nn]", "\n", text)
+    text = re.sub(r"(?m)^\s*\d+\s*$", " ", text)
+    text = re.sub(r"(?m)^\s*\d{1,2}:\d{2}:\d{2}[,.]\d{2,3}\s*-->.*$", " ", text)
+    text = re.sub(r"\{[^}]*\}|<[^>]*>", " ", text)
+    return text
+
+
 def is_chinese_language_suffix(suffix: Any) -> bool:
     return any(part in {"chi", "cht"} for part in normalize_language_suffix(suffix).split("&"))
 
@@ -260,7 +335,18 @@ def auto_target_has_chinese_subtitle(
     *,
     subtitle_inventory: Any,
     is_chinese_language_suffix_func: Callable[[Any], bool] = is_chinese_language_suffix,
+    language_priority: Optional[List[str]] = None,
+    strict: bool = False,
 ) -> bool:
+    if strict:
+        if target_has_preferred_subtitle(target, language_priority or []):
+            return True
+        embedded_subtitles = subtitle_inventory.embedded_subtitle_tracks_for_target(entry)
+        if embedded_subtitles:
+            target["has_embedded_subtitle"] = True
+            target["embedded_subtitle_count"] = len(embedded_subtitles)
+            target["embedded_subtitles"] = embedded_subtitles
+        return target_has_preferred_subtitle(target, language_priority or [])
     if target_has_chinese_subtitle(target, is_chinese_language_suffix_func=is_chinese_language_suffix_func):
         return True
     embedded_subtitles = subtitle_inventory.embedded_subtitle_tracks_for_target(entry)
@@ -273,8 +359,17 @@ def auto_target_has_chinese_subtitle(
 
 def auto_language_bucket(suffix: Any) -> str:
     parts = [item for item in normalize_language_suffix(suffix).split("&") if item]
-    if any(item in {"chi", "cht"} for item in parts) and any(item not in {"chi", "cht"} for item in parts):
-        return "bilingual"
+    if len(parts) == 2 and sum(item in {"chi", "cht"} for item in parts) == 1:
+        other = next(item for item in parts if item not in {"chi", "cht"})
+        if other in {"eng", "en"}:
+            return "chi&eng"
+        if other in {"jp", "jpn"}:
+            return "chi&jp"
+        if other in {"kr", "kor"}:
+            return "chi&kr"
+        return "other_bilingual"
+    if len(parts) > 1:
+        return "und"
     if "chi" in parts:
         return "chi"
     if "cht" in parts:
@@ -291,7 +386,7 @@ def auto_subtitle_sort_key(
     format_priority: Optional[List[str]] = None,
 ) -> Tuple[int, int, int, str]:
     language_bucket = auto_language_bucket(item.get("language_suffix"))
-    language_order = list(language_priority or DEFAULT_AUTO_LANGUAGE_PRIORITY)
+    language_order = normalize_auto_language_priority(language_priority)
     format_order = list(format_priority or DEFAULT_AUTO_FORMAT_PRIORITY)
     try:
         language_rank = language_order.index(language_bucket)
@@ -302,7 +397,7 @@ def auto_subtitle_sort_key(
         format_rank = format_order.index(ext)
     except ValueError:
         format_rank = len(format_order)
-    bilingual_bonus = 0 if language_bucket == "bilingual" else 1
+    bilingual_bonus = 0 if "&" in language_bucket else 1
     return (language_rank, format_rank, bilingual_bonus, normalize_text(item.get("source_name")).lower())
 
 
@@ -332,9 +427,6 @@ def normalize_auto_language_key(value: Any) -> str:
     aliases = {
         "双语": "bilingual",
         "bilingual": "bilingual",
-        "chi&eng": "bilingual",
-        "chi&jp": "bilingual",
-        "chi&kr": "bilingual",
         "简中": "chi",
         "简体": "chi",
         "中文": "chi",
@@ -349,28 +441,128 @@ def normalize_auto_language_key(value: Any) -> str:
         "英语": "eng",
         "en": "eng",
         "eng": "eng",
+        "中英双语": "chi&eng",
+        "简英双语": "chi&eng",
+        "繁英双语": "cht&eng",
+        "中日双语": "chi&jp",
+        "中韩双语": "chi&kr",
+        "其他中外双语": "other_bilingual",
     }
-    return aliases.get(text, normalize_language_suffix(text))
+    normalized = aliases.get(text, text if text == "other_bilingual" else normalize_language_suffix(text))
+    if "&" in normalized:
+        return auto_language_bucket(normalized)
+    return normalized
 
 
 def normalize_auto_language_priority(
     value: Any,
     default_priority: Optional[List[str]] = None,
 ) -> List[str]:
+    defaults = list(DEFAULT_AUTO_LANGUAGE_PRIORITY if default_priority is None else default_priority)
+    if value is None:
+        return defaults
     raw_items = value
     if isinstance(raw_items, str):
         raw_items = re.split(r"[\s,，/|]+", raw_items)
     if not isinstance(raw_items, list):
-        raw_items = []
+        return []
     result: List[str] = []
     for item in raw_items:
         key = normalize_auto_language_key(item)
-        if key and key != "und" and key not in result:
-            result.append(key)
-    for item in list(default_priority or DEFAULT_AUTO_LANGUAGE_PRIORITY):
-        if item not in result:
-            result.append(item)
+        keys = LEGACY_BILINGUAL_BUCKETS if key == "bilingual" else [key]
+        for normalized in keys:
+            if normalized and normalized != "und" and normalized not in result:
+                result.append(normalized)
     return result
+
+
+def language_matches_preferences(suffix: Any, priority: Optional[List[str]]) -> bool:
+    bucket = auto_language_bucket(suffix)
+    return bucket != "und" and bucket in normalize_auto_language_priority(priority)
+
+
+def auto_candidate_language_bucket(item: Dict[str, Any]) -> str:
+    title = normalize_text(item.get("title"))
+    title_bucket = auto_language_bucket(language_profile_from_text(title)["suffix"])
+    if "&" in title_bucket or title_bucket == "other_bilingual":
+        return title_bucket
+    language_bucket = auto_language_bucket(language_profile_from_text(item.get("language"))["suffix"])
+    if "&" in language_bucket or language_bucket == "other_bilingual":
+        return language_bucket
+    # Provider language fields are coarse: a Chinese result can contain Chinese-English subtitles.
+    return "und"
+
+
+def auto_candidate_language_rank(item: Dict[str, Any], priority: Optional[List[str]]) -> Tuple[int, int]:
+    bucket = auto_candidate_language_bucket(item)
+    language_order = normalize_auto_language_priority(priority)
+    if bucket in language_order:
+        return 0, language_order.index(bucket)
+    return (1, len(language_order)) if bucket == "und" else (2, len(language_order))
+
+
+def auto_rank_candidates(
+    candidates: List[Dict[str, Any]], priority: Optional[List[str]], *, strict: bool
+) -> List[Dict[str, Any]]:
+    selected = normalize_auto_language_priority(priority)
+    if not selected:
+        return [] if strict else candidates
+    allowed = []
+    for item in candidates:
+        bucket = auto_candidate_language_bucket(item)
+        if not strict or bucket in selected or bucket == "und":
+            allowed.append(item)
+    return sorted(allowed, key=lambda item: auto_candidate_language_rank(item, selected))
+
+
+def target_has_preferred_subtitle(target: Dict[str, Any], language_priority: Optional[List[str]]) -> bool:
+    subtitles = [*(target.get("subtitles") or []), *(target.get("embedded_subtitles") or [])]
+    return any(
+        isinstance(item, dict)
+        and language_matches_preferences(item.get("language_suffix") or item.get("language"), language_priority)
+        for item in subtitles
+    )
+
+
+def language_profile_from_text(value: Any) -> Dict[str, str]:
+    text = normalize_text(value).lower()
+    languages = set()
+    explicit_chinese = False
+    explicit_traditional = False
+    for marker in ("中英", "简英", "繁英", "中日", "中韩", "中法"):
+        if marker in text:
+            languages.add("eng" if marker in {"中英", "简英", "繁英"} else {"中日": "jp", "中韩": "kr", "中法": "fre"}[marker])
+            explicit_chinese = True
+            explicit_traditional = marker == "繁英"
+    if any(marker in text for marker in ("中文", "简体", "简中", "chinese", "chs", "cht", "zh-cn", "zh-hans", "zh-hant")):
+        explicit_chinese = True
+        explicit_traditional = explicit_traditional or any(marker in text for marker in ("繁体", "繁中", "cht", "zh-hant"))
+    if explicit_chinese:
+        languages.add("cht" if explicit_traditional else "chi")
+
+    token_text = re.sub(r"(?<=[a-z])[_+/,]+(?=[a-z])", "&", text)
+    token_text = re.sub(r"(?<=chinese)-(?=english)|(?<=english)-(?=chinese)", "&", token_text)
+    for token in re.findall(r"(?<![a-z0-9-])(?:zh-hans|zh-hant|zh-cn|zh-tw|chs|cht|zho|cmn|chi|zh|english|eng|en|jpn|jap|japanese|ja|jp|kor|korean|ko|kr|fre|fra|french|fr|spa|spanish|es|ger|deu|german|de)(?![a-z0-9-])", token_text):
+        if token in {"zh-hans", "zh-cn", "chs", "zho", "cmn", "chi", "zh"}:
+            languages.add("chi")
+        elif token in {"zh-hant", "zh-tw", "cht"}:
+            languages.add("cht")
+        else:
+            languages.add(LANGUAGE_PAIR_ALIASES.get(token, ""))
+    languages.discard("")
+
+    for marker, code in (("英文", "eng"), ("英语", "eng"), ("日文", "jp"), ("日语", "jp"), ("韩文", "kr"), ("韩语", "kr"), ("法文", "fre"), ("法语", "fre")):
+        if marker in text:
+            languages.add(code)
+    if len(languages) == 1:
+        suffix = next(iter(languages))
+    elif len(languages) == 2 and any(item in {"chi", "cht"} for item in languages):
+        suffix = "&".join(sorted(languages))
+    else:
+        suffix = "und"
+    suffix = normalize_language_suffix(suffix)
+    label = LANGUAGE_PAIR_LABELS.get(suffix) or LANGUAGE_LABELS.get(suffix, "未知")
+    return {"suffix": suffix, "label": label}
 
 
 def normalize_auto_format_priority(

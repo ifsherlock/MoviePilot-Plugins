@@ -50,6 +50,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "auto_search_on_manual_strm": False,
     "auto_multi_subtitle_mode": "best",
     "auto_subtitle_language_priority": list(DEFAULT_AUTO_LANGUAGE_PRIORITY),
+    "auto_subtitle_language_strict": False,
     "auto_subtitle_format_priority": list(DEFAULT_AUTO_FORMAT_PRIORITY),
     "auto_ass_to_srt_for_ai": True,
     "timeline_max_offset_seconds": 120,
@@ -235,6 +236,14 @@ def normalize_plugin_config(
     ]
 
     legacy_proxy_default = "online_proxy_migrated" not in raw_config and raw_config.get("online_use_proxy") is True
+    language_priority = normalize_auto_language_priority(
+        raw_config.get("auto_subtitle_language_priority"),
+        list(default_auto_language_priority or DEFAULT_AUTO_LANGUAGE_PRIORITY),
+    )
+    language_strict = bool(raw_config.get("auto_subtitle_language_strict", False))
+    if language_strict and not language_priority:
+        raise ValueError("仅接受所选语言时至少选择一种语言")
+
     return {
         "enabled": bool(raw_config.get("enabled")),
         "show_sidebar_nav": bool(raw_config.get("show_sidebar_nav", True)),
@@ -265,10 +274,8 @@ def normalize_plugin_config(
         "manual_strm_paths": normalize_manual_strm_paths(raw_config.get("manual_strm_paths")),
         "auto_search_on_manual_strm": bool(raw_config.get("auto_search_on_manual_strm", False)),
         "auto_multi_subtitle_mode": normalize_auto_multi_subtitle_mode(raw_config.get("auto_multi_subtitle_mode")),
-        "auto_subtitle_language_priority": normalize_auto_language_priority(
-            raw_config.get("auto_subtitle_language_priority"),
-            list(default_auto_language_priority or DEFAULT_AUTO_LANGUAGE_PRIORITY),
-        ),
+        "auto_subtitle_language_priority": language_priority,
+        "auto_subtitle_language_strict": language_strict,
         "auto_subtitle_format_priority": normalize_auto_format_priority(
             raw_config.get("auto_subtitle_format_priority"),
             subtitle_exts or DEFAULT_AUTO_FORMAT_PRIORITY,
@@ -469,8 +476,18 @@ def build_config_form(
                         {
                             "model": "auto_subtitle_language_priority",
                             "label": "语言优先级",
-                            "placeholder": "bilingual,chi,cht,eng",
-                            "hint": "默认：双语, 简中, 繁中, 英文",
+                            "placeholder": "chi&eng,chi&jp,chi&kr,chi,cht,eng",
+                            "hint": "按顺序选择；支持中英、中日、中韩、其他中外双语及单语。",
+                            "persistentHint": True,
+                        },
+                        md=4,
+                    ),
+                    _col(
+                        "VSwitch",
+                        {
+                            "model": "auto_subtitle_language_strict",
+                            "label": "仅接受所选语言",
+                            "hint": "开启后只处理已选语言；无匹配时跳过，不自动回退或提交 AI 翻译。",
                             "persistentHint": True,
                         },
                         md=4,

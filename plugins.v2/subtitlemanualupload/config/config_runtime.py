@@ -31,6 +31,7 @@ RUNTIME_CONFIG_FIELDS = (
     ("_auto_search_on_manual_strm", "auto_search_on_manual_strm"),
     ("_auto_multi_subtitle_mode", "auto_multi_subtitle_mode"),
     ("_auto_subtitle_language_priority", "auto_subtitle_language_priority"),
+    ("_auto_subtitle_language_strict", "auto_subtitle_language_strict"),
     ("_auto_subtitle_format_priority", "auto_subtitle_format_priority"),
     ("_auto_ass_to_srt_for_ai", "auto_ass_to_srt_for_ai"),
     ("_timeline_max_offset_seconds", "timeline_max_offset_seconds"),
@@ -52,6 +53,7 @@ CLASS_RUNTIME_CONFIG_FIELDS = (
     "_auto_search_on_manual_strm",
     "_auto_multi_subtitle_mode",
     "_auto_subtitle_language_priority",
+    "_auto_subtitle_language_strict",
     "_auto_subtitle_format_priority",
     "_auto_ass_to_srt_for_ai",
     "_timeline_max_offset_seconds",
@@ -146,6 +148,7 @@ def build_save_config_payload(owner: Any) -> dict[str, Any]:
         "ai_link_enabled": owner._ai_link_enabled,
         "auto_multi_subtitle_mode": owner._auto_multi_subtitle_mode,
         "auto_subtitle_language_priority": list(owner._auto_subtitle_language_priority),
+        "auto_subtitle_language_strict": owner._auto_subtitle_language_strict,
         "auto_subtitle_format_priority": list(owner._auto_subtitle_format_priority),
         "auto_ass_to_srt_for_ai": owner._auto_ass_to_srt_for_ai,
     }

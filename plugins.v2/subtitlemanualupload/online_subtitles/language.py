@@ -3,26 +3,14 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from ..matching.subtitle_language import language_profile_from_text
+
 
 def _guess_language_label(value: str) -> str:
-    text = (value or "").lower()
-    if any(key in text for key in ["简英", "中英", "双语", "chs&eng", "chi_eng", "zh&en"]):
+    profile = language_profile_from_text(value)
+    if profile["suffix"] == "chi&eng":
         return "简英双语"
-    if any(key in text for key in ["繁", "cht", "zh-hant", "zh-tw"]) or re.search(
-        r"(^|[\s._\-\[\]()])(?:tw|hk)(?=$|[\s._\-\[\]()])",
-        text,
-    ):
-        return "繁体中文"
-    if any(key in text for key in ["简", "chs", "zh-hans", "中文", "chinese"]):
-        return "简体中文"
-    if any(key in text for key in ["eng", "english"]):
-        return "英文"
-    if any(key in text for key in ["日文", "日语", "jpn", "japanese"]) or re.search(
-        r"(^|[\s._\-\[\]()])ja(?=$|[\s._\-\[\]()])",
-        text,
-    ):
-        return "日文"
-    return ""
+    return profile["label"] if profile["suffix"] != "und" else ""
 
 
 def _language_category_from_text(value: str) -> str:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from ..matching.subtitle_formats import is_bitmap_subtitle
+from ..matching.subtitle_language import auto_language_bucket, language_profile_from_text
 
 import json
 import re
@@ -324,6 +325,15 @@ class SubtitleInventory:
     def embedded_subtitle_language_suffix(self, language: Any, title: Any = "") -> str:
         language_text = self._normalize_text(language).strip().lower()
         title_text = self._normalize_text(title).strip().lower()
+        title_suffix = language_profile_from_text(title_text)["suffix"]
+        # Container language tags describe a primary language; explicit track titles can identify a pair.
+        explicit_pair = bool(
+            re.search(r"中英|简英|繁英|中日|中韩|中法|中西|中德", title_text)
+            or re.search(r"\b(?:bilingual|bi-lingual|dual[ -]language)\b", title_text)
+            or re.search(r"\b(?:chs?|chi|zh|zh-cn|zh-hans|cht|zh-tw|zh-hant)[&+/,](?:eng?|english|jpn?|jap|ja|jp|korean|kor|ko|kr|fre|fr|spa|es|ger|de)\b", title_text)
+        )
+        if explicit_pair and "&" in title_suffix and auto_language_bucket(title_suffix) != "und":
+            return title_suffix
         normalized_language = self._normalize_language_suffix(language_text)
         if normalized_language.startswith("zh-hans"):
             return "chi"

@@ -12,6 +12,8 @@ const props = defineProps({
 
 const emit = defineEmits(['save', 'close'])
 const configError = ref('')
+const draggingAutoLanguage = ref('')
+const dropTargetAutoLanguage = ref('')
 const manualStrmPathPlaceholder = `/vol2/1000/raid/2/links2
 /vol1/1000/media-strm`
 const localConfig = ref({
@@ -28,7 +30,8 @@ const localConfig = ref({
   manual_strm_paths: '',
   auto_search_on_manual_strm: false,
   auto_multi_subtitle_mode: 'best',
-  auto_subtitle_language_priority: ['bilingual', 'chi', 'cht', 'eng'],
+  auto_subtitle_language_priority: ['chi&eng', 'chi&jp', 'chi&kr', 'other_bilingual', 'chi', 'cht', 'eng'],
+  auto_subtitle_language_strict: false,
   auto_subtitle_format_priority: ['.ass', '.srt', '.ssa', '.vtt'],
   auto_ass_to_srt_for_ai: true,
   timeline_max_offset_seconds: 120,
@@ -76,13 +79,17 @@ const autoMultiSubtitleModes = [
 ]
 
 const autoLanguageItems = [
-  { title: '双语', value: 'bilingual' },
+  { title: '中英双语', value: 'chi&eng' },
+  { title: '中日双语', value: 'chi&jp' },
+  { title: '中韩双语', value: 'chi&kr' },
+  { title: '其他中外双语', value: 'other_bilingual' },
   { title: '简中', value: 'chi' },
   { title: '繁中', value: 'cht' },
   { title: '英文', value: 'eng' },
   { title: '日文', value: 'jpn' },
   { title: '韩文', value: 'kor' },
 ]
+const defaultAutoLanguages = ['chi&eng', 'chi&jp', 'chi&kr', 'other_bilingual', 'chi', 'cht', 'eng']
 
 const autoFormatItems = [
   { title: 'ASS', value: '.ass' },
@@ -154,6 +161,64 @@ function normalizeList(value, allowed, fallback) {
   return result
 }
 
+function normalizeLanguages(value) {
+  if (value == null) return [...defaultAutoLanguages]
+  const allowed = autoLanguageItems.map(item => item.value)
+  const raw = Array.isArray(value) ? value : String(value).split(/[\s,，/|]+/)
+  const result = []
+  raw.forEach(item => {
+    const key = String(item || '').trim().toLowerCase()
+    const expanded = ['bilingual', '双语'].includes(key) ? defaultAutoLanguages.slice(0, 4) : [key === 'cht&eng' ? 'chi&eng' : key]
+    expanded.forEach(language => {
+      if (allowed.includes(language) && !result.includes(language)) result.push(language)
+    })
+  })
+  return result
+}
+
+function autoLanguageTitle(value) {
+  return autoLanguageItems.find(item => item.value === value)?.title || value
+}
+
+function setAutoLanguageRank(language, value) {
+  const priority = [...localConfig.value.auto_subtitle_language_priority]
+  const currentIndex = priority.indexOf(language)
+  const rank = Number(value)
+  if (!Number.isInteger(rank) || rank < 1 || rank > priority.length || currentIndex < 0) return
+
+  priority.splice(currentIndex, 1)
+  priority.splice(rank - 1, 0, language)
+  localConfig.value.auto_subtitle_language_priority = priority
+}
+
+function moveAutoLanguage(source, target) {
+  const priority = [...localConfig.value.auto_subtitle_language_priority]
+  const sourceIndex = priority.indexOf(source)
+  const targetIndex = priority.indexOf(target)
+  if (sourceIndex < 0 || targetIndex < 0 || sourceIndex === targetIndex) return
+
+  const [language] = priority.splice(sourceIndex, 1)
+  priority.splice(targetIndex, 0, language)
+  localConfig.value.auto_subtitle_language_priority = priority
+}
+
+function startDraggingAutoLanguage(language, event) {
+  draggingAutoLanguage.value = language
+  event.dataTransfer.effectAllowed = 'move'
+  event.dataTransfer.setData('text/plain', language)
+}
+
+function finishDraggingAutoLanguage() {
+  draggingAutoLanguage.value = ''
+  dropTargetAutoLanguage.value = ''
+}
+
+function dropAutoLanguage(language, event) {
+  event.preventDefault()
+  moveAutoLanguage(draggingAutoLanguage.value || event.dataTransfer.getData('text/plain'), language)
+  finishDraggingAutoLanguage()
+}
+
 function normalizeConfig(input) {
   const assrtApiKey = String(input?.assrt_api_key || '').trim()
   const opensubtitlesApiKey = String(input?.opensubtitles_api_key || '').trim()
@@ -186,11 +251,8 @@ function normalizeConfig(input) {
     auto_multi_subtitle_mode: autoMultiSubtitleModes.some(item => item.value === input?.auto_multi_subtitle_mode)
       ? input.auto_multi_subtitle_mode
       : 'best',
-    auto_subtitle_language_priority: normalizeList(
-      input?.auto_subtitle_language_priority,
-      autoLanguageItems.map(item => item.value),
-      ['bilingual', 'chi', 'cht', 'eng'],
-    ),
+    auto_subtitle_language_priority: normalizeLanguages(input?.auto_subtitle_language_priority),
+    auto_subtitle_language_strict: Boolean(input?.auto_subtitle_language_strict),
     auto_subtitle_format_priority: normalizeList(
       input?.auto_subtitle_format_priority,
       autoFormatItems.map(item => item.value),
@@ -221,6 +283,10 @@ function normalizeConfig(input) {
 
 function saveConfig() {
   const normalized = normalizeConfig(localConfig.value)
+  if (normalized.auto_subtitle_language_strict && !normalized.auto_subtitle_language_priority.length) {
+    configError.value = '仅接受所选语言时，请至少选择一种语言。'
+    return
+  }
   if (normalized.opensubtitles_username.includes('@')) {
     configError.value = '请输入用户名而非邮箱！'
     return
@@ -236,24 +302,26 @@ onMounted(() => {
 
 <template>
   <div class="subtitlemanualupload-config">
-    <VToolbar density="comfortable" color="transparent">
-      <div class="text-subtitle-1 ms-3 config-toolbar-title" title="海拉鲁字幕大师配置">海拉鲁字幕大师配置</div>
-      <VSpacer />
-      <VBtn
-        href="https://github.com/ifsherlock/MoviePilot-Plugins/blob/main/docs/SubtitleManualUpload%E5%8A%9F%E8%83%BD%E4%BD%BF%E7%94%A8%E6%95%99%E5%AD%A6.md"
-        target="_blank"
-        rel="noopener noreferrer"
-        prepend-icon="mdi-book-open-page-variant"
-        variant="text"
-        color="primary"
-        class="me-2"
-      >
-        使用教程
-      </VBtn>
-      <VBtn icon="mdi-content-save" variant="text" color="primary" :loading="props.saving" aria-label="保存配置" @click="saveConfig" />
-      <VBtn icon="mdi-close" variant="text" :disabled="props.saving" aria-label="关闭配置" @click="emit('close')" />
-    </VToolbar>
-    <VDivider />
+    <div class="config-toolbar-sticky">
+      <VToolbar density="comfortable" color="transparent">
+        <div class="text-subtitle-1 ms-3 config-toolbar-title" title="海拉鲁字幕大师配置">海拉鲁字幕大师配置</div>
+        <VSpacer />
+        <VBtn
+          href="https://github.com/ifsherlock/MoviePilot-Plugins/blob/main/docs/SubtitleManualUpload%E5%8A%9F%E8%83%BD%E4%BD%BF%E7%94%A8%E6%95%99%E5%AD%A6.md"
+          target="_blank"
+          rel="noopener noreferrer"
+          prepend-icon="mdi-book-open-page-variant"
+          variant="text"
+          color="primary"
+          class="me-2"
+        >
+          使用教程
+        </VBtn>
+        <VBtn icon="mdi-content-save" variant="text" color="primary" :loading="props.saving" aria-label="保存配置" @click="saveConfig" />
+        <VBtn icon="mdi-close" variant="text" :disabled="props.saving" aria-label="关闭配置" @click="emit('close')" />
+      </VToolbar>
+      <VDivider />
+    </div>
 
     <div class="config-shell">
       <VCard rounded="xl" elevation="0" class="config-card">
@@ -365,7 +433,58 @@ onMounted(() => {
               density="comfortable"
               multiple
               chips
-              hint="默认：双语、简中、繁中、英文"
+              hint="勾选需要的语言，展开“调整语言顺序”设置优先级。"
+              persistent-hint
+            />
+            <details v-if="localConfig.auto_subtitle_language_priority.length" class="language-priority-details">
+              <summary>
+                <span class="language-priority-summary">
+                  <span>调整语言顺序</span>
+                  <span class="language-priority-summary-hint">
+                    {{ localConfig.auto_subtitle_language_priority.length }} 项已选，序号 1 优先
+                  </span>
+                </span>
+                <v-icon icon="mdi-chevron-down" size="18" class="language-priority-chevron" aria-hidden="true" />
+              </summary>
+              <div class="language-priority-order">
+                <div
+                  v-for="(language, index) in localConfig.auto_subtitle_language_priority"
+                  :key="language"
+                  class="language-priority-row"
+                  :class="{ 'is-drop-target': dropTargetAutoLanguage === language, 'is-dragging': draggingAutoLanguage === language }"
+                  @dragover.prevent="dropTargetAutoLanguage = language"
+                  @drop="dropAutoLanguage(language, $event)"
+                >
+                  <button
+                    type="button"
+                    class="language-priority-drag-handle"
+                    :aria-label="'拖动' + autoLanguageTitle(language) + '调整顺序'"
+                    title="拖动调整顺序"
+                    draggable="true"
+                    @dragstart="startDraggingAutoLanguage(language, $event)"
+                    @dragend="finishDraggingAutoLanguage"
+                  >
+                    <v-icon icon="mdi-drag" size="18" aria-hidden="true" />
+                  </button>
+                  <span class="language-priority-name">{{ autoLanguageTitle(language) }}</span>
+                  <input
+                    :value="index + 1"
+                    :aria-label="`${autoLanguageTitle(language)}序号`"
+                    type="number"
+                    min="1"
+                    :max="localConfig.auto_subtitle_language_priority.length"
+                    step="1"
+                    class="language-priority-rank"
+                    @change="setAutoLanguageRank(language, $event.target.value)"
+                  >
+                </div>
+              </div>
+            </details>
+            <VSwitch
+              v-model="localConfig.auto_subtitle_language_strict"
+              label="仅接受所选语言"
+              color="info"
+              hint="无匹配时跳过，不自动回退或提交 AI 翻译"
               persistent-hint
             />
             <VSelect
@@ -607,6 +726,14 @@ onMounted(() => {
 </template>
 
 <style scoped>
+.config-toolbar-sticky {
+  position: sticky;
+  top: 0;
+  z-index: 4;
+  background: rgb(var(--v-theme-surface));
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
+}
+
 .config-shell {
   padding: 20px;
 }
@@ -621,6 +748,140 @@ onMounted(() => {
 .config-grid {
   display: grid;
   gap: 16px;
+}
+
+.language-priority-details {
+  border: 1px solid var(--smu-border);
+  border-radius: 6px;
+}
+
+.language-priority-details > summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 18px;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 8px 12px;
+  border-radius: inherit;
+  cursor: pointer;
+  list-style: none;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.language-priority-details > summary::-webkit-details-marker {
+  display: none;
+}
+
+.language-priority-details > summary:hover {
+  background: rgba(var(--v-theme-on-surface), 0.04);
+}
+
+.language-priority-details > summary:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
+
+.language-priority-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+
+.language-priority-details[open] .language-priority-chevron {
+  transform: rotate(180deg);
+}
+
+.language-priority-summary-hint {
+  color: var(--smu-text-muted);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.language-priority-order {
+  display: grid;
+  gap: 8px;
+  padding: 0 12px 12px;
+}
+
+.language-priority-row {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) 64px;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+}
+
+.language-priority-row.is-drop-target {
+  background: rgba(var(--v-theme-primary), 0.08);
+}
+
+.language-priority-row.is-dragging {
+  opacity: 0.48;
+}
+
+.language-priority-drag-handle {
+  display: grid;
+  width: 28px;
+  height: 36px;
+  place-items: center;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--smu-text-muted);
+  cursor: grab;
+  touch-action: none;
+}
+
+.language-priority-drag-handle:hover {
+  background: rgba(var(--v-theme-on-surface), 0.06);
+  color: var(--smu-text);
+}
+
+.language-priority-drag-handle:active {
+  cursor: grabbing;
+}
+
+.language-priority-drag-handle:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 1px;
+}
+
+.language-priority-name {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.language-priority-row > input.language-priority-rank {
+  box-sizing: border-box;
+  width: 64px;
+  height: 32px;
+  min-height: 0;
+  padding: 0 6px;
+  border: 1px solid var(--smu-border);
+  border-radius: 4px;
+  background: rgb(var(--v-theme-surface));
+  color: var(--smu-text);
+  font: inherit;
+  font-size: 14px;
+  text-align: center;
+}
+
+.language-priority-rank:focus-visible {
+  border-color: rgb(var(--v-theme-primary));
+  outline: 2px solid rgba(var(--v-theme-primary), 0.24);
+  outline-offset: 1px;
+}
+
+.language-priority-rank::-webkit-inner-spin-button,
+.language-priority-rank::-webkit-outer-spin-button {
+  margin: 0;
+  appearance: none;
+}
+
+.language-priority-rank {
+  appearance: textfield;
 }
 
 .config-grid.two-column {

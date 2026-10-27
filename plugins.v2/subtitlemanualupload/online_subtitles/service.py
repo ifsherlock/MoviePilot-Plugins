@@ -162,7 +162,7 @@ class OnlineSubtitleSearchService:
             reverse=True,
         )
         return {
-            "results": [item.to_dict() for item in results[:80]],
+            "results": [item.to_dict() for item in (results if scope in {"auto", "season"} else results[:80])],
             "messages": provider_messages,
         }
 

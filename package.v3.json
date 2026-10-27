@@ -3,7 +3,7 @@
     "name": "海拉鲁字幕大师",
     "description": "支持字幕搜索、上传、匹配、改名、智能调轴与自动入库的字幕管理插件。",
     "labels": "字幕,ChineseSubFinder,媒体库,整理",
-    "version": "1.2.11",
+    "version": "1.2.13",
     "icon": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/hyrule-subtitle-master.png",
     "author": "ifsherlock",
     "author_url": "https://github.com/ifsherlock",
@@ -11,6 +11,8 @@
     "system_version": ">=3.0.0",
     "release": true,
     "history": {
+      "v1.2.13": "语言偏好新增序号排序，可直接调整中英、中日等已选语言的优先顺序；排序面板默认收起，展开后调整，支持键盘及手机操作；支持拖动每项前的把手调整顺序；配置页工具栏随滚动固定显示。",
+      "v1.2.12": "精确拆分中英、中日、中韩等字幕语言偏好；新增仅接受所选语言模式，无匹配时跳过且不回退到 AI；兼容旧双语配置。",
       "v1.2.11": "页面顶部新增插件设置入口，支持桌面与手机；插件弹窗切换原生配置，侧栏复用现有设置表单；补齐加载失败重试、保存状态和失败内容保留。",
       "v1.2.10": "修复特殊字符压缩包成员解压为空及空字幕写入；支持 E/EP/Episode 集号并移除按顺序猜集；文字字幕统一 UTF-8、图片字节不变；分页索引全部整理历史，修复 5000 条截断、缓存合并与并发增删，优化缓存查询。",
       "v1.2.9": "新增 SUP、VobSub（IDX/SUB）、SMI/SAMI、TTML/DFXP 字幕上传、在线下载及整理识别；图片字幕保持原始字节，跳过繁简转换、AI 翻译和文字调轴，VobSub 同名配对写入；图片单文件支持 50 MiB；批量语言后缀增加常见组合预设，选择后立即应用勾选项，修复仍以 und 写入的问题。",

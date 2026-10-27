@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ..config.config_schema import normalize_auto_multi_subtitle_mode
-from ..matching.subtitle_language import auto_subtitle_sort_key, is_chinese_language_suffix
+from ..matching.subtitle_language import auto_subtitle_sort_key, is_chinese_language_suffix, language_matches_preferences
 from ..matching.subtitle_formats import is_bitmap_subtitle
 from ..catalog.target_resolver import (
     auto_fill_missing_targets as fill_missing_target_ids,
@@ -82,6 +82,10 @@ class AutoTransferWriteStrategy:
         target_lookup = {item.get("id"): item for item in targets if item.get("id")}
         grouped: Dict[str, List[Dict[str, Any]]] = {}
         for item in items:
+            if getattr(owner, "_auto_subtitle_language_strict", False) and not language_matches_preferences(
+                item.get("language_suffix"), getattr(owner, "_auto_subtitle_language_priority", None)
+            ):
+                continue
             target_id = owner._normalize_text(item.get("target_id"))
             if not target_id:
                 continue
@@ -134,7 +138,7 @@ class AutoTransferWriteStrategy:
         if not chosen_items:
             return {
                 "status": "skipped",
-                "reason": "整季包未能匹配到当前入库集数",
+                "reason": "未找到符合语言要求的字幕" if getattr(owner, "_auto_subtitle_language_strict", False) else "整季包未能匹配到当前入库集数",
                 "written_by_target": {},
                 "prepared_count": len(prepared_uploads),
             }
@@ -148,7 +152,7 @@ class AutoTransferWriteStrategy:
         foreign_items = []
         for item in chosen_items:
             source_path = upload_map[item["upload_id"]]["stored_path"]
-            if is_chinese_language_suffix(item.get("language_suffix")) or is_bitmap_subtitle(source_path):
+            if getattr(owner, "_auto_subtitle_language_strict", False) or is_chinese_language_suffix(item.get("language_suffix")) or is_bitmap_subtitle(source_path):
                 direct_items.append(item)
             else:
                 foreign_items.append(item)

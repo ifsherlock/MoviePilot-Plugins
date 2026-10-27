@@ -8,6 +8,7 @@ import json
 import shutil
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
+from ..matching.subtitle_language import auto_rank_candidates
 from ..online.online_subtitle import build_search_keywords
 
 
@@ -180,10 +181,15 @@ class AutoTransferSeasonCache:
             for item in search_result.get("results") or []
             if item.get("downloadable") is not False and owner._safe_int(item.get("score"), 0) >= owner._auto_search_min_score
         ]
+        candidates = auto_rank_candidates(
+            candidates,
+            getattr(owner, "_auto_subtitle_language_priority", None),
+            strict=bool(getattr(owner, "_auto_subtitle_language_strict", False)),
+        )
         if not candidates:
             return {
                 "status": "skipped",
-                "reason": "没有高置信可下载整季结果",
+                "reason": "未找到符合语言要求的字幕" if getattr(owner, "_auto_subtitle_language_strict", False) else "没有高置信可下载整季结果",
                 "written_by_target": {},
                 "search_results": len(search_result.get("results") or []),
             }
@@ -258,7 +264,7 @@ class AutoTransferSeasonCache:
             return best_partial_result
         return {
             "status": "skipped",
-            "reason": last_reason or "整季包未能写入任何字幕",
+            "reason": last_reason or ("未找到符合语言要求的字幕" if getattr(owner, "_auto_subtitle_language_strict", False) else "整季包未能写入任何字幕"),
             "written_by_target": {},
             "candidate_count": len(candidates),
             "search_results": len(search_result.get("results") or []),
@@ -285,7 +291,8 @@ class AutoTransferSeasonCache:
             target = self._collaborators.target_from_entry(entry)
             base = {"strategy": strategy, "target": target.get("label")}
             if self._collaborators.auto_target_has_chinese_subtitle(entry, target):
-                results[key] = {**base, "status": "skipped", "reason": "目标已有中文字幕"}
+                reason = "目标已有所选语言字幕" if getattr(owner, "_auto_subtitle_language_strict", False) else "目标已有中文字幕"
+                results[key] = {**base, "status": "skipped", "reason": reason}
                 continue
             if target.get("has_subtitle"):
                 self._logger.info(

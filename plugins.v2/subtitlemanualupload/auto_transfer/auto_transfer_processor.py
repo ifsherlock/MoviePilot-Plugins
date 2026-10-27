@@ -6,6 +6,7 @@ from pathlib import Path
 import shutil
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
+from ..matching.subtitle_language import auto_rank_candidates
 from ..online.online_subtitle import build_search_keywords
 
 
@@ -81,10 +82,15 @@ class AutoTransferProcessor:
             for item in search_result.get("results") or []
             if item.get("downloadable") is not False and owner._safe_int(item.get("score"), 0) >= owner._auto_search_min_score
         ]
+        candidates = auto_rank_candidates(
+            candidates,
+            getattr(owner, "_auto_subtitle_language_priority", None),
+            strict=bool(getattr(owner, "_auto_subtitle_language_strict", False)),
+        )
         if not candidates:
             return {
                 "status": "skipped",
-                "reason": "没有高置信可下载结果",
+                "reason": "未找到符合语言要求的字幕" if getattr(owner, "_auto_subtitle_language_strict", False) else "没有高置信可下载结果",
                 "target": target.get("label"),
                 "results": len(search_result.get("results") or []),
                 "search_results": len(search_result.get("results") or []),
@@ -199,7 +205,7 @@ class AutoTransferProcessor:
 
         return {
             "status": "skipped",
-            "reason": last_reason or "高置信结果未解析到可用字幕文件",
+            "reason": last_reason or ("未找到符合语言要求的字幕" if getattr(owner, "_auto_subtitle_language_strict", False) else "高置信结果未解析到可用字幕文件"),
             "target": target.get("label"),
             "candidate_count": len(candidates),
             "search_results": len(search_result.get("results") or []),
@@ -208,7 +214,8 @@ class AutoTransferProcessor:
     def search_and_write_entry(self, entry: Dict[str, Any]) -> Dict[str, Any]:
         target = self._collaborators.target_from_entry(entry)
         if self._collaborators.auto_target_has_chinese_subtitle(entry, target):
-            return {"status": "skipped", "reason": "目标已有中文字幕", "target": target.get("label")}
+            reason = "目标已有所选语言字幕" if getattr(self._owner, "_auto_subtitle_language_strict", False) else "目标已有中文字幕"
+            return {"status": "skipped", "reason": reason, "target": target.get("label")}
         if target.get("has_subtitle"):
             self._logger.info(
                 "[SubtitleManualUpload] 目标已有外挂字幕但未确认中文，继续自动匹配/AI target=%s",
@@ -294,7 +301,8 @@ class AutoTransferProcessor:
         base = {"strategy": strategy, "target": target.get("label")}
 
         if self._collaborators.auto_target_has_chinese_subtitle(entry, target):
-            return {**base, "status": "skipped", "reason": "目标已有中文字幕"}
+            reason = "目标已有所选语言字幕" if getattr(owner, "_auto_subtitle_language_strict", False) else "目标已有中文字幕"
+            return {**base, "status": "skipped", "reason": reason}
         if target.get("has_subtitle"):
             self._logger.info(
                 "[SubtitleManualUpload] 目标已有外挂字幕但未确认中文，继续自动匹配/AI target=%s",
@@ -312,6 +320,8 @@ class AutoTransferProcessor:
             )
 
         if strategy == "ai_source_only":
+            if getattr(owner, "_auto_subtitle_language_strict", False):
+                return {**base, "status": "skipped", "reason": "仅接受所选语言不支持自动 AI 来源生成"}
             return {**base, **self._collaborators.submit_ai_for_entry(entry, target, "策略 ai_source_only")}
 
         search_result = self._collaborators.call_search_write_subtitle(
@@ -320,7 +330,7 @@ class AutoTransferProcessor:
             queue_rate_limited=queue_rate_limited,
             task_ids=task_ids,
         )
-        if strategy == "online_source_only" or search_result.get("status") == "written":
+        if getattr(owner, "_auto_subtitle_language_strict", False) or strategy == "online_source_only" or search_result.get("status") == "written":
             return {**base, **search_result}
 
         if target.get("is_stream"):
