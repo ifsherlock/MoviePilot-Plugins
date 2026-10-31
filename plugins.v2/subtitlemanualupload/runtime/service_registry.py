@@ -25,6 +25,9 @@ class SubtitleManualUploadServices:
     def writer(self):
         return service_factories.subtitle_writer(self._owner)
 
+    def emby_refresh(self):
+        return service_factories.emby_refresh_service()
+
     def history(self):
         return service_factories.subtitle_history(self._owner)
 

@@ -8,7 +8,9 @@ MoviePilot V2 字幕管理插件，脱胎自 [ChineseSubFinder](https://github.c
 
 详细配置、额外 STRM 实时监控和字幕写入说明见：[功能使用教学](../../docs/SubtitleManualUpload功能使用教学.md)。
 
-## v0.1.97 更新
+## v0.1.98 更新
+
+- 写入字幕后优先启动神医助手外挂字幕扫描任务；找不到 `ScanExternalTrackTask` 或 `ScanExternalSubtitleTask` 时，回退 Emby 全库刷新。
 
 - 配置页顶部的使用教程、保存和关闭操作随设置页面滚动固定显示。
 - 语言优先级增加序号输入；调整已选语言的序号即可即时重排，不必反复取消和重选。

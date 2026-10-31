@@ -77,31 +77,31 @@ body[data-theme='transparent'] {
   --smu-card-bg-disabled: rgba(var(--v-theme-surface), var(--transparent-opacity-light, 0.16));
 }
 
-.config-toolbar-sticky[data-v-50304b3e] {
+.config-toolbar-sticky[data-v-e8f08ada] {
   position: sticky;
   top: 0;
   z-index: 4;
   background: rgb(var(--v-theme-surface));
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.08);
 }
-.config-shell[data-v-50304b3e] {
+.config-shell[data-v-e8f08ada] {
   padding: 20px;
 }
-.config-card[data-v-50304b3e] {
+.config-card[data-v-e8f08ada] {
   border: 1px solid var(--smu-border);
   background: var(--smu-card-bg-strong);
   backdrop-filter: blur(12px);
   box-shadow: var(--smu-shadow);
 }
-.config-grid[data-v-50304b3e] {
+.config-grid[data-v-e8f08ada] {
   display: grid;
   gap: 16px;
 }
-.language-priority-details[data-v-50304b3e] {
+.language-priority-details[data-v-e8f08ada] {
   border: 1px solid var(--smu-border);
   border-radius: 6px;
 }
-.language-priority-details > summary[data-v-50304b3e] {
+.language-priority-details > summary[data-v-e8f08ada] {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 18px;
   align-items: center;
@@ -114,49 +114,49 @@ body[data-theme='transparent'] {
   font-size: 13px;
   font-weight: 600;
 }
-.language-priority-details > summary[data-v-50304b3e]::-webkit-details-marker {
+.language-priority-details > summary[data-v-e8f08ada]::-webkit-details-marker {
   display: none;
 }
-.language-priority-details > summary[data-v-50304b3e]:hover {
+.language-priority-details > summary[data-v-e8f08ada]:hover {
   background: rgba(var(--v-theme-on-surface), 0.04);
 }
-.language-priority-details > summary[data-v-50304b3e]:focus-visible {
+.language-priority-details > summary[data-v-e8f08ada]:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 2px;
 }
-.language-priority-summary[data-v-50304b3e] {
+.language-priority-summary[data-v-e8f08ada] {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
   gap: 4px 12px;
 }
-.language-priority-details[open] .language-priority-chevron[data-v-50304b3e] {
+.language-priority-details[open] .language-priority-chevron[data-v-e8f08ada] {
   transform: rotate(180deg);
 }
-.language-priority-summary-hint[data-v-50304b3e] {
+.language-priority-summary-hint[data-v-e8f08ada] {
   color: var(--smu-text-muted);
   font-size: 12px;
   font-weight: 400;
 }
-.language-priority-order[data-v-50304b3e] {
+.language-priority-order[data-v-e8f08ada] {
   display: grid;
   gap: 8px;
   padding: 0 12px 12px;
 }
-.language-priority-row[data-v-50304b3e] {
+.language-priority-row[data-v-e8f08ada] {
   display: grid;
   grid-template-columns: 28px minmax(0, 1fr) 64px;
   align-items: center;
   gap: 12px;
   min-height: 48px;
 }
-.language-priority-row.is-drop-target[data-v-50304b3e] {
+.language-priority-row.is-drop-target[data-v-e8f08ada] {
   background: rgba(var(--v-theme-primary), 0.08);
 }
-.language-priority-row.is-dragging[data-v-50304b3e] {
+.language-priority-row.is-dragging[data-v-e8f08ada] {
   opacity: 0.48;
 }
-.language-priority-drag-handle[data-v-50304b3e] {
+.language-priority-drag-handle[data-v-e8f08ada] {
   display: grid;
   width: 28px;
   height: 36px;
@@ -168,22 +168,22 @@ body[data-theme='transparent'] {
   cursor: grab;
   touch-action: none;
 }
-.language-priority-drag-handle[data-v-50304b3e]:hover {
+.language-priority-drag-handle[data-v-e8f08ada]:hover {
   background: rgba(var(--v-theme-on-surface), 0.06);
   color: var(--smu-text);
 }
-.language-priority-drag-handle[data-v-50304b3e]:active {
+.language-priority-drag-handle[data-v-e8f08ada]:active {
   cursor: grabbing;
 }
-.language-priority-drag-handle[data-v-50304b3e]:focus-visible {
+.language-priority-drag-handle[data-v-e8f08ada]:focus-visible {
   outline: 2px solid currentColor;
   outline-offset: 1px;
 }
-.language-priority-name[data-v-50304b3e] {
+.language-priority-name[data-v-e8f08ada] {
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.language-priority-row > input.language-priority-rank[data-v-50304b3e] {
+.language-priority-row > input.language-priority-rank[data-v-e8f08ada] {
   box-sizing: border-box;
   width: 64px;
   height: 32px;
@@ -197,59 +197,59 @@ body[data-theme='transparent'] {
   font-size: 14px;
   text-align: center;
 }
-.language-priority-rank[data-v-50304b3e]:focus-visible {
+.language-priority-rank[data-v-e8f08ada]:focus-visible {
   border-color: rgb(var(--v-theme-primary));
   outline: 2px solid rgba(var(--v-theme-primary), 0.24);
   outline-offset: 1px;
 }
-.language-priority-rank[data-v-50304b3e]::-webkit-inner-spin-button,
-.language-priority-rank[data-v-50304b3e]::-webkit-outer-spin-button {
+.language-priority-rank[data-v-e8f08ada]::-webkit-inner-spin-button,
+.language-priority-rank[data-v-e8f08ada]::-webkit-outer-spin-button {
   margin: 0;
   appearance: none;
 }
-.language-priority-rank[data-v-50304b3e] {
+.language-priority-rank[data-v-e8f08ada] {
   appearance: textfield;
 }
-.config-grid.two-column[data-v-50304b3e] {
+.config-grid.two-column[data-v-e8f08ada] {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
-.config-section[data-v-50304b3e] {
+.config-section[data-v-e8f08ada] {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
   margin-bottom: 14px;
 }
-.config-section-title[data-v-50304b3e] {
+.config-section-title[data-v-e8f08ada] {
   color: var(--smu-text);
   font-size: 15px;
   font-weight: 800;
   letter-spacing: 0.04em;
 }
-.config-section p[data-v-50304b3e] {
+.config-section p[data-v-e8f08ada] {
   margin: 4px 0 0;
   color: var(--smu-text-muted);
   font-size: 12px;
 }
-.config-toolbar-title[data-v-50304b3e] {
+.config-toolbar-title[data-v-e8f08ada] {
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.config-switch-line[data-v-50304b3e] {
+.config-switch-line[data-v-e8f08ada] {
   min-height: 48px;
 }
-.dialog-title[data-v-50304b3e] {
+.dialog-title[data-v-e8f08ada] {
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 @media (max-width: 760px) {
-.config-grid.two-column[data-v-50304b3e] {
+.config-grid.two-column[data-v-e8f08ada] {
     grid-template-columns: 1fr;
 }
-.config-section[data-v-50304b3e] {
+.config-section[data-v-e8f08ada] {
     align-items: stretch;
     flex-direction: column;
 }

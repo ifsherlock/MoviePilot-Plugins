@@ -41,7 +41,7 @@
         "name": "海拉鲁字幕大师",
         "description": "海拉鲁字幕大师，脱胎自 ChineseSubFinder；支持手动上传字幕、ZIP/RAR/7Z，选择本地电影/剧集后自动匹配并按媒体文件名落盘；网盘挂载暂不保证完整可用性。",
         "labels": "字幕,ChineseSubFinder,媒体库,整理",
-        "version": "0.1.97",
+        "version": "0.1.98",
         "icon": "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/hyrule-subtitle-master.png",
         "author": "ifsherlock",
         "author_url": "https://github.com/ifsherlock",
@@ -50,6 +50,7 @@
         "v3": false,
         "release": true,
         "history": {
+            "v0.1.98": "写入字幕后优先启动神医助手外挂字幕扫描任务；找不到专用任务时回退 Emby 全库刷新，默认关闭。",
             "v0.1.97": "语言偏好新增序号排序，可直接调整中英、中日等已选语言的优先顺序；排序面板默认收起，展开后调整，支持键盘及手机操作；支持拖动每项前的把手调整顺序；配置页工具栏随滚动固定显示。",
             "v0.1.96": "精确拆分中英、中日、中韩等字幕语言偏好；新增仅接受所选语言模式，无匹配时跳过且不回退到 AI；兼容旧双语配置。",
             "v0.1.95": "页面顶部新增插件设置入口，支持桌面与手机；插件弹窗切换原生配置，侧栏复用现有设置表单；补齐加载失败重试、保存状态和失败内容保留。",

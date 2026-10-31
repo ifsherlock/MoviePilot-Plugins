@@ -22,6 +22,7 @@ const localConfig = ref({
   online_providers: ['subhd', 'zimuku'],
   online_use_proxy: false,
   traditional_to_simplified: false,
+  emby_refresh_after_subtitle_write: false,
   auto_search_on_transfer: false,
   auto_skip_chinese_media_on_transfer: true,
   auto_transfer_subtitle_strategy: 'online_then_ai_source',
@@ -250,6 +251,7 @@ function normalizeConfig(input) {
     online_use_proxy: Boolean(input?.online_use_proxy),
     online_proxy_migrated: true,
     traditional_to_simplified: Boolean(input?.traditional_to_simplified),
+    emby_refresh_after_subtitle_write: Boolean(input?.emby_refresh_after_subtitle_write),
     auto_search_on_transfer: Boolean(input?.auto_search_on_transfer),
     auto_skip_chinese_media_on_transfer: input?.auto_skip_chinese_media_on_transfer !== false,
     auto_transfer_subtitle_strategy: autoStrategy,
@@ -370,6 +372,13 @@ onMounted(() => {
               label="写入前繁体转简体"
               color="success"
               hide-details
+            />
+            <VSwitch
+              v-model="localConfig.emby_refresh_after_subtitle_write"
+              label="写入后扫描 Emby 外挂字幕"
+              color="info"
+              hint="优先启动神医助手外挂字幕扫描任务；未找到任务时触发 Emby 全库刷新。"
+              persistent-hint
             />
             <VSwitch
               v-model="localConfig.auto_search_on_transfer"

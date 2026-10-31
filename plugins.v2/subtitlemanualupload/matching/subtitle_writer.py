@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import shutil
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from .subtitle_language import is_chinese_language_suffix
 from .subtitle_formats import is_bitmap_subtitle, is_text_subtitle
@@ -279,6 +279,23 @@ class SubtitleWriter:
         operation["write_source_path"] = output_path
         operation["simplified_result"] = {"enabled": True, "converted": converted}
 
+    def _refresh_emby_after_write(self, targets: Iterable[Dict[str, Any]]) -> None:
+        owner = self._owner
+        if not getattr(owner, "_emby_refresh_after_subtitle_write", False):
+            return
+        items = list(targets)
+        if not items:
+            return
+        try:
+            services = getattr(owner, "services", None)
+            refresh_factory = getattr(services, "emby_refresh", None)
+            if not callable(refresh_factory):
+                self._logger.warning("[SubtitleManualUpload] Emby 外挂字幕扫描服务不可用，跳过扫描")
+                return
+            refresh_factory().refresh_for_videos(items)
+        except Exception as exc:
+            self._logger.warning("[SubtitleManualUpload] 通知 Emby 扫描外挂字幕失败，不影响字幕写入: %s", exc)
+
     def write_operations_to_disk(
         self,
         *,
@@ -420,11 +437,11 @@ class SubtitleWriter:
                 }
             )
 
-        touched_videos: Dict[str, Path] = {
-            str(operation["video_path"]): operation["video_path"]
+        touched_targets: Dict[str, Dict[str, Any]] = {
+            str(operation["video_path"]): operation["target_entry"]
             for operation in operations
         }
-        for video_path in touched_videos.values():
+        for video_path in (Path(path) for path in touched_targets):
             owner._remove_ext_marks(video_path)
             inventory = owner.services.subtitle_inventory()
             if hasattr(inventory, "invalidate_directory"):
@@ -445,6 +462,7 @@ class SubtitleWriter:
             ]
         )
         owner._invalidate_match_history_cache()
+        self._refresh_emby_after_write(touched_targets.values())
         return written_results, fixed_count, simplified_count
 
     def apply_upload_session(

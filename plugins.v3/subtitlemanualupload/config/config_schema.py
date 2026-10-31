@@ -41,6 +41,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "rar_dependency_mode": "none",
     "rar_tool_path": DEFAULT_RAR_TOOL_PATH,
     "traditional_to_simplified": False,
+    "emby_refresh_after_subtitle_write": False,
     "auto_search_on_transfer": False,
     "auto_skip_chinese_media_on_transfer": True,
     "auto_transfer_subtitle_strategy": "online_then_ai_source",
@@ -264,6 +265,7 @@ def normalize_plugin_config(
         "opensubtitles_password": normalize_text(raw_config.get("opensubtitles_password")),
         "ai_link_enabled": bool(raw_config.get("ai_link_enabled", True)),
         "traditional_to_simplified": bool(raw_config.get("traditional_to_simplified", False)),
+        "emby_refresh_after_subtitle_write": bool(raw_config.get("emby_refresh_after_subtitle_write", False)),
         "auto_search_on_transfer": bool(raw_config.get("auto_search_on_transfer", False)),
         "auto_skip_chinese_media_on_transfer": bool(raw_config.get("auto_skip_chinese_media_on_transfer", True)),
         "auto_transfer_subtitle_strategy": normalize_auto_transfer_subtitle_strategy(
@@ -356,6 +358,7 @@ def build_config_form(
                     _col("VSwitch", {"model": "enabled", "label": "启用插件"}, md=3),
                     _col("VSwitch", {"model": "show_sidebar_nav", "label": "显示侧边栏入口"}, md=3),
                     _col("VSwitch", {"model": "traditional_to_simplified", "label": "写入前繁体转简体"}, md=3),
+                    _col("VSwitch", {"model": "emby_refresh_after_subtitle_write", "label": "写入后扫描 Emby 外挂字幕"}, md=3),
                     _col("VSwitch", {"model": "auto_search_on_transfer", "label": "入库后自动搜索匹配字幕"}, md=3),
                 ),
                 _row(

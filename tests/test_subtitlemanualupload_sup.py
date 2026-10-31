@@ -77,6 +77,7 @@ def sup_modules(request, monkeypatch):
 
     try:
         yield types.SimpleNamespace(
+            generation=request.param,
             formats=load("matching.subtitle_formats"),
             language=load("matching.subtitle_language"),
             upload=load("upload.upload_session"),
@@ -117,6 +118,7 @@ def make_bitmap_writer(modules, tmp_path):
     inventory = types.SimpleNamespace(invalidate_directory=Mock())
     owner = types.SimpleNamespace(
         _traditional_to_simplified=True,
+        _emby_refresh_after_subtitle_write=False,
         _subtitle_exts=modules.formats.SUBTITLE_EXTS,
         _stream_exts={".strm"},
         _normalize_text=modules.language.normalize_text,
@@ -141,12 +143,35 @@ def make_bitmap_writer(modules, tmp_path):
     return writer, owner, simplify
 
 
+def make_bitmap_operations(modules, tmp_path, writer, *, target_ids=("episode-1",)):
+    source = tmp_path / "uploaded.sup"
+    source.write_bytes(SUP_CONTENT)
+    targets = {target_id: make_target(tmp_path, target_id) for target_id in target_ids}
+    operations = writer.build_write_operations(
+        [
+            {"upload_id": "uploaded", "target_id": target_id, "ext": ".sup", "language_suffix": "eng"}
+            for target_id in target_ids
+        ],
+        {"uploaded": {"upload_id": "uploaded", "stored_path": str(source), "source_name": source.name, "ext": ".sup"}},
+        targets,
+    )
+    return source, targets, operations
+
+
 def make_target(tmp_path, target_id="episode-1"):
     media_dir = tmp_path / "media"
     media_dir.mkdir(exist_ok=True)
     video = media_dir / f"{target_id}.mkv"
     video.touch()
-    return {"id": target_id, "path": str(video), "basename": video.stem, "storage": "local"}
+    return {
+        "id": target_id,
+        "path": str(video),
+        "basename": video.stem,
+        "storage": "local",
+        "media_type": "tv",
+        "title": "Vision Quest",
+        "year": "2026",
+    }
 
 
 def make_vobsub_uploads(tmp_path, *, archive_name="subtitles.zip", directory="season-1"):
@@ -428,6 +453,181 @@ def test_sup_write_skips_text_processing_and_preserves_binary(sup_modules, tmp_p
     assert owner._set_timeline_task.call_args.kwargs["status"] == "skipped"
     owner._run_timeline_fix.assert_not_called()
     simplify.assert_not_called()
+
+
+def test_subtitle_write_does_not_refresh_emby_when_disabled(sup_modules, tmp_path):
+    writer, owner, _ = make_bitmap_writer(sup_modules, tmp_path)
+    refresh_factory = Mock()
+    owner.services.emby_refresh = refresh_factory
+    _, _, operations = make_bitmap_operations(sup_modules, tmp_path, writer)
+
+    writer.write_operations_to_disk(session_dir=tmp_path / "session", operations=operations, fix_timeline=True)
+
+    refresh_factory.assert_not_called()
+
+
+def test_subtitle_write_refreshes_emby_once_for_batch(sup_modules, tmp_path):
+    writer, owner, _ = make_bitmap_writer(sup_modules, tmp_path)
+    owner._emby_refresh_after_subtitle_write = True
+    refresh_service = Mock()
+    refresh_factory = Mock(return_value=refresh_service)
+    owner.services.emby_refresh = refresh_factory
+    _, targets, operations = make_bitmap_operations(
+        sup_modules, tmp_path, writer, target_ids=("episode-1", "episode-2")
+    )
+
+    written, _, _ = writer.write_operations_to_disk(
+        session_dir=tmp_path / "session", operations=operations, fix_timeline=True
+    )
+
+    assert len(written) == 2
+    refresh_factory.assert_called_once_with()
+    refresh_service.refresh_for_videos.assert_called_once()
+    refreshed_targets = refresh_service.refresh_for_videos.call_args.args[0]
+    assert {target["path"] for target in refreshed_targets} == {target["path"] for target in targets.values()}
+
+
+def test_subtitle_write_keeps_result_when_emby_refresh_fails(sup_modules, tmp_path):
+    writer, owner, _ = make_bitmap_writer(sup_modules, tmp_path)
+    owner._emby_refresh_after_subtitle_write = True
+    refresh_service = Mock()
+    refresh_service.refresh_for_videos.side_effect = RuntimeError("Emby unavailable")
+    owner.services.emby_refresh = Mock(return_value=refresh_service)
+    _, _, operations = make_bitmap_operations(sup_modules, tmp_path, writer)
+
+    written, _, _ = writer.write_operations_to_disk(
+        session_dir=tmp_path / "session", operations=operations, fix_timeline=True
+    )
+
+    assert len(written) == 1
+    assert Path(written[0]["output_path"]).is_file()
+    assert Path(written[0]["output_path"]).read_bytes() == SUP_CONTENT
+
+
+def emby_refresh_test_runtime(monkeypatch, generation, *, http_module_name="app.adapters.network.http"):
+    server = Mock()
+    server._host = "http://emby.local:8096/"
+    server._apikey = "test-api-key"
+    server.is_inactive.return_value = False
+    service_info = types.SimpleNamespace(instance=server)
+    helper = Mock()
+    helper.get_services.return_value = {"nas-emby": service_info}
+    helper_module_name = "app.helper.mediaserver" if generation == "plugins.v2" else "app.application.mediaserver"
+    helper_module = types.ModuleType(helper_module_name)
+    helper_module.MediaServerHelper = Mock(return_value=helper)
+    if helper_module_name == "app.application.mediaserver":
+        monkeypatch.setitem(sys.modules, "app.application", types.ModuleType("app.application"))
+    else:
+        helper_package = types.ModuleType("app.helper")
+        helper_package.mediaserver = helper_module
+        monkeypatch.setitem(sys.modules, "app.helper", helper_package)
+    monkeypatch.setitem(sys.modules, helper_module_name, helper_module)
+
+    response = Mock(status_code=200)
+    response.json.return_value = [
+        {"Id": "global-library-refresh", "Key": "RefreshLibrary", "Name": "Scan media library", "State": "Idle"},
+        {"Id": "external-subtitle-scan", "Key": "ScanExternalTrackTask", "Name": "Scan External Tracks", "State": "Idle"},
+    ]
+    request_utils = Mock()
+    request_utils.get_res.return_value = response
+    request_utils.post_res.return_value = Mock(status_code=204)
+    http_module = types.ModuleType(http_module_name)
+    http_module.RequestUtils = Mock(return_value=request_utils)
+    if http_module_name == "app.adapters.network.http":
+        monkeypatch.setitem(sys.modules, "app.adapters", types.ModuleType("app.adapters"))
+        monkeypatch.setitem(sys.modules, "app.adapters.network", types.ModuleType("app.adapters.network"))
+    else:
+        monkeypatch.setitem(sys.modules, "app.utils", types.ModuleType("app.utils"))
+    monkeypatch.setitem(sys.modules, http_module_name, http_module)
+    return server, helper, request_utils
+
+
+@pytest.mark.parametrize("http_module_name", ("app.adapters.network.http", "app.utils.http"))
+def test_emby_refresh_starts_only_external_subtitle_scan_task(sup_modules, monkeypatch, http_module_name):
+    server, helper, request_utils = emby_refresh_test_runtime(
+        monkeypatch,
+        sup_modules.generation,
+        http_module_name=http_module_name,
+    )
+    service = sup_modules.load("integrations.emby_refresh").EmbyRefreshService(Mock())
+
+    assert service.refresh_for_videos([{"path": "/media/movie.mkv", "media_type": "movie"}]) is True
+
+    helper.get_services.assert_called_once_with()
+    request_utils.get_res.assert_called_once_with(
+        "http://emby.local:8096/emby/ScheduledTasks",
+        params={"api_key": "test-api-key"},
+        timeout=15,
+    )
+    request_utils.post_res.assert_called_once_with(
+        "http://emby.local:8096/emby/ScheduledTasks/Running/external-subtitle-scan",
+        params={"api_key": "test-api-key"},
+        timeout=15,
+    )
+    server.refresh_library_by_items.assert_not_called()
+    server.refresh_root_library.assert_not_called()
+
+
+def test_emby_refresh_does_not_restart_an_active_external_scan(sup_modules, monkeypatch):
+    server, _, request_utils = emby_refresh_test_runtime(monkeypatch, sup_modules.generation)
+    request_utils.get_res.return_value.json.return_value[1]["State"] = "Running"
+    service = sup_modules.load("integrations.emby_refresh").EmbyRefreshService(Mock())
+
+    assert service.refresh_for_videos([{"path": "/media/show.mkv", "media_type": "tv"}]) is True
+
+    request_utils.post_res.assert_not_called()
+    server.refresh_root_library.assert_not_called()
+
+
+def test_emby_refresh_falls_back_to_library_refresh_when_scan_task_is_missing(sup_modules, monkeypatch):
+    _, _, request_utils = emby_refresh_test_runtime(monkeypatch, sup_modules.generation)
+    request_utils.get_res.return_value.json.return_value = [
+        {"Id": "library", "Key": "RefreshLibrary", "Name": "Scan media library", "State": "Idle"}
+    ]
+    service = sup_modules.load("integrations.emby_refresh").EmbyRefreshService(Mock())
+
+    assert service.refresh_for_videos([{"path": "/media/movie.mkv", "media_type": "movie"}]) is True
+    request_utils.post_res.assert_called_once_with(
+        "http://emby.local:8096/emby/Library/Refresh",
+        params={"api_key": "test-api-key"},
+        timeout=15,
+    )
+
+
+def test_emby_refresh_recognizes_upstream_scan_task_key(sup_modules, monkeypatch):
+    _, _, request_utils = emby_refresh_test_runtime(monkeypatch, sup_modules.generation)
+    request_utils.get_res.return_value.json.return_value = [
+        {"Id": "upstream-scan", "Key": "ScanExternalSubtitleTask", "State": "Idle"}
+    ]
+    service = sup_modules.load("integrations.emby_refresh").EmbyRefreshService(Mock())
+
+    assert service.refresh_for_videos([{"path": "/media/movie.mkv", "media_type": "movie"}]) is True
+    request_utils.post_res.assert_called_once_with(
+        "http://emby.local:8096/emby/ScheduledTasks/Running/upstream-scan",
+        params={"api_key": "test-api-key"},
+        timeout=15,
+    )
+
+
+def test_emby_refresh_does_not_fallback_when_task_query_fails(sup_modules, monkeypatch):
+    _, _, request_utils = emby_refresh_test_runtime(monkeypatch, sup_modules.generation)
+    request_utils.get_res.return_value = Mock(status_code=503)
+    service = sup_modules.load("integrations.emby_refresh").EmbyRefreshService(Mock())
+
+    assert service.refresh_for_videos([{"path": "/media/movie.mkv", "media_type": "movie"}]) is False
+    request_utils.post_res.assert_not_called()
+
+
+def test_emby_refresh_does_not_fallback_when_dedicated_task_start_fails(sup_modules, monkeypatch):
+    _, _, request_utils = emby_refresh_test_runtime(monkeypatch, sup_modules.generation)
+    request_utils.post_res.return_value = Mock(status_code=500)
+    service = sup_modules.load("integrations.emby_refresh").EmbyRefreshService(Mock())
+
+    assert service.refresh_for_videos([{"path": "/media/movie.mkv", "media_type": "movie"}]) is False
+    request_utils.post_res.assert_called_once()
+    assert request_utils.post_res.call_args.args[0].endswith(
+        "/emby/ScheduledTasks/Running/external-subtitle-scan"
+    )
 
 
 @pytest.mark.parametrize(("extension", "content"), ((".sup", SUP_CONTENT), (".idx", IDX_CONTENT), (".sub", VOBSUB_CONTENT)), ids=("sup", "idx", "vobsub"))

@@ -155,7 +155,7 @@ def test_backend_inventory_cli_outputs_valid_json_for_big_modules():
             assert target_packages[name]["python_files"] == ["__init__.py", "upload_session.py"]
         elif name == "integrations":
             assert target_packages[name]["contains_only_init"] is False
-            assert target_packages[name]["python_files"] == ["__init__.py", "autosub_bridge.py"]
+            assert target_packages[name]["python_files"] == ["__init__.py", "autosub_bridge.py", "emby_refresh.py"]
         elif name == "runtime":
             assert target_packages[name]["contains_only_init"] is False
             assert target_packages[name]["python_files"] == [

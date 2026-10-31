@@ -47,6 +47,7 @@ from ..catalog.target_resolver import (
 )
 from ..catalog.manual_strm import ManualStrmCatalog
 from ..timeline.timeline_fixer import TimelineFixResult, check_timeline_fixer_dependencies, fix_subtitle_timeline
+from ..integrations.emby_refresh import EmbyRefreshService
 from ..timeline.timeline_tasks import TimelineTaskStore
 from ..matching.tongwen import convert_subtitle_file_to_simplified
 from ..upload.upload_session import (
@@ -142,6 +143,10 @@ def subtitle_writer(owner) -> SubtitleWriter:
         ),
         timeline_cache_dir=lambda: owner.get_data_path() / "timeline_cache",
     )
+
+
+def emby_refresh_service() -> EmbyRefreshService:
+    return EmbyRefreshService(logger)
 
 
 def target_entry_cache(owner) -> TargetEntryCache:
