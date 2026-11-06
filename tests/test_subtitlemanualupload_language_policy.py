@@ -71,6 +71,49 @@ def test_language_filter_and_sort_distinguish_pairs(language_modules):
     assert [item["language_suffix"] for item in sorted(candidates, key=lambda item: language.auto_subtitle_sort_key(item, language_priority=priority))] == ["chi&eng", "chi&jp", "chi&kr"]
 
 
+@pytest.mark.parametrize("priority,strict,expected", [
+    (["chi&eng", "chi", "eng"], False, ["chi&eng"]),
+    (["cht&eng", "chi&jp", "chi&eng", "chi"], True, ["chi&eng", "chi&jp"]),
+    (["chi&eng", "chi&jp", "chi"], False, ["chi&eng", "chi&jp"]),
+    (["other_bilingual", "chi"], False, ["other_bilingual"]),
+    (["chi", "eng"], False, None),
+    (["chi", "eng"], True, ["chi", "eng"]),
+    ([], False, None),
+    ([], True, []),
+])
+def test_required_languages_preserve_selected_pairs_over_single_languages(language_modules, priority, strict, expected):
+    assert language_modules.language.required_auto_languages(priority, strict=strict) == expected
+
+
+@pytest.mark.parametrize("strict", [False, True])
+@pytest.mark.parametrize("existing,expected", [
+    (["chi"], False),
+    (["chi&kr"], False),
+    (["chi", "eng"], False),
+    (["cht&eng"], True),
+    (["chi&jp"], True),
+])
+def test_any_selected_pair_satisfies_existing_subtitles_without_combining_tracks(language_modules, strict, existing, expected):
+    language = language_modules.language
+    target = {"subtitles": [{"language_suffix": suffix} for suffix in existing]}
+    inventory = types.SimpleNamespace(embedded_subtitle_tracks_for_target=lambda entry: [])
+
+    assert language.auto_target_has_chinese_subtitle(
+        {}, target, subtitle_inventory=inventory,
+        language_priority=["chi&eng", "chi&jp", "chi"], strict=strict,
+    ) is expected
+
+
+def test_single_language_without_strict_mode_keeps_existing_chinese_skip(language_modules):
+    language = language_modules.language
+    inventory = types.SimpleNamespace(embedded_subtitle_tracks_for_target=lambda entry: [])
+
+    assert language.auto_target_has_chinese_subtitle(
+        {}, {"subtitles": [{"language_suffix": "chi"}]}, subtitle_inventory=inventory,
+        language_priority=["eng"], strict=False,
+    )
+
+
 def test_preferred_existing_subtitle_uses_exact_pair(language_modules):
     language = language_modules.language
 
@@ -150,7 +193,8 @@ def test_dialogue_distinguishes_japanese_from_chinese_japanese(language_modules)
     assert language.detect_language_profile("movie.srt", (chinese + japanese).encode(), {".srt"})["suffix"] == "chi&jp"
 
 
-def test_strict_candidate_filter_checks_specific_pairs(language_modules):
+@pytest.mark.parametrize("strict", [False, True])
+def test_candidate_filter_checks_required_pairs_and_keeps_unknown_for_inspection(language_modules, strict):
     language = language_modules.language
     candidates = [
         {"title": "Movie 中日双语", "language": "Chinese", "score": 99},
@@ -158,12 +202,15 @@ def test_strict_candidate_filter_checks_specific_pairs(language_modules):
         {"title": "Movie 中英双语", "language": "Chinese", "score": 90},
     ]
 
-    assert [item["title"] for item in language.auto_rank_candidates(candidates, ["chi&eng"], strict=True)] == [
+    assert [item["title"] for item in language.auto_rank_candidates(candidates, ["chi&eng", "chi"], strict=strict)] == [
         "Movie 中英双语", "Movie 双语"
     ]
     assert language.auto_rank_candidates(candidates, [], strict=True) == []
-    assert [item["title"] for item in language.auto_rank_candidates(candidates, ["chi&eng"], strict=False)] == [
-        "Movie 中英双语", "Movie 双语", "Movie 中日双语"
+    assert [item["title"] for item in language.auto_rank_candidates(candidates, ["chi"], strict=False)] == [
+        "Movie 双语", "Movie 中日双语", "Movie 中英双语"
+    ]
+    assert [item["title"] for item in language.auto_rank_candidates(candidates, ["chi&eng", "chi&jp"], strict=strict)] == [
+        "Movie 中英双语", "Movie 中日双语", "Movie 双语"
     ]
 
 

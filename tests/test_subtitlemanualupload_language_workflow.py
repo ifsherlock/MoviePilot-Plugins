@@ -138,11 +138,15 @@ def serve_zip(workflow, content, titles=("Show 双语",)):
     workflow.online.download.side_effect = lambda selected: [{"provider": "assrt", "source_name": "Show.zip", "content": content, "result": selected[0]}]
 
 
+@pytest.mark.parametrize("strict", [False, True])
 @pytest.mark.parametrize("mode", ["best", "chinese_all", "all"])
-def test_strict_zip_writes_only_selected_pair(workflow, tmp_path, mode):
+def test_selected_bilingual_zip_writes_only_required_pair(workflow, tmp_path, mode, strict):
+    workflow.owner._auto_subtitle_language_strict = strict
+    workflow.owner._auto_subtitle_language_priority = ["chi&eng", "chi"]
     workflow.owner._auto_multi_subtitle_mode = mode
     entry = entry_for(tmp_path)
-    serve_zip(workflow, subtitle_zip(), ("Show 中日双语", "Show 双语"))
+    entry["subtitles"] = [{"language_suffix": "chi"}]
+    serve_zip(workflow, subtitle_zip(languages=("chi.jp", "chi", "chi.eng")), ("Show 中日双语", "Show 双语"))
     result = workflow.processor.process_entry(entry)
     assert result["status"] == "written", result
     assert [path.name for path in tmp_path.glob("*.srt")] == ["Show.S01E01.chi&eng.srt"]
@@ -151,10 +155,13 @@ def test_strict_zip_writes_only_selected_pair(workflow, tmp_path, mode):
     workflow.ai.assert_not_called()
 
 
+@pytest.mark.parametrize("strict", [False, True])
 @pytest.mark.parametrize("strategy", ["online_then_ai_source", "online_source_only", "ai_source_only"])
-def test_strict_no_match_never_writes_or_submits_ai(workflow, tmp_path, strategy):
+def test_required_pair_no_match_never_writes_or_submits_ai(workflow, tmp_path, strategy, strict):
+    workflow.owner._auto_subtitle_language_strict = strict
+    workflow.owner._auto_subtitle_language_priority = ["chi&eng", "chi"]
     workflow.owner._auto_transfer_subtitle_strategy = strategy
-    serve_zip(workflow, subtitle_zip(languages=("chi.jp",)))
+    serve_zip(workflow, subtitle_zip(languages=("chi.jp", "chi")))
     result = workflow.processor.process_entry(entry_for(tmp_path))
     assert result["status"] == "skipped"
     assert list(tmp_path.glob("*.srt")) == []
@@ -162,21 +169,25 @@ def test_strict_no_match_never_writes_or_submits_ai(workflow, tmp_path, strategy
     if strategy == "ai_source_only":
         workflow.online.search.assert_not_called()
     else:
-        assert result["reason"] == "未找到符合语言要求的字幕"
+        assert "语言要求" in result["reason"]
 
 
-def test_existing_other_pair_does_not_skip_selected_pair(workflow, tmp_path):
+@pytest.mark.parametrize("strict", [False, True])
+def test_existing_other_pair_does_not_skip_selected_pair(workflow, tmp_path, strict):
+    workflow.owner._auto_subtitle_language_strict = strict
     entry = entry_for(tmp_path)
     entry["subtitles"] = [{"language_suffix": "chi&jp"}]
     serve_zip(workflow, subtitle_zip())
     assert workflow.processor.process_entry(entry)["status"] == "written"
     workflow.online.search.assert_called_once()
     entry["subtitles"].append({"language_suffix": "chi&eng"})
-    assert workflow.processor.process_entry(entry)["reason"] == "目标已有所选语言字幕"
+    assert workflow.processor.process_entry(entry)["reason"] == "目标已有符合语言要求的字幕"
     workflow.online.search.assert_called_once()
 
 
-def test_season_cache_rechecks_language_after_restart_and_preference_change(workflow, tmp_path):
+@pytest.mark.parametrize("strict", [False, True])
+def test_season_cache_rechecks_language_after_restart_and_preference_change(workflow, tmp_path, strict):
+    workflow.owner._auto_subtitle_language_strict = strict
     entries = [entry_for(tmp_path, 1), entry_for(tmp_path, 2)]
     serve_zip(workflow, subtitle_zip(episodes=(1, 2)))
     workflow.owner._auto_subtitle_language_priority = ["chi&jp"]

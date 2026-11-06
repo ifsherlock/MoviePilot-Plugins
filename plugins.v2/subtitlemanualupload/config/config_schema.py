@@ -466,7 +466,7 @@ def build_config_form(
                             "model": "auto_subtitle_language_priority",
                             "label": "语言优先级",
                             "placeholder": "chi&eng,chi&jp,chi&kr,chi,cht,eng",
-                            "hint": "按顺序选择；支持中英、中日、中韩、其他中外双语及单语。",
+                            "hint": "选了双语，已有字幕须满足所选双语之一，否则补充搜索；多选按顺序优先，找不到时不回退单语或 AI。",
                             "persistentHint": True,
                         },
                         md=4,
@@ -476,7 +476,7 @@ def build_config_form(
                         {
                             "model": "auto_subtitle_language_strict",
                             "label": "仅接受所选语言",
-                            "hint": "开启后只处理已选语言；无匹配时跳过，不自动回退或提交 AI 翻译。",
+                            "hint": "未选择双语时，开启此项才限制为所选语言；无匹配不回退或提交 AI 翻译。双语要求始终生效。",
                             "persistentHint": True,
                         },
                         md=4,

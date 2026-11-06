@@ -2,6 +2,7 @@ import { computed, nextTick, ref } from 'vue'
 import {
   isForeignOnlineResult,
   isOnlineResultDownloadable,
+  onlineLanguageItems,
   onlineProviderItems,
   defaultOnlineProviderIds,
   onlineResultIdentityPriority,
@@ -66,38 +67,30 @@ export function useOnlineSubtitles({
   let onlineDownloadSeq = 0
 
   const hasOnlineResults = computed(() => onlineResults.value.length > 0)
-  const filteredOnlineResults = computed(() => {
-    return onlineResults.value.filter(item => {
-      const languageMatched = onlineLanguageFilter.value === 'all' || onlineResultLanguageFilterCategory(item) === onlineLanguageFilter.value
-      const providerMatched = onlineProviderFilter.value === 'all' || item.provider === onlineProviderFilter.value
-      return languageMatched && providerMatched
-    })
-  })
+  const matchesLanguage = item => onlineLanguageFilter.value === 'all' || onlineResultLanguageFilterCategory(item) === onlineLanguageFilter.value
+  const matchesProvider = item => onlineProviderFilter.value === 'all' || item.provider === onlineProviderFilter.value
+  const filteredOnlineResults = computed(() => onlineResults.value.filter(item => matchesLanguage(item) && matchesProvider(item)))
   const onlineLanguageFilterItems = computed(() => {
-    const languageItems = [
-      { title: '中文', value: 'chinese' },
-      { title: '英文', value: 'english' },
-      { title: '日文', value: 'japanese' },
-      { title: '其他', value: 'other' },
-    ]
-    const counts = onlineResults.value.reduce((acc, item) => {
+    const results = onlineResults.value.filter(matchesProvider)
+    const counts = results.reduce((acc, item) => {
       const category = onlineResultLanguageFilterCategory(item)
       acc[category] = (acc[category] || 0) + 1
       return acc
     }, {})
     return [
-      { title: `全部 ${onlineResults.value.length}`, value: 'all' },
-      ...languageItems.map(item => ({ title: `${item.title} ${counts[item.value] || 0}`, value: item.value })),
+      { title: `全部 ${results.length}`, value: 'all' },
+      ...onlineLanguageItems.map(item => ({ title: `${item.title} ${counts[item.value] || 0}`, value: item.value })),
     ]
   })
   const onlineProviderFilterItems = computed(() => {
-    const counts = onlineResults.value.reduce((acc, item) => {
+    const results = onlineResults.value.filter(matchesLanguage)
+    const counts = results.reduce((acc, item) => {
       const provider = item.provider || 'unknown'
       acc[provider] = (acc[provider] || 0) + 1
       return acc
     }, {})
     return [
-      { title: `全部 ${onlineResults.value.length}`, value: 'all' },
+      { title: `全部 ${results.length}`, value: 'all' },
       ...onlineProviderItems.map(item => ({ title: `${item.title} ${counts[item.value] || 0}`, value: item.value })),
     ]
   })

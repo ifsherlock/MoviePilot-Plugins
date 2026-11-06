@@ -338,23 +338,21 @@ def auto_target_has_chinese_subtitle(
     language_priority: Optional[List[str]] = None,
     strict: bool = False,
 ) -> bool:
-    if strict:
-        if target_has_preferred_subtitle(target, language_priority or []):
-            return True
-        embedded_subtitles = subtitle_inventory.embedded_subtitle_tracks_for_target(entry)
-        if embedded_subtitles:
-            target["has_embedded_subtitle"] = True
-            target["embedded_subtitle_count"] = len(embedded_subtitles)
-            target["embedded_subtitles"] = embedded_subtitles
-        return target_has_preferred_subtitle(target, language_priority or [])
-    if target_has_chinese_subtitle(target, is_chinese_language_suffix_func=is_chinese_language_suffix_func):
+    required = required_auto_languages(language_priority, strict=strict)
+
+    def satisfied() -> bool:
+        if required is not None:
+            return target_has_preferred_subtitle(target, required)
+        return target_has_chinese_subtitle(target, is_chinese_language_suffix_func=is_chinese_language_suffix_func)
+
+    if satisfied():
         return True
     embedded_subtitles = subtitle_inventory.embedded_subtitle_tracks_for_target(entry)
     if embedded_subtitles:
         target["has_embedded_subtitle"] = True
         target["embedded_subtitle_count"] = len(embedded_subtitles)
         target["embedded_subtitles"] = embedded_subtitles
-    return target_has_chinese_subtitle(target, is_chinese_language_suffix_func=is_chinese_language_suffix_func)
+    return satisfied()
 
 
 def auto_language_bucket(suffix: Any) -> str:
@@ -481,14 +479,36 @@ def language_matches_preferences(suffix: Any, priority: Optional[List[str]]) -> 
     return bucket != "und" and bucket in normalize_auto_language_priority(priority)
 
 
-def auto_candidate_language_bucket(item: Dict[str, Any]) -> str:
+def required_auto_languages(priority: Optional[List[str]], *, strict: bool = False) -> Optional[List[str]]:
+    selected = normalize_auto_language_priority(priority)
+    bilingual = [item for item in selected if item in LEGACY_BILINGUAL_BUCKETS]
+    # Selecting bilingual subtitles is a requirement even when monolingual fallbacks are selected.
+    if bilingual:
+        return bilingual
+    return selected if strict else None
+
+
+def online_result_language_bucket(item: Dict[str, Any]) -> str:
     title = normalize_text(item.get("title"))
+    language = normalize_text(item.get("language"))
     title_bucket = auto_language_bucket(language_profile_from_text(title)["suffix"])
-    if "&" in title_bucket or title_bucket == "other_bilingual":
-        return title_bucket
-    language_bucket = auto_language_bucket(language_profile_from_text(item.get("language"))["suffix"])
-    if "&" in language_bucket or language_bucket == "other_bilingual":
-        return language_bucket
+    language_bucket = auto_language_bucket(language_profile_from_text(language)["suffix"])
+    for bucket in (title_bucket, language_bucket):
+        if bucket in LEGACY_BILINGUAL_BUCKETS:
+            return bucket
+    # A generic bilingual label does not identify a pair or prove a Chinese track.
+    if re.search(r"双语|雙語|\bbilingual\b|\bbi-lingual\b|\bdual[ -]language\b", f"{language} {title}", re.I):
+        return "und"
+    bucket = language_bucket if language_bucket != "und" else title_bucket
+    if bucket in {"chi", "cht", "eng", "jpn", "kor", "und"}:
+        return bucket
+    return "other"
+
+
+def auto_candidate_language_bucket(item: Dict[str, Any]) -> str:
+    bucket = online_result_language_bucket(item)
+    if bucket in LEGACY_BILINGUAL_BUCKETS:
+        return bucket
     # Provider language fields are coarse: a Chinese result can contain Chinese-English subtitles.
     return "und"
 
@@ -504,15 +524,15 @@ def auto_candidate_language_rank(item: Dict[str, Any], priority: Optional[List[s
 def auto_rank_candidates(
     candidates: List[Dict[str, Any]], priority: Optional[List[str]], *, strict: bool
 ) -> List[Dict[str, Any]]:
-    selected = normalize_auto_language_priority(priority)
-    if not selected:
-        return [] if strict else candidates
+    required = required_auto_languages(priority, strict=strict)
+    if required == []:
+        return []
     allowed = []
     for item in candidates:
         bucket = auto_candidate_language_bucket(item)
-        if not strict or bucket in selected or bucket == "und":
+        if required is None or bucket in required or bucket == "und":
             allowed.append(item)
-    return sorted(allowed, key=lambda item: auto_candidate_language_rank(item, selected))
+    return sorted(allowed, key=lambda item: auto_candidate_language_rank(item, required if required is not None else priority))
 
 
 def target_has_preferred_subtitle(target: Dict[str, Any], language_priority: Optional[List[str]]) -> bool:
@@ -529,12 +549,12 @@ def language_profile_from_text(value: Any) -> Dict[str, str]:
     languages = set()
     explicit_chinese = False
     explicit_traditional = False
-    for marker in ("中英", "简英", "繁英", "中日", "中韩", "中法"):
+    for marker in ("中英", "简英", "繁英", "中日", "中韩", "中法", "中西", "中德"):
         if marker in text:
-            languages.add("eng" if marker in {"中英", "简英", "繁英"} else {"中日": "jp", "中韩": "kr", "中法": "fre"}[marker])
+            languages.add("eng" if marker in {"中英", "简英", "繁英"} else {"中日": "jp", "中韩": "kr", "中法": "fre", "中西": "spa", "中德": "ger"}[marker])
             explicit_chinese = True
             explicit_traditional = marker == "繁英"
-    if any(marker in text for marker in ("中文", "简体", "简中", "chinese", "chs", "cht", "zh-cn", "zh-hans", "zh-hant")):
+    if any(marker in text for marker in ("中文", "简体", "简中", "繁体", "繁中", "chinese", "chs", "cht", "zh-cn", "zh-hans", "zh-hant")):
         explicit_chinese = True
         explicit_traditional = explicit_traditional or any(marker in text for marker in ("繁体", "繁中", "cht", "zh-hant"))
     if explicit_chinese:

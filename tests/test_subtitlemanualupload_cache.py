@@ -114,7 +114,8 @@ def make_plugin(module):
     plugin._auto_skip_chinese_media_on_transfer = True
     plugin._auto_transfer_subtitle_strategy = "online_then_ai_source"
     plugin._auto_multi_subtitle_mode = "best"
-    plugin._auto_subtitle_language_priority = ["bilingual", "chi", "cht", "eng"]
+    # General cache/AI cases allow monolingual subtitles; bilingual cases opt in explicitly.
+    plugin._auto_subtitle_language_priority = ["chi", "cht", "eng"]
     plugin._auto_subtitle_format_priority = [".ass", ".srt", ".ssa", ".vtt", ".webvtt", ".sbv", ".sub"]
     plugin._auto_ass_to_srt_for_ai = True
     plugin._auto_search_min_score = 20
@@ -804,6 +805,7 @@ def test_target_has_chinese_subtitle_checks_external_and_embedded_tracks():
         {"id": "m1"},
         target,
         subtitle_inventory=inventory,
+        language_priority=["chi"],
     )
     assert target["embedded_subtitle_count"] == 1
 
@@ -4435,7 +4437,7 @@ def test_auto_transfer_skips_before_search_when_video_has_embedded_chinese_subti
         module.subprocess.run = original_run
 
     assert result["status"] == "skipped"
-    assert result["reason"] == "目标已有中文字幕"
+    assert result["reason"] == "目标已有符合语言要求的字幕"
 
 
 def test_auto_transfer_ai_source_only_skips_embedded_chinese_before_ai(tmp_path):
@@ -4461,7 +4463,7 @@ def test_auto_transfer_ai_source_only_skips_embedded_chinese_before_ai(tmp_path)
         module.subprocess.run = original_run
 
     assert result["status"] == "skipped"
-    assert result["reason"] == "目标已有中文字幕"
+    assert result["reason"] == "目标已有符合语言要求的字幕"
 
 
 def test_auto_transfer_samples_unknown_embedded_text_subtitle_content(tmp_path):
@@ -4497,7 +4499,7 @@ def test_auto_transfer_samples_unknown_embedded_text_subtitle_content(tmp_path):
         module.subprocess.run = original_run
 
     assert result["status"] == "skipped"
-    assert result["reason"] == "目标已有中文字幕"
+    assert result["reason"] == "目标已有符合语言要求的字幕"
 
 
 def test_auto_transfer_embedded_english_subtitle_still_searches(tmp_path):
@@ -4552,7 +4554,7 @@ def test_auto_transfer_embedded_regional_chinese_language_tag_skips(tmp_path):
         module.subprocess.run = original_run
 
     assert result["status"] == "skipped"
-    assert result["reason"] == "目标已有中文字幕"
+    assert result["reason"] == "目标已有符合语言要求的字幕"
 
 
 def test_auto_transfer_embedded_chinese_pgs_does_not_skip_online_search(tmp_path):
@@ -4660,7 +4662,7 @@ def test_auto_transfer_group_skips_embedded_chinese_target_before_season_search(
         module.subprocess.run = original_run
 
     assert results["e1"]["status"] == "skipped"
-    assert results["e1"]["reason"] == "目标已有中文字幕"
+    assert results["e1"]["reason"] == "目标已有符合语言要求的字幕"
     assert cache_ids == ["e2"]
     assert season_ids == ["e2"]
     assert searched == ["e2"]
@@ -4960,7 +4962,7 @@ def test_auto_transfer_existing_chinese_subtitle_skips_all_strategies(tmp_path):
     result = service.auto_process_transfer_entry(entry)
 
     assert result["status"] == "skipped"
-    assert result["reason"] == "目标已有中文字幕"
+    assert result["reason"] == "目标已有符合语言要求的字幕"
 
 
 def test_auto_transfer_existing_non_chinese_subtitle_still_searches(tmp_path):
@@ -5485,9 +5487,9 @@ def test_auto_write_chinese_all_keeps_chinese_and_bilingual_variants(tmp_path):
 
     assert result["status"] == "written"
     assert [operation["upload_info"]["source_name"] for operation in captured["operations"]] == [
-        "Movie.chi.eng.srt",
         "Movie.chi.ass",
         "Movie.cht.srt",
+        "Movie.chi.eng.srt",
     ]
 
 

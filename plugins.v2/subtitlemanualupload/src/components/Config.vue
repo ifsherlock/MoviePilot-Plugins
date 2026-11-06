@@ -429,7 +429,7 @@ onMounted(() => {
               density="comfortable"
               multiple
               chips
-              hint="勾选需要的语言，展开“调整语言顺序”设置优先级。"
+              hint="选了双语，已有字幕须满足所选双语之一，否则补充搜索；多选按顺序优先，找不到时不回退单语或 AI。"
               persistent-hint
             />
             <details v-if="localConfig.auto_subtitle_language_priority.length" class="language-priority-details">
@@ -480,7 +480,7 @@ onMounted(() => {
               v-model="localConfig.auto_subtitle_language_strict"
               label="仅接受所选语言"
               color="info"
-              hint="无匹配时跳过，不自动回退或提交 AI 翻译"
+              hint="未选择双语时，开启此项才限制为所选语言；无匹配不回退或提交 AI 翻译。双语要求始终生效。"
               persistent-hint
             />
             <VSelect

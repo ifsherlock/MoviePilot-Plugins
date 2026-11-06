@@ -258,7 +258,7 @@ class SubtitleInventory:
                     "-select_streams",
                     "s",
                     "-show_entries",
-                    "stream=index,codec_name,disposition:stream_tags=language,title",
+                    "stream=index,codec_name:stream_tags=language,title:stream_disposition",
                     "-of",
                     "json",
                     str(video_path),
@@ -266,6 +266,7 @@ class SubtitleInventory:
                 stdout=self._subprocess.PIPE,
                 stderr=self._subprocess.PIPE,
                 text=True,
+                encoding="utf-8",
                 check=True,
                 timeout=8,
             )

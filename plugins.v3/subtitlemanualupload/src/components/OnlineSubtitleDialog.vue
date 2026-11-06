@@ -195,10 +195,12 @@ defineEmits([
               </div>
               <span>{{ hasOnlineResults ? `${filteredOnlineResults.length}/${onlineResults.length} 条结果` : '暂无结果' }}</span>
             </div>
+            <p v-if="hasOnlineResults" class="online-filter-hint">语言、来源各选一项，同时满足；中文仅含单语，双语单独分类。</p>
             <VChipGroup
               v-if="hasOnlineResults"
               :model-value="onlineLanguageFilter"
               class="online-provider-filter"
+              column
               mandatory
               selected-class="online-provider-filter-active"
               @update:model-value="$emit('update:onlineLanguageFilter', $event)"
@@ -217,6 +219,7 @@ defineEmits([
               v-if="hasOnlineResults"
               :model-value="onlineProviderFilter"
               class="online-provider-filter"
+              column
               mandatory
               selected-class="online-provider-filter-active"
               @update:model-value="$emit('update:onlineProviderFilter', $event)"
@@ -484,6 +487,13 @@ defineEmits([
 
 .online-provider-filter {
   margin: -4px 0 12px;
+}
+
+.online-filter-hint {
+  margin: 0 0 12px;
+  color: var(--smu-text-muted);
+  font-size: 12px;
+  line-height: 1.6;
 }
 
 .online-provider-progress {

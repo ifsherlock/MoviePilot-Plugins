@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 import json
+import shutil
 import subprocess
 import sys
 import types
@@ -80,8 +81,10 @@ def track(language="chi", title="中英双语", *, codec="subrip", disposition=N
     }
 
 
+@pytest.mark.parametrize("strict", [False, True])
 @pytest.mark.parametrize("tracks,expected", [
     ([track()], True),
+    ([track(title="中文字幕")], False),
     ([track(title="中日双语")], False),
     ([track(title="双语")], False),
     ([track(title="中文字幕"), track(language="eng", title="English")], False),
@@ -90,7 +93,7 @@ def track(language="chi", title="中英双语", *, codec="subrip", disposition=N
     ([track(title="中英双语 歌词")], False),
     ([track(codec="hdmv_pgs_subtitle")], False),
 ])
-def test_strict_existing_track_policy_keeps_usability_filters(embedded_policy, tracks, expected):
+def test_required_pair_keeps_embedded_track_usability_filters(embedded_policy, tracks, expected, strict):
     embedded_policy.probe.return_value = types.SimpleNamespace(stdout=json.dumps({"streams": tracks}))
     target = {}
 
@@ -98,14 +101,15 @@ def test_strict_existing_track_policy_keeps_usability_filters(embedded_policy, t
         embedded_policy.entry,
         target,
         subtitle_inventory=embedded_policy.inventory,
-        language_priority=["chi&eng"],
-        strict=True,
+        language_priority=["chi&eng", "chi"],
+        strict=strict,
     ) is expected
     assert embedded_policy.probe.call_count == 1
     assert embedded_policy.probe.call_args.args[0][0] == "ffprobe"
 
 
-def test_cached_track_metadata_uses_current_language_selection(embedded_policy):
+@pytest.mark.parametrize("strict", [False, True])
+def test_cached_track_metadata_uses_current_language_selection(embedded_policy, strict):
     embedded_policy.probe.return_value = types.SimpleNamespace(stdout=json.dumps({"streams": [track()]}))
     for priority, expected in [(["chi&eng"], True), (["chi&jp"], False)]:
         assert embedded_policy.language.auto_target_has_chinese_subtitle(
@@ -113,6 +117,56 @@ def test_cached_track_metadata_uses_current_language_selection(embedded_policy):
             {},
             subtitle_inventory=embedded_policy.inventory,
             language_priority=priority,
-            strict=True,
+            strict=strict,
         ) is expected
     assert embedded_policy.probe.call_count == 1
+
+
+def test_trusting_transfer_history_never_probes_embedded_tracks(embedded_policy):
+    embedded_policy.inventory._trust_transfer_history_paths = True
+
+    assert not embedded_policy.language.auto_target_has_chinese_subtitle(
+        embedded_policy.entry,
+        {},
+        subtitle_inventory=embedded_policy.inventory,
+        language_priority=["chi&eng"],
+        strict=False,
+    )
+    embedded_policy.probe.assert_not_called()
+
+
+@pytest.mark.parametrize("disposition,expected", [("0", True), ("forced", False), ("comment", False)])
+def test_real_mkv_probe_rejects_forced_and_comment_tracks(embedded_policy, tmp_path, disposition, expected):
+    if not shutil.which("ffmpeg") or not shutil.which("ffprobe"):
+        pytest.skip("ffmpeg and ffprobe are required to verify real container dispositions")
+    subtitle = tmp_path / "track.srt"
+    subtitle.write_text("1\n00:00:00,000 --> 00:00:01,000\n这是中文字幕。\nThis is an English subtitle.\n", encoding="utf-8")
+    video = Path(embedded_policy.entry["path"])
+    subprocess.run(
+        [
+            "ffmpeg", "-v", "error", "-nostdin", "-y",
+            "-f", "lavfi", "-i", "color=c=black:s=16x16:r=1:d=1",
+            "-i", str(subtitle), "-map", "0:v:0", "-map", "1:0",
+            "-c:v", "ffv1", "-c:s", "srt",
+            "-metadata:s:s:0", "language=chi",
+            "-metadata:s:s:0", "title=中英双语",
+            "-disposition:s:0", disposition, str(video),
+        ],
+        capture_output=True, check=True, timeout=15,
+    )
+    # First verify the fixture really carries the container flag under test.
+    probe = subprocess.run(
+        ["ffprobe", "-v", "error", "-select_streams", "s", "-show_streams", "-of", "json", str(video)],
+        capture_output=True, text=True, encoding="utf-8", check=True, timeout=10,
+    )
+    stream = json.loads(probe.stdout)["streams"][0]
+    assert stream["disposition"].get(disposition, 0) == (0 if disposition == "0" else 1)
+    embedded_policy.inventory._subprocess = subprocess
+
+    assert embedded_policy.language.auto_target_has_chinese_subtitle(
+        embedded_policy.entry,
+        {},
+        subtitle_inventory=embedded_policy.inventory,
+        language_priority=["chi&eng"],
+        strict=False,
+    ) is expected

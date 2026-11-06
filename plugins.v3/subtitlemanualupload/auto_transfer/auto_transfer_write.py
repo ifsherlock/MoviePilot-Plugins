@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from ..config.config_schema import normalize_auto_multi_subtitle_mode
-from ..matching.subtitle_language import auto_subtitle_sort_key, is_chinese_language_suffix, language_matches_preferences
+from ..matching.subtitle_language import auto_subtitle_sort_key, is_chinese_language_suffix, language_matches_preferences, required_auto_languages
 from ..matching.subtitle_formats import is_bitmap_subtitle
 from ..catalog.target_resolver import (
     auto_fill_missing_targets as fill_missing_target_ids,
@@ -80,12 +80,14 @@ class AutoTransferWriteStrategy:
             return []
 
         mode = normalize_auto_multi_subtitle_mode(getattr(owner, "_auto_multi_subtitle_mode", "best"))
+        required = required_auto_languages(
+            getattr(owner, "_auto_subtitle_language_priority", None),
+            strict=bool(getattr(owner, "_auto_subtitle_language_strict", False)),
+        )
         target_lookup = {item.get("id"): item for item in targets if item.get("id")}
         grouped: Dict[str, List[Dict[str, Any]]] = {}
         for item in items:
-            if getattr(owner, "_auto_subtitle_language_strict", False) and not language_matches_preferences(
-                item.get("language_suffix"), getattr(owner, "_auto_subtitle_language_priority", None)
-            ):
+            if required is not None and not language_matches_preferences(item.get("language_suffix"), required):
                 continue
             target_id = owner._normalize_text(item.get("target_id"))
             if not target_id:
@@ -139,7 +141,7 @@ class AutoTransferWriteStrategy:
         if not chosen_items:
             return {
                 "status": "skipped",
-                "reason": "未找到符合语言要求的字幕" if getattr(owner, "_auto_subtitle_language_strict", False) else "整季包未能匹配到当前入库集数",
+                "reason": "下载包中没有符合语言要求且匹配目标的字幕",
                 "written_by_target": {},
                 "prepared_count": len(prepared_uploads),
             }
