@@ -16,6 +16,7 @@ from .keyword_builder import (
     _unique_keywords,
 )
 from .language import _guess_language_label
+from .catalog import PROVIDER_SPECS
 
 
 def _episode_from_text(value: str) -> Optional[Tuple[int, int]]:
@@ -54,15 +55,7 @@ def _has_relevance_signal(title: str, keyword: str, targets: List[Dict[str, Any]
 
 
 def _provider_priority(item: Any) -> int:
-    if item.provider == "subhd":
-        return 35
-    if item.provider == "assrt":
-        return 30
-    if item.provider == "zimuku":
-        return 25
-    if item.provider == "opensubtitles":
-        return 20
-    return 0
+    return PROVIDER_SPECS.get(item.provider, {}).get("priority", 0)
 
 
 def _identity_priority(item: Any) -> int:

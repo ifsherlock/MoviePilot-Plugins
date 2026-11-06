@@ -18,12 +18,13 @@ from ..matching.subtitle_language import (
     normalize_auto_language_priority,
 )
 
+from ..online_subtitles.catalog import (
+    DEFAULT_ONLINE_PROVIDER_IDS, AVAILABLE_ONLINE_PROVIDER_IDS,
+    MANUAL_ONLINE_PROVIDER_IDS, PROVIDER_CATALOG,
+)
+
 
 DEFAULT_RAR_TOOL_PATH = "/usr/bin/unar"
-DEFAULT_ONLINE_PROVIDER_IDS = ["subhd", "zimuku"]
-AVAILABLE_ONLINE_PROVIDER_IDS = ["subhd", "zimuku", "assrt", "opensubtitles"]
-MANUAL_ONLINE_PROVIDER_IDS = ["subhd", "zimuku", "assrt", "opensubtitles"]
-
 RAR_DEPENDENCY_MODES = {"none", "container_install", "mapped_binary"}
 AUTO_TRANSFER_SUBTITLE_STRATEGIES = {"online_then_ai_source", "online_source_only", "ai_source_only"}
 AUTO_MULTI_SUBTITLE_MODES = {"best", "chinese_all", "all"}
@@ -62,7 +63,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "online_engine": DEFAULT_ENGINE,
     "online_use_proxy": False,
     "subhd_url": DEFAULT_PROVIDER_ROOTS["subhd"],
-    "zimuku_url": DEFAULT_PROVIDER_ROOTS["zimuku"],
+    "subtitlecat_include_translations": False,
+    "subdl_api_key": "",
     "assrt_url": DEFAULT_PROVIDER_ROOTS["assrt"],
     "assrt_api_key": "",
     "assrt_api_url": DEFAULT_ASSRT_API_URL,
@@ -153,7 +155,6 @@ def normalize_auto_transfer_subtitle_strategy(value: Any) -> str:
 def normalize_provider_ids(
     value: Any,
     *,
-    fallback: bool = True,
     available_provider_ids: Optional[Iterable[str]] = None,
     default_provider_ids: Optional[Iterable[str]] = None,
 ) -> List[str]:
@@ -170,17 +171,14 @@ def normalize_provider_ids(
         provider_id = normalize_text(item).lower()
         if provider_id in allowed and provider_id not in providers:
             providers.append(provider_id)
-    return providers or (list(defaults) if fallback else [])
+    # Explicit empty selections (including retired-only sources) remain disabled.
+    return providers
 
 
 def normalize_online_site_urls(config: Dict[str, Any]) -> Dict[str, str]:
     raw = config.get("online_site_urls") if isinstance(config.get("online_site_urls"), dict) else {}
-    roots = {
-        "subhd": raw.get("subhd") or config.get("subhd_url"),
-        "zimuku": raw.get("zimuku") or config.get("zimuku_url"),
-        "assrt": raw.get("assrt") or config.get("assrt_url"),
-        "opensubtitles": raw.get("opensubtitles") or config.get("opensubtitles_url"),
-    }
+    roots = {provider_id: raw.get(provider_id) or config.get(f"{provider_id}_url")
+             for provider_id in AVAILABLE_ONLINE_PROVIDER_IDS}
     return normalize_provider_roots(roots)
 
 
@@ -222,20 +220,6 @@ def normalize_plugin_config(
         available_provider_ids=available_provider_list,
         default_provider_ids=default_provider_list,
     )
-    if not raw_config.get("assrt_provider_migrated") and not assrt_api_key:
-        online_provider_ids = [item for item in online_provider_ids if item != "assrt"]
-    if assrt_api_key and "assrt" not in online_provider_ids:
-        online_provider_ids.append("assrt")
-    if opensubtitles_api_key and "opensubtitles" not in online_provider_ids:
-        online_provider_ids.append("opensubtitles")
-    online_provider_ids = [
-        item
-        for item in online_provider_ids
-        if item in available_provider_list
-        and (item != "assrt" or assrt_api_key)
-        and (item != "opensubtitles" or opensubtitles_api_key)
-    ]
-
     legacy_proxy_default = "online_proxy_migrated" not in raw_config and raw_config.get("online_use_proxy") is True
     language_priority = normalize_auto_language_priority(
         raw_config.get("auto_subtitle_language_priority"),
@@ -254,6 +238,8 @@ def normalize_plugin_config(
         "online_engine": normalize_online_engine(raw_config.get("online_engine")),
         "online_use_proxy": False if legacy_proxy_default else bool(raw_config.get("online_use_proxy", False)),
         "online_site_urls": normalize_online_site_urls(raw_config),
+        "subdl_api_key": normalize_text(raw_config.get("subdl_api_key")),
+        "subtitlecat_include_translations": bool(raw_config.get("subtitlecat_include_translations", False)),
         "assrt_api_key": assrt_api_key,
         "assrt_api_url": normalize_root_url(raw_config.get("assrt_api_url"), DEFAULT_ASSRT_API_URL),
         "opensubtitles_api_key": opensubtitles_api_key,
@@ -520,12 +506,7 @@ def build_config_form(
                             "label": "自动字幕源",
                             "multiple": True,
                             "chips": True,
-                            "items": [
-                                {"title": "SubHD 中文字幕", "value": "subhd"},
-                                {"title": "Zimuku 中文字幕", "value": "zimuku"},
-                                {"title": "射手网(伪，需 API Key)", "value": "assrt"},
-                                {"title": "OpenSubtitles 多语言字幕", "value": "opensubtitles"},
-                            ],
+                            "items": [{"title": item["name"], "value": item["id"]} for item in PROVIDER_CATALOG],
                         },
                         md=6,
                     ),
@@ -545,15 +526,8 @@ def build_config_form(
                         },
                         md=6,
                     ),
-                    _col(
-                        "VTextField",
-                        {
-                            "model": "zimuku_url",
-                            "label": "Zimuku 站点地址",
-                            "placeholder": DEFAULT_PROVIDER_ROOTS["zimuku"],
-                        },
-                        md=6,
-                    ),
+                    _col("VTextField", {"model": "subdl_api_key", "label": "SubDL API Key", "type": "password", "placeholder": "填写后在自动字幕源中选择 SubDL"}, md=6),
+                    _col("VSwitch", {"model": "subtitlecat_include_translations", "label": "接受 SubtitleCat 已有中文站点翻译（默认关闭）"}, md=6),
                     _col(
                         "VTextField",
                         {
@@ -630,7 +604,7 @@ def build_config_form(
                         md=6,
                     ),
                 ),
-                _alert("从 MoviePilot 本地整理记录中搜索已有视频资源；在线字幕搜索支持 SubHD、Zimuku、射手网(伪) 和 OpenSubtitles。"),
+                _alert("从 MoviePilot 本地整理记录中搜索已有视频资源；在线字幕搜索支持 SubHD、射手网(伪)、OpenSubtitles、SubtitleCat 和 SubDL。"),
                 _row(
                     _col(
                         "VSelect",

@@ -43,7 +43,7 @@ def download_online_results_to_uploads(
             result,
         )
         try:
-            extracted = upload_session.extract_subtitle_files(
+            extracted = upload_session.extract_online_subtitle_files(
                 source_name,
                 downloaded.get("content") or b"",
                 session_dir,
@@ -57,6 +57,7 @@ def download_online_results_to_uploads(
         for item in extracted:
             item["online_source"] = downloaded.get("provider")
             item["online_title"] = result.get("title", "")
+            item["translation_source"] = result.get("translation_source", "unknown")
             if not item.get("archive_name") and source_name != item.get("source_name"):
                 item["archive_name"] = source_name
         prepared_uploads.extend(extracted)
@@ -146,7 +147,6 @@ class OnlineApi:
         requested_providers = body.get("providers") if isinstance(body.get("providers"), list) else owner._online_provider_ids
         providers = normalize_provider_ids(
             requested_providers,
-            fallback=not isinstance(body.get("providers"), list),
             available_provider_ids=owner._available_online_provider_ids,
             default_provider_ids=owner._default_online_provider_ids,
         )
@@ -200,7 +200,6 @@ class OnlineApi:
         provider_id = owner._normalize_text(body.get("provider"))
         providers = normalize_provider_ids(
             [provider_id],
-            fallback=False,
             available_provider_ids=owner._available_online_provider_ids,
             default_provider_ids=owner._default_online_provider_ids,
         )

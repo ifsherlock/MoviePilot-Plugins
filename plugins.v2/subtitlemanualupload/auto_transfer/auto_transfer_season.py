@@ -9,6 +9,7 @@ import shutil
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
 from ..matching.subtitle_language import auto_rank_candidates
+from ..matching.subtitle_validation import validate_online_subtitle_files
 from ..online.online_subtitle import build_search_keywords
 
 
@@ -137,6 +138,7 @@ class AutoTransferSeasonCache:
         session_dir = owner.services.upload_session().get_session_root() / session_id
         session_dir.mkdir(parents=True, exist_ok=True)
         try:
+            validate_online_subtitle_files(cached.get("items") or [])
             result = self._collaborators.write_prepared_uploads_for_entries(
                 target_entries=entries,
                 prepared_uploads=cached.get("items") or [],
@@ -218,6 +220,7 @@ class AutoTransferSeasonCache:
                     for item in extracted:
                         item["online_source"] = downloaded.get("provider")
                         item["online_title"] = result.get("title", "")
+                        item["translation_source"] = result.get("translation_source", "unknown")
                         if not item.get("archive_name") and source_name != item.get("source_name"):
                             item["archive_name"] = source_name
                     prepared_uploads.extend(extracted)

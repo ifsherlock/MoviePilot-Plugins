@@ -139,6 +139,7 @@ class AutoTransferProcessor:
                     for item in extracted:
                         item["online_source"] = downloaded.get("provider")
                         item["online_title"] = result.get("title", "")
+                        item["translation_source"] = result.get("translation_source", "unknown")
                         if not item.get("archive_name") and source_name != item.get("source_name"):
                             item["archive_name"] = source_name
                     prepared_uploads.extend(extracted)

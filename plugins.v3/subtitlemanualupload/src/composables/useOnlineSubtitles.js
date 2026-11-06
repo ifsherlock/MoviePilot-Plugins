@@ -3,6 +3,7 @@ import {
   isForeignOnlineResult,
   isOnlineResultDownloadable,
   onlineProviderItems,
+  defaultOnlineProviderIds,
   onlineResultIdentityPriority,
   onlineResultKey,
   onlineResultLanguageFilterCategory,
@@ -52,7 +53,7 @@ export function useOnlineSubtitles({
   const onlineKeyword = ref('')
   const onlineTargets = ref([])
   const onlineStatus = ref({ providers: [], capabilities: {} })
-  const onlineSelectedProviders = ref(['subhd', 'zimuku'])
+  const onlineSelectedProviders = ref([...defaultOnlineProviderIds])
   const onlineResults = ref([])
   const onlineLanguageFilter = ref('all')
   const onlineProviderFilter = ref('all')
@@ -138,12 +139,9 @@ export function useOnlineSubtitles({
     return selectedSeason.value === 'all' ? '搜索全部季字幕包' : '搜索本季字幕包'
   })
 
-  function ensureConfiguredApiProvidersSelected() {
-    const configured = [...(onlineStatus.value?.enabled_providers || [])]
+  function syncConfiguredProviders() {
+    const configured = (onlineStatus.value?.enabled_providers || [])
       .filter(provider => onlineProviderItems.some(item => item.value === provider))
-    if (onlineStatus.value?.assrt_api_configured) configured.push('assrt')
-    if (onlineStatus.value?.opensubtitles_api_configured) configured.push('opensubtitles')
-    if (!configured.length) return
     onlineSelectedProviders.value = Array.from(new Set(configured))
   }
 
@@ -151,11 +149,7 @@ export function useOnlineSubtitles({
     try {
       const response = await pluginApi.value.onlineStatus()
       onlineStatus.value = unwrapResponse(response) || onlineStatus.value
-      const enabled = onlineStatus.value.enabled_providers || []
-      if (enabled.length) {
-        onlineSelectedProviders.value = enabled
-      }
-      ensureConfiguredApiProvidersSelected()
+      syncConfiguredProviders()
     } catch (err) {
       onlineError.value = errorMessage(err, '加载在线字幕源状态失败')
     }
@@ -512,7 +506,7 @@ export function useOnlineSubtitles({
     onlineProviderProgressItems,
     onlineAiConfirmText,
     onlineBatchLabel,
-    ensureConfiguredApiProvidersSelected,
+    syncConfiguredProviders,
     loadOnlineStatus,
     openOnlineDialog,
     openBatchOnlineSearch,

@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 
+from ..online_subtitles.catalog import AVAILABLE_ONLINE_PROVIDER_IDS
+
 from .auto_transfer_processor import AutoTransferProcessor, AutoTransferProcessorCollaborators
 from .auto_transfer_queue import AutoTransferQueue
 from .auto_transfer_rate_limit import AutoTransferRateLimiter
@@ -51,7 +53,7 @@ class AutoTransferCollaborators:
             target_from_entry=owner._target_from_entry,
             extract_subtitle_files=lambda upload_name, raw_bytes, session_dir: owner._upload_session_service_for_path(
                 session_dir.parent
-            ).extract_subtitle_files(upload_name, raw_bytes, session_dir),
+            ).extract_online_subtitle_files(upload_name, raw_bytes, session_dir),
             write_operations_to_disk=lambda **kwargs: owner._subtitle_writer().write_operations_to_disk(**kwargs),
             submit_autosub_for_entries=lambda *args, **kwargs: owner._autosub_bridge().submit_autosub_for_entries(
                 *args,
@@ -384,7 +386,7 @@ class AutoTransferService:
 
     def auto_search_providers(self) -> List[str]:
         owner = self._owner
-        return [item for item in (owner._online_provider_ids or []) if item in {"subhd", "zimuku", "assrt", "opensubtitles"}]
+        return [item for item in (owner._online_provider_ids or []) if item in AVAILABLE_ONLINE_PROVIDER_IDS]
 
 
     def auto_search_write_subtitle(

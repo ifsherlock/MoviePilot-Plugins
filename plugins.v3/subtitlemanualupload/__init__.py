@@ -163,7 +163,7 @@ class SubtitleManualUpload(_PluginBase):
     plugin_name = "海拉鲁字幕大师"
     plugin_desc = "脱胎自 ChineseSubFinder，支持字幕搜索、上传、匹配、改名与智能调轴。"
     plugin_icon = "https://raw.githubusercontent.com/ifsherlock/MoviePilot-Plugins/main/icons/hyrule-subtitle-master.png"
-    plugin_version = "1.2.16"
+    plugin_version = "1.2.17"
     plugin_author = "ifsherlock"
     author_url = "https://github.com/ifsherlock"
     plugin_config_prefix = "subtitlemanualupload_"
@@ -177,7 +177,7 @@ class SubtitleManualUpload(_PluginBase):
     _default_online_provider_ids = list(DEFAULT_ONLINE_PROVIDER_IDS)
     _available_online_provider_ids = list(AVAILABLE_ONLINE_PROVIDER_IDS)
     _manual_online_provider_ids = list(MANUAL_ONLINE_PROVIDER_IDS)
-    _online_provider_ids = ["subhd", "zimuku"]
+    _online_provider_ids = list(DEFAULT_ONLINE_PROVIDER_IDS)
     _online_engine = DEFAULT_ENGINE
     _online_use_proxy = False
     _online_site_urls = dict(DEFAULT_PROVIDER_ROOTS)
@@ -196,6 +196,8 @@ class SubtitleManualUpload(_PluginBase):
     _embedded_subtitle_probe_cache_max_size = 500
     _embedded_subtitle_text_codecs = {"subrip", "srt", "ass", "ssa", "webvtt", "mov_text", "text"}
     _embedded_subtitle_image_codecs = {"hdmv_pgs_subtitle", "dvd_subtitle", "dvb_subtitle", "xsub", "dvb_teletext", "eia_608"}
+    _subdl_api_key = ""
+    _subtitlecat_include_translations = False
     _assrt_api_key = ""
     _assrt_api_url = DEFAULT_ASSRT_API_URL
     _opensubtitles_api_key = ""

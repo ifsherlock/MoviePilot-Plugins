@@ -63,6 +63,7 @@ class AutoTransferWriteStrategy:
                     "detected_label": language_profile["label"],
                     "language_suffix": language_profile["suffix"],
                     "online_source": prepared.get("online_source", ""),
+                    "translation_source": prepared.get("translation_source", "unknown"),
                 }
             )
         fill_missing_target_ids(items, targets, extract_episode_hint=owner._extract_episode_hint)

@@ -1,9 +1,7 @@
-export const onlineProviderItems = [
-  { title: 'SubHD', value: 'subhd' },
-  { title: 'Zimuku', value: 'zimuku' },
-  { title: '射手网(伪)', value: 'assrt' },
-  { title: 'OpenSubtitles', value: 'opensubtitles' },
-]
+import providerCatalog from '../../online_subtitles/provider_catalog.json' with { type: 'json' }
+
+export const onlineProviderItems = providerCatalog.map(item => ({ title: item.name, value: item.id }))
+export const defaultOnlineProviderIds = providerCatalog.filter(item => item.default_enabled).map(item => item.id)
 
 export function onlineResultKey(item) {
   return `${item?.provider || 'unknown'}:${item?.result_id || item?.page_url || item?.title || ''}`
@@ -15,16 +13,14 @@ export function providerName(providerId) {
 }
 
 export function providerPriority(providerId) {
-  if (providerId === 'subhd') return 35
-  if (providerId === 'assrt') return 30
-  if (providerId === 'zimuku') return 25
-  if (providerId === 'opensubtitles') return 20
-  return 0
+  return providerCatalog.find(item => item.id === providerId)?.priority || 0
 }
 
 export function onlineResultMeta(item) {
   const parts = []
   if (item.language) parts.push(item.language)
+  if (item.translation_source === 'site_translation') parts.push('站点翻译')
+  if (item.translation_source === 'original_upload') parts.push('原始上传')
   if (item.format) parts.push(item.format)
   if (item.season || item.episode) {
     parts.push(`S${String(item.season || 0).padStart(2, '0')}E${String(item.episode || 0).padStart(2, '0')}`)

@@ -1,0 +1,7 @@
+[
+  {"id": "subhd", "name": "SubHD", "root_url": "https://subhd.tv", "default_enabled": true, "priority": 35, "media_types": ["movie", "tv"]},
+  {"id": "assrt", "name": "射手网(伪)", "root_url": "https://2.assrt.net", "default_enabled": false, "priority": 30, "media_types": ["movie", "tv"]},
+  {"id": "opensubtitles", "name": "OpenSubtitles", "root_url": "https://www.opensubtitles.com", "default_enabled": false, "priority": 20, "media_types": ["movie", "tv"]},
+  {"id": "subtitlecat", "name": "SubtitleCat", "root_url": "https://www.subtitlecat.com", "default_enabled": true, "priority": 10, "media_types": ["movie", "tv"]},
+  {"id": "subdl", "name": "SubDL", "root_url": "https://subdl.com", "default_enabled": false, "priority": 20, "media_types": ["movie", "tv"]}
+]

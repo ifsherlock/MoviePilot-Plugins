@@ -21,7 +21,7 @@
 
 | 插件 | V2 版本 | V3 版本 | 主要功能 |
 | --- | --- | --- | --- |
-| 海拉鲁字幕大师 | 0.1.91 | 1.2.7 | 字幕搜索、下载、上传、匹配、改名、调轴、入库自动处理 |
+| 海拉鲁字幕大师 | 0.1.99 | 1.2.17 | 字幕搜索、下载、上传、匹配、改名、调轴、入库自动处理 |
 | AI字幕生成(联动版) | 3.5.61 | 4.0.1 | 音轨识别、字幕提取、AI 翻译、任务队列、联动字幕匹配 |
 
 ## 字幕匹配
@@ -35,7 +35,7 @@
 - 支持电影、单集、整季维度的字幕匹配。
 - 支持 `.srt`、`.ass`、`.ssa`、`.sbv`、`.sub`、`.vtt`、`.webvtt`。
 - 支持 ZIP/RAR 字幕包解析。
-- 支持 SubHD、Zimuku、ASSRT、OpenSubtitles 等在线字幕来源。
+- 支持 SubHD、SubtitleCat、SubDL、ASSRT、OpenSubtitles 等在线字幕来源；SubDL 需配置 API Key。
 - 支持语言和格式偏好，自动选择合适字幕入库。
 - 支持繁体转简体、智能调轴、匹配历史管理。
 - 支持入库后自动搜索字幕。
@@ -83,6 +83,7 @@ https://github.com/ifsherlock/MoviePilot-Plugins
 - [MoviePilot](https://github.com/jxxghp/MoviePilot)
 - [MoviePilot-Plugins](https://github.com/jxxghp/MoviePilot-Plugins)
 - [ChineseSubFinder](https://github.com/ChineseSubFinder/ChineseSubFinder)
+- [ChineseSubFinder-optimization](https://github.com/morningstar-ski/ChineseSubFinder-optimization)：感谢上游提供字幕来源接入流程与适配思路参考；本项目据此评估可用性，并按 MoviePilot 插件结构独立实现 SubtitleCat、SubDL 适配器。
 - [allanpk716/chinesesubfinder](https://github.com/allanpk716/chinesesubfinder)
 
 主要依赖库：

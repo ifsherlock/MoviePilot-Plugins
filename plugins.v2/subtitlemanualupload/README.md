@@ -8,6 +8,24 @@ MoviePilot V2 字幕管理插件，脱胎自 [ChineseSubFinder](https://github.c
 
 详细配置、额外 STRM 实时监控和字幕写入说明见：[功能使用教学](../../docs/SubtitleManualUpload功能使用教学.md)。
 
+## v0.1.99 更新
+
+- 移除 Zimuku 自动搜索、手动链接和专用验证码处理；旧配置中的该来源会被过滤。
+- 新增 SubtitleCat 原始上传字幕：电影和剧集均支持。来源声明语言未知时保留未知；已有简中/繁中站点翻译通过独立开关启用，默认关闭，并在候选中明确标记。
+- 新增 SubDL v1：填写 API Key 后在自动字幕源中选择。支持电影及同季剧集查询；使用官方接口密钥，鉴权/限流/响应错误会明确提示。整季包只采用能核实季集的解包候选。
+- 新安装默认选择 SubHD、SubtitleCat；已有明确来源选择保持不变，新增源可在设置中勾选。清空来源或取消选择会保持关闭，填写密钥不会强制启用来源。
+- 来源目录、默认值、排序和媒体能力由 `online_subtitles/provider_catalog.json` 集中定义；站点适配器仅处理搜索和下载入口，复用现有匹配、网络、解包、校验和写入模块，未增加浏览器或额外 Python 依赖。
+- 在线字幕在解包后检查真实字幕时间轴及正文，错误网页、空文件、无有效字幕的文本拒绝进入预览或自动写入。
+- 在线字幕设置按平台独立分区，窄屏使用单列；SubDL 名称统一精简，密钥填写区提供官方申请入口。
+
+2026-11-06 验证范围：SubtitleCat 在开发环境完成电影、剧集原英文及已有简中样本下载；随后 MoviePilot 容器实测英文电影、剧集字幕下载并通过内容校验，但已有简中站点翻译出现详情或下载超时。开启站点翻译时，详情请求失败会使该来源本次搜索失败；该选项默认关闭。不能据此保证全部片源的覆盖、翻译质量、时间轴同步或长期可用性。SubDL 已验证请求、解析、异常路径及注册集成，尚未完成真实账户的下载验证。Moviesubtitles 搜索报错且样本下载变为网页，本轮不接入；TVsubtitles 修正入口后可下载，但语言和多版本导航改造成本更高，本轮暂缓。
+
+适配器按目标项目接口重新实现；流程参考 `morningstar-ski/ChineseSubFinder-optimization` 提交 `7fab5b4ebcffa68518a9f55919a603b375322ce0` 和 SubDL v1 文档，未复制其应用框架或 Go 实现。
+
+## 相关项目与鸣谢
+
+感谢 [ChineseSubFinder-optimization](https://github.com/morningstar-ski/ChineseSubFinder-optimization) 上游项目提供字幕来源接入流程和适配思路参考，也感谢 [ChineseSubFinder](https://github.com/ChineseSubFinder/ChineseSubFinder) 项目。SubtitleCat、SubDL 适配器按本插件模块边界独立实现，复用现有匹配、下载、解包和写入流程。
+
 ## v0.1.98 更新
 
 - 写入字幕后优先启动神医助手外挂字幕扫描任务；找不到 `ScanExternalTrackTask` 或 `ScanExternalSubtitleTask` 时，回退 Emby 全库刷新。
@@ -206,9 +224,9 @@ MoviePilot V2 字幕管理插件，脱胎自 [ChineseSubFinder](https://github.c
 - 剧集支持横向季度卡片，可切换单季或“全部季”。
 - 每集列表支持全选/反选、单集上传、锁定集数、CC 图标查看已有外挂字幕。
 - 批量上传会弹出拖拽上传卡片，自动匹配字幕、目标视频和最终改名结果；生成预览后隐藏上传文件列表，锁定集数会被跳过。
-- 支持在线字幕搜索：剧集可搜索本季/选中集字幕包，单集可点放大镜搜索；自动来源为 SubHD、Zimuku、射手网(伪) API 和 OpenSubtitles API。
+- 支持在线字幕搜索：剧集可搜索本季/选中集字幕包，单集可点放大镜搜索；自动来源为 SubHD、射手网(伪)、OpenSubtitles、SubtitleCat 和 SubDL。
 - 在线字幕下载后会进入同一个匹配预览流程，确认语言后缀、集数和文件名后再写入，不会直接落盘。
-- 自动搜索失败时，弹窗右侧仍提供 SubHD、Zimuku、射手网(伪)、OpenSubtitles 的手动搜索链接，可下载后回到本页手动上传。
+- 自动搜索失败时，弹窗右侧仍提供 SubHD、射手网(伪)、OpenSubtitles、SubtitleCat、SubDL 的手动搜索链接，可下载后回到本页手动上传。
 - OpenSubtitles 默认搜索中文、英文、日文等多语言字幕；英文字幕结果可下载后提交给 `AI字幕生成(联动版)` 执行翻译。
 - 可联动 `AI字幕生成(联动版)`：在整季工具栏或单集行点击 AI 图标提交生成任务，并在字幕匹配页面查看排队、生成、完成、忽略或失败状态。
 - 在线搜索默认不使用 MoviePilot 系统代理，由容器自身网络出口决定；如需代理可在插件设置中手动开启。
@@ -237,7 +255,7 @@ MoviePilot V2 字幕管理插件，脱胎自 [ChineseSubFinder](https://github.c
 - 当前版本主要支持可从 MoviePilot 本地媒体库读取到的本地视频文件；CD2、WebDAV、SMB、网盘挂载等远程路径暂不保证完整可用性。
 - “信任整理历史路径”只用于减少慢路径批量探测，开启后插件会信任 MoviePilot 整理历史中的路径，不逐条访问目标文件；已有外挂字幕、内置字幕等状态可能显示不完整，写入字幕仍受挂载稳定性影响。
 - SubHD 默认地址为 `https://subhd.tv`，优先使用豆瓣 ID 自动搜索，没有 ID 时使用标题关键词搜索，站点波动时可手动跳转。
-- Zimuku 默认地址为 `https://zmk.pw`，使用标题关键词搜索候选字幕页，站点波动时可手动跳转。
+- SubtitleCat 使用公开页面搜索，站点已有翻译不代表人工校对；SubDL 需要有效 API Key，单次剧集查询限同一季。
 - 射手网(伪) 配置 API Key 后访问 `https://api.assrt.net` 官方接口；未配置时不参与自动搜索。
 - OpenSubtitles 配置 API Key 后访问 `https://api.opensubtitles.com/api/v1` 搜索中文、英文、日文字幕；下载时由插件使用 OpenSubtitles 用户名和密码后台登录换取 token。
 - 自定义站点地址只填写根地址，例如 `https://subhd.tv` 或反代入口；插件会按各站当前路径拼接搜索页。

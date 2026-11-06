@@ -1,12 +1,10 @@
 from __future__ import annotations
 
-import base64
+import hashlib
 import html
-import io
 import json
 import re
 import ssl
-import struct
 import time
 import urllib.error
 import urllib.request
@@ -22,17 +20,8 @@ from .clients import OnlinePageClient
 from .keyword_builder import _normalize_title_for_match, _strong_title_matches, _unique_keywords
 from .matcher import _extract_years, _normalize_imdb_tt
 from .models import HtmlLink, OnlineSubtitleResult
+from .catalog import DEFAULT_PROVIDER_ROOTS
 
-
-DEFAULT_PROVIDER_ROOTS = {
-    "subhd": "https://subhd.tv",
-    "zimuku": "https://zmk.pw",
-    "assrt": "https://2.assrt.net",
-    "opensubtitles": "https://www.opensubtitles.com",
-}
-LEGACY_PROVIDER_ROOTS = {
-    "zimuku": {"https://zimuku.org"},
-}
 DEFAULT_ASSRT_API_URL = "https://api.assrt.net"
 DEFAULT_OPENSUBTITLES_API_URL = "https://api.opensubtitles.com/api/v1"
 INTERACTIVE_DOWNLOAD_EVENT_TIMEOUT_MS = 12000
@@ -68,10 +57,9 @@ class LinkExtractor(HTMLParser):
 
 
 def _looks_like_html_bytes(content: bytes, filename: str = "") -> bool:
-    suffix = Path(filename or "").suffix.lower()
-    if suffix in {".zip", ".rar", ".srt", ".ass", ".ssa", ".sub", ".sup", ".idx", ".vtt", ".webvtt", ".sbv", ".smi", ".sami", ".ttml", ".dfxp"}:
+    head = (content or b"")[:1024].lstrip(b"\xef\xbb\xbf \t\r\n").lower()
+    if head.startswith(b"<sami"):
         return False
-    head = (content or b"")[:300].lstrip().lower()
     return head.startswith(b"<!doctype html") or head.startswith(b"<html") or b"<title>" in head
 
 
@@ -87,8 +75,6 @@ def normalize_provider_roots(value: Optional[Dict[str, Any]]) -> Dict[str, str]:
     roots: Dict[str, str] = {}
     for provider_id, default_url in DEFAULT_PROVIDER_ROOTS.items():
         normalized = normalize_root_url(raw.get(provider_id), default_url)
-        if normalized in LEGACY_PROVIDER_ROOTS.get(provider_id, set()):
-            normalized = default_url
         roots[provider_id] = normalized
     return roots
 
@@ -293,7 +279,7 @@ def _extract_links(text: str) -> List[HtmlLink]:
 
 
 def _stable_result_id(provider: str, value: str) -> str:
-    digest = base64.urlsafe_b64encode(value.encode("utf-8"))[:18].decode("ascii")
+    digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:24]
     return f"{provider}-{digest}"
 
 
@@ -318,46 +304,6 @@ def _provider_error_summary(errors: List[str], keyword_count: int) -> str:
     if keyword_count > 1:
         summary += f"（已尝试 {keyword_count} 个关键词）"
     return summary
-
-
-def _is_zimuku_security_page(text: str) -> bool:
-    return "security_verify" in (text or "") or "网站防火墙" in (text or "")
-
-
-def _clean_captcha_text(value: str) -> str:
-    return re.sub(r"[^0-9A-Za-z]", "", value or "")
-
-
-def _preprocess_zimuku_captcha(image_b64: str) -> List[str]:
-    try:
-        from PIL import Image, ImageFilter
-
-        image = Image.open(io.BytesIO(base64.b64decode(image_b64))).convert("RGB")
-        scaled = image.resize((image.width * 3, image.height * 3), Image.Resampling.LANCZOS)
-        mask = Image.new("L", scaled.size, 255)
-        source = scaled.load()
-        output = mask.load()
-        for y in range(scaled.height):
-            for x in range(scaled.width):
-                r, g, b = source[x, y]
-                # Zimuku's Yunsuo captcha uses green glyphs on a pale background.
-                output[x, y] = 0 if (g > r + 20 and g > b + 20 and g < 190) else 255
-        mask = mask.filter(ImageFilter.MedianFilter(3))
-        buffer = io.BytesIO()
-        mask.convert("RGB").save(buffer, format="PNG")
-        return [base64.b64encode(buffer.getvalue()).decode()]
-    except Exception as exc:
-        logger.warning("[SubtitleManualUpload] Zimuku 验证码图片预处理失败：%s", exc)
-        return []
-
-
-def _string_to_hex(value: str) -> str:
-    return "".join(f"{ord(char):x}" for char in value)
-
-
-def _append_raw_query_param(url: str, key: str, value: str) -> str:
-    separator = "&" if "?" in (url or "") else "?"
-    return f"{url}{separator}{quote(str(key))}={quote(str(value))}"
 
 
 __all__ = [name for name in globals() if not name.startswith("__")]

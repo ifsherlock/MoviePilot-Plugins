@@ -32,6 +32,7 @@ class OnlineSubtitleResult:
     identity_status: str = ""
     reject_reason: str = ""
     match_detail: str = ""
+    translation_source: str = "unknown"
 
     def to_dict(self) -> Dict[str, Any]:
         from .language import _language_category_from_text
@@ -63,6 +64,7 @@ class OnlineSubtitleResult:
             "identity_status": self.identity_status,
             "reject_reason": self.reject_reason,
             "match_detail": self.match_detail,
+            "translation_source": self.translation_source,
         }
 
 

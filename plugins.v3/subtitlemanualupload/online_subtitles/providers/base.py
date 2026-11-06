@@ -42,6 +42,8 @@ class BaseSubtitleProvider:
         if not download_url:
             raise ValueError("没有可下载链接")
         filename, content, final_url = self.fetcher.get_bytes(download_url, referer=result.get("page_url") or "")
+        if not content:
+            raise ValueError(f"{self.display_name} 返回了空文件")
         if self._looks_like_html(content, filename):
             raise ValueError(f"{self.display_name} 返回了网页而不是字幕文件，请尝试手动搜索")
         logger.info(
@@ -87,8 +89,3 @@ class ManualSubtitleProvider(BaseSubtitleProvider):
 
 def _subhd_manual_url(root_url: str, keyword: str) -> str:
     return f"{root_url}/search/{quote(keyword)}"
-
-
-def _zimuku_manual_url(root_url: str, keyword: str) -> str:
-    chost = _host(root_url) or "zmk.pw"
-    return f"{root_url}/search?q={quote(keyword)}&chost={quote(chost)}"

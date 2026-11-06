@@ -128,18 +128,18 @@ def test_build_search_keywords_episode_ignores_episode_title_suffix():
     assert all("第 1 集" not in keyword and "第1集" not in keyword for keyword in keywords)
 
 
-def test_manual_providers_keep_subhd_zimuku_links_only():
+def test_manual_providers_exclude_retired_source():
     module = load_online_module()
 
     service = module.OnlineSubtitleSearchService()
     links = service.manual_links(["Ghost Rider 2007"], providers=["subhd", "zimuku"])
     status = {item["id"]: item for item in service.status()["manual_providers"]}
 
-    assert [item["provider"] for item in links] == ["subhd", "zimuku"]
+    assert [item["provider"] for item in links] == ["subhd"]
     assert links[0]["links"][0]["url"] == "https://subhd.tv/search/Ghost%20Rider%202007"
-    assert links[1]["links"][0]["url"] == "https://zmk.pw/search?q=Ghost%20Rider%202007&chost=zmk.pw"
     assert status["subhd"]["manual_only"] is False
-    assert status["zimuku"]["manual_only"] is False
+    assert "zimuku" not in status
+    assert {"subtitlecat", "subdl"} <= status.keys()
 
 
 def test_online_subtitle_models_are_reexported_from_common():
@@ -855,71 +855,6 @@ def test_subhd_download_prepares_new_data_sid_button():
     assert fetcher.posts[0][1] == {"sid": "vlSDLm"}
 
 
-def test_zimuku_searches_candidates_and_filters_episode():
-    module = load_online_module()
-    search_html = """
-    <div class="item"><div class="title"><p class="tt">
-      <a href="/subs/456.html">Example Show</a>
-    </p></div></div>
-    """
-    subs_html = """
-    <table><tbody>
-      <tr><td><a href="/detail/1.html">Example Show S01E01 简体中文</a></td></tr>
-      <tr><td><img title="简体中文字幕"><a href="/detail/2.html">Example Show S01E02 ASS</a></td></tr>
-    </tbody></table>
-    """
-    fetcher = FakeWebFetcher({"/search": search_html, "/subs/456.html": subs_html})
-    provider = module.ZimukuProvider(fetcher)
-
-    results = provider.search(
-        "Example Show S01E02",
-        [{"media_type": "tv", "title": "Example Show", "season": 1, "episode": 2}],
-        "episode",
-    )
-
-    assert [item.result_id for item in results] == ["2"]
-    assert "chost=zmk.pw" in fetcher.requested[0]
-    assert results[0].provider == "zimuku"
-    assert results[0].language_category == "chinese"
-    assert results[0].download_url.startswith("zimuku-page:")
-
-
-def test_zimuku_search_falls_back_when_query_path_404():
-    module = load_online_module()
-    search_html = """
-    <div class="item"><div class="title"><p class="tt">
-      <a href="/subs/456.html">Example Show</a>
-    </p></div></div>
-    """
-    subs_html = """
-    <table><tbody>
-      <tr><td><a href="/detail/2.html">Example Show S01E02 简体中文 ASS</a></td></tr>
-    </tbody></table>
-    """
-
-    class FallbackFetcher(FakeWebFetcher):
-        def get_text(self, url, *, referer=""):
-            self.requested.append(url)
-            if "/search?q=" in url:
-                return 404, "", url
-            if "/search/" in url:
-                return 200, search_html, url
-            if "/subs/456.html" in url:
-                return 200, subs_html, url
-            return 404, "", url
-
-    fetcher = FallbackFetcher()
-    provider = module.ZimukuProvider(fetcher)
-
-    results = provider.search(
-        "Example Show S01E02",
-        [{"media_type": "tv", "title": "Example Show", "season": 1, "episode": 2}],
-        "episode",
-    )
-
-    assert [item.result_id for item in results] == ["2"]
-    assert any("/search?q=" in url for url in fetcher.requested)
-    assert any("/search/" in url and "/search?q=" not in url for url in fetcher.requested)
 
 
 def test_subhd_download_accepts_nested_api_download_url():
@@ -2082,7 +2017,8 @@ def test_provider_roots_are_normalized_with_fallbacks():
     )
 
     assert roots["subhd"] == "https://sub.example"
-    assert roots["zimuku"] == "https://zmk.pw"
+    assert "zimuku" not in roots
+    assert roots["subtitlecat"] == "https://www.subtitlecat.com"
     assert roots["assrt"] == "https://2.assrt.net"
     assert roots["opensubtitles"] == "https://www.opensubtitles.org"
 

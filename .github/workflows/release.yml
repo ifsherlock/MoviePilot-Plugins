@@ -50,6 +50,12 @@ jobs:
       - name: Check plugin versions
         run: python .github/scripts/check_plugin_versions.py package.json package.v2.json package.v3.json
 
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          package-manager-cache: false
+
       - name: Build and release plugins
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -131,6 +137,19 @@ jobs:
                 echo "Release $tag exists, deleting before replacement."
                 gh release delete "$tag" -y
                 git push origin :refs/tags/"$tag" || true
+              fi
+
+              if [ -f "$plugin_dir/package.json" ] && jq -e '.scripts.build | type == "string" and length > 0' "$plugin_dir/package.json" >/dev/null; then
+                echo "Building frontend for $plugin_id from $plugin_dir"
+                (
+                  cd "$plugin_dir"
+                  if [ -f package-lock.json ]; then
+                    npm ci --include=dev --no-audit --no-fund
+                  else
+                    npm install --include=dev --package-lock=false --no-audit --no-fund
+                  fi
+                  npm run build
+                )
               fi
 
               echo "Packing $plugin_id from $plugin_dir -> $asset"

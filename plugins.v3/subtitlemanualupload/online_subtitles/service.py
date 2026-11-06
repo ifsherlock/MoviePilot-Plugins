@@ -4,8 +4,9 @@ from .clients import *  # noqa: F401,F403
 from .language import *  # noqa: F401,F403
 from .matcher import *  # noqa: F401,F403
 from .models import *  # noqa: F401,F403
-from .providers import AssrtProvider, OpenSubtitlesProvider, SubHDProvider, ZimukuProvider
+from .providers import AssrtProvider, OpenSubtitlesProvider, SubHDProvider, SubtitleCatProvider, SubDLProvider
 from .providers.base import BaseSubtitleProvider
+from .catalog import PROVIDER_SPECS, supports_search
 from .shared import *  # noqa: F401,F403
 
 class OnlineSubtitleSearchService:
@@ -15,6 +16,8 @@ class OnlineSubtitleSearchService:
         engine: str = DEFAULT_ENGINE,
         use_proxy: bool = False,
         provider_roots: Optional[Dict[str, str]] = None,
+        subdl_api_key: str = "",
+        subtitlecat_include_translations: bool = False,
         assrt_api_key: str = "",
         assrt_api_url: str = DEFAULT_ASSRT_API_URL,
         opensubtitles_api_key: str = "",
@@ -30,7 +33,8 @@ class OnlineSubtitleSearchService:
         roots = normalize_provider_roots(provider_roots)
         self.providers: Dict[str, BaseSubtitleProvider] = {
             "subhd": SubHDProvider(self.fetcher, root_url=roots["subhd"]),
-            "zimuku": ZimukuProvider(self.fetcher, root_url=roots["zimuku"]),
+            "subtitlecat": SubtitleCatProvider(self.fetcher, root_url=roots["subtitlecat"], include_translations=subtitlecat_include_translations),
+            "subdl": SubDLProvider(self.fetcher, root_url=roots["subdl"], api_key=subdl_api_key),
             "assrt": AssrtProvider(
                 self.fetcher,
                 root_url=roots["assrt"],
@@ -46,19 +50,15 @@ class OnlineSubtitleSearchService:
                 password=opensubtitles_password,
             ),
         }
-        self.manual_providers: Dict[str, BaseSubtitleProvider] = {
-            "subhd": self.providers["subhd"],
-            "zimuku": self.providers["zimuku"],
-            "assrt": self.providers["assrt"],
-            "opensubtitles": self.providers["opensubtitles"],
-        }
+        self.manual_providers = self.providers
 
     def status(self) -> Dict[str, Any]:
         browser_status = self.fetcher.status()
         return {
             "engine": browser_status["engine"],
             "engine_name": browser_status["engine_name"],
-            "providers": [provider.status() for provider in self.providers.values()],
+            "providers": [{**provider.status(), "media_types": PROVIDER_SPECS[provider.provider_id]["media_types"]}
+                          for provider in self.providers.values()],
             "manual_providers": [provider.status() for provider in self.manual_providers.values()],
             "capabilities": {
                 "ocr": _can_import("app.helper.ocr"),
@@ -117,6 +117,9 @@ class OnlineSubtitleSearchService:
         try:
             for provider_id in provider_ids:
                 provider = self.providers[provider_id]
+                if not supports_search(provider_id, targets, scope):
+                    provider_messages.append({"provider": provider_id, "level": "info", "message": "该来源不支持当前媒体类型"})
+                    continue
                 provider_errors: List[str] = []
                 found: List[OnlineSubtitleResult] = []
                 try:

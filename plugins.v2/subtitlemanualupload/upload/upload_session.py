@@ -15,6 +15,7 @@ from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
 from fastapi import HTTPException
 
 from ..matching.subtitle_formats import BITMAP_SUBTITLE_EXTS, is_bitmap_subtitle
+from ..matching.subtitle_validation import validate_online_subtitle_files
 
 
 HashText = Callable[[str], str]
@@ -846,6 +847,11 @@ class UploadSessionService:
             except Exception as exc:
                 if self._logger_warning:
                     self._logger_warning("[SubtitleManualUpload] 清理旧会话失败 %s: %s", child, exc)
+
+    def extract_online_subtitle_files(self, upload_name, raw_bytes, session_dir):
+        files = self.extract_subtitle_files(upload_name, raw_bytes, session_dir)
+        validate_online_subtitle_files(files)
+        return files
 
     def extract_subtitle_files(
         self,

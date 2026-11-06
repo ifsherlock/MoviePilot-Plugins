@@ -1,6 +1,7 @@
 <script setup>
 import { onMounted, ref } from 'vue'
 import '../styles/theme.css'
+import { onlineProviderItems, defaultOnlineProviderIds } from '../utils/onlineResult'
 
 const props = defineProps({
   initialConfig: {
@@ -19,7 +20,7 @@ const manualStrmPathPlaceholder = `/vol2/1000/raid/2/links2
 const localConfig = ref({
   enabled: false,
   show_sidebar_nav: true,
-  online_providers: ['subhd', 'zimuku'],
+  online_providers: [...defaultOnlineProviderIds],
   online_use_proxy: false,
   traditional_to_simplified: false,
   emby_refresh_after_subtitle_write: false,
@@ -40,7 +41,8 @@ const localConfig = ref({
   timeline_vad_mode: 'webrtc',
   timeline_allow_risky_offset: false,
   subhd_url: 'https://subhd.tv',
-  zimuku_url: 'https://zmk.pw',
+  subdl_api_key: '',
+  subtitlecat_include_translations: false,
   assrt_url: 'https://2.assrt.net',
   assrt_api_key: '',
   assrt_api_url: 'https://api.assrt.net',
@@ -54,12 +56,6 @@ const localConfig = ref({
   rar_tool_path: '/usr/bin/unar',
 })
 
-const onlineProviderItems = [
-  { title: 'SubHD 中文字幕', value: 'subhd' },
-  { title: 'Zimuku 中文字幕', value: 'zimuku' },
-  { title: '射手网(伪，需 API Key)', value: 'assrt' },
-  { title: 'OpenSubtitles 多语言字幕', value: 'opensubtitles' },
-]
 
 const rarDependencyModes = [
   { title: '不处理，仅检测', value: 'none' },
@@ -114,9 +110,9 @@ const timelineVadItems = [
 ]
 
 function normalizeProviders(value) {
-  const allowed = ['subhd', 'zimuku', 'assrt', 'opensubtitles']
+  const allowed = onlineProviderItems.map(item => item.value)
   const providers = Array.isArray(value) ? value.filter(item => allowed.includes(item)) : []
-  return providers.length ? Array.from(new Set(providers)) : ['subhd', 'zimuku']
+  return Array.isArray(value) ? Array.from(new Set(providers)) : [...defaultOnlineProviderIds]
 }
 
 function normalizeRootUrl(value, fallback) {
@@ -124,10 +120,6 @@ function normalizeRootUrl(value, fallback) {
   return /^https?:\/\//i.test(text) ? text : fallback
 }
 
-function normalizeZimukuRootUrl(value) {
-  const normalized = normalizeRootUrl(value, 'https://zmk.pw')
-  return normalized === 'https://zimuku.org' ? 'https://zmk.pw' : normalized
-}
 
 function normalizePositiveNumber(value, fallback) {
   const number = Number(value)
@@ -238,12 +230,6 @@ function normalizeConfig(input) {
   const opensubtitlesPassword = String(input?.opensubtitles_password || '').trim()
   const providers = normalizeProviders(input?.online_providers)
   const autoStrategy = normalizeAutoStrategy(input?.auto_transfer_subtitle_strategy)
-  if (assrtApiKey && !providers.includes('assrt')) {
-    providers.push('assrt')
-  }
-  if (opensubtitlesApiKey && !providers.includes('opensubtitles')) {
-    providers.push('opensubtitles')
-  }
   return {
     enabled: Boolean(input?.enabled),
     show_sidebar_nav: input?.show_sidebar_nav !== false,
@@ -275,7 +261,8 @@ function normalizeConfig(input) {
     timeline_vad_mode: timelineVadItems.some(item => item.value === input?.timeline_vad_mode) ? input.timeline_vad_mode : 'webrtc',
     timeline_allow_risky_offset: Boolean(input?.timeline_allow_risky_offset),
     subhd_url: normalizeRootUrl(input?.subhd_url, 'https://subhd.tv'),
-    zimuku_url: normalizeZimukuRootUrl(input?.zimuku_url),
+    subdl_api_key: String(input?.subdl_api_key || '').trim(),
+    subtitlecat_include_translations: Boolean(input?.subtitlecat_include_translations),
     assrt_url: normalizeRootUrl(input?.assrt_url, 'https://2.assrt.net'),
     assrt_api_key: assrtApiKey,
     assrt_api_url: normalizeRootUrl(input?.assrt_api_url, 'https://api.assrt.net'),
@@ -529,129 +516,196 @@ onMounted(() => {
           <div class="config-section">
             <div>
               <div class="config-section-title">在线字幕搜索</div>
-              <p>自动搜索支持 SubHD、Zimuku、射手网(伪) 和 OpenSubtitles；站点波动时仍可使用右侧手动搜索跳转。</p>
+              <p>先选择启用的字幕源，再填写对应平台的设置。站点暂时不可用时，可在搜索页手动跳转。</p>
             </div>
           </div>
 
-          <div class="config-grid two-column">
-            <VSelect
-              v-model="localConfig.online_providers"
-              :items="onlineProviderItems"
-              label="启用字幕源"
-              variant="outlined"
-              density="comfortable"
-              multiple
-              chips
-              hide-details
-            />
-            <VSelect
-              v-model="localConfig.online_use_proxy"
-              :items="[
-                { title: '不使用系统代理', value: false },
-                { title: '使用 MoviePilot 系统代理', value: true },
-              ]"
-              label="API 请求代理"
-              variant="outlined"
-              density="comfortable"
-              hide-details
-            />
-            <VTextField
-              v-model="localConfig.subhd_url"
-              label="SubHD 站点地址"
-              placeholder="https://subhd.tv"
-              variant="outlined"
-              density="comfortable"
-              hide-details
-            />
-            <VTextField
-              v-model="localConfig.zimuku_url"
-              label="Zimuku 站点地址"
-              placeholder="https://zmk.pw"
-              variant="outlined"
-              density="comfortable"
-              hide-details
-            />
-            <VTextField
-              v-model="localConfig.assrt_url"
-              label="射手网(伪) 手动搜索地址"
-              placeholder="https://2.assrt.net"
-              variant="outlined"
-              density="comfortable"
-              hide-details
-            />
-            <VTextField
-              v-model="localConfig.assrt_api_url"
-              label="射手网(伪) API 地址"
-              placeholder="https://api.assrt.net"
-              variant="outlined"
-              density="comfortable"
-              hide-details
-            />
-            <VTextField
-              v-model="localConfig.assrt_api_key"
-              label="射手网(伪) API Key"
-              placeholder="未填写时默认不启用伪射手自动搜索"
-              variant="outlined"
-              density="comfortable"
-              type="password"
-              autocomplete="new-password"
-              hide-details
-            />
-            <VTextField
-              v-model="localConfig.opensubtitles_url"
-              label="OpenSubtitles 手动搜索地址"
-              placeholder="https://www.opensubtitles.com"
-              variant="outlined"
-              density="comfortable"
-              hide-details
-            />
-            <VTextField
-              v-model="localConfig.opensubtitles_api_url"
-              label="OpenSubtitles API 地址"
-              placeholder="https://api.opensubtitles.com/api/v1"
-              variant="outlined"
-              density="comfortable"
-              hide-details
-            />
-            <VTextField
-              v-model="localConfig.opensubtitles_api_key"
-              label="OpenSubtitles API Key"
-              placeholder="用于搜索多语言字幕"
-              variant="outlined"
-              density="comfortable"
-              type="password"
-              autocomplete="new-password"
-              hide-details
-            />
-            <VTextField
-              v-model="localConfig.opensubtitles_username"
-              label="OpenSubtitles 用户名（可选）"
-              placeholder="下载时用于后台登录换取 token"
-              variant="outlined"
-              density="comfortable"
-              autocomplete="username"
-              :error="localConfig.opensubtitles_username.includes('@')"
-              :error-messages="localConfig.opensubtitles_username.includes('@') ? '请输入用户名而非邮箱！' : ''"
-            />
-            <VTextField
-              v-model="localConfig.opensubtitles_password"
-              label="OpenSubtitles 密码（可选）"
-              placeholder="下载时用于后台登录换取 token"
-              variant="outlined"
-              density="comfortable"
-              type="password"
-              autocomplete="new-password"
-              hide-details
-            />
-          </div>
+          <div class="online-source-settings">
+            <div class="config-grid two-column online-source-general">
+              <VSelect
+                v-model="localConfig.online_providers"
+                :items="onlineProviderItems"
+                label="启用字幕源"
+                variant="outlined"
+                density="comfortable"
+                multiple
+                chips
+                hide-details
+              />
+              <VSelect
+                v-model="localConfig.online_use_proxy"
+                :items="[
+                  { title: '不使用系统代理', value: false },
+                  { title: '使用 MoviePilot 系统代理', value: true },
+                ]"
+                label="API 请求代理"
+                variant="outlined"
+                density="comfortable"
+                hide-details
+              />
+            </div>
+            <p class="provider-note online-source-help">填写密钥后，仍需在上方“启用字幕源”中勾选对应平台，并保存设置。</p>
 
-          <VAlert
-            class="mt-4"
-            type="info"
-            variant="tonal"
-            density="compact"
-            text="OpenSubtitles 搜索需要 API Key；下载由插件使用用户名和密码后台登录换取 token。英文字幕结果可下载后提交给 AI 字幕生成翻译。"
-          />
+            <section class="provider-settings" aria-labelledby="provider-subhd-title">
+              <div class="provider-heading">
+                <h3 id="provider-subhd-title">SubHD</h3>
+                <p>无需 API Key</p>
+              </div>
+              <div class="provider-body">
+                <div class="config-grid">
+                  <VTextField
+                    v-model="localConfig.subhd_url"
+                    label="SubHD 站点地址"
+                    placeholder="https://subhd.tv"
+                    variant="outlined"
+                    density="comfortable"
+                    hide-details
+                  />
+                </div>
+              </div>
+            </section>
+            <section class="provider-settings" aria-labelledby="provider-subtitlecat-title">
+              <div class="provider-heading">
+                <h3 id="provider-subtitlecat-title">SubtitleCat</h3>
+                <p>无需 API Key</p>
+              </div>
+              <div class="provider-body">
+                <div class="config-grid">
+                  <VSwitch
+                    v-model="localConfig.subtitlecat_include_translations"
+                    label="接受已有中文站点翻译"
+                    hint="默认只搜索原字幕；开启后另列站点翻译，不会发起在线翻译任务。"
+                    persistent-hint
+                    color="primary"
+                  />
+                </div>
+              </div>
+            </section>
+            <section class="provider-settings" aria-labelledby="provider-subdl-title">
+              <div class="provider-heading">
+                <h3 id="provider-subdl-title">SubDL</h3>
+                <p>需要 API Key</p>
+              </div>
+              <div class="provider-body">
+                <div class="config-grid">
+                  <VTextField
+                    v-model="localConfig.subdl_api_key"
+                    label="SubDL API Key"
+                    placeholder="粘贴从 SubDL 账户获取的密钥"
+                    type="password"
+                    autocomplete="new-password"
+                    variant="outlined"
+                    density="comfortable"
+                    hide-details
+                  />
+                </div>
+                <p class="provider-note">
+                  <a href="https://subdl.com/panel/api" target="_blank" rel="noopener noreferrer" class="provider-help-link">获取 API Key ↗</a>
+                  <span>注册或登录 SubDL 后，在 API 管理页获取密钥。</span>
+                </p>
+              </div>
+            </section>
+            <section class="provider-settings" aria-labelledby="provider-assrt-title">
+              <div class="provider-heading">
+                <h3 id="provider-assrt-title">射手网（伪） / ASSRT</h3>
+                <p>需要 API Key</p>
+              </div>
+              <div class="provider-body">
+                <div class="config-grid">
+                  <VTextField
+                    v-model="localConfig.assrt_api_key"
+                    label="射手网(伪) API Key"
+                    placeholder="未填写时默认不启用伪射手自动搜索"
+                    variant="outlined"
+                    density="comfortable"
+                    type="password"
+                    autocomplete="new-password"
+                    hide-details
+                  />
+                </div>
+                <div class="config-grid two-column">
+                  <VTextField
+                    v-model="localConfig.assrt_api_url"
+                    label="射手网(伪) API 地址"
+                    placeholder="https://api.assrt.net"
+                    variant="outlined"
+                    density="comfortable"
+                    hide-details
+                  />
+                  <VTextField
+                    v-model="localConfig.assrt_url"
+                    label="射手网(伪) 手动搜索地址"
+                    placeholder="https://2.assrt.net"
+                    variant="outlined"
+                    density="comfortable"
+                    hide-details
+                  />
+                </div>
+              </div>
+            </section>
+            <section class="provider-settings" aria-labelledby="provider-opensubtitles-title">
+              <div class="provider-heading">
+                <h3 id="provider-opensubtitles-title">OpenSubtitles</h3>
+                <p>搜索需要 API Key；下载需账号</p>
+              </div>
+              <div class="provider-body">
+                <div class="config-grid">
+                  <VTextField
+                    v-model="localConfig.opensubtitles_api_key"
+                    label="OpenSubtitles API Key"
+                    placeholder="用于搜索多语言字幕"
+                    variant="outlined"
+                    density="comfortable"
+                    type="password"
+                    autocomplete="new-password"
+                    hide-details
+                  />
+                </div>
+                <div class="config-grid two-column">
+                  <VTextField
+                    v-model="localConfig.opensubtitles_username"
+                    label="OpenSubtitles 用户名（可选）"
+                    placeholder="下载时用于后台登录换取 token"
+                    variant="outlined"
+                    density="comfortable"
+                    autocomplete="username"
+                    hide-details="auto"
+                    :error="localConfig.opensubtitles_username.includes('@')"
+                    :error-messages="localConfig.opensubtitles_username.includes('@') ? '请输入用户名而非邮箱！' : ''"
+                  />
+                  <VTextField
+                    v-model="localConfig.opensubtitles_password"
+                    label="OpenSubtitles 密码（可选）"
+                    placeholder="下载时用于后台登录换取 token"
+                    variant="outlined"
+                    density="comfortable"
+                    type="password"
+                    autocomplete="new-password"
+                    hide-details
+                  />
+                </div>
+                <div class="config-grid two-column">
+                  <VTextField
+                    v-model="localConfig.opensubtitles_api_url"
+                    label="OpenSubtitles API 地址"
+                    placeholder="https://api.opensubtitles.com/api/v1"
+                    variant="outlined"
+                    density="comfortable"
+                    hide-details
+                  />
+                  <VTextField
+                    v-model="localConfig.opensubtitles_url"
+                    label="OpenSubtitles 手动搜索地址"
+                    placeholder="https://www.opensubtitles.com"
+                    variant="outlined"
+                    density="comfortable"
+                    hide-details
+                  />
+                </div>
+                <p class="provider-note">下载时使用用户名和密码登录。下载后的英文字幕，可提交给 AI 字幕生成翻译。</p>
+              </div>
+            </section>
+          </div>
 
           <VDivider class="my-5" />
 
@@ -766,6 +820,90 @@ onMounted(() => {
 .config-grid {
   display: grid;
   gap: 16px;
+}
+
+.online-source-settings {
+  container-type: inline-size;
+}
+
+.online-source-general {
+  margin-bottom: 8px;
+}
+
+.provider-settings {
+  display: grid;
+  grid-template-columns: 184px minmax(0, 1fr);
+  gap: 24px;
+  padding: 24px 0;
+  border-top: 1px solid var(--smu-border);
+}
+
+.provider-settings:last-child {
+  padding-bottom: 0;
+}
+
+.provider-heading h3 {
+  margin: 0;
+  color: var(--smu-text);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.provider-heading p,
+.provider-note {
+  margin: 6px 0 0;
+  color: var(--smu-text-muted);
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+
+.online-source-help {
+  margin: 0 0 24px;
+}
+
+.provider-body {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  min-width: 0;
+}
+
+.provider-body .config-grid {
+  align-items: start;
+}
+
+.provider-body .provider-note {
+  margin: -4px 0 0;
+}
+
+.provider-help-link {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  margin-right: 12px;
+  color: rgb(var(--v-theme-primary));
+  font-weight: 600;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.provider-help-link:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: 3px;
+}
+
+@container (max-width: 720px) {
+  .provider-settings {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+
+  .online-source-settings .config-grid.two-column {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }
 
 .language-priority-details {
