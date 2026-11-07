@@ -11,6 +11,7 @@ import psutil
 import srt
 
 from ..core.models import ResolvedSource, UserInterruptException
+from .model_download import resolve_model_path
 
 
 class AsrService:
@@ -47,24 +48,19 @@ class AsrService:
         video_name = os.path.basename(video_file) if video_file else os.path.basename(audio_file)
         self._logger.info(f"[Whisper音频提取文本] 开始处理: {video_name}")
         try:
-            from faster_whisper import WhisperModel, download_model
+            from faster_whisper import WhisperModel
             self._logger.info(f"[Whisper音频提取文本] {video_name} - 加载模型中...")
             cache_dir = os.path.join(self._faster_whisper_model_path(), "cache")
-            if not os.path.exists(cache_dir):
-                os.mkdir(cache_dir)
-            os.environ["HF_HUB_CACHE"] = cache_dir
-            if self._huggingface_proxy():
-                proxy = self._proxy_config()
-                os.environ["HTTP_PROXY"] = proxy['http']
-                os.environ["HTTPS_PROXY"] = proxy['https']
-
             max_retries = 3
             model = None
             for attempt in range(max_retries):
                 try:
-                    model_path = download_model(self._faster_whisper_model(), local_files_only=False, cache_dir=cache_dir)
-                    if model_path is None:
-                        raise ValueError("模型下载返回空路径")
+                    model_path = resolve_model_path(
+                        self._faster_whisper_model(),
+                        cache_dir,
+                        self._proxy_config() if self._huggingface_proxy() else None,
+                        self._raise_if_task_cancelled,
+                    )
                     model = WhisperModel(
                         model_path,
                         device="cpu",
@@ -72,6 +68,8 @@ class AsrService:
                         cpu_threads=psutil.cpu_count(logical=False),
                     )
                     break
+                except UserInterruptException:
+                    raise
                 except Exception as e:
                     if attempt < max_retries - 1:
                         self._logger.warn(f"[Whisper音频提取文本] {video_name} - 模型下载失败（第{attempt+1}次），30秒后重试... 错误: {e}")

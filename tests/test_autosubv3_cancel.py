@@ -1587,7 +1587,6 @@ def test_autosub_release_metadata_versions_match():
     readme = (root / "plugins.v2" / "autosubv3" / "README.md").read_text(encoding="utf-8")
     version = module.AutoSubv3.plugin_version
 
-    assert version == "3.5.62"
     assert package["AutoSubv3"]["version"] == version
     assert package_v2["AutoSubv3"]["version"] == version
     assert plugin_package["version"] == version

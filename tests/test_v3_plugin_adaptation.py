@@ -22,18 +22,19 @@ def _class_name_and_version(path: Path) -> tuple[str, str]:
 
 
 def test_v3_plugins_keep_stable_identity_and_versions():
-    assert _class_name_and_version(ROOT / "plugins.v3/autosubv3/__init__.py") == ("AutoSubv3", "4.0.2")
-    assert _class_name_and_version(ROOT / "plugins.v3/subtitlemanualupload/__init__.py") == (
-        "SubtitleManualUpload",
-        "1.2.17",
-    )
+    package_v3 = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
+    for plugin_id in ("AutoSubv3", "SubtitleManualUpload"):
+        assert _class_name_and_version(ROOT / f"plugins.v3/{plugin_id.lower()}/__init__.py") == (
+            plugin_id,
+            package_v3[plugin_id]["version"],
+        )
 
 
 def test_v3_index_and_v2_opt_out_are_consistent():
     package_v3 = json.loads((ROOT / "package.v3.json").read_text(encoding="utf-8"))
     package_v2 = json.loads((ROOT / "package.v2.json").read_text(encoding="utf-8"))
-    for plugin_id, version in (("AutoSubv3", "4.0.2"), ("SubtitleManualUpload", "1.2.17")):
-        assert package_v3[plugin_id]["version"] == version
+    for plugin_id in ("AutoSubv3", "SubtitleManualUpload"):
+        version = package_v3[plugin_id]["version"]
         assert package_v3[plugin_id]["system_version"] == ">=3.0.0"
         assert f"v{version}" in package_v3[plugin_id]["history"]
         assert package_v2[plugin_id]["v3"] is False

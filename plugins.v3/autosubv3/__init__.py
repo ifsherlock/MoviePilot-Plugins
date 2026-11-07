@@ -57,7 +57,7 @@ class AutoSubv3(AutoSubv3CompatMixin, _PluginBase):
     # 主题色
     plugin_color = "#2C4F7E"
     # 插件版本
-    plugin_version = "4.0.2"
+    plugin_version = "4.0.3"
     # 插件作者
     plugin_author = "ifsherlock"
     # 作者主页
