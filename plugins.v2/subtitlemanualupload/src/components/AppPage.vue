@@ -164,7 +164,6 @@ const {
   autoQueueDialog,
   autoQueueMutating,
   autoQueueActionTaskId,
-  autoQueueSummary,
   autoQueueTasks,
   autoQueueSummaryText,
   applyAutoTransferSummary,
@@ -937,7 +936,6 @@ defineExpose({
         :root-tab="rootTab"
         :match-history-summary="matchHistorySummary"
         :index-summary="indexSummary"
-        :auto-queue-visible="Boolean(autoQueueTasks.length || autoQueueSummary.total || autoQueueSummary.active)"
         :auto-queue-summary-text="autoQueueSummaryText"
         :refreshing="refreshing"
         :match-history-loading="matchHistoryLoading || matchHistoryRefreshing"

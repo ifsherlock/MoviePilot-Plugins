@@ -5,7 +5,6 @@ const props = defineProps({
   rootTab: { type: String, required: true },
   matchHistorySummary: { type: String, required: true },
   indexSummary: { type: String, required: true },
-  autoQueueVisible: { type: Boolean, default: false },
   autoQueueSummaryText: { type: String, default: '' },
   refreshing: { type: Boolean, default: false },
   matchHistoryLoading: { type: Boolean, default: false },
@@ -49,7 +48,6 @@ const mediaTypeItems = [
         </div>
         <div class="search-head-actions">
           <VBtn
-            v-if="autoQueueVisible"
             variant="text"
             prepend-icon="mdi-tray-full"
             @click="$emit('open-auto-queue')"
