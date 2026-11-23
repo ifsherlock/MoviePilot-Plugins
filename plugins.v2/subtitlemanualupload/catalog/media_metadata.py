@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 import re
 from typing import Any, Callable, Dict, Iterable, List, Tuple
 
@@ -247,6 +248,29 @@ def auto_media_for_entry(
     return media
 
 
+_CHINESE_SUB_TAG_RE = re.compile(
+    r"(?<![A-Za-z0-9])("
+    r"CHS|CHT|ZH(?:[-_]?(?:HANS|HANT|CN|TW|HK))|"
+    r"简繁|繁简|简日|繁日|简英|繁英|中英|中日|中韩|中字|双语|雙語|简中|繁中|简体|繁體|内封|內封|内嵌|內嵌"
+    r")(?![A-Za-z0-9])",
+    re.I,
+)
+
+
+def chinese_filename_subtitle_evidence(
+    entry: Dict[str, Any],
+    *,
+    normalize_text: NormalizeText,
+) -> str:
+    raw_name = normalize_text(entry.get("filename")) or normalize_text(entry.get("path"))
+    if not raw_name:
+        return ""
+    match = _CHINESE_SUB_TAG_RE.search(Path(raw_name).name)
+    if match:
+        return f"文件名包含中文字幕标识 ({match.group(1)})"
+    return ""
+
+
 def is_chinese_transfer_media(
     entry: Dict[str, Any],
     *,
@@ -257,6 +281,13 @@ def is_chinese_transfer_media(
     chinese_region_names: Iterable[str],
     chinese_category_pattern: Any,
 ) -> Tuple[bool, str]:
+    filename_reason = chinese_filename_subtitle_evidence(
+        entry,
+        normalize_text=normalize_text,
+    )
+    if filename_reason:
+        return True, filename_reason
+
     category_reason = chinese_category_evidence(
         entry,
         normalize_text=normalize_text,

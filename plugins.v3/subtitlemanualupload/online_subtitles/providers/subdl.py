@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import re
+import time
 import urllib.error
 import urllib.request
 from typing import Any, Dict, List
@@ -25,6 +26,18 @@ class SubDLProvider(BaseSubtitleProvider):
     download_root = "https://dl.subdl.com"
     max_queries = 3
     request_timeout = 6
+    _quota_cooldown_until = 0.0
+
+    @classmethod
+    def _in_quota_cooldown(cls) -> bool:
+        return time.time() < cls._quota_cooldown_until
+
+    @classmethod
+    def _trip_quota_cooldown(cls, detail: str = "", default_seconds: int = 1800) -> None:
+        match = re.search(r'"retryAfterSeconds"\s*:\s*(\d+)', str(detail or ""))
+        wait = int(match.group(1)) if match else default_seconds
+        wait = max(300, min(86400, wait))
+        cls._quota_cooldown_until = max(cls._quota_cooldown_until, time.time() + wait)
 
     def __init__(self, fetcher, root_url: str = "", *, api_key: str = ""):
         super().__init__(fetcher, root_url=root_url)
@@ -49,6 +62,8 @@ class SubDLProvider(BaseSubtitleProvider):
     def search_all(self, keywords: List[str], targets: List[Dict[str, Any]], scope: str) -> List[OnlineSubtitleResult]:
         if not self.api_key:
             raise ValueError("SubDL 未配置 API Key")
+        if self._in_quota_cooldown():
+            return []
         for params in self._search_plan(keywords, targets, scope):
             payload = self._api_json(params)
             found = self._parse_results(payload, params, keywords, targets)
@@ -103,6 +118,12 @@ class SubDLProvider(BaseSubtitleProvider):
             if exc.code in {401, 403}:
                 raise ValueError("SubDL API 鉴权失败，请检查密钥及账户权限") from None
             if exc.code == 429:
+                try:
+                    body = exc.read(512).decode("utf-8", errors="ignore")
+                except Exception:
+                    body = ""
+                if any(marker in body.lower() for marker in ("retryafterseconds", "api_download_limit_exceeded", "daily")):
+                    self._trip_quota_cooldown(body, default_seconds=1800)
                 raise ValueError("SubDL API 请求限流或额度耗尽") from None
             raise ValueError(f"SubDL API 服务请求失败 HTTP {exc.code}") from None
         except (urllib.error.URLError, OSError):
@@ -238,4 +259,12 @@ class SubDLProvider(BaseSubtitleProvider):
         url = self._download_url(result.get("download_url"))
         if not url:
             raise ValueError("SubDL 缺少有效的官方字幕下载地址")
-        return super().download({**result, "download_url": url}, captcha_code=captcha_code)
+        if self._in_quota_cooldown():
+            raise ValueError("SubDL 今日配额已达上限，已自动暂停调用等待重置")
+        try:
+            return super().download({**result, "download_url": url}, captcha_code=captcha_code)
+        except ValueError as exc:
+            msg = str(exc)
+            if "HTTP 429" in msg or "api_download_limit_exceeded" in msg:
+                self._trip_quota_cooldown(msg, default_seconds=3600)
+            raise
