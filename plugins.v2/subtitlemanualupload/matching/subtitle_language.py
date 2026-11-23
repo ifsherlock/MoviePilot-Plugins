@@ -221,43 +221,59 @@ def detect_language_profile(file_name: str, raw_bytes: bytes, subtitle_exts: Ite
     elif (has_chinese_name or (has_cjk and not has_kana and not has_hangul)) and (has_english_name or has_ascii):
         suffix = "chi&eng"
         label = "中英双语"
-    elif any(token in lowered for token in ("zh-hant", "zh_tw", "zh-tw", "cht", "繁体", "繁中", "big5")) or re.search(
-        r"(^|[\s._\-\[\]()])(?:tw|hk)(?=$|[\s._\-\[\]()])",
+    elif any(token in lowered for token in ("繁体", "繁中")) or re.search(
+        r"(^|[\s._\-\[\]()/+&,])(?:zh-hant|zh_tw|zh-tw|cht|big5|tw|hk)(?=$|[\s._\-\[\]()/+&,])",
         lowered,
     ):
         suffix = "cht"
         label = "繁中"
-    elif any(token in lowered for token in ("zh-hans", "zh_cn", "zh-cn", "chs", "简体", "简中", "gb")):
+    elif any(token in lowered for token in ("简体", "简中")) or re.search(
+        r"(^|[\s._\-\[\]()/+&,])(?:zh-hans|zh_cn|zh-cn|chs|gb)(?=$|[\s._\-\[\]()/+&,])",
+        lowered,
+    ):
         suffix = "chi"
         label = "简中"
-    elif any(token in lowered for token in ("zh", "chi", "zho", "cmn", "中文", "中字")) or (has_cjk and not has_kana and not has_hangul):
+    elif (
+        any(token in lowered for token in ("中文", "中字"))
+        or re.search(r"(^|[\s._\-\[\]()/+&,])(?:zh|chi|zho|cmn)(?=$|[\s._\-\[\]()/+&,])", lowered)
+        or (has_cjk and not has_kana and not has_hangul)
+    ):
         suffix = "chi"
         label = "中文"
-    elif any(token in lowered for token in ("jpn", "japanese", "日文", "日语", ".ja.")) or has_kana:
+    elif any(token in lowered for token in ("日文", "日语")) or re.search(
+        r"(^|[\s._\-\[\]()/+&,])(?:jpn|japanese|ja|jp)(?=$|[\s._\-\[\]()/+&,])",
+        lowered,
+    ) or has_kana:
         suffix = "jpn"
         label = "日文"
-    elif any(token in lowered for token in ("kor", "korean", "韩文", "韩语", ".ko.")) or has_hangul:
+    elif any(token in lowered for token in ("韩文", "韩语")) or re.search(
+        r"(^|[\s._\-\[\]()/+&,])(?:kor|korean|ko|kr)(?=$|[\s._\-\[\]()/+&,])",
+        lowered,
+    ) or has_hangul:
         suffix = "kor"
         label = "韩文"
-    elif any(token in lowered for token in ("eng", "english", "英文", "英语", ".en.")) or has_ascii:
+    elif any(token in lowered for token in ("英文", "英语")) or re.search(
+        r"(^|[\s._\-\[\]()/+&,])(?:eng|english|en)(?=$|[\s._\-\[\]()/+&,])",
+        lowered,
+    ) or has_ascii:
         suffix = "eng"
         label = "英文"
-    elif any(token in lowered for token in ("fre", "fra", "french", "français", ".fr.")):
+    elif re.search(r"(^|[\s._\-\[\]()/+&,])(?:fre|fra|french|français|fr)(?=$|[\s._\-\[\]()/+&,])", lowered):
         suffix = "fre"
         label = "法文"
-    elif any(token in lowered for token in ("spa", "spanish", "español", ".es.")):
+    elif re.search(r"(^|[\s._\-\[\]()/+&,])(?:spa|spanish|español|es)(?=$|[\s._\-\[\]()/+&,])", lowered):
         suffix = "spa"
         label = "西文"
-    elif any(token in lowered for token in ("ger", "deu", "german", "deutsch", ".de.")):
+    elif re.search(r"(^|[\s._\-\[\]()/+&,])(?:ger|deu|german|deutsch|de)(?=$|[\s._\-\[\]()/+&,])", lowered):
         suffix = "ger"
         label = "德文"
-    elif any(token in lowered for token in ("por", "portuguese", "português", ".pt.")):
+    elif re.search(r"(^|[\s._\-\[\]()/+&,])(?:por|portuguese|português|pt)(?=$|[\s._\-\[\]()/+&,])", lowered):
         suffix = "por"
         label = "葡文"
-    elif any(token in lowered for token in ("ita", "italian", "italiano", ".it.")):
+    elif re.search(r"(^|[\s._\-\[\]()/+&,])(?:ita|italian|italiano|it)(?=$|[\s._\-\[\]()/+&,])", lowered):
         suffix = "ita"
         label = "意文"
-    elif any(token in lowered for token in ("rus", "russian", ".ru.")):
+    elif re.search(r"(^|[\s._\-\[\]()/+&,])(?:rus|russian|ru)(?=$|[\s._\-\[\]()/+&,])", lowered):
         suffix = "rus"
         label = "俄文"
 
