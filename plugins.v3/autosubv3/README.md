@@ -2,6 +2,10 @@
 
 MoviePilot V3 专用插件，用于从视频音轨、内嵌字幕或外挂字幕中生成字幕，并可调用大模型翻译为中文。V2 版本保留在 `plugins.v2/autosubv3`。
 
+## v4.0.4 更新
+
+限制 PyAV 低于 19，避免 faster-whisper 1.2.1 在 ASR 解码时因 `metadata_errors` 参数报错。faster-whisper 发布包含 PyAV 19 兼容修复的版本后，可以去掉这条上限。
+
 ## v4.0.3 更新
 
 修复 [#15](https://github.com/ifsherlock/MoviePilot-Plugins/issues/15)：开启 Hugging Face 代理并执行 Whisper 识别后，旧版会改写整个 MoviePilot 进程的代理环境，可能导致 MoviePilotMCP 本机请求返回 503，以及其他插件请求意外走代理。
